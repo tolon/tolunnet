@@ -74,7 +74,23 @@ Build/import:
 Read-only, never copy code (§4.2):
 - AmiTCP 3.0b: https://aminet.net/comm/net/AmiTCP-bin-30b2.lha (+src)
 - AROS bsdsocket: https://github.com/aros-development-team/AROS
-- Roadshow SDK 1.5: app-side headers, in dev bench DevPack
+Roadshow SDK 1.8 — on bench at `E:\amiga\Amigatolon\roadshow\
+Roadshow-SDK-1.8`. Use as primary local reference:
+- `doc/bsdsocket.doc` — the bsdsocket autodoc, locally (same text as the
+  wiki URL; cite this copy).
+- `doc/SANA-II.pdf`, `doc/sana2r4.html`, `doc/sana2r5.html` — SANA-II
+  specs locally.
+- `netinclude/` — real net headers; `netinclude/sys/errno.h` is the
+  errno value source §5.1 requires. Build against these; check
+  `netinclude.readme` for their redistribution terms before vendoring.
+- `include/devices/sana2.h`, `sana2specialstats.h`.
+- `sfd/` + `interfaces/bsdsocket.xml` — function definitions; generate
+  the library jump table from the SFD, do not hand-write it.
+- `locale/bsdsocket.cd` — catalog description reference for tolunet's
+  own .catalog work (M8).
+- `source_code/` — 4.4BSD-Lite2, libpcap, tcpdump, tftp-client, all
+  BSD-licensed reference source. Reading allowed; do not import —
+  tolunet's protocol code is lwIP only (§4.2).
 Hardware lanes (drivers to support well):
 - wifipi.device — PiStorm/Emu68 WiFi. Primary lane, M7.
 - PaulaNET — https://github.com/RobSmithDev/PaulaNET. Pinned facts:
@@ -90,7 +106,7 @@ Hardware lanes (drivers to support well):
 Bench: WinUAE (https://www.winuae.net/), A2065/uaenet + slirp. Oracle:
 Roadshow demo (http://roadshow.apc-tcp.de/index-en.php).
 On dev bench already (`E:\amiga\Amigatolon`) — ask human to stage, do not
-re-download: NDK 3.2, NDK39, DevPack (Roadshow SDK 1.5, MUI 5 SDK),
+re-download: NDK 3.2, NDK39, DevPack (MUI 5 SDK), Roadshow SDK 1.8
 AmiSSL-v5-OS3, Amelinium, amipkg, pfs3aio, wifipi packages, WinUAE,
 7-Zip, amitools. OS/Kickstart media are the human's licensed copies;
 the project never redistributes them.

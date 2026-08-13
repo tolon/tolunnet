@@ -39,3 +39,44 @@ Status: `open` · `answered` · `superseded`.
     `https://download.savannah.gnu.org/releases/lwip/`. §3.1 says "pin latest
     stable tag"; 2.2.0 is the pinned release. A newer 2.2.1 exists — confirm we
     stay on 2.2.0 (pinned) or bump.
+
+## Raised during M0 — §3.1 SDK reference additions (master prompt update)
+
+The master prompt §3.1 gained a "Roadshow SDK 1.8 — primary local reference"
+block (paths under `E:\amiga\Amigatolon\roadshow\Roadshow-SDK-1.8`). This binds
+the later milestones; recorded here so nothing is missed.
+
+12. **[answered]** **Roadshow SDK version conflict (was 1.8 vs 1.5).** §3.1 line
+    77 said "SDK 1.8" (primary reference), line 109 said "DevPack (Roadshow SDK
+    1.5)". Human resolved: **1.8 is the valid primary reference; the 1.5 wording
+    was a stale leftover.** Master prompt edited: line 109 now reads
+    "DevPack (MUI 5 SDK), Roadshow SDK 1.8". No further action.
+
+13. **[answered]** **SANA-II revision conflict (was Rev 7 vs r4/r5 files).**
+    §3.1 line 66 names "SANA-II Rev 7" (wiki) as normative; lines 81–82 list
+    local files `doc/SANA-II.pdf`, `sana2r4.html`, `sana2r5.html`. Human
+    resolved: **Rev 7 stays normative; the local r4/r5 HTML files are
+    additional reading that shipped with the SDK, not the binding spec.** M1
+    code cites Rev 7; local files are cross-reference only.
+
+14. **[open]** **bsdsocket.library jump table from SFD.** §3.1 now says:
+    "`sfd/` + `interfaces/bsdsocket.xml` — function definitions; generate the
+    library jump table from the SFD, do not hand-write it." This binds M3. Need
+    on bench: the SFD + a generator (`fd2inline` / `sfd` toolchain, or a small
+    script). Please confirm the SDK ships the SFD at the named path and which
+    generator to use. The library skeleton is NOT written until this is settled.
+
+15. **[open]** **netinclude errno source for §5.1.** §3.1 now names
+    `netinclude/sys/errno.h` as the errno value source §5.1 requires ("values
+    from NDK netinclude, no literals"). The M4 errno.c table must be built from
+    this file. Confirm it is reachable at
+    `E:\amiga\Amigatolon\roadshow\Roadshow-SDK-1.8\netinclude\sys\errno.h` (and
+    check `netinclude.readme` redistribution terms before any vendoring). Until
+    confirmed, errno.c is not written.
+
+16. **[open]** **CI container choice.** §3 names "bebbo amiga-gcc, Docker image
+    or cached CI build". The CI workflow uses the
+    `sebastianbergmann/amiga-gcc:latest` Docker image (purpose-built Bebbo
+    toolchain, provides `m68k-amigaos-gcc`). Verify this is acceptable vs a
+    cached self-built image; the exact GCC version is recorded in STATUS.md on
+    first green run. Tied to #9 (toolchain relocation).
