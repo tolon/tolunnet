@@ -1,0 +1,5 @@
+# docs/probes/
+# Behavioural oracle probes (master prompt §8). For each disputed bsdsocket
+# semantic, a probe program is run under Roadshow demo AND under tolunet; both
+# outputs are archived under docs/probes/NNN-name/. Empty in M0; first probes
+# arrive at M4.

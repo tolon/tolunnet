@@ -1,0 +1,4 @@
+# tests/amiga/
+# Amiga-side test programs (run in WinUAE / on real iron). These may use NDK
+# structs and lwIP. Empty in M0; first contents arrive at M4
+# (tests/amiga/m4_expectations.md per master prompt §M4).
