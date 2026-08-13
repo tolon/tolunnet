@@ -1,0 +1,27 @@
+# Build artefacts
+/build/
+/obj/
+*.o
+*.a
+*.uo
+*.exe
+
+# Amiga build outputs
+*.elf
+*.hunk
+*.lha
+
+# lwIP vendored from a clean release; no per-user junk inside it
+vendor/lwip/**/*.o
+vendor/lwip/**/*.orig
+vendor/lwip/**/.git/
+
+# Editor / OS
+*~
+.*.swp
+.DS_Store
+Thumbs.db
+
+# Local toolchain / env
+.env
+.env.*
