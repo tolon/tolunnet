@@ -13,10 +13,40 @@
 | Date          | 2026-08-13                                     |
 | Milestone     | M0 (scaffold) — M1 source added, unproven      |
 | lwIP          | 2.2.0 (vendored, unmodified) — see vendor/     |
-| Toolchain     | amiga-gcc (AmigaPorts build) — version TBD on first CI green |
+| Toolchain     | **amiga-gcc 6.5.0b (2026-07-31)** in WSL Ubuntu; gcc+libnix+libgcc built. Works: `make all` produces `build/tolunet-hello`. |
 | CI            | workflow added; first green pending            |
-| Last proven    | (nothing yet)                                  |
-| Next exit test | M0: hello task runs in WinUAE, writes WORK:    |
+| Last proven    | hello-task **compiles & links** → AmigaOS loadseg() exe (3472 bytes, confirmed by `file`) |
+| Next exit test | M0: hello task **runs** in WinUAE, writes WORK: (BLOCKED — see below) |
+
+## Build proven (host side)
+
+The M0 hello-task builds under the installed toolchain:
+- Toolchain: AmigaPorts/m68k-amigaos-gcc, gcc 6.5.0b, built in WSL Ubuntu-24.04
+  (`~/opt/m68k-amigaos`). libnix + libgcc + newlib built via `make min` (gdb
+  skipped — it fails on missing curses, irrelevant for builds).
+- `make all CROSS=m68k-amigaos-` → `build/tolunet-hello`, a 3472-byte AmigaOS
+  executable, `file` reports "AmigaOS loadseg()ble executable/binary".
+- Toolchain note: GCC 6.5 freestanding ships no `stdint.h`; NDK `exec/types.h`
+  needs one. A minimal C99 `stdint.h` was written to the GCC include dir
+  (ci/write_stdint.sh records it). This is a toolchain install fix, not a
+  vendor change.
+
+## M0 exit test — BLOCKED on WinUAE bench automation
+
+Automated WinUAE testing was attempted but could not boot the bench:
+- WB39.hdf is a **bare hardfile with no RDB** (starts `DOS\0` at offset 0);
+  WinUAE needs explicit geometry for such images and the tried configs did
+  not boot (no output written to the WORK: host dir after >90 s in 3 attempts).
+- WinUAE runs headless here (`use_gui=no`) and screen capture could not be
+  focused on the emulator window, so the boot state could not be diagnosed
+  visually.
+- Artifacts prepared for a manual run: `ci/tolunet-m0.uae` (bench config,
+  needs geometry/RDB fixing), `ci/User-Startup` (adds `C:tolunet-hello` to the
+  boot). The bench WB39.hdf was restored to its original (hello-task +
+  User-Startup edits reverted) so the human starts from a clean image.
+- **Human action needed**: load `ci/tolunet-m0.uae` in the WinUAE GUI, fix the
+  hardfile/geometry (or boot from a known-good OS 3.x HDF), confirm `WORK:`
+  mounts, and run the hello-task. Paste the `WORK:tolunet-hello.log` line here.
 
 ## Proven
 
@@ -79,7 +109,7 @@ paths/fields are confirmed on the bench — every unverified symbol is tagged
 
 ## Session log
 
-- **2026-08-13** — M0 scaffold + M1 source created. No exit test run yet.
+- **2026-08-13 (session 1)** — M0 scaffold + M1 source created. No exit test run.
   Commits (in order):
   1. `scaffold: repo skeleton, LICENSE, tracking docs, README`
   2. `scaffold: vendor lwIP 2.2.0 (unmodified), record checksum`
@@ -92,7 +122,18 @@ paths/fields are confirmed on the bench — every unverified symbol is tagged
   - Resolved §3.1 internal conflicts (master prompt edited): SDK 1.8 is the
     valid reference (1.5 was a leftover); SANA-II Rev 7 stays normative (local
     r4/r5 files are additional reading). See QUESTIONS.md #12, #13.
-  - Toolchain relocation (bebbo → AmigaPorts) and CI container choice are open
-    (QUESTIONS.md #9, #16); CI uses `sebastianbergmann/amiga-gcc:latest`.
-  - Awaiting human for: M0 WinUAE run; QUESTIONS.md #15 (sana2.h verify on
-    bench); #10 (SDI headers path for M3); #11 (lwIP 2.2.0 vs 2.2.1 pin).
+
+- **2026-08-13 (session 2)** — Verification + build automation:
+  - Read bench's Roadshow SDK 1.8 `include/devices/sana2.h` and
+    `netinclude/sys/errno.h`; confirmed every M1 SANA-II symbol and every §5.1
+    errno value. Removed all `/* VERIFY */` tags (commit). QUESTIONS.md #15
+    closed.
+  - Installed amiga-gcc 6.5.0b in WSL Ubuntu (`make all` then `make min` — gdb
+    skipped on missing curses). Added minimal stdint.h (GCC 6.5 freestanding
+    gap, NDK needs it). **hello-task builds**: `build/tolunet-hello` is a real
+    AmigaOS loadseg executable (3472 bytes). This is host-side proven.
+  - **WinUAE bench automation failed**: WB39.hdf is RDB-less (bare hardfile),
+    WinUAE needs explicit geometry and the tried configs did not boot; screen
+    capture could not focus the emulator window to diagnose. Bench HDF
+    restored to original; ci/ holds the config skeleton + User-Startup for a
+    human-driven run. **M0 runtime exit test still pending — needs human.**

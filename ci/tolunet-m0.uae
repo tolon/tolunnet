@@ -1,0 +1,11 @@
+cpu_type=68020
+cpu_compatible=true
+chipmem_size=4
+fastmem_size=8
+cpu_speed=max
+kickstart_rom_file=E:\amiga\Amigatolon\kickstart\Kickstart v3.1 rev 40.68 (1993)(Commodore)(A1200).rom
+; RDB-siz bare HDF icin WinUAE hardfile (geometri otomatik):
+hardfile=rw,DH0:E:\amiga\Amigatolon\hdf\WB39.hdf,32,1,2,512
+filesystem2=rw,WORK:E:\amiga\Amigatolon\work
+floppy0type=-1
+use_gui=no
