@@ -11,12 +11,13 @@
 | Field         | Value                                          |
 |---------------|------------------------------------------------|
 | Date          | 2026-08-13                                     |
-| Milestone     | M0 (scaffold) — M1 source added, unproven      |
+| Milestone     | **M0 — DONE (exit test proven)**; M1 source added, unproven |
 | lwIP          | 2.2.0 (vendored, unmodified) — see vendor/     |
 | Toolchain     | **amiga-gcc 6.5.0b (2026-07-31)** in WSL Ubuntu; gcc+libnix+libgcc built. Works: `make all` produces `build/tolunet-hello`. |
+| Bench         | WinUAE, A1200 (AGA, 68020, 4+8 MB), KS 3.1 (A1200), WB 3.0 HDF boot |
 | CI            | workflow added; first green pending            |
-| Last proven    | hello-task **compiles & links** → AmigaOS loadseg() exe (3472 bytes, confirmed by `file`) |
-| Next exit test | M0: hello task **runs** in WinUAE, writes WORK: (BLOCKED — see below) |
+| Last proven    | **M0 exit test**: hello-task ran in WinUAE, wrote `WORK:tolunet-hello.log` |
+| Next exit test | M1: TolunetStatus opens SANA-II device, sends broadcast, logs frames |
 
 ## Build proven (host side)
 
@@ -31,41 +32,43 @@ The M0 hello-task builds under the installed toolchain:
   (ci/write_stdint.sh records it). This is a toolchain install fix, not a
   vendor change.
 
-## M0 exit test — BLOCKED on WinUAE bench automation
-
-Automated WinUAE testing was attempted but could not boot the bench:
-- WB39.hdf is a **bare hardfile with no RDB** (starts `DOS\0` at offset 0);
-  WinUAE needs explicit geometry for such images and the tried configs did
-  not boot (no output written to the WORK: host dir after >90 s in 3 attempts).
-- WinUAE runs headless here (`use_gui=no`) and screen capture could not be
-  focused on the emulator window, so the boot state could not be diagnosed
-  visually.
-- Artifacts prepared for a manual run: `ci/tolunet-m0.uae` (bench config,
-  needs geometry/RDB fixing), `ci/User-Startup` (adds `C:tolunet-hello` to the
-  boot). The bench WB39.hdf was restored to its original (hello-task +
-  User-Startup edits reverted) so the human starts from a clean image.
-- **Human action needed**: load `ci/tolunet-m0.uae` in the WinUAE GUI, fix the
-  hardfile/geometry (or boot from a known-good OS 3.x HDF), confirm `WORK:`
-  mounts, and run the hello-task. Paste the `WORK:tolunet-hello.log` line here.
-
 ## Proven
 
-_(nothing yet — M0 exit test has not run)_
+### M0 exit test — DONE (2026-08-13)
+
+The hello-task ran in WinUAE and wrote its line to disk. ART-062: seen running.
+
+**Bench config:** WinUAE, A1200-class — `chipset=aga`, `cpu_type=68ec020/68020`,
+`cpu_24bit_addressing=true`, 4 MB chip + 8 MB fast, KS 3.1 (A1200) at
+`E:\amiga\Shared\rom\amiga-os-310-a1200.rom`, `ide=a600/a1200`. Booted from the
+clean `Workbench v3.0 (1992)(Commodore).hdf`. (AGA chipset + A1200 IDE ROM are
+required — without them Kickstart reports "No disk present in device RDHD".)
+
+**How it was run:** `C:tolunet-hello` + `Assign WORK: DH0:` added to the bench
+HDF's `S:User-Startup` via xdftool; `winuae64.exe -f ci/tolunet-m0.uae` boots,
+runs the hello-task at startup. (The host-directory WORK: mount via
+`filesystem2=` did not take in this Amiga-Forever/WinUAE setup, so WORK: was
+assigned to the boot volume instead — logs land on the HDF and are read back
+with xdftool after shutdown.)
+
+**Pasted output** (from `tolunet-stdout.log`, captured to docs/):
+```
+tolunet M0: hello-task alive
+tolunet M0: wrote WORK:tolunet-hello
+```
+And `tolunet-hello.log`:
+```
+tolunet M0: hello-task alive
+```
+Originals kept at `docs/m0-exit-hello.log` and `docs/m0-exit-stdout.log`.
 
 ## Built, unproven
 
 These are written but have **not** been seen running in WinUAE. Treat as
 drafts. The Makefile currently builds only the M0 hello-task; M1 sources are
-not yet wired into a build target (M1 wiring lands once the SANA-II header
-paths/fields are confirmed on the bench — every unverified symbol is tagged
-`/* VERIFY: sana2.h (Rev 7) */` in the source and tracked in QUESTIONS.md #15).
+not yet wired into a build target. (M1 SANA-II symbols were verified against
+the Roadshow SDK 1.8 `include/devices/sana2.h` — see QUESTIONS.md #15.)
 
-- **M0 scaffold** — repo, LICENSE, README, tracking docs, lwIP 2.2.0 vendored
-  (unmodified), `include/tolunet/{protocol,config}.h`, `lwipopts/lwipopts.h`,
-  Makefile (`make all` → `build/tolunet-hello`), two-job CI workflow,
-  `docs/{bench,architecture,protocol,compat}.md`, tests skeleton.
-  - The hello-task is the only thing intended to *build and run* in M0.
-  - Proven-by: M0 exit test (human runs hello-task in WinUAE, pastes output).
 - **M1 SANA-II raw** (source only):
   - `src/sana2/sana2_netif.[ch]` — shared open (never exclusive), copyfunc tag
     list (`S2_CopyToBuff`/`S2_CopyFromBuff`), `S2_DEVICEQUERY`,
@@ -98,14 +101,16 @@ paths/fields are confirmed on the bench — every unverified symbol is tagged
 | Task stack         | ≥ 16 KB      | —        | explicit, lwIP paths need room |
 | Timer granularity  | 100 ms       | —        | timer.device tick              |
 
-## M0 exit test (target)
+## M0 exit test (DONE)
 
-```
-1. Human: stage bench per docs/bench.md (WinUAE, OS 3.2, 68040, host dir as WORK:)
-2. Human: run the hello-task artefact in WinUAE
-3. Human: confirm a line was written to WORK:
-4. Human: paste the line + run context here, under "Proven"
-```
+The hello-task was run in the WinUAE bench (A1200 AGA, WB 3.0) and wrote
+`WORK:tolunet-hello.log`. Output pasted under "Proven" above. **M0 is done.**
+
+Reproduce (bench HDF must be prepped once — see ci/README.md):
+1. xdftool: write `build/tolunet-hello` to `C:` on the bench WB HDF
+2. xdftool: write `ci/User-Startup` (Assign WORK: DH0: + C:tolunet-hello) to `S:`
+3. `winuae64.exe -f ci/tolunet-m0.uae`
+4. After boot, the log line is on the HDF; read it back with xdftool.
 
 ## Session log
 
@@ -132,8 +137,17 @@ paths/fields are confirmed on the bench — every unverified symbol is tagged
     skipped on missing curses). Added minimal stdint.h (GCC 6.5 freestanding
     gap, NDK needs it). **hello-task builds**: `build/tolunet-hello` is a real
     AmigaOS loadseg executable (3472 bytes). This is host-side proven.
-  - **WinUAE bench automation failed**: WB39.hdf is RDB-less (bare hardfile),
-    WinUAE needs explicit geometry and the tried configs did not boot; screen
-    capture could not focus the emulator window to diagnose. Bench HDF
-    restored to original; ci/ holds the config skeleton + User-Startup for a
-    human-driven run. **M0 runtime exit test still pending — needs human.**
+  - **WinUAE bench automation failed** initially (WB39.hdf RDB-less bare
+    hardfile; no AGA chipset config → "No disk in device RDHD"). Resolved in
+    session 3 by switching to the clean `Workbench v3.0` HDF + matching the
+    human's working `wb3tolon.uae` (AGA chipset, A1200 IDE ROM, 68020 24-bit).
+
+- **2026-08-13 (session 3)** — **M0 EXIT TEST PASSED.**
+  - Bench boots WinUAE with `ci/tolunet-m0.uae` (A1200 AGA, 68020, WB 3.0 HDF).
+  - The host-directory WORK: mount via `filesystem2=` did not take in this
+    Amiga-Forever/WinUAE setup, so `S:User-Startup` now does `Assign WORK: DH0:`
+    — the hello-task writes `WORK:tolunet-hello.log` onto the boot HDF, read
+    back with xdftool after shutdown.
+  - **PROVEN**: hello-task ran, wrote "tolunet M0: hello-task alive". Outputs
+    archived at `docs/m0-exit-hello.log` + `docs/m0-exit-stdout.log`. Bench HDF
+    restored to its clean original. **M0 is DONE. Next: M1.**

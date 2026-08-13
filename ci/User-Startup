@@ -1,6 +1,6 @@
-; tolunet M0 exit test — runs the hello-task at boot.
-; Added by build automation (ci/). Runs AFTER assigns, BEFORE LoadWB.
-; The hello-task writes one line to WORK:tolunet-hello.log (host-mounted dir).
-If EXISTS WORK:
-  C:tolunet-hello
-EndIf
+;BEGIN tolunet M0 exit test
+; WORK: -> boot volume (DH0:) cunku host-directory mount config'te calismadi.
+; Boylece hello-task WORK:tolunet-hello.log'a yazar = HDF icine, xdftool ile okunur.
+Assign WORK: DH0:
+C:tolunet-hello >WORK:tolunet-stdout.log
+;END tolunet
