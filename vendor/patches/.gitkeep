@@ -1,0 +1,3 @@
+# This directory holds patches applied to vendored sources by the build.
+# Master prompt §2: the vendored tree stays unmodified; patches live here.
+# Empty for now — add <topic>.patch files only if a vendor change is unavoidable.
