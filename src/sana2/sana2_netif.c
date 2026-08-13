@@ -281,32 +281,40 @@ LONG tn_s2_send(TnSana2If *nif, const void *buf, LONG len,
 }
 
 /* --------------------------------------------------------------- s2_recv
- * Blocking receive on one read slot (idx into read_ios). The copyfunc writes
- * the frame into buf (<= buf_len bytes); returns the on-wire length. M2 will
- * switch this to an async pump + completion-signal callback into the task.
+ * Blocking receive using the primary io (idx ignored in M1; the read_ios pump
+ * is a later optimisation). The driver's copyfunc writes the frame into buf.
+ * Returns the on-wire frame length, or <0 on error.
  */
 LONG tn_s2_recv(TnSana2If *nif, void *buf, ULONG buf_len,
                 ULONG idx, UBYTE *src_addr)
 {
     struct IOSana2Req *io;
-    if (nif == NULL || !nif->online) return -1;
-    if (nif->read_ios == NULL || idx >= nif->n_read_ios) return -1;
-    io = nif->read_ios[idx];
+    LONG flen;
+    (void)idx;
 
-    io->ios2_Data       = buf;          /* copyfunc writes here */
-    io->ios2_DataLength = buf_len;
-    io->ios2_Req.io_Error = 0;
+    if (nif == NULL || !nif->online || nif->io == NULL) return -1;
+    io = nif->io;
 
+    /* Blocking CMD_READ on IPv4 packets. copyfunc fills ios2_Data (=buf). */
+    io->ios2_Data           = buf;
+    io->ios2_DataLength     = buf_len;
+    io->ios2_PacketType     = 0x0800;
+    io->ios2_Req.io_Command = CMD_READ;
+    io->ios2_Req.io_Error   = 0;
     DoIO((struct IORequest *)io);
+
     if (io->ios2_Req.io_Error != 0) {
         return -1;
     }
+    flen = (LONG)io->ios2_DataLength;
+    if (flen < 0) flen = 0;
+    if ((ULONG)flen > buf_len) flen = (LONG)buf_len;
     if (src_addr != NULL) {
         ULONG i;
         for (i = 0; i < nif->addr_bytes; i++)
             src_addr[i] = io->ios2_SrcAddr[i];
     }
-    return (LONG)io->ios2_DataLength;
+    return flen;
 }
 
 /* --------------------------------------------------------------- arm_reads
@@ -331,9 +339,11 @@ TnS2Result tn_s2_arm_reads(TnSana2If *nif)
         rio = (struct IOSana2Req *)tn_create_extio(nif->reply_port,
                                                sizeof(struct IOSana2Req));
         if (rio == NULL) return TN_S2_NO_MEM;
-        /* Bind to the same device the primary io opened, and keep the buffer
-         * management cookie the driver returned at open time. */
+        /* Bind to the same device/unit the primary io opened, and keep the
+         * buffer management cookie the driver returned at open time. The unit
+         * is essential — without it the driver rejects every I/O. */
         rio->ios2_Req.io_Device = nif->io->ios2_Req.io_Device;
+        rio->ios2_Req.io_Unit   = nif->io->ios2_Req.io_Unit;
         rio->ios2_BufferManagement = nif->io->ios2_BufferManagement;
         nif->read_ios[i] = rio;
     }
@@ -360,6 +370,11 @@ void tn_s2_offline_close(TnSana2If *nif)
         for (i = 0; i < nif->n_read_ios; i++) {
             struct IOSana2Req *rio = nif->read_ios[i];
             if (rio != NULL) {
+                /* Free the per-slot receive buffer allocated in arm_reads. */
+                if (rio->ios2_Data != NULL) {
+                    FreeVec(rio->ios2_Data);
+                    rio->ios2_Data = NULL;
+                }
                 /* If anything is still pending, abort then wait it out. */
                 if (!CheckIO((struct IORequest *)rio)) {
                     AbortIO((struct IORequest *)rio);

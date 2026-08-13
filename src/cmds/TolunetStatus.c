@@ -123,28 +123,26 @@ int main(int argc, char *argv[])
             log_line(DOSBase, fh, "tolunet M1: broadcast sent\n");
     }
 
-    /* Poll incoming frames for a short window. M1 just logs type+length. */
+    /* Poll incoming frames for a short window. M1 just logs type+length.
+     * Uses the primary io blocking; idx 0. */
+    log_line(DOSBase, fh, "tolunet M1: polling for frames\n");
     {
-        ULONG spin;
         UBYTE src[SANA2_MAX_ADDR_BYTES];
         ULONG frames = 0;
-        /* Crude bounded poll; the real task uses Wait() on the reply port. */
-        for (spin = 0; spin < (ULONG)(TN_STATUS_SECONDS * 100); spin++) {
-            ULONG idx;
-            for (idx = 0; idx < nif.n_read_ios; idx++) {
-                LONG flen = tn_s2_recv(&nif, rbuf, sizeof(rbuf), idx, src);
-                if (flen > 0) {
-                    ULONG et = ether_type(rbuf, (ULONG)flen);
-                    char line[80];
-                    /* Tiny manual formatter (no sprintf in resident code). */
-                    format_line(line, sizeof(line),
-                                "tolunet M1: frame len=", (ULONG)flen,
-                                " type=0x", et);
-                    log_line(DOSBase, fh, line);
-                    frames++;
-                }
+        ULONG spin;
+        for (spin = 0; spin < 4; spin++) {  /* a few blocking reads */
+            LONG flen = tn_s2_recv(&nif, rbuf, sizeof(rbuf), 0, src);
+            if (flen > 0) {
+                ULONG et = ether_type(rbuf, (ULONG)flen);
+                char line[80];
+                format_line(line, sizeof(line),
+                            "tolunet M1: frame len=", (ULONG)flen,
+                            " type=0x", et);
+                log_line(DOSBase, fh, line);
+                frames++;
+            } else {
+                log_line(DOSBase, fh, "tolunet M1: recv returned no frame\n");
             }
-            Delay(50);   /* VERIFY: DOS Delay, ~1s at 50 VBlank ticks */
         }
         if (frames == 0)
             log_line(DOSBase, fh, "tolunet M1: no frames received in window\n");
