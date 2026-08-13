@@ -49,6 +49,35 @@ static void tn_delete_extio(struct IORequest *io)
     if (io != NULL) FreeVec(io);
 }
 
+/* Append a decimal LONG (with optional sign) to buf at *o, respecting cap. */
+static void tn_append_signed(char *buf, ULONG cap, ULONG *o, LONG v)
+{
+    char tmp[12];
+    ULONG i = 0;
+    LONG av = v < 0 ? -v : v;
+    if (v < 0 && *o + 1 < cap) buf[(*o)++] = '-';
+    if (av == 0) tmp[i++] = '0';
+    while (av > 0 && i < sizeof(tmp)) { tmp[i++] = (char)('0' + (av % 10)); av /= 10; }
+    while (i > 0 && *o + 1 < cap) buf[(*o)++] = tmp[--i];
+}
+
+/* Log a one-line SANA-II step failure: name, io_Error, ios2_WireError. */
+void tn_log_s2err(const char *step, LONG err, LONG wire)
+{
+    char buf[96];
+    ULONG o = 0, i;
+    const char *p;
+    p = "tolunet: ";          for (i = 0; p[i] && o+1 < sizeof(buf); i++) buf[o++]=p[i];
+    for (i = 0; step[i] && o+1 < sizeof(buf); i++) buf[o++]=step[i];
+    p = " failed err=";       for (i = 0; p[i] && o+1 < sizeof(buf); i++) buf[o++]=p[i];
+    tn_append_signed(buf, sizeof(buf), &o, err);
+    p = " wire=";             for (i = 0; p[i] && o+1 < sizeof(buf); i++) buf[o++]=p[i];
+    tn_append_signed(buf, sizeof(buf), &o, wire);
+    if (o+1 < sizeof(buf)) buf[o++]='\n';
+    if (o < sizeof(buf)) buf[o]='\0';
+    tn_log(TN_LOG_BASIC, buf);
+}
+
 /* ------------------------------------------------------------------ copyfuncs
  * The driver calls these to move bytes between its packet and our buffer.
  * S2_CopyToBuff:   driver packet -> our buffer  (receive path).
@@ -154,7 +183,7 @@ static TnS2Result tn_s2_query(TnSana2If *nif)
 
     DoIO((struct IORequest *)io);
     if (io->ios2_Req.io_Error != 0) {
-        tn_log(TN_LOG_BASIC, "tolunet: S2_DEVICEQUERY failed\n");
+        tn_log_s2err("S2_DEVICEQUERY", io->ios2_Req.io_Error, io->ios2_WireError);
         return TN_S2_QUERY_FAIL;
     }
 
@@ -194,17 +223,25 @@ TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac)
     io->ios2_Req.io_Error   = 0;
     DoIO((struct IORequest *)io);
     if (io->ios2_Req.io_Error != 0) {
-        tn_log(TN_LOG_BASIC, "tolunet: S2_CONFIGINTERFACE failed\n");
+        tn_log_s2err("S2_CONFIGINTERFACE", io->ios2_Req.io_Error, io->ios2_WireError);
         return TN_S2_CONFIG_FAIL;
     }
 
-    /* S2_ONLINE: bring the interface up for active traffic. */
+    /* S2_ONLINE: bring the interface up for active traffic. Some drivers/devices
+     * (e.g. WinUAE's a2065 over slirp) report the unit as already online —
+     * S2ERR_BAD_STATE (4) / S2WERR_UNIT_ONLINE (2). Treat that as success since
+     * the interface is usable; anything else is a real failure. */
     io->ios2_Req.io_Command = S2_ONLINE;
     io->ios2_Req.io_Error   = 0;
     DoIO((struct IORequest *)io);
     if (io->ios2_Req.io_Error != 0) {
-        tn_log(TN_LOG_BASIC, "tolunet: S2_ONLINE failed\n");
-        return TN_S2_ONLINE_FAIL;
+        if (io->ios2_Req.io_Error == S2ERR_BAD_STATE &&
+            io->ios2_WireError == S2WERR_UNIT_ONLINE) {
+            tn_log(TN_LOG_BASIC, "tolunet: S2_ONLINE: already online (ok)\n");
+        } else {
+            tn_log_s2err("S2_ONLINE", io->ios2_Req.io_Error, io->ios2_WireError);
+            return TN_S2_ONLINE_FAIL;
+        }
     }
 
     /* Capture the negotiated station address back for diagnostics. */
