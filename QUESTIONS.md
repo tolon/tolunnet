@@ -66,13 +66,20 @@ the later milestones; recorded here so nothing is missed.
     script). Please confirm the SDK ships the SFD at the named path and which
     generator to use. The library skeleton is NOT written until this is settled.
 
-15. **[open]** **netinclude errno source for §5.1.** §3.1 now names
-    `netinclude/sys/errno.h` as the errno value source §5.1 requires ("values
-    from NDK netinclude, no literals"). The M4 errno.c table must be built from
-    this file. Confirm it is reachable at
-    `E:\amiga\Amigatolon\roadshow\Roadshow-SDK-1.8\netinclude\sys\errno.h` (and
-    check `netinclude.readme` redistribution terms before any vendoring). Until
-    confirmed, errno.c is not written.
+15. **[answered]** **netinclude errno source for §5.1.** §3.1 names
+    `netinclude/sys/errno.h` as the errno value source §5.1 requires. Confirmed
+    present and BSD-licensed ("Freely Distributable") at
+    `E:\amiga\Amigatolon\roadshow\Roadshow-SDK-1.8\netinclude\sys\errno.h`.
+    All §5.1 errno values verified there: ENOBUFS=55, ETIMEDOUT=60,
+    EHOSTUNREACH=65, EINPROGRESS=36, EINVAL=22, EWOULDBLOCK=EAGAIN=35,
+    EADDRINUSE=48, EALREADY=37, EISCONN=56, ENOTCONN=57, ECONNABORTED=53,
+    ECONNRESET=54, ENETDOWN=50, EINTR=4. errno.c (M4) builds from this file.
+
+    **Also closed:** `include/devices/sana2.h` verified against the M1 source.
+    Every struct field and constant used in src/sana2/sana2_netif.c is present
+    and matches (IOSana2Req, Sana2DeviceQuery, S2_CopyToBuff/S2_CopyFromBuff,
+    SANA2_MAX_ADDR_BYTES, all S2_* commands, S2ERR_*/S2WERR_* codes). The
+    `/* VERIFY */` tags were removed in the verification commit.
 
 16. **[open]** **CI container choice.** §3 names "bebbo amiga-gcc, Docker image
     or cached CI build". The CI workflow uses the

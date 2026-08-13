@@ -25,10 +25,6 @@
  * tool has no task loop yet. The real network task does this with Wait(). */
 #define TN_STATUS_SECONDS  8
 
-/* Arm the >=4-read pump; defined in sana2_netif.c, declared here pending
- * promotion to sana2_netif.h in the M1 wiring commit. */
-extern TnS2Result tn_s2_arm_reads(TnSana2If *nif);
-
 /* Forward declarations. */
 static void log_line(struct Library *dos, BPTR fh, const char *s);
 static ULONG ether_type(const UBYTE *frame, ULONG len);

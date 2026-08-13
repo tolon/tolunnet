@@ -8,19 +8,16 @@
  * This is the lwIP-netif ↔ SANA-II boundary. In M1 it is exercised by a raw
  * frame logger (src/cmds/TolunetStatus.c) — there is no IP yet (that is M2).
  *
- * UNPROVEN: written against the SANA-II Rev 7 spec (wiki) plus the web-fetched
- * field list. Every struct/constant below that could not be verified against
- * the Roadshow SDK's local include/devices/sana2.h is tagged
- *   /* VERIFY: sana2.h (Rev 7) */
- * and listed in QUESTIONS.md. Do not assume this compiles or runs until the
- * M1 exit test is pasted in STATUS.md.
+ * All SANA-II types/constants are confirmed against the Roadshow SDK 1.8
+ * include/devices/sana2.h (QUESTIONS.md #15 closed). Still UNPROVEN at runtime:
+ * do not assume it runs until the M1 exit test is pasted in STATUS.md.
  */
 #ifndef TOLUNET_SANA2_NETIF_H
 #define TOLUNET_SANA2_NETIF_H
 
 #include <exec/types.h>
-#include <exec/io.h>     /* struct IORequest — VERIFY: actual header */
-#include <devices/sana2.h> /* SANA-II Rev 7 types — VERIFY: path/fields */
+#include <exec/io.h>       /* struct IORequest */
+#include <devices/sana2.h> /* IOSana2Req, Sana2DeviceQuery, S2_* (verified) */
 
 /* Result codes for the SANA-II open/bring-up sequence. */
 typedef enum {
@@ -49,7 +46,7 @@ typedef struct TnSana2If {
     ULONG            mtu;             /* from S2_DEVICEQUERY            */
     UWORD            addr_bits;       /* AddrFieldSize from query       */
     UWORD            addr_bytes;      /* (addr_bits + 7) / 8            */
-    UBYTE            mac[SANA2_MAX_ADDR_BYTES]; /* VERIFY: const in sana2.h */
+    UBYTE            mac[SANA2_MAX_ADDR_BYTES]; /* 16 bytes max (128 bits) */
     BOOL             online;
 } TnSana2If;
 
@@ -58,10 +55,13 @@ TnS2Result tn_s2_open(TnSana2If *nif, CONST_STRPTR device_name, ULONG unit);
 TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac /* nullable */);
 void       tn_s2_offline_close(TnSana2If *nif);
 
+/* Arm >=4 outstanding async CMD_READ requests (the receive pump). */
+TnS2Result tn_s2_arm_reads(TnSana2If *nif);
+
 /* Frame I/O (M1: logger only; M2: feed lwIP). */
 LONG       tn_s2_send(TnSana2If *nif, const void *buf, LONG len,
                       BOOL broadcast, ULONG packet_type);
-/* Re-arm one completed CMD_READ; returns the frame length or a negative err. */
+/* Blocking receive on slot idx; returns the on-wire frame length or negative. */
 LONG       tn_s2_recv(TnSana2If *nif, void *buf, ULONG buf_len,
                       ULONG idx, UBYTE *src_addr /* nullable */);
 
