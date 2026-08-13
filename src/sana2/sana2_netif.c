@@ -8,21 +8,12 @@
  *
  * All SANA-II constants/structs are confirmed against the Roadshow SDK 1.8
  * header include/devices/sana2.h (Rev 7 normative; QUESTIONS.md #15 closed).
- * Field names used: IOSana2Req{ios2_Req,ios2_WireError,ios2_PacketType,
- * ios2_SrcAddr,ios2_DstAddr,ios2_DataLength,ios2_Data,ios2_StatData,
- * ios2_BufferManagement}; Sana2DeviceQuery{SizeAvailable,SizeSupplied,
- * DevQueryFormat,DeviceLevel,AddrFieldSize,MTU,...}; S2_CopyToBuff/
- * S2_CopyFromBuff tags; SANA2_MAX_ADDR_BYTES; S2_DEVICEQUERY/CONFIGINTERFACE/
- * ONLINE/OFFLINE/BROADCAST; S2ERR_*/S2WERR_* error codes.
- *
- * Not yet wired into the M0 Makefile (which builds only the hello-task); M1
- * wiring lands once this compiles under amiga-gcc and the SANA-II device on
- * the bench (a2065/uaenet) is reachable.
  */
 
 #include "sana2_netif.h"
 #include "../common/log.h"
 
+#include <stdint.h>           /* int8_t etc. for exec/types.h */
 #include <proto/exec.h>
 #include <proto/dos.h>
 
@@ -37,6 +28,26 @@
 /* EtherType values (big-endian on the wire, bytes 12-13 of an Ethernet frame). */
 #define TN_ETHERTYPE_IPV4 0x0800U
 #define TN_ETHERTYPE_ARP  0x0806U
+
+/* ------------------------------------------------------------------ io helpers
+ * CreateExtIO/DeleteExtIO are not in every clib; allocate an IORequest the
+ * classic way (AllocMem + Message setup) and free it the same way.
+ */
+static struct IORequest *tn_create_extio(struct MsgPort *port, ULONG size)
+{
+    struct IORequest *io = (struct IORequest *)AllocVec(size, MEMF_CLEAR | MEMF_ANY);
+    if (io != NULL) {
+        io->io_Message.mn_ReplyPort = port;
+        io->io_Message.mn_Length    = (UWORD)size;
+        io->io_Message.mn_Node.ln_Type = NT_MESSAGE;
+    }
+    return io;
+}
+
+static void tn_delete_extio(struct IORequest *io)
+{
+    if (io != NULL) FreeVec(io);
+}
 
 /* ------------------------------------------------------------------ copyfuncs
  * The driver calls these to move bytes between its packet and our buffer.
@@ -90,7 +101,7 @@ TnS2Result tn_s2_open(TnSana2If *nif, CONST_STRPTR device_name, ULONG unit)
     nif->reply_port = port;
 
     /* CreateExtIO fills in mn_ReplyPort, mn_Length and ln_Type=NT_MESSAGE. */
-    io = (struct IOSana2Req *)CreateExtIO(port, sizeof(struct IOSana2Req));
+    io = (struct IOSana2Req *)tn_create_extio(port, sizeof(struct IOSana2Req));
     if (io == NULL) {
         DeleteMsgPort(port);
         nif->reply_port = NULL;
@@ -100,9 +111,9 @@ TnS2Result tn_s2_open(TnSana2If *nif, CONST_STRPTR device_name, ULONG unit)
 
     /* Buffer-management tag list: drivers refuse to open without both funcs. */
     bm_tags[0].ti_Tag   = S2_CopyToBuff;
-    bm_tags[0].ti_Data  = (ULONG)(IPTR)tn_copy_to_buff;
+    bm_tags[0].ti_Data  = (ULONG)tn_copy_to_buff;
     bm_tags[1].ti_Tag   = S2_CopyFromBuff;
-    bm_tags[1].ti_Data  = (ULONG)(IPTR)tn_copy_from_buff;
+    bm_tags[1].ti_Data  = (ULONG)tn_copy_from_buff;
     bm_tags[2].ti_Tag   = TAG_DONE;
 
     /* OpenDevice reads ios2_BufferManagement as the tag list before opening. */
@@ -112,7 +123,7 @@ TnS2Result tn_s2_open(TnSana2If *nif, CONST_STRPTR device_name, ULONG unit)
     err = OpenDevice((STRPTR)device_name, unit, (struct IORequest *)io, 0UL);
     if (err != 0) {
         tn_log(TN_LOG_BASIC, "tolunet: OpenDevice failed\n");
-        DeleteExtIO((struct IORequest *)io);
+        tn_delete_extio((struct IORequest *)io);
         nif->io = NULL;
         DeleteMsgPort(port);
         nif->reply_port = NULL;
@@ -280,7 +291,7 @@ TnS2Result tn_s2_arm_reads(TnSana2If *nif)
 
     for (i = 0; i < TN_S2_NREADS; i++) {
         struct IOSana2Req *rio;
-        rio = (struct IOSana2Req *)CreateExtIO(nif->reply_port,
+        rio = (struct IOSana2Req *)tn_create_extio(nif->reply_port,
                                                sizeof(struct IOSana2Req));
         if (rio == NULL) return TN_S2_NO_MEM;
         /* Bind to the same device the primary io opened, and keep the buffer
@@ -317,7 +328,7 @@ void tn_s2_offline_close(TnSana2If *nif)
                     AbortIO((struct IORequest *)rio);
                 }
                 WaitIO((struct IORequest *)rio);
-                DeleteExtIO((struct IORequest *)rio);
+                tn_delete_extio((struct IORequest *)rio);
             }
         }
         FreeVec(nif->read_ios);
@@ -327,7 +338,7 @@ void tn_s2_offline_close(TnSana2If *nif)
 
     if (nif->io != NULL) {
         CloseDevice((struct IORequest *)nif->io);
-        DeleteExtIO((struct IORequest *)nif->io);
+        tn_delete_extio((struct IORequest *)nif->io);
         nif->io = NULL;
     }
     if (nif->reply_port != NULL) {

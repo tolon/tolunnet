@@ -23,10 +23,14 @@ LDFLAGS     = -noixemul
 BUILD      ?= build
 OBJS        = $(BUILD)/main.o $(BUILD)/log.o $(BUILD)/mem.o
 HELLO       = $(BUILD)/tolunet-hello
+# M1: TolunetStatus raw-frame tool (sana2_netif + buffers + the tool itself).
+STATUS_OBJS = $(BUILD)/TolunetStatus.o $(BUILD)/sana2_netif.o $(BUILD)/buffers.o \
+              $(BUILD)/log.o $(BUILD)/mem.o
+STATUSTOOL  = $(BUILD)/TolunetStatus
 
 .PHONY: all clean lwip
 
-all: $(HELLO)
+all: $(HELLO) $(STATUSTOOL)
 
 # --- M0: hello-task -----------------------------------------------------
 $(BUILD):
@@ -38,10 +42,20 @@ $(BUILD)/%.o: src/task/%.c | $(BUILD)
 $(BUILD)/%.o: src/common/%.c | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(BUILD)/%.o: src/sana2/%.c | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/%.o: src/cmds/%.c | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
 # main.c is the entry; log.c/mem.c are linked in for completeness even though
 # the hello-task does not call them yet (M2+ wiring).
 $(HELLO): $(OBJS)
 	$(CC) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS)
+
+# M1: TolunetStatus — raw-frame logger over a SANA-II device.
+$(STATUSTOOL): $(STATUS_OBJS)
+	$(CC) $(CFLAGS) $(STATUS_OBJS) -o $@ $(LDFLAGS)
 
 # --- lwIP (M2 wiring placeholder) ---------------------------------------
 # In M2 the build will compile the lwIP core (vendor/lwip/src/core/*,

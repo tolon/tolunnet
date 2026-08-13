@@ -15,6 +15,7 @@
  */
 
 #include "../sana2/sana2_netif.h"
+#include "../common/log.h"
 
 #include <proto/exec.h>
 #include <proto/dos.h>
@@ -63,12 +64,17 @@ int main(int argc, char *argv[])
     DOSBase = OpenLibrary((CONST_STRPTR)"dos.library", 0);
     if (DOSBase == NULL) return 20;
 
+    /* Wire the logger so tn_log() inside sana2_netif.c actually writes. */
+    g_log_dos = DOSBase;
+    g_log_level = TN_LOG_VERBOSE;
+
     if (argc >= 2) device = (CONST_STRPTR)argv[1];
     if (argc >= 3) {
-        /* parse unit as decimal via DOS (no strtol in resident code) */
-        STRPTR end = NULL;
-        LONG v = StrToLong((STRPTR)argv[2], &end);   /* VERIFY: DOS StrToLong */
-        if (v >= 0) unit = (ULONG)v;
+        /* DOS StrToLong(CONST_STRPTR string, LONG *value) returns chars consumed;
+         * the parsed value is stored in *value. */
+        LONG parsed = 0;
+        LONG consumed = StrToLong((CONST_STRPTR)argv[2], &parsed);
+        if (consumed > 0) unit = (ULONG)parsed;
     }
 
     log_line(DOSBase, (BPTR)0, "tolunet M1: TolunetStatus starting\n");
