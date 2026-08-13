@@ -1,0 +1,63 @@
+# tolunet CI — master prompt §3.
+#
+# Two jobs, run on every push and every branch (trigger: push with no branch
+# filter). Job 1 cross-compiles with amiga-gcc and uploads the artefact tree.
+# Job 2 runs the host-side unit tests natively.
+#
+# Container: sebastianbergmann/amiga-gcc (purpose-built Bebbo amiga-gcc image;
+# provides m68k-amigaos-gcc). The exact GCC version is recorded in STATUS.md on
+# the first green run. If this image is ever unavailable, fall back to the
+# AmigaPorts prebuilt (see QUESTIONS.md #9) — do not change flags.
+
+name: build
+
+on:
+  push:
+    # Every branch, every push (no branches: filter = all).
+  workflow_dispatch:
+
+jobs:
+  # --- Job 1: cross-compile for m68k AmigaOS -------------------------------
+  amiga:
+    name: amiga-gcc build
+    runs-on: ubuntu-latest
+    container:
+      image: sebastianbergmann/amiga-gcc:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain sanity check
+        run: |
+          which m68k-amigaos-gcc || { echo "m68k-amigaos-gcc not found in image"; exit 1; }
+          m68k-amigaos-gcc --version | head -1
+
+      - name: Build
+        run: make all
+
+      - name: Artefact listing
+        run: |
+          echo "=== build/ contents ==="
+          ls -l build || true
+          echo "=== file type ==="
+          file build/tolunet-hello || true
+
+      - name: Upload artefact tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: tolunet-amiga-build
+          path: build/
+          if-no-files-found: error
+
+  # --- Job 2: host-side unit tests (native) --------------------------------
+  host:
+    name: host tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build & run host tests
+        # tests/host/ holds host-compilable logic (protocol encode/decode,
+        # socket table). M0: skeleton present, real tests arrive with M3/M4.
+        run: |
+          echo "tests/host: skeleton only in M0; nothing to run yet."
+          ls -R tests/host || true
