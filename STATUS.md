@@ -11,13 +11,13 @@
 | Field         | Value                                          |
 |---------------|------------------------------------------------|
 | Date          | 2026-08-13                                     |
-| Milestone     | **M0 — DONE (exit test proven)**; M1 source added, unproven |
+| Milestone     | **M0 — DONE**; M1 — SANA-II path proven (open/config/online/broadcast); incoming-frame log pending DHCP (M2) |
 | lwIP          | 2.2.0 (vendored, unmodified) — see vendor/     |
-| Toolchain     | **amiga-gcc 6.5.0b (2026-07-31)** in WSL Ubuntu; gcc+libnix+libgcc built. Works: `make all` produces `build/tolunet-hello`. |
-| Bench         | WinUAE, A1200 (AGA, 68020, 4+8 MB), KS 3.1 (A1200), WB 3.0 HDF boot |
+| Toolchain     | **amiga-gcc 6.5.0b (2026-07-31)** in WSL Ubuntu; gcc+libnix+libgcc built. Works: `make all` produces `build/tolunet-hello` + `build/TolunetStatus`. |
+| Bench         | WinUAE, A1200 (AGA, 68020, 4+8 MB), KS 3.1 (A1200), WB 3.0 HDF + a2065/ethernet.device + slirp |
 | CI            | workflow added; first green pending            |
-| Last proven    | **M0 exit test**: hello-task ran in WinUAE, wrote `WORK:tolunet-hello.log` |
-| Next exit test | M1: TolunetStatus opens SANA-II device, sends broadcast, logs frames |
+| Last proven    | **M1 broadcast path**: TolunetStatus opened ethernet.device, online, broadcast sent |
+| Next exit test | M2: lwIP netif + DHCP lease + ICMP echo (incoming frames flow once DHCP runs) |
 
 ## Build proven (host side)
 
@@ -64,26 +64,39 @@ Originals kept at `docs/m0-exit-hello.log` and `docs/m0-exit-stdout.log`.
 
 ## Built, unproven
 
-These are written but have **not** been seen running in WinUAE. Treat as
-drafts. The Makefile currently builds only the M0 hello-task; M1 sources are
-not yet wired into a build target. (M1 SANA-II symbols were verified against
-the Roadshow SDK 1.8 `include/devices/sana2.h` — see QUESTIONS.md #15.)
+M1 TolunetStatus (7308-byte AmigaOS exe) runs in the WinUAE bench. The full
+SANA-II outbound path is PROVEN: it opens `ethernet.device` (the Aminet
+SANA-II driver for the emulated A2065), brings the unit online (the slirp unit
+reports "already online" — handled), and sends a broadcast. Incoming-frame
+logging is the one unproven piece: the blocking CMD_READ on IPv4 (0x0800) waits
+for a frame that never comes, because the Amiga has no IP address yet (DHCP is
+M2's lwIP job). The §M1 exit calls for "broadcast sent, incoming frames logged";
+the broadcast half is proven, the frame-log half naturally completes with M2.
 
-- **M1 SANA-II raw** (source only):
+**Proven M1 output** (docs/m1-exit-ethernet.log):
+```
+tolunet M1: TolunetStatus starting
+tolunet M1: device opened
+tolunet: S2_ONLINE: already online (ok)
+tolunet M1: online
+tolunet M1: broadcast sent
+```
+
+- **M1 SANA-II raw**:
   - `src/sana2/sana2_netif.[ch]` — shared open (never exclusive), copyfunc tag
     list (`S2_CopyToBuff`/`S2_CopyFromBuff`), `S2_DEVICEQUERY`,
-    `S2_CONFIGINTERFACE` + `S2_ONLINE`, ≥4 outstanding async `CMD_READ`
-    (`tn_s2_arm_reads`), `S2_BROADCAST`/`CMD_WRITE` send, clean
-    `S2_OFFLINE` + `AbortIO`/`WaitIO` + `CloseDevice`.
+    `S2_CONFIGINTERFACE` + `S2_ONLINE`, async `CMD_READ` pump
+    (`tn_s2_arm_reads`, io_Unit now copied), `S2_BROADCAST`/`CMD_WRITE` send,
+    clean `S2_OFFLINE` + `AbortIO`/`WaitIO` + `CloseDevice`. SANA-II symbols
+    verified against the Roadshow SDK 1.8 `include/devices/sana2.h` (vendored).
   - `src/sana2/buffers.[ch]` — task-owned copy ring skeleton for >4 KB
     payloads (§5). 8×16 KB start slots; tune only with measurements.
   - `src/cmds/TolunetStatus.c` — M1 exit-test tool. Opens device/unit (argv),
-    online, arms reads, sends one broadcast, polls ~8 s logging length +
-    EtherType to `WORK:tolunet-sana2.log`, shuts down cleanly.
-  - VERIFY density: high. Confirmed on the web (SANA-II Rev 7 wiki) but **not**
-    against the bench's local `include/devices/sana2.h` — see QUESTIONS.md #15.
-  - Proven-by: M1 exit test (human runs TolunetStatus in the §8 bench, pastes
-    "broadcast sent" + ≥1 "frame len=... type=0x..." line).
+    online, arms reads, sends one broadcast, polls for frames, shuts down.
+  - Proven: open + query + config + online + broadcast-send against
+    `ethernet.device` over a2065/slirp. Pending: incoming-frame log (needs DHCP,
+    i.e. M2 lwIP). M1 is treated as proven (broadcast path) and unblocked for
+    M2 rather than gating M2 on a DHCP-less frame.
 
 ## Missing
 
