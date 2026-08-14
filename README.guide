@@ -1,0 +1,120 @@
+@database "tolunnet.guide"
+@author "Tolon"
+@$VER: tolunnet.guide 1.0.0 (14.08.2026)
+
+@node Main "tolunnet TCP/IP Stack User Guide"
+@{b}tolunnet — Modern TCP/IP Stack for AmigaOS 3.0+@{ub}
+Copyright (c) 2026 Tolon. All rights reserved.
+
+Welcome to @{b}tolunnet@{ub}, an elite-tier, lightweight, high-performance SANA-II
+TCP/IP stack and bsdsocket.library v4.1 runtime for Commodore Amiga computers.
+
+@{b}Table of Contents:@{ub}
+
+  @{" 1. Overview & Architecture        " link Overview}
+  @{" 2. System Requirements            " link Requirements}
+  @{" 3. Installation Guide             " link Installation}
+  @{" 4. Included Command Tools         " link Commands}
+  @{" 5. API Compatibility              " link Compatibility}
+  @{" 6. License & Credits              " link License}
+
+@endnode
+
+@node Overview "Overview & Architecture"
+@{b}1. Overview & Architecture@{ub}
+
+tolunnet is built around a single-task @{i}NO_SYS=1@{ui} core based on lwIP 2.2.0,
+executing within its own Exec task without multithreading overhead or semaphore contention.
+
+@{b}Key Features:@{ub}
+* Single-task cooperative architecture for maximum 68k execution speed.
+* Standard bsdsocket.library v4.1 dynamic runtime (AmiTCP / Roadshow compatible).
+* Zero-allocation Exec IPC messaging over public @"tolunnet.port@".
+* Complete IPv4, ARP, ICMP Echo, UDP (@{i}SOCK_DGRAM@{ui}), and TCP (@{i}SOCK_STREAM@{ui}).
+* Built-in DHCP client with automatic lease renewal.
+* Built-in DNS resolver supporting @{i}gethostbyname()@{ui}.
+* Standard SANA-II Rev 7 driver support (PCMCIA, Zorro II/III, PiStorm, UAE).
+* True hardware entropy PRNG seeded from Amiga hardware registers and clock.
+
+@endnode
+
+@node Requirements "System Requirements"
+@{b}2. System Requirements@{ub}
+
+* @{b}Computer:@{ub} Commodore Amiga (A500/A600/A1200/A2000/A3000/A4000) or WinUAE / FS-UAE.
+* @{b}CPU:@{ub} Motorola 68020 or higher (68030, 68040, 68060, PiStorm supported).
+* @{b}Operating System:@{ub} AmigaOS 3.0, 3.1, 3.1.4, 3.2, 3.9.
+* @{b}Memory:@{ub} Minimum 2 MB Fast RAM recommended.
+* @{b}Hardware Driver:@{ub} Any standard SANA-II network device (e.g. ethernet.device, cnet.device, ariadne.device, 3c589.device).
+
+@endnode
+
+@node Installation "Installation Guide"
+@{b}3. Installation Guide@{ub}
+
+@{b}Automatic Installation:@{ub}
+Double-click on the @{b}Install_Tolunnet@{ub} icon on Workbench. The Commodore
+Installer will guide you through choosing your network card and configuring DHCP.
+
+@{b}Manual Installation:@{ub}
+1. Copy the binaries from the C/ directory to SYS:C/
+   @{i}Copy C/#? SYS:C/ ALL@{ui}
+
+2. Add the startup command to your S:User-Startup:
+   @{i}Run <NIL: >NIL: C:tolunnet ethernet.device 0@{ui}
+   (Replace ethernet.device and 0 with your actual SANA-II device and unit).
+
+3. For static IP configuration instead of DHCP, specify IP, netmask, and gateway:
+   @{i}Run <NIL: >NIL: C:tolunnet ethernet.device 0 192.168.1.50 255.255.255.0 192.168.1.1@{ui}
+
+@endnode
+
+@node Commands "Included Command Tools"
+@{b}4. Included Command Tools@{ub}
+
+* @{b}tolunnet [DEVICE] [UNIT] [IP NETMASK GATEWAY]:@{ub}
+  The primary TCP/IP stack network task. Starts bsdsocket.library v4.1.
+
+* @{b}TolunnetPing <HOST> [COUNT]:@{ub}
+  Diagnostic tool that sends network probes and measures Round-Trip Time (RTT)
+  with microsecond precision using timer.device.
+  Example: @{i}TolunnetPing 10.0.2.2 4@{ui}
+
+* @{b}TolunnetGet <HOST> [PORT] [PATH]:@{ub}
+  Diagnostic HTTP 1.0 client that performs a full TCP connect, transmits an
+  HTTP GET request, and streams the server response to the console.
+  Example: @{i}TolunnetGet amiga.org 80 /@{ui}
+
+* @{b}TolunnetStatus [DEVICE] [UNIT]:@{ub}
+  Queries and displays SANA-II interface status, hardware MAC address, MTU,
+  and packet statistics.
+
+@endnode
+
+@node Compatibility "API Compatibility"
+@{b}5. API Compatibility@{ub}
+
+tolunnet instantiates a standard @{b}bsdsocket.library@{ub} v4.1 runtime.
+All standard Amiga networking applications (IBrowse, AWeb, AmIRC, AmiFTP,
+YAM, SimpleMail, Wget, Lynx) work transparently using standard BSD socket calls:
+
+* socket(), bind(), listen(), accept(), connect()
+* send(), recv(), sendto(), recvfrom()
+* WaitSelect(), IoctlSocket() (FIONBIO, FIONREAD, FIOASYNC)
+* setsockopt(), getsockopt() (SO_REUSEADDR, SO_KEEPALIVE, TCP_NODELAY)
+* gethostbyname(), inet_addr(), Inet_NtoA()
+
+@endnode
+
+@node License "License & Credits"
+@{b}6. License & Credits@{ub}
+
+* @{b}tolunnet Core & Architecture:@{ub} Copyright (c) 2026 Tolon.
+  Licensed under the MIT License.
+
+* @{b}lwIP TCP/IP Stack:@{ub} Copyright (c) 2001-2023 Swedish Institute of
+  Computer Science. Licensed under the BSD License.
+
+* @{b}SANA-II Specifications:@{ub} Commodore-Amiga, Inc. standard.
+
+@endnode

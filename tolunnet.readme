@@ -1,0 +1,35 @@
+Short:        Lightweight high-performance TCP/IP stack & bsdsocket.library
+Author:       Tolon
+Uploader:     tolon
+Type:         comm/tcp
+Version:      1.0.0
+Architecture: m68k-amigaos >= 3.0.0
+
+==============================================================================
+tolunnet — Lightweight High-Performance TCP/IP Network Stack for AmigaOS
+==============================================================================
+
+tolunnet is a modern, lightweight, high-performance TCP/IP network stack and
+bsdsocket.library v4.1 runtime designed specifically for Motorola 68020+
+Commodore Amiga systems running AmigaOS 3.0 or later.
+
+Features:
+- Single-task cooperative architecture (lwIP 2.2.0 NO_SYS=1)
+- Zero-allocation Exec IPC messaging over "tolunnet.port"
+- Standard bsdsocket.library v4.1 compatible with AmiTCP and Roadshow applications
+- Complete IPv4, ARP, ICMP Echo, UDP (SOCK_DGRAM), TCP (SOCK_STREAM), DNS client
+- Built-in DHCP client with automatic lease configuration
+- Hardware-seeded entropy PRNG (GetSysTime, MAC, memory pools)
+- Fast 68k assembly register trampolines for SANA-II Rev 7 buffer management
+- Diagnostic tools: TolunnetPing, TolunnetGet, TolunnetStatus
+- Standard Commodore Installer script & AmigaGuide documentation
+
+Requirements:
+- Commodore Amiga (A500/A600/A1200/A2000/A3000/A4000) or WinUAE / FS-UAE
+- Motorola 68020 CPU or higher (68030, 68040, 68060, PiStorm)
+- AmigaOS 3.0 or later
+- Standard SANA-II network device driver
+
+Installation:
+Double-click on the "Install_Tolunnet" icon or copy binaries in C/ to SYS:C/.
+See README.guide for complete details.

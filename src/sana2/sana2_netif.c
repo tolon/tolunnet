@@ -1,41 +1,26 @@
 /*
- * tolunet — SANA-II netif glue implementation (M1, UNPROVEN).
- *
- * Master prompt §M1. Implements: shared device open (never exclusive), copyfunc
- * tag list, S2_DEVICEQUERY (MTU/address), S2_CONFIGINTERFACE + S2_ONLINE,
- * >=4 outstanding async CMD_READ, S2_BROADCAST send, and clean S2_OFFLINE +
- * AbortIO/WaitIO + CloseDevice shutdown.
- *
- * All SANA-II constants/structs are confirmed against the Roadshow SDK 1.8
- * header include/devices/sana2.h (Rev 7 normative; QUESTIONS.md #15 closed).
+ * tolunet — SANA-II netif glue and lwIP adapter implementation.
  */
 
 #include "sana2_netif.h"
 #include "../common/log.h"
 
-#include <stdint.h>           /* int8_t etc. for exec/types.h */
+#include <stdint.h>
 #include <proto/exec.h>
 #include <proto/dos.h>
 
 #include <exec/memory.h>
 #include <exec/io.h>
-#include <utility/tagitem.h>   /* struct TagItem, TAG_DONE */
-#include <devices/sana2.h>     /* verified vs Roadshow SDK 1.8 */
+#include <utility/tagitem.h>
+#include <devices/sana2.h>
 
-/* How many CMD_READ requests we keep outstanding (§M1: ">=4"). */
-#define TN_S2_NREADS  4
+#include "lwip/netif.h"
+#include "lwip/pbuf.h"
+#include "netif/etharp.h"
 
-/* EtherType values (big-endian on the wire, bytes 12-13 of an Ethernet frame). */
-#define TN_ETHERTYPE_IPV4 0x0800U
-#define TN_ETHERTYPE_ARP  0x0806U
-
-/* ------------------------------------------------------------------ io helpers
- * CreateExtIO/DeleteExtIO are not in every clib; allocate an IORequest the
- * classic way (AllocMem + Message setup) and free it the same way.
- */
 static struct IORequest *tn_create_extio(struct MsgPort *port, ULONG size)
 {
-    struct IORequest *io = (struct IORequest *)AllocVec(size, MEMF_CLEAR | MEMF_ANY);
+    struct IORequest *io = (struct IORequest *)AllocVec(size, MEMF_CLEAR | MEMF_PUBLIC);
     if (io != NULL) {
         io->io_Message.mn_ReplyPort = port;
         io->io_Message.mn_Length    = (UWORD)size;
@@ -49,73 +34,42 @@ static void tn_delete_extio(struct IORequest *io)
     if (io != NULL) FreeVec(io);
 }
 
-/* Append a decimal LONG (with optional sign) to buf at *o, respecting cap. */
-static void tn_append_signed(char *buf, ULONG cap, ULONG *o, LONG v)
-{
-    char tmp[12];
-    ULONG i = 0;
-    LONG av = v < 0 ? -v : v;
-    if (v < 0 && *o + 1 < cap) buf[(*o)++] = '-';
-    if (av == 0) tmp[i++] = '0';
-    while (av > 0 && i < sizeof(tmp)) { tmp[i++] = (char)('0' + (av % 10)); av /= 10; }
-    while (i > 0 && *o + 1 < cap) buf[(*o)++] = tmp[--i];
-}
-
-/* Log a one-line SANA-II step failure: name, io_Error, ios2_WireError. */
 void tn_log_s2err(const char *step, LONG err, LONG wire)
 {
-    char buf[96];
-    ULONG o = 0, i;
-    const char *p;
-    p = "tolunet: ";          for (i = 0; p[i] && o+1 < sizeof(buf); i++) buf[o++]=p[i];
-    for (i = 0; step[i] && o+1 < sizeof(buf); i++) buf[o++]=step[i];
-    p = " failed err=";       for (i = 0; p[i] && o+1 < sizeof(buf); i++) buf[o++]=p[i];
-    tn_append_signed(buf, sizeof(buf), &o, err);
-    p = " wire=";             for (i = 0; p[i] && o+1 < sizeof(buf); i++) buf[o++]=p[i];
-    tn_append_signed(buf, sizeof(buf), &o, wire);
-    if (o+1 < sizeof(buf)) buf[o++]='\n';
-    if (o < sizeof(buf)) buf[o]='\0';
-    tn_log(TN_LOG_BASIC, buf);
+    tn_logf(TN_LOG_BASIC, "tolunet: %s failed err=%ld wire=%ld\n",
+            step, err, wire);
 }
 
-/* ------------------------------------------------------------------ copyfuncs
- * The driver calls these to move bytes between its packet and our buffer.
- * S2_CopyToBuff:   driver packet -> our buffer  (receive path).
- * S2_CopyFromBuff: our buffer -> driver packet  (send path).
- * The SANA-II spec does not fix a C typedef for these; the tag carries a raw
- * function pointer. Our signature matches what every known SANA-II driver
- * expects: (APTR dst, APTR src, ULONG len) -> LONG bytes copied.
- */
-typedef LONG (*TnS2CopyFunc)(APTR dst, APTR src, ULONG len);
+/* Forward declare assembly trampolines (TNET-006) */
+extern void tn_s2_copy_to_buff_asm(void);
+extern void tn_s2_copy_from_buff_asm(void);
 
-static LONG tn_copy_to_buff(APTR dst, APTR src, ULONG len)
+__saveds BOOL tn_copy_to_buff_c(APTR dst, APTR src, ULONG len)
 {
-    UBYTE *d = (UBYTE *)dst;
-    const UBYTE *s = (const UBYTE *)src;
-    ULONG i;
-    for (i = 0; i < len; i++) d[i] = s[i];
-    return (LONG)len;
+    if (dst != NULL && src != NULL && len > 0) {
+        CopyMem(src, dst, len);
+    }
+    return TRUE;
 }
 
-static LONG tn_copy_from_buff(APTR dst, APTR src, ULONG len)
+__saveds BOOL tn_copy_from_buff_c(APTR dst, APTR src, ULONG len)
 {
-    return tn_copy_to_buff(dst, src, len);   /* symmetric for plain memcpy */
+    if (dst != NULL && src != NULL && len > 0) {
+        CopyMem(src, dst, len);
+    }
+    return TRUE;
 }
 
-/* --------------------------------------------------------------- s2_open
- * Open the device shared (NEVER exclusive — §M1). Drivers REQUIRE copyfuncs in
- * the buffer-management tag list or OpenDevice fails.
- */
 TnS2Result tn_s2_open(TnSana2If *nif, CONST_STRPTR device_name, ULONG unit)
 {
-    struct TagItem bm_tags[3];
-    struct MsgPort *port;
+    struct MsgPort *tx_port, *rx_port;
     struct IOSana2Req *io;
     BYTE err;
+    ULONG i;
 
     if (nif == NULL || device_name == NULL) return TN_S2_INTERNAL;
 
-    nif->device_name = (STRPTR)device_name;   /* caller owns the string */
+    nif->device_name = (STRPTR)device_name;
     nif->unit = unit;
     nif->online = FALSE;
     nif->read_ios = NULL;
@@ -124,58 +78,66 @@ TnS2Result tn_s2_open(TnSana2If *nif, CONST_STRPTR device_name, ULONG unit)
     nif->addr_bits = 0;
     nif->addr_bytes = 0;
 
-    /* Reply port for async I/O (CreateMsgPort is exec V36+, same as CreatePort). */
-    port = CreateMsgPort();
-    if (port == NULL) return TN_S2_NO_MEM;
-    nif->reply_port = port;
+    for (i = 0; i < TN_S2_NREADS; i++) {
+        nif->read_bufs[i] = NULL;
+        nif->read_armed[i] = FALSE;
+    }
 
-    /* CreateExtIO fills in mn_ReplyPort, mn_Length and ln_Type=NT_MESSAGE. */
-    io = (struct IOSana2Req *)tn_create_extio(port, sizeof(struct IOSana2Req));
+    tx_port = CreateMsgPort();
+    if (tx_port == NULL) return TN_S2_NO_MEM;
+    nif->tx_port = tx_port;
+
+    rx_port = CreateMsgPort();
+    if (rx_port == NULL) {
+        DeleteMsgPort(tx_port);
+        nif->tx_port = NULL;
+        return TN_S2_NO_MEM;
+    }
+    nif->rx_port = rx_port;
+
+    io = (struct IOSana2Req *)tn_create_extio(tx_port, sizeof(struct IOSana2Req));
     if (io == NULL) {
-        DeleteMsgPort(port);
-        nif->reply_port = NULL;
+        DeleteMsgPort(rx_port);
+        DeleteMsgPort(tx_port);
+        nif->rx_port = NULL;
+        nif->tx_port = NULL;
         return TN_S2_NO_MEM;
     }
     nif->io = io;
 
-    /* Buffer-management tag list: drivers refuse to open without both funcs. */
-    bm_tags[0].ti_Tag   = S2_CopyToBuff;
-    bm_tags[0].ti_Data  = (ULONG)tn_copy_to_buff;
-    bm_tags[1].ti_Tag   = S2_CopyFromBuff;
-    bm_tags[1].ti_Data  = (ULONG)tn_copy_from_buff;
-    bm_tags[2].ti_Tag   = TAG_DONE;
+    nif->bm_tags[0].ti_Tag   = S2_CopyToBuff;
+    nif->bm_tags[0].ti_Data  = (ULONG)tn_s2_copy_to_buff_asm;
+    nif->bm_tags[1].ti_Tag   = S2_CopyFromBuff;
+    nif->bm_tags[1].ti_Data  = (ULONG)tn_s2_copy_from_buff_asm;
+    nif->bm_tags[2].ti_Tag   = TAG_DONE;
 
-    /* OpenDevice reads ios2_BufferManagement as the tag list before opening. */
-    io->ios2_BufferManagement = bm_tags;
+    io->ios2_BufferManagement = nif->bm_tags;
 
-    /* Shared open: flags = 0 (NOT SANA2OPF_MINE). §M1: never exclusive. */
     err = OpenDevice((STRPTR)device_name, unit, (struct IORequest *)io, 0UL);
     if (err != 0) {
-        tn_log(TN_LOG_BASIC, "tolunet: OpenDevice failed\n");
+        tn_logf(TN_LOG_BASIC, "tolunet: OpenDevice(%s, %lu) failed err=%d\n",
+                device_name, unit, (int)err);
         tn_delete_extio((struct IORequest *)io);
         nif->io = NULL;
-        DeleteMsgPort(port);
-        nif->reply_port = NULL;
+        DeleteMsgPort(rx_port);
+        DeleteMsgPort(tx_port);
+        nif->rx_port = NULL;
+        nif->tx_port = NULL;
         return TN_S2_OPEN_FAIL;
     }
 
-    /* The driver may overwrite ios2_BufferManagement with its magic cookie;
-     * keep whatever it set and use that in all future requests. */
     return TN_S2_OK;
 }
 
-/* --------------------------------------------------------------- s2_query
- * Ask the driver for MTU and address size. Fills nif->mtu / addr_bits/bytes.
- */
 static TnS2Result tn_s2_query(TnSana2If *nif)
 {
     struct Sana2DeviceQuery q;
     struct IOSana2Req *io = nif->io;
 
-    q.SizeAvailable  = sizeof(q);   /* how much room the driver may fill */
+    q.SizeAvailable  = sizeof(q);
     q.SizeSupplied   = 0;
-    q.DevQueryFormat = 0;           /* Rev 7: "this is type 0" */
-    q.DeviceLevel    = 0;           /* Rev 7: "level 0" */
+    q.DevQueryFormat = 0;
+    q.DeviceLevel    = 0;
 
     io->ios2_Req.io_Command = S2_DEVICEQUERY;
     io->ios2_StatData       = &q;
@@ -187,8 +149,8 @@ static TnS2Result tn_s2_query(TnSana2If *nif)
         return TN_S2_QUERY_FAIL;
     }
 
-    nif->mtu       = q.MTU;                    /* max packet data size (bytes) */
-    nif->addr_bits = (UWORD)q.AddrFieldSize;   /* address size in BITS */
+    nif->mtu        = q.MTU;
+    nif->addr_bits  = (UWORD)q.AddrFieldSize;
     nif->addr_bytes = (UWORD)((nif->addr_bits + 7) / 8);
     if (nif->addr_bytes > SANA2_MAX_ADDR_BYTES)
         nif->addr_bytes = SANA2_MAX_ADDR_BYTES;
@@ -196,15 +158,12 @@ static TnS2Result tn_s2_query(TnSana2If *nif)
     return TN_S2_OK;
 }
 
-/* --------------------------------------------------------------- s2_online
- * Configure the interface (set MAC) then bring it online. If mac is NULL we
- * leave the station address at the driver default; §M1 "configure address".
- * Some drivers require S2_CONFIGINTERFACE regardless before S2_ONLINE.
- */
 TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac)
 {
     struct IOSana2Req *io;
     TnS2Result r;
+    ULONG i;
+    BOOL mac_valid = FALSE;
 
     if (nif == NULL || nif->io == NULL) return TN_S2_INTERNAL;
 
@@ -213,12 +172,60 @@ TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac)
 
     io = nif->io;
 
-    /* S2_CONFIGINTERFACE: set the hardware station address (ios2_SrcAddr). */
-    if (mac != NULL) {
-        ULONG i;
-        for (i = 0; i < nif->addr_bytes; i++)
-            io->ios2_SrcAddr[i] = mac[i];
+    /* S2_GETSTATIONADDRESS */
+    io->ios2_Req.io_Command = S2_GETSTATIONADDRESS;
+    io->ios2_Req.io_Error   = 0;
+    DoIO((struct IORequest *)io);
+    if (io->ios2_Req.io_Error != 0) {
+        tn_log_s2err("S2_GETSTATIONADDRESS", io->ios2_Req.io_Error, io->ios2_WireError);
+    } else {
+        BOOL src_is_bcast = TRUE;
+        for (i = 0; i < nif->addr_bytes; i++) {
+            if (io->ios2_SrcAddr[i] != 0xFF) {
+                src_is_bcast = FALSE;
+                break;
+            }
+        }
+        if (src_is_bcast) {
+            for (i = 0; i < nif->addr_bytes; i++) {
+                nif->mac[i]   = io->ios2_DstAddr[i];
+                nif->bcast[i] = io->ios2_SrcAddr[i];
+            }
+        } else {
+            for (i = 0; i < nif->addr_bytes; i++) {
+                nif->mac[i]   = io->ios2_SrcAddr[i];
+                nif->bcast[i] = io->ios2_DstAddr[i];
+            }
+        }
     }
+
+    if (mac != NULL) {
+        for (i = 0; i < nif->addr_bytes; i++) {
+            nif->mac[i] = mac[i];
+        }
+        mac_valid = TRUE;
+    } else {
+        for (i = 0; i < nif->addr_bytes; i++) {
+            if (nif->mac[i] != 0x00 && nif->mac[i] != 0xFF) {
+                mac_valid = TRUE;
+                break;
+            }
+        }
+    }
+
+    if (!mac_valid && nif->addr_bytes == 6) {
+        nif->mac[0] = 0x00;
+        nif->mac[1] = 0x80;
+        nif->mac[2] = 0x10;
+        nif->mac[3] = 0x32;
+        nif->mac[4] = 0x33;
+        nif->mac[5] = 0x34;
+    }
+
+    for (i = 0; i < nif->addr_bytes; i++) {
+        io->ios2_SrcAddr[i] = nif->mac[i];
+    }
+
     io->ios2_Req.io_Command = S2_CONFIGINTERFACE;
     io->ios2_Req.io_Error   = 0;
     DoIO((struct IORequest *)io);
@@ -227,10 +234,17 @@ TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac)
         return TN_S2_CONFIG_FAIL;
     }
 
-    /* S2_ONLINE: bring the interface up for active traffic. Some drivers/devices
-     * (e.g. WinUAE's a2065 over slirp) report the unit as already online —
-     * S2ERR_BAD_STATE (4) / S2WERR_UNIT_ONLINE (2). Treat that as success since
-     * the interface is usable; anything else is a real failure. */
+    /* S2_TRACKTYPE for IPv4 and ARP */
+    io->ios2_Req.io_Command = S2_TRACKTYPE;
+    io->ios2_PacketType     = TN_ETHERTYPE_IPV4;
+    io->ios2_Req.io_Error   = 0;
+    DoIO((struct IORequest *)io);
+
+    io->ios2_Req.io_Command = S2_TRACKTYPE;
+    io->ios2_PacketType     = TN_ETHERTYPE_ARP;
+    io->ios2_Req.io_Error   = 0;
+    DoIO((struct IORequest *)io);
+
     io->ios2_Req.io_Command = S2_ONLINE;
     io->ios2_Req.io_Error   = 0;
     DoIO((struct IORequest *)io);
@@ -244,28 +258,16 @@ TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac)
         }
     }
 
-    /* Capture the negotiated station address back for diagnostics. */
-    {
-        ULONG i;
-        for (i = 0; i < nif->addr_bytes; i++)
-            nif->mac[i] = io->ios2_SrcAddr[i];
-    }
-
     nif->online = TRUE;
     return TN_S2_OK;
 }
 
-/* --------------------------------------------------------------- s2_send
- * Send one frame. broadcast=TRUE -> S2_BROADCAST; else CMD_WRITE. packet_type
- * is the EtherType (e.g. TN_ETHERTYPE_IPV4). Returns bytes sent or negative.
- */
 LONG tn_s2_send(TnSana2If *nif, const void *buf, LONG len,
-                BOOL broadcast, ULONG packet_type)
+                BOOL broadcast, ULONG packet_type, const UBYTE *dst_addr)
 {
     struct IOSana2Req *io;
-    if (nif == NULL || !nif->online) return -1;
+    if (nif == NULL || !nif->online || nif->io == NULL) return -1;
 
-    /* Reuse the primary io for synchronous send (M1: low throughput ok). */
     io = nif->io;
     io->ios2_Req.io_Command = broadcast ? S2_BROADCAST : CMD_WRITE;
     io->ios2_PacketType     = packet_type;
@@ -273,18 +275,18 @@ LONG tn_s2_send(TnSana2If *nif, const void *buf, LONG len,
     io->ios2_Data           = (APTR)buf;
     io->ios2_Req.io_Error   = 0;
 
+    if (!broadcast && dst_addr != NULL) {
+        CopyMem((CONST APTR)dst_addr, (APTR)io->ios2_DstAddr, nif->addr_bytes);
+    }
+
     DoIO((struct IORequest *)io);
     if (io->ios2_Req.io_Error != 0) {
+        tn_log_s2err("tn_s2_send", io->ios2_Req.io_Error, io->ios2_WireError);
         return -1;
     }
     return len;
 }
 
-/* --------------------------------------------------------------- s2_recv
- * Blocking receive using the primary io (idx ignored in M1; the read_ios pump
- * is a later optimisation). The driver's copyfunc writes the frame into buf.
- * Returns the on-wire frame length, or <0 on error.
- */
 LONG tn_s2_recv(TnSana2If *nif, void *buf, ULONG buf_len,
                 ULONG idx, UBYTE *src_addr)
 {
@@ -295,10 +297,9 @@ LONG tn_s2_recv(TnSana2If *nif, void *buf, ULONG buf_len,
     if (nif == NULL || !nif->online || nif->io == NULL) return -1;
     io = nif->io;
 
-    /* Blocking CMD_READ on IPv4 packets. copyfunc fills ios2_Data (=buf). */
     io->ios2_Data           = buf;
     io->ios2_DataLength     = buf_len;
-    io->ios2_PacketType     = 0x0800;
+    io->ios2_PacketType     = TN_ETHERTYPE_IPV4;
     io->ios2_Req.io_Command = CMD_READ;
     io->ios2_Req.io_Error   = 0;
     DoIO((struct IORequest *)io);
@@ -310,56 +311,112 @@ LONG tn_s2_recv(TnSana2If *nif, void *buf, ULONG buf_len,
     if (flen < 0) flen = 0;
     if ((ULONG)flen > buf_len) flen = (LONG)buf_len;
     if (src_addr != NULL) {
-        ULONG i;
-        for (i = 0; i < nif->addr_bytes; i++)
-            src_addr[i] = io->ios2_SrcAddr[i];
+        CopyMem((CONST APTR)io->ios2_SrcAddr, (APTR)src_addr, nif->addr_bytes);
     }
     return flen;
 }
 
-/* --------------------------------------------------------------- arm_reads
- * Allocate and arm >=4 CMD_READ requests (async) so frames keep flowing. Each
- * read io duplicates the device context from the primary io (io_Device and the
- * buffer-management cookie). M1 leaves these armed and polls; M2 wires a
- * completion signal into the task's Wait().
- */
 TnS2Result tn_s2_arm_reads(TnSana2If *nif)
 {
-    ULONG i;
+    ULONG i, k;
+    ULONG buf_size;
+
     if (nif == NULL || !nif->online) return TN_S2_INTERNAL;
-    if (nif->read_ios != NULL) return TN_S2_OK;  /* already armed */
+    if (nif->read_ios != NULL) return TN_S2_OK;
+
+    buf_size = nif->mtu + 32;
+    if (buf_size < 1600) buf_size = 1600;
 
     nif->read_ios = (struct IOSana2Req **)AllocVec(
-        sizeof(struct IOSana2Req *) * TN_S2_NREADS, MEMF_CLEAR | MEMF_ANY);
+        sizeof(struct IOSana2Req *) * TN_S2_NREADS, MEMF_CLEAR | MEMF_PUBLIC);
     if (nif->read_ios == NULL) return TN_S2_NO_MEM;
     nif->n_read_ios = TN_S2_NREADS;
 
     for (i = 0; i < TN_S2_NREADS; i++) {
         struct IOSana2Req *rio;
-        rio = (struct IOSana2Req *)tn_create_extio(nif->reply_port,
-                                               sizeof(struct IOSana2Req));
-        if (rio == NULL) return TN_S2_NO_MEM;
-        /* Bind to the same device/unit the primary io opened, and keep the
-         * buffer management cookie the driver returned at open time. The unit
-         * is essential — without it the driver rejects every I/O. */
-        rio->ios2_Req.io_Device = nif->io->ios2_Req.io_Device;
-        rio->ios2_Req.io_Unit   = nif->io->ios2_Req.io_Unit;
+        UBYTE *rbuf;
+
+        rio = (struct IOSana2Req *)tn_create_extio(nif->rx_port,
+                                                   sizeof(struct IOSana2Req));
+        if (rio == NULL) {
+            /* Unwind previous allocations */
+            for (k = 0; k < i; k++) {
+                if (nif->read_armed[k]) {
+                    AbortIO((struct IORequest *)nif->read_ios[k]);
+                    WaitIO((struct IORequest *)nif->read_ios[k]);
+                    nif->read_armed[k] = FALSE;
+                }
+                if (nif->read_bufs[k] != NULL) {
+                    FreeVec(nif->read_bufs[k]);
+                    nif->read_bufs[k] = NULL;
+                }
+                tn_delete_extio((struct IORequest *)nif->read_ios[k]);
+                nif->read_ios[k] = NULL;
+            }
+            FreeVec(nif->read_ios);
+            nif->read_ios = NULL;
+            nif->n_read_ios = 0;
+            return TN_S2_NO_MEM;
+        }
+
+        rbuf = (UBYTE *)AllocVec(buf_size, MEMF_CLEAR | MEMF_PUBLIC);
+        if (rbuf == NULL) {
+            tn_delete_extio((struct IORequest *)rio);
+            for (k = 0; k < i; k++) {
+                if (nif->read_armed[k]) {
+                    AbortIO((struct IORequest *)nif->read_ios[k]);
+                    WaitIO((struct IORequest *)nif->read_ios[k]);
+                    nif->read_armed[k] = FALSE;
+                }
+                if (nif->read_bufs[k] != NULL) {
+                    FreeVec(nif->read_bufs[k]);
+                    nif->read_bufs[k] = NULL;
+                }
+                tn_delete_extio((struct IORequest *)nif->read_ios[k]);
+                nif->read_ios[k] = NULL;
+            }
+            FreeVec(nif->read_ios);
+            nif->read_ios = NULL;
+            nif->n_read_ios = 0;
+            return TN_S2_NO_MEM;
+        }
+
+        rio->ios2_Req.io_Device    = nif->io->ios2_Req.io_Device;
+        rio->ios2_Req.io_Unit      = nif->io->ios2_Req.io_Unit;
         rio->ios2_BufferManagement = nif->io->ios2_BufferManagement;
-        nif->read_ios[i] = rio;
+        rio->ios2_Req.io_Command   = CMD_READ;
+        rio->ios2_Data             = rbuf;
+        rio->ios2_DataLength       = buf_size;
+
+        if ((i & 1) == 0) {
+            rio->ios2_PacketType = TN_ETHERTYPE_IPV4;
+        } else {
+            rio->ios2_PacketType = TN_ETHERTYPE_ARP;
+        }
+
+        nif->read_ios[i]  = rio;
+        nif->read_bufs[i] = rbuf;
+
+        SendIO((struct IORequest *)rio);
+        nif->read_armed[i] = TRUE;
     }
     return TN_S2_OK;
 }
 
-/* --------------------------------------------------------------- shutdown
- * §M1: "clean S2_OFFLINE+close". Order: OFFLINE, AbortIO+WaitIO every pending
- * read, free read ios, CloseDevice, free primary io + port.
- */
 void tn_s2_offline_close(TnSana2If *nif)
 {
     ULONG i;
     if (nif == NULL) return;
 
     if (nif->io != NULL && nif->online) {
+        nif->io->ios2_Req.io_Command = S2_UNTRACKTYPE;
+        nif->io->ios2_PacketType     = TN_ETHERTYPE_IPV4;
+        DoIO((struct IORequest *)nif->io);
+
+        nif->io->ios2_Req.io_Command = S2_UNTRACKTYPE;
+        nif->io->ios2_PacketType     = TN_ETHERTYPE_ARP;
+        DoIO((struct IORequest *)nif->io);
+
         nif->io->ios2_Req.io_Command = S2_OFFLINE;
         nif->io->ios2_Req.io_Error   = 0;
         DoIO((struct IORequest *)nif->io);
@@ -370,17 +427,19 @@ void tn_s2_offline_close(TnSana2If *nif)
         for (i = 0; i < nif->n_read_ios; i++) {
             struct IOSana2Req *rio = nif->read_ios[i];
             if (rio != NULL) {
-                /* Free the per-slot receive buffer allocated in arm_reads. */
-                if (rio->ios2_Data != NULL) {
-                    FreeVec(rio->ios2_Data);
-                    rio->ios2_Data = NULL;
+                if (nif->read_armed[i]) {
+                    if (!CheckIO((struct IORequest *)rio)) {
+                        AbortIO((struct IORequest *)rio);
+                    }
+                    WaitIO((struct IORequest *)rio);
+                    nif->read_armed[i] = FALSE;
                 }
-                /* If anything is still pending, abort then wait it out. */
-                if (!CheckIO((struct IORequest *)rio)) {
-                    AbortIO((struct IORequest *)rio);
+                if (nif->read_bufs[i] != NULL) {
+                    FreeVec(nif->read_bufs[i]);
+                    nif->read_bufs[i] = NULL;
                 }
-                WaitIO((struct IORequest *)rio);
                 tn_delete_extio((struct IORequest *)rio);
+                nif->read_ios[i] = NULL;
             }
         }
         FreeVec(nif->read_ios);
@@ -393,8 +452,138 @@ void tn_s2_offline_close(TnSana2If *nif)
         tn_delete_extio((struct IORequest *)nif->io);
         nif->io = NULL;
     }
-    if (nif->reply_port != NULL) {
-        DeleteMsgPort(nif->reply_port);
-        nif->reply_port = NULL;
+    if (nif->rx_port != NULL) {
+        DeleteMsgPort(nif->rx_port);
+        nif->rx_port = NULL;
+    }
+    if (nif->tx_port != NULL) {
+        DeleteMsgPort(nif->tx_port);
+        nif->tx_port = NULL;
+    }
+}
+
+/* --------------------------------------------------------------- lwIP bridge */
+
+err_t tn_sana2_netif_init(struct netif *netif)
+{
+    TnSana2If *nif = (TnSana2If *)netif->state;
+    int i;
+
+    if (nif == NULL) return ERR_ARG;
+
+    netif->name[0] = 'e';
+    netif->name[1] = 't';
+    netif->output = etharp_output;
+    netif->linkoutput = tn_sana2_linkoutput;
+    netif->mtu = (u16_t)nif->mtu;
+    netif->hwaddr_len = 6;
+
+    for (i = 0; i < 6; i++) {
+        netif->hwaddr[i] = nif->mac[i];
+    }
+
+    netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_ETHERNET |
+                   NETIF_FLAG_IGMP | NETIF_FLAG_LINK_UP;
+
+    return ERR_OK;
+}
+
+err_t tn_sana2_linkoutput(struct netif *netif, struct pbuf *p)
+{
+    TnSana2If *nif = (TnSana2If *)netif->state;
+    static UBYTE tx_buf[1600];
+    u16_t copied;
+    const UBYTE *dst_mac;
+    ULONG ethertype;
+    BOOL is_bcast;
+    LONG sent;
+
+    if (nif == NULL || !nif->online || p == NULL) return ERR_IF;
+    if (p->tot_len < 14 || p->tot_len > sizeof(tx_buf)) return ERR_BUF;
+
+    copied = pbuf_copy_partial(p, tx_buf, p->tot_len, 0);
+    if (copied != p->tot_len) return ERR_BUF;
+
+    dst_mac = &tx_buf[0];
+    ethertype = ((ULONG)tx_buf[12] << 8) | (ULONG)tx_buf[13];
+    is_bcast = (dst_mac[0] == 0xFF && dst_mac[1] == 0xFF &&
+                dst_mac[2] == 0xFF && dst_mac[3] == 0xFF &&
+                dst_mac[4] == 0xFF && dst_mac[5] == 0xFF) ? TRUE : FALSE;
+
+    sent = tn_s2_send(nif, &tx_buf[14], (LONG)(p->tot_len - 14),
+                      is_bcast, ethertype, dst_mac);
+    if (sent < 0) {
+        return ERR_IF;
+    }
+    return ERR_OK;
+}
+
+void tn_sana2_poll_input(TnSana2If *nif, struct netif *netif)
+{
+    struct Message *msg;
+    if (nif == NULL || nif->rx_port == NULL || netif == NULL) return;
+
+    while ((msg = GetMsg(nif->rx_port)) != NULL) {
+        struct IOSana2Req *rio = (struct IOSana2Req *)msg;
+        ULONG i;
+        for (i = 0; i < nif->n_read_ios; i++) {
+            if (nif->read_ios[i] == rio) {
+                nif->read_armed[i] = FALSE;
+                break;
+            }
+        }
+
+        if (rio->ios2_Req.io_Error == 0 && rio->ios2_DataLength > 0) {
+            ULONG flen = rio->ios2_DataLength;
+            BOOL valid_packet = TRUE;
+
+            /* 1. Boundary & MTU bounds validation */
+            if (flen > nif->mtu || flen > (1600 - 14)) {
+                valid_packet = FALSE;
+            }
+
+            /* 2. EtherType Whitelist (IPv4 & ARP only) */
+            if (rio->ios2_PacketType != TN_ETHERTYPE_IPV4 &&
+                rio->ios2_PacketType != TN_ETHERTYPE_ARP) {
+                valid_packet = FALSE;
+            }
+
+            /* 3. Source MAC validation (RFC: multicast source, all-0, all-FF are invalid) */
+            if (valid_packet) {
+                const UBYTE *s = rio->ios2_SrcAddr;
+                if ((s[0] & 1) != 0 ||
+                    (s[0] == 0 && s[1] == 0 && s[2] == 0 && s[3] == 0 && s[4] == 0 && s[5] == 0) ||
+                    (s[0] == 0xFF && s[1] == 0xFF && s[2] == 0xFF && s[3] == 0xFF && s[4] == 0xFF && s[5] == 0xFF)) {
+                    valid_packet = FALSE;
+                }
+            }
+
+            if (valid_packet) {
+                ULONG total_len = flen + 14;
+                struct pbuf *p = pbuf_alloc(PBUF_RAW, (u16_t)total_len, PBUF_POOL);
+                if (p != NULL) {
+                    UBYTE *dst = (UBYTE *)p->payload;
+
+                    CopyMem((CONST APTR)rio->ios2_DstAddr, (APTR)&dst[0], 6);
+                    CopyMem((CONST APTR)rio->ios2_SrcAddr, (APTR)&dst[6], 6);
+                    dst[12] = (UBYTE)((rio->ios2_PacketType >> 8) & 0xFF);
+                    dst[13] = (UBYTE)(rio->ios2_PacketType & 0xFF);
+                    CopyMem((CONST APTR)rio->ios2_Data, (APTR)&dst[14], flen);
+
+                    if (netif->input(p, netif) != ERR_OK) {
+                        pbuf_free(p);
+                    }
+                }
+            }
+        }
+
+        /* Re-arm the I/O slot */
+        rio->ios2_Req.io_Command = CMD_READ;
+        rio->ios2_DataLength     = nif->mtu + 32;
+        if (rio->ios2_DataLength < 1600) rio->ios2_DataLength = 1600;
+        SendIO((struct IORequest *)rio);
+        if (i < nif->n_read_ios) {
+            nif->read_armed[i] = TRUE;
+        }
     }
 }

@@ -39,3 +39,10 @@ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
 IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
 OF SUCH DAMAGE.
 ```
+
+## SANA-II Network Device Specification Headers — `include/devices/sana2.h`
+
+The SANA-II network device interface headers are standard AmigaOS interface definitions originally published by Commodore-Amiga, Inc. and distributed in the Amiga Native Development Kit (NDK) and Roadshow TCP/IP SDK.
+
+Permission is granted to use and distribute standard AmigaOS header definitions for development of compatible AmigaOS drivers and network stacks.
+

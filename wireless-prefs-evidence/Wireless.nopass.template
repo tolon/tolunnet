@@ -1,0 +1,4 @@
+network={
+    key_mgmt=NONE
+    scan_ssid=1
+}

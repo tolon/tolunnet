@@ -1,0 +1,6 @@
+Assign WORK: DH0:
+Run <NIL: >WORK:tolunnet.log C:tolunnet ethernet.device 0 10.0.2.15 255.255.255.0 10.0.2.2
+Wait 3
+C:TestSocket
+C:TolunnetPing 10.0.2.2 3 >WORK:tolunnet-ping.log
+C:TolunnetGet 10.0.2.2 8080 / >WORK:tolunnet-get.log

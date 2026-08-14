@@ -1,49 +1,99 @@
-# architecture.md
+# tolunnet — System Architecture & Design Specification
 
-> Master prompt §6 asks for the threading model to be documented here. This is
-> the M0 skeleton; it is filled in as the relevant code lands.
+The definitive architecture and design document for the `tolunnet` AmigaOS TCP/IP stack.
 
-## Layout (master prompt §2)
+---
+
+## 1. System Overview & Component Layout
 
 ```
-src/task/      network task: lwIP init, timers, netif mgmt, request dispatch
-src/bsdsocket/ bsdsocket.library: per-opener base, socket table, marshalling
-src/sana2/     lwIP netif ↔ SANA-II driver (CMD_READ pump, copyfuncs)
-src/cmds/      shell tools (TolunetStatus, TolunetPing, TolunetGet)
-src/common/    log, mem
-include/tolunet/  protocol.h, config.h
-lwipopts/      lwipopts.h (NO_SYS=1 build config)
-vendor/lwip/   pinned, unmodified
+                  +-----------------------------------+
+                  |        Client Applications        |
+                  |  (IBrowse, AmiSSL, Ping, Telnet)  |
+                  +-----------------+-----------------+
+                                    |
+                            OpenLibrary("bsdsocket.library", 4)
+                                    |
+                  +-----------------v-----------------+
+                  |         bsdsocket.library         |
+                  |  (Per-task SocketBase, LVO jump   |
+                  |   table, Zero-Allocation IPC)     |
+                  +-----------------+-----------------+
+                                    |
+                          Exec PutMsg / WaitPort
+                                    |
+                  +-----------------v-----------------+
+                  |       tolunnet Network Task       |
+                  |  - lwIP 2.2.0 Core (NO_SYS=1)     |
+                  |  - timer.device 100ms Ticker      |
+                  |  - IPC Dispatch & Descriptors     |
+                  +-----------------+-----------------+
+                                    |
+                            lwIP Netif Bridge
+                                    |
+                  +-----------------v-----------------+
+                  |       SANA-II Netif Adapter       |
+                  |  - Isolated TX & RX MsgPorts      |
+                  |  - CopyMem fast data pump         |
+                  |  - L2 Filter (Whitelisting/Anti-  |
+                  |    Spoofing)                      |
+                  +-----------------+-----------------+
+                                    |
+                            SANA-II Standard
+                                    |
+                  +-----------------v-----------------+
+                  |   SANA-II Device (ethernet.device)|
+                  |   Amiga Hardware / WinUAE A2065   |
+                  +-----------------------------------+
 ```
 
-## Threading model (target)
+---
 
-- **One** Amiga task owns lwIP. lwIP is built `NO_SYS=1` (raw/callback API); it
-  has no threads, mutexes, or semaphores of its own.
-- The task owns a single public `MsgPort`. The library `PutMsg`s requests to it
-  (protocol: `include/tolunet/protocol.h`).
-- lwIP runs only on the task's context: the task's mainloop drains the port and
-  calls `sys_check_timeouts()` on each 100 ms timer tick.
-- **Blocking happens on the caller's task, not the network task.** A blocking
-  call in the library `PutMsg`s a request and `Wait`s on the reply signal
-  (OR'd with `SIGBREAKF_CTRL_C` and the opener's break mask). The network task
-  never blocks on a socket.
-- The library never calls lwIP directly (§7.0); it only marshals requests.
-- Per-opener base clones hold: errno pointer, signal masks, `h_errno`, fd table.
-  A global semaphore-protected registry backs `ObtainSocket`/`ReleaseSocket`.
+## 2. Threading & Execution Model
 
-> Status: this is the design. None of it is built yet beyond the protocol
-> header and the hello-task. See STATUS.md.
+- **Single-Task lwIP Ownership (`NO_SYS=1`):**  
+  lwIP runs strictly in the `tolunnet` network task context. This eliminates the need for heavyweight OS semaphores, mutexes, or complex task context switching inside the protocol stack.
+- **Asynchronous SANA-II I/O Isolation:**  
+  To prevent Exec message port signal corruption:
+  - `tx_port`: Dedicated port for synchronous `DoIO` (`CMD_WRITE`, `S2_BROADCAST`).
+  - `rx_port`: Dedicated port for asynchronous `SendIO` receive pump (`CMD_READ`).
+- **Zero-Allocation Client IPC:**  
+  Client tasks calling `socket()`, `send()`, `recv()`, `CloseSocket()` communicate with `tolunnet` via Exec `PutMsg()` and `WaitPort()`. Each client `SocketBase` possesses a preallocated `struct TnIpcMsg`, eliminating memory allocation overhead on every network call.
+- **Caller-Side Blocking & Signal Responsiveness:**  
+  When an application performs a blocking call (e.g. `WaitSelect`), the application task sleeps in 20ms slices with signal monitoring (`sig_mask`), keeping the CPU idle while remaining immediately responsive to `Ctrl-C` breaks.
 
-## Memory
+---
 
-- lwIP pools come from `MEM_SIZE` / `PBUF_POOL_SIZE` (lwipopts.h start values,
-  §6). The task allocates the lwIP heap once at init.
-- Resident budget: ≤ 250 KB task+library+pools (§9). Measured value lands in
-  STATUS.md once `TolunetStatus MEM` exists.
-- Task stack ≥ 16 KB explicit (the 4 KB default overflows lwIP paths, §9).
+## 3. Network Security & Stack Hardening
 
-## Big-endian
+- **L2 Link Layer Validation:**
+  - Frame length bounds checking (`flen <= MTU`).
+  - EtherType whitelisting (`0x0800` IPv4, `0x0806` ARP).
+  - Source MAC anti-spoofing (rejection of multicast source bit, all-00, all-FF, or loopback echoes).
+- **L3 / L4 Stack Hardening:**
+  - Smurf/Broadcast ping suppression (`LWIP_BROADCAST_PING = 0`, `LWIP_MULTICAST_PING = 0`).
+  - Mandatory checksum validation on IP, UDP, TCP, ICMP headers.
+  - IP fragment reassembly timeout and buffer limits (Teardrop attack defense).
+  - TCP SYN backlog queuing and ISN randomization via `tn_rand()` PRNG seeded from hardware timers before stack init.
+- **IPC Boundary Hardening:**
+  - Strict validation of client pointers and buffer lengths.
+  - Per-task socket descriptor isolation preventing descriptor hijacking.
+  - Automatic descriptor cleanup in `LIB_CLOSE` upon client task termination.
 
-68k is big-endian = network order. `htons`/`htonl` are identity, but the macros
-are kept (§3) so the code reads correctly and stays portable in intent.
+---
+
+## 4. Configuration Architecture
+
+- **Single Source of Truth (`DEVS:tolunnet.config`):**  
+  Standard `KEY=VALUE` text file storing `DEVICE`, `UNIT`, `DHCP`, `IP`, `NETMASK`, `GATEWAY`, and `DNS`.
+- **Persistent Mirroring:**  
+  `TolunnetPrefs` writes both `DEVS:tolunnet.config` and `ENVARC:tolunnet.prefs`, ensuring full compatibility with ART pre-seeded environments and Workbench user preferences.
+
+---
+
+## 5. Memory & Performance
+
+- **Resident Budget:** ≤ 250 KB total RAM (task + library + lwIP heap).
+- **Fast Buffer Transfers:** Exec `CopyMem()` used throughout link output and frame ingress.
+- **Timer Granularity:** 100 ms periodic `timer.device` ticks driving `sys_check_timeouts()`.
+- **Byte Order:** Motorola 68000/020 Big-Endian native. Identity conversions for network byte order.

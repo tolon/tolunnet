@@ -1,0 +1,146 @@
+; tolunnet — Official AmigaOS Installation Script
+; Compatible with Commodore Installer 43.x / AmigaOS 3.0+
+
+(transcript "T:tolunnet_install.log")
+
+(welcome)
+
+(message
+  "Welcome to the tolunnet TCP/IP Stack Installation.\n\n"
+  "tolunnet is a lightweight, high-performance SANA-II TCP/IP stack\n"
+  "and bsdsocket.library v4.1 implementation for Commodore Amiga.\n\n"
+  "Author: Tolon\n"
+  "Requirements: AmigaOS 3.0+, 68020+ CPU, SANA-II Network Driver."
+)
+
+(set #device-name
+  (askstring
+    (prompt "Enter the SANA-II device name for your network card:\n(e.g. ethernet.device, a2065.device, cnet.device, ariadne.device)")
+    (help "Enter the name of the SANA-II network device driver file located in DEVS:Networks/ or DEVS:.")
+    (default "ethernet.device")
+  )
+)
+
+(set #unit-num
+  (asknumber
+    (prompt "Enter the SANA-II unit number (usually 0):")
+    (help "Enter the unit number of your network interface. Usually 0.")
+    (default 0)
+    (range 0 16)
+  )
+)
+
+(set #ip-mode
+  (askchoice
+    (prompt "Select network address configuration method:")
+    (help "Choose DHCP for automatic IP address configuration from your router, or Static for manual configuration.")
+    (choices "Automatic configuration via DHCP (Recommended)"
+             "Static IP configuration (Manual)")
+    (default 0)
+  )
+)
+
+(if (= #ip-mode 1)
+  (set #static-ip (askstring (prompt "Enter Static IP address:") (help "Enter your Amiga IP address, e.g. 192.168.1.100") (default "192.168.1.100")))
+  (set #static-nm (askstring (prompt "Enter Subnet Mask:") (help "Enter your subnet mask, e.g. 255.255.255.0") (default "255.255.255.0")))
+  (set #static-gw (askstring (prompt "Enter Default Gateway:") (help "Enter router/gateway IP address, e.g. 192.168.1.1") (default "192.168.1.1")))
+)
+
+(message "Installing tolunnet system binaries to SYS:C/ and SYS:Prefs/ ...")
+
+(copyfiles
+  (prompt "Copying tolunnet network daemon to SYS:C/")
+  (help "Copies the main tolunnet daemon executable to your system C directory.")
+  (source "C/tolunnet")
+  (dest "SYS:C/tolunnet")
+)
+
+(copyfiles
+  (prompt "Copying TolunnetPing and ping to SYS:C/")
+  (help "Copies the ping ICMP network diagnostic command to SYS:C/.")
+  (source "C/TolunnetPing")
+  (dest "SYS:C/TolunnetPing")
+)
+
+(copyfiles
+  (prompt "Copying ping command to SYS:C/")
+  (help "Copies standard ping command to SYS:C/.")
+  (source "C/ping")
+  (dest "SYS:C/ping")
+)
+
+(copyfiles
+  (prompt "Copying TolunnetGet, wget and curl to SYS:C/")
+  (help "Copies the wget/curl HTTP client command to SYS:C/.")
+  (source "C/TolunnetGet")
+  (dest "SYS:C/TolunnetGet")
+)
+
+(copyfiles
+  (prompt "Copying wget command to SYS:C/")
+  (help "Copies standard wget command to SYS:C/.")
+  (source "C/wget")
+  (dest "SYS:C/wget")
+)
+
+(copyfiles
+  (prompt "Copying curl command to SYS:C/")
+  (help "Copies standard curl command to SYS:C/.")
+  (source "C/curl")
+  (dest "SYS:C/curl")
+)
+
+(copyfiles
+  (prompt "Copying TolunnetStatus, ifconfig and netstat to SYS:C/")
+  (help "Copies the ifconfig network status diagnostic tool to SYS:C/.")
+  (source "C/TolunnetStatus")
+  (dest "SYS:C/TolunnetStatus")
+)
+
+(copyfiles
+  (prompt "Copying ifconfig command to SYS:C/")
+  (help "Copies standard ifconfig command to SYS:C/.")
+  (source "C/ifconfig")
+  (dest "SYS:C/ifconfig")
+)
+
+(copyfiles
+  (prompt "Copying netstat command to SYS:C/")
+  (help "Copies standard netstat command to SYS:C/.")
+  (source "C/netstat")
+  (dest "SYS:C/netstat")
+)
+
+(copyfiles
+  (prompt "Copying TolunnetPrefs to SYS:Prefs/")
+  (help "Copies the TolunnetPrefs GUI configuration panel to SYS:Prefs/.")
+  (source "TolunnetPrefs")
+  (dest "SYS:Prefs/TolunnetPrefs")
+)
+
+(copyfiles
+  (prompt "Copying TolunnetPrefs.info to SYS:Prefs/")
+  (help "Copies the icon for TolunnetPrefs to SYS:Prefs/.")
+  (source "TolunnetPrefs.info")
+  (dest "SYS:Prefs/TolunnetPrefs.info")
+)
+
+(if (= #ip-mode 0)
+  (set #startup-line (cat "Run <NIL: >NIL: C:tolunnet " #device-name " " #unit-num))
+  (set #startup-line (cat "Run <NIL: >NIL: C:tolunnet " #device-name " " #unit-num " " #static-ip " " #static-nm " " #static-gw))
+)
+
+(startup "tolunnet"
+  (prompt "Add tolunnet network stack to your S:User-Startup?")
+  (help "This will automatically start the tolunnet network stack every time your Amiga boots.")
+  (command #startup-line)
+)
+
+(message
+  "tolunnet installation is complete!\n\n"
+  "You can configure settings at any time using SYS:Prefs/TolunnetPrefs\n"
+  "and view documentation by opening README.guide with MultiView.\n\n"
+  "Reboot your Amiga to start using the network stack."
+)
+
+(exit)

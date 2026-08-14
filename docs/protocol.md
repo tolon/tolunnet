@@ -1,51 +1,61 @@
-# protocol.md — library ⇄ task wire protocol
+# tolunnet IPC Protocol Specification
 
-> Master prompt §5. The wire format is defined in
-> `include/tolunet/protocol.h`. This document describes each request kind's
-> **union payload**. Rule (§5): every union field added is documented here in
-> the same commit.
+> Single source of truth for AmigaOS IPC messaging between `bsdsocket.library` openers and the `tolunnet` network daemon.
 
-## Versioning
+---
 
-`TN_PROTO_VERSION` (currently 1). The task refuses requests whose
-`proto_version` differs.
+## 1. Overview & Architecture
 
-## Envelope (all requests)
+The `tolunnet` network stack runs in a single dedicated Exec task (`NO_SYS=1`), ensuring thread safety for lwIP. Client tasks accessing the network do so through `bsdsocket.library`.
 
+When a client task calls standard BSD socket LVO vectors (e.g. `socket()`, `bind()`, `sendto()`, `recvfrom()`, `CloseSocket()`, `WaitSelect()`):
+1. The 68k assembly dispatch stub (`src/lib/lib_stubs.s`) marshals register arguments into the client task's private `TnSocketBase`.
+2. The client task populates `base->ipc_msg` (a zero-allocation embedded `struct TnIpcMsg`).
+3. The client calls `PutMsg(base->tolunnet_port, &base->ipc_msg.msg)` and waits synchronously on its private `base->reply_port`.
+4. The `tolunnet` network task processes the request within lwIP's core loop, sets `result` and `err_no`, and calls `ReplyMsg()`.
+5. The client wakes up, updates its task-local `errno` (or pointer), and returns the result in `d0`/`a0`.
+
+---
+
+## 2. Command Codes (`TnIpcCmd`)
+
+| Command Code | Value | Description |
+|---|---|---|
+| `TN_IPC_CMD_OPEN` | 0 | Client opens `bsdsocket.library` |
+| `TN_IPC_CMD_CLOSE` | 1 | Client closes `bsdsocket.library` (unwinds open fds) |
+| `TN_IPC_CMD_SOCKET` | 2 | `socket(domain, type, protocol)` |
+| `TN_IPC_CMD_BIND` | 3 | `bind(sock, name, namelen)` |
+| `TN_IPC_CMD_LISTEN` | 4 | `listen(sock, backlog)` |
+| `TN_IPC_CMD_ACCEPT` | 5 | `accept(sock, addr, addrlen)` |
+| `TN_IPC_CMD_CONNECT` | 6 | `connect(sock, name, namelen)` |
+| `TN_IPC_CMD_SENDTO` | 7 | `sendto(sock, buf, len, flags, to, tolen)` |
+| `TN_IPC_CMD_SEND` | 8 | `send(sock, buf, len, flags)` |
+| `TN_IPC_CMD_RECVFROM` | 9 | `recvfrom(sock, buf, len, flags, addr, addrlen)` |
+| `TN_IPC_CMD_RECV` | 10 | `recv(sock, buf, len, flags)` |
+| `TN_IPC_CMD_SHUTDOWN` | 11 | `shutdown(sock, how)` |
+| `TN_IPC_CMD_SETSOCKOPT` | 12 | `setsockopt(...)` |
+| `TN_IPC_CMD_GETSOCKOPT` | 13 | `getsockopt(...)` |
+| `TN_IPC_CMD_GETSOCKNAME` | 14 | `getsockname(...)` |
+| `TN_IPC_CMD_GETPEERNAME` | 15 | `getpeername(...)` |
+| `TN_IPC_CMD_IOCTL` | 16 | `IoctlSocket(...)` |
+| `TN_IPC_CMD_CLOSESOCKET` | 17 | `CloseSocket(sock)` |
+| `TN_IPC_CMD_GETHOSTBYNAME` | 18 | `gethostbyname(name)` |
+| `TN_IPC_CMD_GETHOSTBYADDR` | 19 | `gethostbyaddr(addr, len, type)` |
+| `TN_IPC_CMD_WAITSELECT` | 20 | `WaitSelect(nfds, read_fds, write_fds, except_fds, timeout, sigmask)` |
+
+---
+
+## 3. Data Structures
+
+```c
+typedef struct TnIpcMsg {
+    struct Message msg;         /* Standard Exec Message node */
+    TnIpcCmd       cmd;         /* Command code */
+    struct Task   *client_task; /* Calling client task pointer */
+    APTR           socket_base; /* Calling SocketBase instance */
+    LONG           args[6];     /* Generic integer/register arguments */
+    APTR           ptrs[4];     /* Generic pointer arguments */
+    LONG           result;      /* Return code (>=0 success, -1 error) */
+    LONG           err_no;      /* POSIX errno if result == -1 */
+} TnIpcMsg;
 ```
-struct TnRequest {
-    struct Message msg;   /* Exec message header */
-    uint16 proto_version; /* TN_PROTO_VERSION   */
-    uint16 kind;          /* TnReqKind          */
-    int32  sock;          /* task-side socket id */
-    int32  result;        /* OUT                */
-    int32  err;           /* OUT errno (§5.1)   */
-    union { ... } u;      /* per-kind, see below */
-};
-```
-
-Rules (§5):
-- The task keeps **no pointers into library memory after ReplyMsg**. Anything
-  needed beyond the reply is copied into task-owned storage (`buffers.c`).
-- Buffers > 4 KB go through the task-owned copy ring.
-- `result` / `err` are valid only after the reply arrives.
-
-## Per-kind payloads
-
-_(none yet — the union is empty in M0.)_
-
-Payloads are added with their milestone. The first will be:
-
-- **M3** — `TN_REQ_SOCKET` (domain/type/proto), `TN_REQ_CONNECT` (sockaddr),
-  `TN_REQ_SEND`/`TN_REQ_RECV` (buffer descriptor + length).
-- **M4** — `TN_REQ_SELECT_ARM`/`CANCEL` (fd-set + signal mask), `TN_REQ_IOCTL`
-  (cmd + argp).
-- **M5** — `TN_REQ_RESOLVE` (hostname → addr), `TN_REQ_UDP_SENDTO`/`RECVFROM`.
-
-Each addition lands here with: field names, types, who owns each buffer, and
-the `result`/`err` semantics for that kind.
-
-## errno mapping
-
-See master prompt §5.1 and (later) `src/bsdsocket/errno.c`. Values come from
-`netinclude/sys/errno.h` (Roadshow SDK, §3.1 item 15) — no literals.

@@ -1,0 +1,103 @@
+; tolunnet — Official AmigaOS Installation Script
+; Compatible with Commodore Installer 43.x / AmigaOS 3.0+
+
+(transcript "T:tolunnet_install.log")
+
+(welcome
+  (text "Welcome to the tolunnet TCP/IP Stack Installation.\n\n"
+        "tolunnet is a lightweight, high-performance SANA-II TCP/IP stack\n"
+        "and bsdsocket.library v4.1 implementation for Commodore Amiga.\n\n"
+        "Author: Tolon\n"
+        "Requirements: AmigaOS 3.0+, 68020+ CPU, SANA-II Network Driver.")
+)
+
+(set @default-dest "SYS:")
+
+(set #device-name
+  (askstring
+    (prompt "Enter the SANA-II device name for your network card:\n"
+            "(e.g. ethernet.device, cnet.device, ariadne.device, 3c589.device)")
+    (default "ethernet.device")
+  )
+)
+
+(set #unit-num
+  (asknumber
+    (prompt "Enter the SANA-II unit number (usually 0):")
+    (default 0)
+    (range 0 16)
+  )
+)
+
+(set #ip-mode
+  (askchoice
+    (prompt "Select network address configuration method:")
+    (choices "Automatic configuration via DHCP (Recommended)"
+             "Static IP configuration (Manual)")
+    (default 0)
+  )
+)
+
+(if (= #ip-mode 1)
+  (set #static-ip (askstring (prompt "Enter Static IP address:") (default "192.168.1.100")))
+  (set #static-nm (askstring (prompt "Enter Subnet Mask:") (default "255.255.255.0")))
+  (set #static-gw (askstring (prompt "Enter Default Gateway:") (default "192.168.1.1")))
+)
+
+(message "Installing tolunnet system binaries to SYS:C/ ...")
+
+(copylib
+  (source "C/tolunnet")
+  (dest "SYS:C/tolunnet")
+  (confirm)
+)
+
+(copylib
+  (source "C/TolunnetPing")
+  (dest "SYS:C/TolunnetPing")
+  (confirm)
+)
+
+(copylib
+  (source "C/TolunnetGet")
+  (dest "SYS:C/TolunnetGet")
+  (confirm)
+)
+
+(copylib
+  (source "C/TolunnetStatus")
+  (dest "SYS:C/TolunnetStatus")
+  (confirm)
+)
+
+(copyfiles
+  (source "TolunnetPrefs")
+  (dest "SYS:Prefs/TolunnetPrefs")
+  (all)
+  (confirm)
+)
+
+(copyfiles
+  (source "TolunnetPrefs.info")
+  (dest "SYS:Prefs/TolunnetPrefs.info")
+  (all)
+  (confirm)
+)
+
+(if (= #ip-mode 0)
+  (set #startup-line (cat "Run <NIL: >NIL: C:tolunnet " #device-name " " #unit-num))
+  (set #startup-line (cat "Run <NIL: >NIL: C:tolunnet " #device-name " " #unit-num " " #static-ip " " #static-nm " " #static-gw))
+)
+
+(startup "tolunnet"
+  (prompt "Add tolunnet network stack to your S:User-Startup?")
+  (help "This will automatically start tolunnet every time your Amiga boots.")
+  (command #startup-line)
+)
+
+(complete
+  (text "tolunnet installation is complete!\n\n"
+        "You can configure settings at any time using SYS:Prefs/TolunnetPrefs\n"
+        "and view documentation by opening README.guide with MultiView.\n\n"
+        "Reboot your Amiga to start using the network stack.")
+)

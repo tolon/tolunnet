@@ -1,6 +1,4 @@
-;BEGIN tolunet M0 exit test
-; WORK: -> boot volume (DH0:) cunku host-directory mount config'te calismadi.
-; Boylece hello-task WORK:tolunet-hello.log'a yazar = HDF icine, xdftool ile okunur.
 Assign WORK: DH0:
-C:tolunet-hello >WORK:tolunet-stdout.log
-;END tolunet
+Run <NIL: >WORK:tolunet.log C:tolunet ethernet.device 0 10.0.2.15 255.255.255.0 10.0.2.2
+Wait 3
+C:TestSocket
