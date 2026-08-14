@@ -7,21 +7,21 @@
 
 ## Honest Milestone & Ledger Matrix
 
-| Milestone | Area | Code / Implementation Status | On-Iron Proof Gate |
+| Milestone | Area | Code Implementation | Hardware Proof Gate |
 |---|---|---|---|
-| **M0** | Toolchain & Build | ✅ **BUILT & VERIFIED** (WSL `m68k-amigaos-gcc` clean build) | Verified on WinUAE |
-| **M1** | SANA-II Driver Interface | ✅ **BUILT & VERIFIED** (`A0/A1/D0` ASM trampolines, persistent `bm_tags`, `__saveds` hooks) | Outbound frame proven; pending live RX capture |
-| **M2** | lwIP Core & DHCP Engine | ✅ **BUILT & VERIFIED** (lwIP 2.2.0, dual timer channels, 100ms ticker, PRNG seed) | Pending photographed DHCP lease on physical hardware |
-| **M3** | Standard `bsdsocket.library` | ✅ **BUILT & VERIFIED** (50 LVO vectors, Exec IPC dispatch, refcounted descriptor cloning) | Dynamic `MakeLibrary` proven |
-| **M4** | DNS Resolver & CLI Ping | ✅ **BUILT & VERIFIED** (Dynamic DNS resolver, bidirectional echo probe with real RTT timing) | Verified via IPC loop |
-| **M5** | TCP Stream & `wget`/`curl` | ✅ **BUILT & VERIFIED** (HTTP 1.0 client, 1024-byte bounded buffers, URL parsing) | Verified via TCP state engine |
-| **M6** | Roadshow / Miami DX Suite | ✅ **BUILT & VERIFIED** (`SocketBaseTagList` -294, `getservby*`, `getproto*`, `Inet_*`, `Dup2Socket`) | Validated against Roadshow SFD |
-| **M7** | Release Packaging | ✅ **BUILT & VERIFIED** (`tolunnet-1.1.0.lha` 511 KB, `tolunnet-final.adf` 548 KB / DD Floppy) | Verified via `xdftool` |
-| **M8** | Workbench Preferences GUI | ✅ **BUILT & VERIFIED** (`TolunnetPrefs` GadTools panel managing `DEVS:tolunnet.config`) | Verified on Workbench 3.0 |
+| **M0** | Toolchain & Build | ✅ **BUILT & TESTED** (WSL `m68k-amigaos-gcc` clean build) | Verified on WinUAE |
+| **M1** | SANA-II Driver Interface | ✅ **BUILT & TESTED** (`A0/A1/D0` ASM trampolines, persistent `bm_tags`, `__saveds` hooks) | Outbound frame verified; pending live physical RX frame capture |
+| **M2** | lwIP Core & DHCP Engine | ✅ **BUILT & TESTED** (lwIP 2.2.0, dual timer channels, 100ms ticker, PRNG seed) | **PENDING** photographed DHCP lease on physical hardware |
+| **M3** | Standard `bsdsocket.library` | ✅ **BUILT & TESTED** (50 LVO vectors, Exec IPC dispatch, refcounted descriptor cloning) | Dynamic `MakeLibrary` proven |
+| **M4** | DNS Resolver & CLI Ping | ✅ **BUILT & TESTED** (Dynamic DNS resolver, UDP echo round-trip with ms timing) | Verified via internal stack loop |
+| **M5** | TCP Stream & `wget`/`curl` | ✅ **BUILT & TESTED** (HTTP 1.0 client, 1024-byte bounded buffers, URL parsing) | Verified via TCP state engine |
+| **M6** | Roadshow / Miami DX Suite | ✅ **BUILT & TESTED** (`SocketBaseTagList` -294, `getservby*`, `getproto*`, `Inet_*`, `Dup2Socket`) | Validated against Roadshow SFD |
+| **M7** | Release Packaging | ✅ **BUILT & TESTED** (Candidate `tolunnet-1.1.0.lha` 513 KB, `tolunnet-final.adf` 551 KB) | Verified via `xdftool` |
+| **M8** | Workbench Preferences GUI | ✅ **BUILT & TESTED** (`TolunnetPrefs` GadTools panel managing `DEVS:tolunnet.config`) | Verified on Workbench 3.0 |
 
 ---
 
-## Working Tree Build Artifacts
+## Working Tree Build Artifacts (Candidate Release)
 
 - 📦 **LhA Archive:** [`build/tolunnet-1.1.0.lha`](file:///d:/Projeler/tolunnet/build/tolunnet-1.1.0.lha) (513,771 bytes / 513 KB)
 - 💾 **ADF Floppy Image:** [`build/tolunnet-final.adf`](file:///d:/Projeler/tolunnet/build/tolunnet-final.adf) (564,224 bytes / 551 KB, fits 880 KB DD floppy with ~328 KB free)
