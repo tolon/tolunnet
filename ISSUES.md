@@ -47,7 +47,11 @@
 | **TNET-045** | Medium | Correctness | Unit number multi-digit text formatting | **RESOLVED** | Formatted unit integer as full string in `prefs.c` |
 | **TNET-046** | Medium | Correctness | SANA-II multicast vs hardware broadcast | **RESOLVED** | Restricted `is_bcast` to exact all-FF addresses |
 | **TNET-047** | Medium | Security | PRNG entropy startup initialization order | **RESOLVED** | Seeded PRNG from hardware timers before `lwip_init` |
+| **TNET-048** | High | Compat | Dup2Socket descriptor aliasing and lifetime leak | **RESOLVED** | Routed via `TN_IPC_CMD_DUP2` with socket slot reference counting |
 | **TNET-049** | Low | Correctness | TCP error socket state mapping | **RESOLVED** | Mapped `TN_TCP_STATE_ERROR` to `ECONNRESET` / EOF on receive |
 | **TNET-050** | Low | Correctness | TCP RX queue depth bounding | **RESOLVED** | Enforced `TN_MAX_RX_QUEUE_PER_SOCKET` in `tn_tcp_recv_cb` |
+| **TNET-051** | Low | Compat | inet_addr dotted-quad single format constraint | **RESOLVED** | Implemented standard BSD 1-4 part decimal/octal/hex parser |
 | **TNET-052** | Low | Optimization | Dead RawDoFmt cleanup in `prefs.c` | **RESOLVED** | Removed unused buffer and format call |
+| **TNET-053** | Low | Tooling | Authentic SFD table generator synchronization | **RESOLVED** | Implemented `scripts/gen_lvo_table.py` parsing `bsdsocket_lib.sfd` |
+| **TNET-054** | Low | ABI | SANA-II buffer copy callbacks missing __saveds | **RESOLVED** | Added `__saveds` to `tn_copy_to_buff_c` and `tn_copy_from_buff_c` |
 | **TNET-055** | Low | Compat | `sin_len` initialization on recvfrom | **RESOLVED** | Initialized `from->sin_len = sizeof(struct sockaddr_in)` |
