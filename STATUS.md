@@ -23,6 +23,6 @@
 
 ## Working Tree Build Artifacts (Candidate Release)
 
-- 📦 **LhA Archive:** [`build/tolunnet-1.1.0.lha`](file:///d:/Projeler/tolunnet/build/tolunnet-1.1.0.lha) (513,771 bytes / 513 KB)
-- 💾 **ADF Floppy Image:** [`build/tolunnet-final.adf`](file:///d:/Projeler/tolunnet/build/tolunnet-final.adf) (564,224 bytes / 551 KB, fits 880 KB DD floppy with ~328 KB free)
+- 📦 **LhA Archive:** [`build/tolunnet-1.1.0.lha`](file:///d:/Projeler/tolunnet/build/tolunnet-1.1.0.lha) (514,307 bytes / 514 KB)
+- 💾 **ADF Floppy Image:** [`build/tolunnet-release.adf`](file:///d:/Projeler/tolunnet/build/tolunnet-release.adf) (564,736 bytes / 551 KB, fits 880 KB DD floppy with ~328 KB free)
 - 💾 **Workbench Hard Drive Sync:** `E:\amiga\Amigatolon\hdf\Workbench v3.0 (1992)(Commodore).hdf` synchronized.

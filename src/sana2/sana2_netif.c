@@ -44,7 +44,7 @@ void tn_log_s2err(const char *step, LONG err, LONG wire)
 extern void tn_s2_copy_to_buff_asm(void);
 extern void tn_s2_copy_from_buff_asm(void);
 
-__saveds BOOL tn_copy_to_buff_c(APTR dst, APTR src, ULONG len)
+BOOL tn_copy_to_buff_c(APTR dst, APTR src, ULONG len)
 {
     if (dst != NULL && src != NULL && len > 0) {
         CopyMem(src, dst, len);
@@ -52,7 +52,7 @@ __saveds BOOL tn_copy_to_buff_c(APTR dst, APTR src, ULONG len)
     return TRUE;
 }
 
-__saveds BOOL tn_copy_from_buff_c(APTR dst, APTR src, ULONG len)
+BOOL tn_copy_from_buff_c(APTR dst, APTR src, ULONG len)
 {
     if (dst != NULL && src != NULL && len > 0) {
         CopyMem(src, dst, len);
