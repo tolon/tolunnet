@@ -53,5 +53,7 @@
 | **TNET-051** | Low | Compat | inet_addr dotted-quad single format constraint | **RESOLVED** | Implemented standard BSD 1-4 part decimal/octal/hex parser |
 | **TNET-052** | Low | Optimization | Dead RawDoFmt cleanup in `prefs.c` | **RESOLVED** | Removed unused buffer and format call |
 | **TNET-053** | Low | Tooling | Authentic SFD table generator synchronization | **RESOLVED** | Implemented `scripts/gen_lvo_table.py` parsing `bsdsocket_lib.sfd` |
-| **TNET-054** | Low | ABI | SANA-II buffer copy callbacks missing __saveds | **RESOLVED** | Added `__saveds` to `tn_copy_to_buff_c` and `tn_copy_from_buff_c` |
 | **TNET-055** | Low | Compat | `sin_len` initialization on recvfrom | **RESOLVED** | Initialized `from->sin_len = sizeof(struct sockaddr_in)` |
+| **TNET-056** | Blocker | GUI | TolunnetPrefs GadTools font pointer type crash (#8000000B) | **RESOLVED** | Set `ng_TextAttr = NULL` to safely use default Screen font in GadTools |
+| **TNET-057** | Major | Packaging | Installer subdrawer nesting & icon positioning | **RESOLVED** | Corrected Installer `dest` to `SYS:Prefs` and snapped `TolunnetPrefs.info` to grid (4,48) |
+

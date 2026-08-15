@@ -16,13 +16,13 @@
 | **M4** | DNS Resolver & CLI Ping | ✅ **BUILT & TESTED** (Dynamic DNS resolver, UDP echo round-trip with ms timing) | Verified via internal stack loop |
 | **M5** | TCP Stream & `wget`/`curl` | ✅ **BUILT & TESTED** (HTTP 1.0 client, 1024-byte bounded buffers, URL parsing) | Verified via TCP state engine |
 | **M6** | Roadshow / Miami DX Suite | ✅ **BUILT & TESTED** (`SocketBaseTagList` -294, `getservby*`, `getproto*`, `Inet_*`, `Dup2Socket`) | Validated against Roadshow SFD |
-| **M7** | Release Packaging | ✅ **BUILT & TESTED** (Candidate `tolunnet-1.1.0.lha` 513 KB, `tolunnet-final.adf` 551 KB) | Verified via `xdftool` |
-| **M8** | Workbench Preferences GUI | ✅ **BUILT & TESTED** (`TolunnetPrefs` GadTools panel managing `DEVS:tolunnet.config`) | Verified on Workbench 3.0 |
+| **M7** | Release Packaging | ✅ **BUILT & TESTED** (Candidate `tolunnet-1.1.0.lha` 514 KB, `tolunnet-release.adf` 551 KB) | Verified via `xdftool` |
+| **M8** | Workbench Preferences GUI | ✅ **BUILT & TESTED** (`TolunnetPrefs` 3D beveled native GadTools GUI with hardware, IP, host, live controls & snapped icon) | Verified on Workbench 3.0 |
 
 ---
 
 ## Working Tree Build Artifacts (Candidate Release)
 
 - 📦 **LhA Archive:** [`build/tolunnet-1.1.0.lha`](file:///d:/Projeler/tolunnet/build/tolunnet-1.1.0.lha) (514,307 bytes / 514 KB)
-- 💾 **ADF Floppy Image:** [`build/tolunnet-v11.adf`](file:///d:/Projeler/tolunnet/build/tolunnet-v11.adf) (564,736 bytes / 551 KB, fits 880 KB DD floppy with ~328 KB free)
+- 💾 **ADF Floppy Image:** [`build/tolunnet-release.adf`](file:///d:/Projeler/tolunnet/build/tolunnet-release.adf) (564,736 bytes / 551 KB, fits 880 KB DD floppy with ~328 KB free)
 - 💾 **Workbench Hard Drive Sync:** `E:\amiga\Amigatolon\hdf\Workbench v3.0 (1992)(Commodore).hdf` synchronized.
