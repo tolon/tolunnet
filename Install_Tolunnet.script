@@ -70,22 +70,18 @@
   (confirm)
 )
 
-(delete
-  "SYS:Prefs/TolunnetPrefs"
-  (all)
-)
+(run "Delete >NIL: SYS:Prefs/TolunnetPrefs ALL FORCE QUIET")
+(run "Delete >NIL: SYS:Prefs/TolunnetPrefs.info FORCE QUIET")
 
-(copyfiles
+(copylib
   (source "TolunnetPrefs")
   (dest "SYS:Prefs")
-  (all)
   (confirm)
 )
 
 (copyfiles
   (source "TolunnetPrefs.info")
   (dest "SYS:Prefs")
-  (all)
   (confirm)
 )
 

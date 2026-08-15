@@ -28,10 +28,7 @@
 #include <dos/dos.h>
 #include <exec/execbase.h>
 
-struct IntuitionBase *IntuitionBase = NULL;
-struct Library       *GadToolsBase  = NULL;
-struct GfxBase       *GfxBase       = NULL;
-struct DosLibrary   *DOSBase       = NULL;
+struct Library *GadToolsBase = NULL;
 
 /* Gadget IDs */
 #define GID_DEVICE      1
@@ -56,12 +53,10 @@ static const STRPTR g_mode_labels[] = {
 };
 
 /*
- * GadTools requires a REAL TextAttr for every gadget — a NULL ng_TextAttr is
- * NOT safe on OS 3.0/3.1 (GadTools dereferences it to open the label font and
- * to size the gadget, crashing with a line-F / #8000000B before the window
- * opens). topaz.font/8 is always present in ROM, so this never fails.
+ * GadTools requires a REAL TextAttr for every gadget.
+ * topaz.font/8 with FPF_ROMFONT is always present in Kickstart ROM.
  */
-static struct TextAttr g_gui_font = { (STRPTR)"topaz.font", 8, 0, 0 };
+static struct TextAttr g_gui_font = { (STRPTR)"topaz.font", 8, FS_NORMAL, FPF_ROMFONT };
 
 /* Render 3D Beveled Framing Boxes around visual groups */
 static void render_gui_frames(struct Window *win, APTR vi)
@@ -116,13 +111,9 @@ int main(int argc, char *argv[])
     char dns2_buf[20] = "1.0.0.1";
     (void)argc; (void)argv;
 
-    DOSBase = (struct DosLibrary *)OpenLibrary((CONST_STRPTR)"dos.library", 36);
-    IntuitionBase = (struct IntuitionBase *)OpenLibrary((CONST_STRPTR)"intuition.library", 36);
     GadToolsBase = OpenLibrary((CONST_STRPTR)"gadtools.library", 36);
-    GfxBase = (struct GfxBase *)OpenLibrary((CONST_STRPTR)"graphics.library", 36);
-
-    if (!DOSBase || !IntuitionBase || !GadToolsBase || !GfxBase) {
-        goto cleanup;
+    if (!GadToolsBase) {
+        return 20;
     }
 
     /* Load persistent preferences */
@@ -139,7 +130,7 @@ int main(int argc, char *argv[])
     if (!gad) goto cleanup;
 
     /* Base NewGadget defaults */
-    ng.ng_TextAttr   = &g_gui_font; /* MUST be a real TextAttr (see g_gui_font) */
+    ng.ng_TextAttr   = &g_gui_font;
     ng.ng_VisualInfo = vi;
     ng.ng_UserData   = NULL;
 
@@ -464,10 +455,7 @@ cleanup:
     if (vi) FreeVisualInfo(vi);
     if (scr) UnlockPubScreen(NULL, scr);
 
-    if (GfxBase) CloseLibrary((struct Library *)GfxBase);
     if (GadToolsBase) CloseLibrary(GadToolsBase);
-    if (IntuitionBase) CloseLibrary((struct Library *)IntuitionBase);
-    if (DOSBase) CloseLibrary((struct Library *)DOSBase);
 
     return 0;
 }
