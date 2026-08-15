@@ -24,6 +24,7 @@
 #include <intuition/gadgetclass.h>
 #include <libraries/gadtools.h>
 #include <graphics/gfxbase.h>
+#include <graphics/text.h>
 #include <dos/dos.h>
 #include <exec/execbase.h>
 
@@ -53,6 +54,14 @@ static const STRPTR g_mode_labels[] = {
     (STRPTR)"Static IP (Manual)",
     NULL
 };
+
+/*
+ * GadTools requires a REAL TextAttr for every gadget — a NULL ng_TextAttr is
+ * NOT safe on OS 3.0/3.1 (GadTools dereferences it to open the label font and
+ * to size the gadget, crashing with a line-F / #8000000B before the window
+ * opens). topaz.font/8 is always present in ROM, so this never fails.
+ */
+static struct TextAttr g_gui_font = { (STRPTR)"topaz.font", 8, 0, 0 };
 
 /* Render 3D Beveled Framing Boxes around visual groups */
 static void render_gui_frames(struct Window *win, APTR vi)
@@ -130,7 +139,7 @@ int main(int argc, char *argv[])
     if (!gad) goto cleanup;
 
     /* Base NewGadget defaults */
-    ng.ng_TextAttr   = NULL; /* Strictly NULL -> uses default Screen font */
+    ng.ng_TextAttr   = &g_gui_font; /* MUST be a real TextAttr (see g_gui_font) */
     ng.ng_VisualInfo = vi;
     ng.ng_UserData   = NULL;
 
