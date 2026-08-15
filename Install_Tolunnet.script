@@ -76,14 +76,11 @@
 (copylib
   (source "TolunnetPrefs")
   (dest "SYS:Prefs")
+  (infos)
   (confirm)
 )
 
-(copyfiles
-  (source "TolunnetPrefs.info")
-  (dest "SYS:Prefs")
-  (confirm)
-)
+(run "Copy TolunnetPrefs.info SYS:Prefs/TolunnetPrefs.info CLONE QUIET")
 
 (if (= #ip-mode 0)
   (set #startup-line (cat "Run <NIL: >NIL: C:tolunnet " #device-name " " #unit-num))

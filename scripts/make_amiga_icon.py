@@ -256,11 +256,11 @@ def main():
         f.write(icon_disk)
     print("Generated Disk.info (Floppy Volume Icon)")
     
-    # 5. Generate TolunnetPrefs.info (Workbench Preferences Tool Icon, positioned in Prefs grid)
-    icon_prefs = create_amiga_diskobject(idx32, 32, 32, nplanes=2, icon_type=WBTOOL, pos_x=4, pos_y=48, stack_size=16384)
+    # 5. Generate TolunnetPrefs.info (Workbench Preferences Tool Icon, auto-placed by Workbench)
+    icon_prefs = create_amiga_diskobject(idx32, 32, 32, nplanes=2, icon_type=WBTOOL, pos_x=None, pos_y=None, stack_size=16384)
     with open("TolunnetPrefs.info", "wb") as f:
         f.write(icon_prefs)
-    print("Generated TolunnetPrefs.info (Preferences Tool Icon at grid 4,48)")
+    print("Generated TolunnetPrefs.info (Preferences Tool Icon)")
     
     # 6. Generate Drawer Icon for LhA releases (tolunnet.info)
     icon_drawer = create_amiga_diskobject(idx32, 32, 32, nplanes=2, icon_type=WBDRAWER)
