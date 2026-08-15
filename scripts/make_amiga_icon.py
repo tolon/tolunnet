@@ -4,9 +4,9 @@ make_amiga_icon.py — Convert a logo image into authentic AmigaOS .info icons
 and IFF-ILBM graphic files.
 
 Supports:
-- AmigaOS 2.x / 3.x DiskObject format (magic 0xE310)
-- 4-color & 8-color planar bitmap encoding with normal and selected states
-- Tool, Drawer, and Project icon types
+- Standard 4-color (2 bitplanes) AmigaOS 2.x/3.x DiskObject format (magic 0xE310)
+- Fully compatible with standard 4-colour Workbench screens (PlanePick=3, Depth=2)
+- Tool, Drawer, and Project icon types with 16 KB stack size
 - IFF-ILBM image export for Amiga MultiView
 """
 
@@ -14,16 +14,12 @@ import sys
 import struct
 from PIL import Image
 
-# Standard Workbench 3.x 8-colour palette
-AMIGA_WB3_PALETTE = [
+# Standard Workbench 3.x 4-colour palette (Opal / Topaz standard screen)
+AMIGA_WB3_4COLOR_PALETTE = [
     (170, 170, 170),  # 0: Grey (Workbench background)
-    (0,   0,   0),    # 1: Black
-    (255, 255, 255),  # 2: White
-    (0,   85,  170),  # 3: Blue
-    (238, 68,  68),   # 4: Red
-    (90,  180, 160),  # 5: Teal / Green (matches tolunet logo teal!)
-    (200, 130, 60),   # 6: Copper / Orange (matches tolunet logo copper!)
-    (120, 50,  140),  # 7: Purple (matches tolunet logo purple!)
+    (0,   0,   0),    # 1: Black (Outline / Shadow)
+    (255, 255, 255),  # 2: White (Highlights)
+    (0,   85,  170),  # 3: Blue (Amiga Blue Accent)
 ]
 
 # Amiga DiskObject types (per <workbench/workbench.h>)
@@ -79,7 +75,7 @@ def planar_encode(indices, w, h, nplanes):
         res += planes[p]
     return bytes(res)
 
-def create_amiga_diskobject(indices, w, h, nplanes, icon_type=WBTOOL, default_tool=None, tooltypes=None, pos_x=None, pos_y=None, stack_size=16384):
+def create_amiga_diskobject(indices, w, h, nplanes=2, icon_type=WBTOOL, default_tool=None, tooltypes=None, pos_x=None, pos_y=None, stack_size=16384):
     """
     Construct a standard Commodore AmigaOS DiskObject (.info file).
     """
@@ -87,8 +83,8 @@ def create_amiga_diskobject(indices, w, h, nplanes, icon_type=WBTOOL, default_to
     plane_size_words = row_words * h
     bitplane_data = planar_encode(indices, w, h, nplanes)
     
-    # Inverted state for selected image
-    sel_indices = [(7 - idx) if idx < 8 else 0 for idx in indices]
+    # Complement state for selected image
+    sel_indices = [(3 - idx) if idx < 4 else 0 for idx in indices]
     sel_bitplane_data = planar_encode(sel_indices, w, h, nplanes)
     
     buf = bytearray()
@@ -126,7 +122,6 @@ def create_amiga_diskobject(indices, w, h, nplanes, icon_type=WBTOOL, default_to
     
     # struct DrawerData (56 bytes) for WBDISK and WBDRAWER
     if has_drawer:
-        # struct NewWindow (48 bytes) + dd_CurrentX(4) + dd_CurrentY(4)
         nw = struct.pack(">hhhhBBIIIIIIIhhhhH",
                          50, 40, 360, 160, # LeftEdge, TopEdge, Width, Height
                          0, 1,             # DetailPen, BlockPen
@@ -135,7 +130,7 @@ def create_amiga_diskobject(indices, w, h, nplanes, icon_type=WBTOOL, default_to
                          0, 0, 0, 0, 0,    # Pointers
                          80, 50, -1, -1,   # MinWidth, MinHeight, MaxWidth, MaxHeight
                          1)                # WTYPE_WORKBENCH
-        dd = nw + struct.pack(">ii", -2147483648, -2147483648) # dd_CurrentX, dd_CurrentY
+        dd = nw + struct.pack(">ii", -2147483648, -2147483648)
         buf += dd
     
     # Image 1 (Normal)
@@ -145,7 +140,7 @@ def create_amiga_diskobject(indices, w, h, nplanes, icon_type=WBTOOL, default_to
                        w, h,
                        nplanes,
                        1, # ImageData present
-                       (1 << nplanes) - 1, # PlanePick
+                       (1 << nplanes) - 1, # PlanePick = 0x3 for 2 planes
                        0, # PlaneOnOff
                        0) # NextImage
     
@@ -158,14 +153,14 @@ def create_amiga_diskobject(indices, w, h, nplanes, icon_type=WBTOOL, default_to
                        w, h,
                        nplanes,
                        1, # ImageData present
-                       (1 << nplanes) - 1, # PlanePick
+                       (1 << nplanes) - 1, # PlanePick = 0x3 for 2 planes
                        0, # PlaneOnOff
                        0) # NextImage
     
     # Bitplane data for Image 2
     buf += sel_bitplane_data
     
-    # Optional DefaultTool string (BSTR/C-string in Amiga DiskObject)
+    # Optional DefaultTool string
     if default_tool:
         encoded = default_tool.encode("latin1") + b"\x00"
         buf += struct.pack(">I", len(encoded))
@@ -173,12 +168,12 @@ def create_amiga_diskobject(indices, w, h, nplanes, icon_type=WBTOOL, default_to
     
     # Optional ToolTypes array
     if tooltypes:
-        buf += struct.pack(">I", (len(tooltypes) + 1) * 4) # array byte size
+        buf += struct.pack(">I", (len(tooltypes) + 1) * 4)
         for tt in tooltypes:
             encoded = tt.encode("latin1") + b"\x00"
             buf += struct.pack(">I", len(encoded))
             buf += encoded
-        buf += struct.pack(">I", 0) # NULL terminator entry
+        buf += struct.pack(">I", 0)
     
     return bytes(buf)
 
@@ -186,95 +181,97 @@ def export_iff_ilbm(indices, w, h, nplanes, palette, out_path):
     """Write an authentic IFF-ILBM image readable by Amiga MultiView / DPaint."""
     row_bytes = (w + 15) // 16 * 2
     body = bytearray()
-    
-    # Interleaved rows for ILBM
-    planes = [bytearray(row_bytes * h) for _ in range(nplanes)]
-    for y in range(h):
-        for x in range(w):
-            idx = indices[y * w + x]
-            byte_offset = y * row_bytes + (x >> 3)
-            bit = 7 - (x & 7)
-            for p in range(nplanes):
-                if idx & (1 << p):
-                    planes[p][byte_offset] |= (1 << bit)
-                    
     for y in range(h):
         for p in range(nplanes):
-            body += planes[p][y * row_bytes : (y + 1) * row_bytes]
-            
-    # BMHD chunk
-    bmhd = struct.pack(">HHhhHBBBhBBhh",
-                       w, h, 0, 0, nplanes, 0, 0, 0, 0, 1, 1, 320, 200)
+            row_plane = bytearray(row_bytes)
+            for x in range(w):
+                idx = indices[y * w + x]
+                if idx & (1 << p):
+                    row_plane[x >> 3] |= (1 << (7 - (x & 7)))
+            body += row_plane
+    
+    # BMHD chunk (20 bytes)
+    bmhd = struct.pack(">HHhhBBBBHBBhh",
+                       w, h, 0, 0,
+                       nplanes, 0, 0, 0,
+                       0, 10, 11, w, h)
     
     # CMAP chunk
     cmap = bytearray()
-    for r, g, b in palette[:(1 << nplanes)]:
-        cmap += bytes((r, g, b))
-        
-    def chunk(tag, data):
-        pad = b"\x00" if len(data) & 1 else b""
-        return tag.encode("ascii") + struct.pack(">I", len(data)) + data + pad
-
-    form_data = b"ILBM" + chunk("BMHD", bmhd) + chunk("CMAP", bytes(cmap)) + chunk("BODY", bytes(body))
+    for i in range(1 << nplanes):
+        if i < len(palette):
+            r, g, b = palette[i]
+        else:
+            r, g, b = 0, 0, 0
+        cmap += struct.pack(">BBB", r, g, b)
+    
+    form_length = 4 + (8 + len(bmhd)) + (8 + len(cmap)) + (8 + len(body))
     with open(out_path, "wb") as f:
-        f.write(b"FORM" + struct.pack(">I", len(form_data)) + form_data)
+        f.write(b"FORM")
+        f.write(struct.pack(">I", form_length))
+        f.write(b"ILBM")
+        f.write(b"BMHD")
+        f.write(struct.pack(">I", len(bmhd)))
+        f.write(bmhd)
+        f.write(b"CMAP")
+        f.write(struct.pack(">I", len(cmap)))
+        f.write(cmap)
+        f.write(b"BODY")
+        f.write(struct.pack(">I", len(body)))
+        f.write(body)
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: make_amiga_icon.py <input_logo.jpg/png>")
-        sys.exit(1)
-        
-    src_path = sys.argv[1]
+    src_path = sys.argv[1] if len(sys.argv) > 1 else "assets/logo.png"
     img = Image.open(src_path)
     
     # Save standard PNG
     img.save("assets/logo.png")
     print("Exported assets/logo.png")
     
-    # 1. Generate 32x32 Tool Icon for tolunnet (SYS:C/tolunnet.info)
+    # 1. Generate 32x32 Tool Icon for tolunnet (SYS:C/tolunnet.info) - 4 color standard
     img32 = img.resize((32, 32), Image.LANCZOS)
-    idx32 = quantize_image(img32, AMIGA_WB3_PALETTE)
-    icon_tool = create_amiga_diskobject(idx32, 32, 32, 3, icon_type=WBTOOL)
+    idx32 = quantize_image(img32, AMIGA_WB3_4COLOR_PALETTE)
+    icon_tool = create_amiga_diskobject(idx32, 32, 32, nplanes=2, icon_type=WBTOOL)
     with open("ci/tolunnet.info", "wb") as f:
         f.write(icon_tool)
     with open("assets/tolunnet.info", "wb") as f:
         f.write(icon_tool)
-    print("Generated ci/tolunnet.info and assets/tolunnet.info (32x32 8-color AmigaOS Tool Icon)")
+    print("Generated ci/tolunnet.info and assets/tolunnet.info (4-color Workbench Icon)")
     
     # 2. Generate 32x32 Installer Project Icon (Install_Tolunnet.info)
-    icon_inst = create_amiga_diskobject(idx32, 32, 32, 3, icon_type=WBPROJECT, default_tool="Installer")
+    icon_inst = create_amiga_diskobject(idx32, 32, 32, nplanes=2, icon_type=WBPROJECT, default_tool="Installer")
     with open("Install_Tolunnet.info", "wb") as f:
         f.write(icon_inst)
     print("Generated Install_Tolunnet.info (Installer Project Icon)")
     
     # 3. Generate Project/Doc Icon for README.guide (README.guide.info)
-    icon_doc = create_amiga_diskobject(idx32, 32, 32, 3, icon_type=WBPROJECT, default_tool="SYS:Utilities/MultiView")
+    icon_doc = create_amiga_diskobject(idx32, 32, 32, nplanes=2, icon_type=WBPROJECT, default_tool="SYS:Utilities/MultiView")
     with open("README.guide.info", "wb") as f:
         f.write(icon_doc)
     print("Generated README.guide.info (AmigaGuide Project Icon)")
     
     # 4. Generate Disk.info (Volume/Floppy Disk Icon)
-    icon_disk = create_amiga_diskobject(idx32, 32, 32, 3, icon_type=WBDISK)
+    icon_disk = create_amiga_diskobject(idx32, 32, 32, nplanes=2, icon_type=WBDISK)
     with open("Disk.info", "wb") as f:
         f.write(icon_disk)
     print("Generated Disk.info (Floppy Volume Icon)")
     
     # 5. Generate TolunnetPrefs.info (Workbench Preferences Tool Icon, positioned in Prefs grid)
-    icon_prefs = create_amiga_diskobject(idx32, 32, 32, 3, icon_type=WBTOOL, pos_x=4, pos_y=48, stack_size=16384)
+    icon_prefs = create_amiga_diskobject(idx32, 32, 32, nplanes=2, icon_type=WBTOOL, pos_x=4, pos_y=48, stack_size=16384)
     with open("TolunnetPrefs.info", "wb") as f:
         f.write(icon_prefs)
     print("Generated TolunnetPrefs.info (Preferences Tool Icon at grid 4,48)")
     
     # 6. Generate Drawer Icon for LhA releases (tolunnet.info)
-    icon_drawer = create_amiga_diskobject(idx32, 32, 32, 3, icon_type=WBDRAWER)
+    icon_drawer = create_amiga_diskobject(idx32, 32, 32, nplanes=2, icon_type=WBDRAWER)
     with open("assets/tolunnet_drawer.info", "wb") as f:
         f.write(icon_drawer)
     print("Generated assets/tolunnet_drawer.info (Release Drawer Icon)")
     
     # 7. Generate high-resolution IFF-ILBM Logo for Amiga screens (64x64)
     img64 = img.resize((64, 64), Image.LANCZOS)
-    idx64 = quantize_image(img64, AMIGA_WB3_PALETTE)
-    export_iff_ilbm(idx64, 64, 64, 3, AMIGA_WB3_PALETTE, "assets/tolunnet_logo.iff")
+    idx64 = quantize_image(img64, AMIGA_WB3_4COLOR_PALETTE)
+    export_iff_ilbm(idx64, 64, 64, 2, AMIGA_WB3_4COLOR_PALETTE, "assets/tolunnet_logo.iff")
     print("Generated assets/tolunnet_logo.iff (64x64 IFF-ILBM for Amiga MultiView)")
 
 if __name__ == "__main__":
