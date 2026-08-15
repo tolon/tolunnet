@@ -115,7 +115,6 @@ $(PREFS_BIN): $(BUILD)/src/cmds/TolunnetPrefs.o $(BUILD)/src/common/prefs.o $(BU
 # Release Packaging Target (M7)
 PACKAGE_DIR = $(BUILD)/release/tolunnet
 LHA_ARCHIVE = $(BUILD)/tolunnet-1.1.0.lha
-LHA_ARCHIVE_COMPAT = $(BUILD)/tolunnet-1.0.0.lha
 
 package: all
 	@echo "--- Creating Release Directory ---"
@@ -149,7 +148,6 @@ package: all
 	cp assets/tolunnet_drawer.info $(BUILD)/release/tolunnet.info || true
 	@echo "--- Building LhA Archive ---"
 	python3 scripts/create_lha.py $(PACKAGE_DIR) $(LHA_ARCHIVE)
-	cp $(LHA_ARCHIVE) $(LHA_ARCHIVE_COMPAT)
 	@echo "Package successfully created: $(LHA_ARCHIVE)"
 
 clean:
