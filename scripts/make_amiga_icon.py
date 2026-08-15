@@ -79,23 +79,9 @@ def planar_encode(indices, w, h, nplanes):
         res += planes[p]
     return bytes(res)
 
-def create_amiga_diskobject(indices, w, h, nplanes, icon_type=WBTOOL, default_tool=None, tooltypes=None):
+def create_amiga_diskobject(indices, w, h, nplanes, icon_type=WBTOOL, default_tool=None, tooltypes=None, pos_x=None, pos_y=None, stack_size=16384):
     """
     Construct a standard Commodore AmigaOS DiskObject (.info file).
-    Structure:
-      UWORD Magic = 0xE310
-      UWORD Version = 1
-      struct Gadget (44 bytes)
-      UBYTE Type
-      UBYTE Pad
-      APTR DefaultTool
-      APTR ToolTypes
-      LONG CurrentX, CurrentY
-      APTR DrawerData
-      APTR ToolWindow
-      LONG StackSize
-      struct Image normal (20 bytes + bitplane data)
-      struct Image selected (optional)
     """
     row_words = (w + 15) // 16
     plane_size_words = row_words * h
@@ -129,12 +115,14 @@ def create_amiga_diskobject(indices, w, h, nplanes, icon_type=WBTOOL, default_to
     
     # DiskObject fields
     has_drawer = 1 if (icon_type in (WBDISK, WBDRAWER)) else 0
+    cx = pos_x if pos_x is not None else -2147483648
+    cy = pos_y if pos_y is not None else -2147483648
     buf += struct.pack(">BB", icon_type, 0) # do_Type, pad
     buf += struct.pack(">I", 1 if default_tool else 0) # do_DefaultTool present flag
     buf += struct.pack(">I", 1 if tooltypes else 0)    # do_ToolTypes present flag
-    buf += struct.pack(">ii", -2147483648, -2147483648) # do_CurrentX, do_CurrentY (NO_ICON_POSITION)
+    buf += struct.pack(">ii", cx, cy) # do_CurrentX, do_CurrentY
     buf += struct.pack(">II", has_drawer, 0) # do_DrawerData, do_ToolWindow
-    buf += struct.pack(">I", 8192)  # do_StackSize = 8 KB
+    buf += struct.pack(">I", stack_size)  # do_StackSize = 16 KB
     
     # struct DrawerData (56 bytes) for WBDISK and WBDRAWER
     if has_drawer:
@@ -271,11 +259,11 @@ def main():
         f.write(icon_disk)
     print("Generated Disk.info (Floppy Volume Icon)")
     
-    # 5. Generate TolunnetPrefs.info (Workbench Preferences Tool Icon)
-    icon_prefs = create_amiga_diskobject(idx32, 32, 32, 3, icon_type=WBTOOL)
+    # 5. Generate TolunnetPrefs.info (Workbench Preferences Tool Icon, positioned in Prefs grid)
+    icon_prefs = create_amiga_diskobject(idx32, 32, 32, 3, icon_type=WBTOOL, pos_x=4, pos_y=48, stack_size=16384)
     with open("TolunnetPrefs.info", "wb") as f:
         f.write(icon_prefs)
-    print("Generated TolunnetPrefs.info (Preferences Tool Icon)")
+    print("Generated TolunnetPrefs.info (Preferences Tool Icon at grid 4,48)")
     
     # 6. Generate Drawer Icon for LhA releases (tolunnet.info)
     icon_drawer = create_amiga_diskobject(idx32, 32, 32, 3, icon_type=WBDRAWER)

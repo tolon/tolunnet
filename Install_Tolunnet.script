@@ -48,38 +48,38 @@
 
 (copylib
   (source "C/tolunnet")
-  (dest "SYS:C/tolunnet")
+  (dest "SYS:C")
   (confirm)
 )
 
 (copylib
   (source "C/TolunnetPing")
-  (dest "SYS:C/TolunnetPing")
+  (dest "SYS:C")
   (confirm)
 )
 
 (copylib
   (source "C/TolunnetGet")
-  (dest "SYS:C/TolunnetGet")
+  (dest "SYS:C")
   (confirm)
 )
 
 (copylib
   (source "C/TolunnetStatus")
-  (dest "SYS:C/TolunnetStatus")
+  (dest "SYS:C")
   (confirm)
 )
 
 (copyfiles
   (source "TolunnetPrefs")
-  (dest "SYS:Prefs/TolunnetPrefs")
+  (dest "SYS:Prefs")
   (all)
   (confirm)
 )
 
 (copyfiles
   (source "TolunnetPrefs.info")
-  (dest "SYS:Prefs/TolunnetPrefs.info")
+  (dest "SYS:Prefs")
   (all)
   (confirm)
 )
