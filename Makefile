@@ -10,7 +10,7 @@ STRIP       = $(CROSS)strip
 # Automatic or overridable NDK include directory (TNET-017)
 NDK_INC    ?= $(shell if [ -d "$$(dirname $$(which $(CC) 2>/dev/null))/../m68k-amigaos/ndk-include" ]; then echo "-I$$(dirname $$(which $(CC)))/../m68k-amigaos/ndk-include"; fi)
 
-CFLAGS      = -O2 -fomit-frame-pointer -m68020 -msoft-float -noixemul -Wall -Wextra \
+CFLAGS      = -O2 -fomit-frame-pointer -m68000 -msoft-float -noixemul -Wall -Wextra \
               -Ilwipopts -Iinclude -Ivendor/lwip/src/include -Isrc \
               $(NDK_INC) -std=c11
 LDFLAGS     = -noixemul -msoft-float
