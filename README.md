@@ -23,11 +23,11 @@ Classic AmigaOS has lacked a modern, actively maintained, fully open-source TCP/
 - **Zero-Allocation Exec IPC:** Fast message-passing between client applications and the network daemon with zero per-packet allocation overhead.
 - **SANA-II Rev 7 Network Driver Interface:** Standard register trampolines (`A0/A1/D0`) with persistent BufferManagement and multi-request DMA/IO read pump.
 - **Hardware-Seeded Entropy:** Cryptographically secure PRNG pool seeded from `GetSysTime` (microseconds), network MAC address, and memory pool allocations before core stack initialization.
-- **Pure Integer Architecture (`-msoft-float`):** Runs seamlessly on standard 68EC020/68020/68030 processors without requiring an FPU coprocessor.
+- **Universal 68k Architecture (`-m68000 -msoft-float`):** Runs seamlessly on all Motorola 68k processors (68000, 68010, 68020, 68030, 68040, 68060) without requiring an FPU coprocessor or triggering CPU instruction exceptions.
 - **Standard CLI Network Suite:** Includes `ping` (with true bidirectional RTT timing), `ifconfig`, `netstat`, `wget`, and `curl` in `SYS:C/`.
 - **Unified Text Configuration:** Single source of truth in `DEVS:tolunnet.config` (`KEY=VALUE` format) with `ENVARC:` persistent mirroring.
 - **Native GadTools GUI Panel:** `SYS:Prefs/TolunnetPrefs` allows live configuration of network devices, units, DHCP vs Static IP, live ping tests, and persistent saving with zero external MUI dependencies.
-- **Floppy-Optimized Packaging:** Release ADF disk image takes only **548 KB**, easily fitting standard 880 KB DD floppy disks with >330 KB free.
+- **Floppy-Optimized Packaging:** Release ADF disk image (`build/tolunnet-install.adf`) takes only **551 KB**, easily fitting standard 880 KB DD floppy disks with >328 KB free.
 
 ---
 
