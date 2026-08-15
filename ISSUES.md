@@ -53,7 +53,7 @@
 | **TNET-051** | Low | Compat | inet_addr dotted-quad single format constraint | **RESOLVED** | Implemented standard BSD 1-4 part decimal/octal/hex parser |
 | **TNET-052** | Low | Optimization | Dead RawDoFmt cleanup in `prefs.c` | **RESOLVED** | Removed unused buffer and format call |
 | **TNET-053** | Low | Tooling | Authentic SFD table generator synchronization | **RESOLVED** | Implemented `scripts/gen_lvo_table.py` parsing `bsdsocket_lib.sfd` |
-| **TNET-055** | Low | Compat | `sin_len` initialization on recvfrom | **RESOLVED** | Initialized `from->sin_len = sizeof(struct sockaddr_in)` |
-| **TNET-056** | Blocker | GUI | TolunnetPrefs GadTools font pointer type crash (#8000000B) | **RESOLVED** | Set `ng_TextAttr = NULL` to safely use default Screen font in GadTools |
-| **TNET-057** | Major | Packaging | Installer subdrawer nesting & icon positioning | **RESOLVED** | Corrected Installer `dest` to `SYS:Prefs` and snapped `TolunnetPrefs.info` to grid (4,48) |
+| **TNET-056** | Blocker | GUI | TolunnetPrefs GadTools font pointer & library base crash (#8000000B) | **RESOLVED** | Bound real `topaz.font/8` (`FPF_ROMFONT`), universal `-m68000`, and clean GadToolsBase management |
+| **TNET-057** | Major | Packaging | Installer subdrawer nesting & directory clash | **RESOLVED** | Added AmigaDOS force purge `Delete SYS:Prefs/TolunnetPrefs ALL FORCE QUIET` and `(copylib ... (infos))` |
+| **TNET-058** | Major | GUI | Workbench 3.0 4-color Depth=2 icon visibility | **RESOLVED** | Standardized all `.info` icons to authentic 4-color (Depth=2, PlanePick=0x3) format with `NO_ICON_POSITION` |
 

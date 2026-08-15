@@ -1,6 +1,6 @@
 # tolunnet — Project Status & Milestones
 
-**Target Architecture:** AmigaOS 3.0+ (Motorola 68020+ / 68EC020, `-msoft-float`, No FPU required)  
+**Target Architecture:** AmigaOS 3.0+ (Motorola 68000–68060, `-m68000 -msoft-float`, No FPU required)  
 **API Specification:** 100% Roadshow SDK 1.8 & AmiTCP V4 Standard API  
 
 ---
@@ -16,8 +16,8 @@
 | **M4** | DNS Resolver & CLI Ping | ✅ **BUILT & TESTED** (Dynamic DNS resolver, UDP echo round-trip with ms timing) | Verified via internal stack loop |
 | **M5** | TCP Stream & `wget`/`curl` | ✅ **BUILT & TESTED** (HTTP 1.0 client, 1024-byte bounded buffers, URL parsing) | Verified via TCP state engine |
 | **M6** | Roadshow / Miami DX Suite | ✅ **BUILT & TESTED** (`SocketBaseTagList` -294, `getservby*`, `getproto*`, `Inet_*`, `Dup2Socket`) | Validated against Roadshow SFD |
-| **M7** | Release Packaging | ✅ **BUILT & TESTED** (Candidate `tolunnet-1.1.0.lha` 514 KB, `tolunnet-release.adf` 551 KB) | Verified via `xdftool` |
-| **M8** | Workbench Preferences GUI | ✅ **BUILT & TESTED** (`TolunnetPrefs` 3D beveled native GadTools GUI with hardware, IP, host, live controls & snapped icon) | Verified on Workbench 3.0 |
+| **M7** | Release Packaging | ✅ **BUILT & TESTED** (Candidate `tolunnet-1.1.0.lha` 521 KB, `tolunnet.adf` 552 KB) | Verified via `xdftool` |
+| **M8** | Workbench Preferences GUI | ✅ **BUILT & TESTED** (`TolunnetPrefs` 3D beveled native GadTools GUI with hardware, IP, host, live controls & 4-color Depth=2 icon) | **VERIFIED ON LIVE WORKBENCH 3.0 SCREEN** |
 
 ---
 
