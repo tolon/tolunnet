@@ -1,7 +1,30 @@
 ; tolunnet — Official AmigaOS Installation Script
 ; Compatible with Commodore Installer 43.x / AmigaOS 3.0+
+;
+; 2026-09-05: grammar fixes merged from the Install_Tolunnet-fixed review:
+;  - (set) defaults for the static-address variables so (cat) never sees an
+;    unset variable, and (set @app-name)/(@default-dest) which (startup)/(exit)
+;    expect.
+;  - the static-address prompts moved into (procedure P_ASK_STATIC): the old
+;    block passed THREE (set) forms to one (if), but (if) takes a condition,
+;    a then-part and one optional else-part only — strict Installer builds
+;    (e.g. CaffeineOS) reject the extra argument.
 
 (transcript "T:tolunnet_install.log")
+
+(set @app-name "tolunnet")
+(set @default-dest "SYS:")
+
+; safe defaults (overwritten if the user chooses Static below)
+(set #static-ip "192.168.1.100")
+(set #static-nm "255.255.255.0")
+(set #static-gw "192.168.1.1")
+
+(procedure P_ASK_STATIC
+  (set #static-ip (askstring (prompt "Enter Static IP address:") (help "Enter your Amiga IP address, e.g. 192.168.1.100") (default #static-ip)))
+  (set #static-nm (askstring (prompt "Enter Subnet Mask:") (help "Enter your subnet mask, e.g. 255.255.255.0") (default #static-nm)))
+  (set #static-gw (askstring (prompt "Enter Default Gateway:") (help "Enter router/gateway IP address, e.g. 192.168.1.1") (default #static-gw)))
+)
 
 (welcome)
 
@@ -40,11 +63,7 @@
   )
 )
 
-(if (= #ip-mode 1)
-  (set #static-ip (askstring (prompt "Enter Static IP address:") (help "Enter your Amiga IP address, e.g. 192.168.1.100") (default "192.168.1.100")))
-  (set #static-nm (askstring (prompt "Enter Subnet Mask:") (help "Enter your subnet mask, e.g. 255.255.255.0") (default "255.255.255.0")))
-  (set #static-gw (askstring (prompt "Enter Default Gateway:") (help "Enter router/gateway IP address, e.g. 192.168.1.1") (default "192.168.1.1")))
-)
+(if (= #ip-mode 1) (P_ASK_STATIC))
 
 (message "Installing tolunnet system binaries to SYS:C/ and SYS:Prefs/ ...")
 
