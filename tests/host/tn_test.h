@@ -123,6 +123,15 @@ static const char *tn_test_current_todo_reason = "";
         } \
     } while (0)
 
+#define TN_ASSERT_FALSE(cond) \
+    do { \
+        if (cond) { \
+            printf("#   FAIL %s:%d: %s is true (expected false)\n", __FILE__, __LINE__, #cond); \
+            tn_test_current_failed = 1; \
+            return; \
+        } \
+    } while (0)
+
 #define TN_TEST_PLAN() \
     do { printf("1..%d\n", tn_test_count); } while (0)
 

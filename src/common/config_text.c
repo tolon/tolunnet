@@ -107,6 +107,8 @@ void tn_config_parse_line(TnPrefs *prefs, const char *key, const char *val)
     } else if (tn_str_equal_nocase(key, "PRIORITY")) {
         LONG p = 5;
         if (tn_str_to_long(val, &p) && p >= -128 && p <= 127) prefs->priority = p;
+    } else if (tn_str_equal_nocase(key, "VERSION")) {
+        /* Config format version recognised */
     }
 }
 
@@ -184,6 +186,7 @@ int tn_config_format(const TnPrefs *prefs, char *buf, int buf_size)
     struct tn_cfg_out o = { buf, buf_size, 0, 0 };
 
     tn_cfg_put(&o, "# tolunnet configuration file\n");
+    tn_cfg_put(&o, "VERSION=1\n");
     tn_cfg_put_kv_str(&o, "DEVICE=", prefs->device);
     tn_cfg_put_kv_int(&o, "UNIT=", prefs->unit);
     tn_cfg_put(&o, "DHCP=");

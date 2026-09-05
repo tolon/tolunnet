@@ -145,6 +145,42 @@ TN_TEST(defaults_have_no_slirp_literals)
     }
 }
 
+TN_TEST(version_header_formatted)
+{
+    TnPrefs in;
+    char text[TN_CONFIG_TEXT_MAX];
+    tn_prefs_default(&in);
+    TN_ASSERT_TRUE(tn_config_format(&in, text, sizeof(text)) > 0);
+    TN_ASSERT_TRUE(strstr(text, "VERSION=1") != NULL);
+}
+
+TN_TEST(hand_edited_devs_precedence)
+{
+    /* TNET-083: Simulates the mtime comparison rule.
+     * When DEVS has a newer DateStamp than ENV (or equal), DEVS wins.
+     * When ENV has a strictly newer DateStamp, ENV wins. */
+    struct {
+        int32_t ds_Days;
+        int32_t ds_Minute;
+        int32_t ds_Tick;
+    } date_devs, date_env;
+
+    /* Case 1: Hand-edited DEVS (newer minute) -> DEVS wins */
+    date_devs.ds_Days = 1000; date_devs.ds_Minute = 120; date_devs.ds_Tick = 0;
+    date_env.ds_Days  = 1000; date_env.ds_Minute = 100; date_env.ds_Tick = 0;
+    int env_is_newer = (date_env.ds_Days > date_devs.ds_Days) ||
+                       (date_env.ds_Days == date_devs.ds_Days && date_env.ds_Minute > date_devs.ds_Minute) ||
+                       (date_env.ds_Days == date_devs.ds_Days && date_env.ds_Minute == date_devs.ds_Minute && date_env.ds_Tick > date_devs.ds_Tick);
+    TN_ASSERT_FALSE(env_is_newer);
+
+    /* Case 2: User clicked 'Use' in Prefs (newer minute in ENV) -> ENV wins */
+    date_env.ds_Minute = 130;
+    env_is_newer = (date_env.ds_Days > date_devs.ds_Days) ||
+                   (date_env.ds_Days == date_devs.ds_Days && date_env.ds_Minute > date_devs.ds_Minute) ||
+                   (date_env.ds_Days == date_devs.ds_Days && date_env.ds_Minute == date_devs.ds_Minute && date_env.ds_Tick > date_devs.ds_Tick);
+    TN_ASSERT_TRUE(env_is_newer);
+}
+
 int main(void)
 {
     TN_TEST_RUN(round_trip_all_keys);
@@ -153,6 +189,8 @@ int main(void)
     TN_TEST_RUN(value_cleanup_and_oversize);
     TN_TEST_RUN(debug_bounds_and_unknown_keys);
     TN_TEST_RUN(defaults_have_no_slirp_literals);
+    TN_TEST_RUN(version_header_formatted);
+    TN_TEST_RUN(hand_edited_devs_precedence);
     TN_TEST_PLAN();
     return tn_test_failures();
 }

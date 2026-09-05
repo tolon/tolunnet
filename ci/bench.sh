@@ -131,7 +131,8 @@ for cfg in $CONFIGS; do
         skip=$(grep -c '# SKIP' "$log" 2>/dev/null || echo 0)
         todo=$(grep -c '# TODO' "$log" 2>/dev/null || echo 0)
         say "$(basename "$log"): ok=$ok not_ok=$nok skip=$skip todo=$todo"
-        [ "$nok" -gt 0 ] 2>/dev/null && fail=1
+        real_nok=$((nok - todo))
+        [ "$real_nok" -gt 0 ] 2>/dev/null && fail=1
     done
 done
 

@@ -26,6 +26,7 @@
 #include <proto/gadtools.h>
 #include <proto/graphics.h>
 #include <proto/dos.h>
+#include <proto/icon.h>
 
 #include <intuition/intuition.h>
 #include <intuition/gadgetclass.h>
@@ -36,8 +37,14 @@
 #include <dos/dostags.h>
 #include <exec/execbase.h>
 #include <devices/timer.h>
+#include <workbench/startup.h>
+#include <workbench/workbench.h>
 
-struct Library *GadToolsBase = NULL;
+struct IntuitionBase *IntuitionBase = NULL;
+struct GfxBase       *GfxBase       = NULL;
+struct Library       *GadToolsBase  = NULL;
+struct Library       *IconBase      = NULL;
+struct DosLibrary    *DOSBase       = NULL;
 
 /* Gadget IDs */
 #define GID_DEVICE      1
@@ -353,17 +360,79 @@ int main(int argc, char *argv[])
     UWORD code;
     BOOL running = TRUE;
     TnPrefs prefs;
-    (void)argc; (void)argv;
+    CONST_STRPTR pubscreen_name = NULL;
+
+    DOSBase = (struct DosLibrary *)OpenLibrary((CONST_STRPTR)"dos.library", 36);
+    if (!DOSBase) return 20;
+
+    IntuitionBase = (struct IntuitionBase *)OpenLibrary((CONST_STRPTR)"intuition.library", 36);
+    if (!IntuitionBase) {
+        CloseLibrary((struct Library *)DOSBase);
+        return 20;
+    }
+
+    GfxBase = (struct GfxBase *)OpenLibrary((CONST_STRPTR)"graphics.library", 36);
+    if (!GfxBase) {
+        CloseLibrary((struct Library *)IntuitionBase);
+        CloseLibrary((struct Library *)DOSBase);
+        return 20;
+    }
 
     GadToolsBase = OpenLibrary((CONST_STRPTR)"gadtools.library", 36);
     if (!GadToolsBase) {
+        CloseLibrary((struct Library *)GfxBase);
+        CloseLibrary((struct Library *)IntuitionBase);
+        CloseLibrary((struct Library *)DOSBase);
         return 20;
+    }
+
+    IconBase = OpenLibrary((CONST_STRPTR)"icon.library", 36);
+
+    /* TNET-072: WBStartup and ToolTypes handling */
+    if (IconBase != NULL) {
+        struct DiskObject *dobj = NULL;
+        BPTR old_dir = (BPTR)0;
+
+        if (argc == 0 && argv != NULL) {
+            struct WBStartup *wbmsg = (struct WBStartup *)argv;
+            if (wbmsg->sm_NumArgs > 0 && wbmsg->sm_ArgList != NULL) {
+                old_dir = CurrentDir(wbmsg->sm_ArgList[0].wa_Lock);
+                dobj = GetDiskObject(wbmsg->sm_ArgList[0].wa_Name);
+            }
+        } else {
+            dobj = GetDiskObject((CONST_STRPTR)"PROGDIR:TolunnetPrefs");
+        }
+
+        if (dobj != NULL) {
+            if (dobj->do_ToolTypes != NULL) {
+                STRPTR tt;
+                if ((tt = (STRPTR)FindToolType((CONST_STRPTR *)dobj->do_ToolTypes, (CONST_STRPTR)"PUBSCREEN")) != NULL) {
+                    pubscreen_name = (CONST_STRPTR)tt;
+                }
+                if ((tt = (STRPTR)FindToolType((CONST_STRPTR *)dobj->do_ToolTypes, (CONST_STRPTR)"TOOLPRI")) != NULL) {
+                    LONG pri = 0;
+                    if (StrToLong((CONST_STRPTR)tt, &pri)) {
+                        SetTaskPri(FindTask(NULL), (BYTE)pri);
+                    }
+                }
+            }
+            FreeDiskObject(dobj);
+        }
+
+        if (old_dir != (BPTR)0) {
+            CurrentDir(old_dir);
+        }
     }
 
     /* Load persistent preferences */
     tn_prefs_load(&prefs);
 
-    scr = LockPubScreen(NULL);
+    if (pubscreen_name != NULL) {
+        scr = LockPubScreen(pubscreen_name);
+    }
+    if (!scr) {
+        scr = LockPubScreen(NULL);
+    }
     if (!scr) goto cleanup;
 
     compute_layout(&lo, scr);
@@ -712,7 +781,11 @@ cleanup:
     if (vi) FreeVisualInfo(vi);
     if (scr) UnlockPubScreen(NULL, scr);
 
+    if (IconBase) CloseLibrary(IconBase);
     if (GadToolsBase) CloseLibrary(GadToolsBase);
+    if (GfxBase) CloseLibrary((struct Library *)GfxBase);
+    if (IntuitionBase) CloseLibrary((struct Library *)IntuitionBase);
+    if (DOSBase) CloseLibrary((struct Library *)DOSBase);
 
     return 0;
 }
