@@ -8,6 +8,8 @@
 
 #include "../../include/ipc.h"
 #include "../common/log.h"
+#include "../common/inet_parse.h"
+#include "../common/sbtc_dispatch.h"
 
 #include <proto/exec.h>
 #include <proto/dos.h>
@@ -518,72 +520,11 @@ STRPTR tn_lvo_inet_ntoa(in_addr_t ip, TnSocketBase *base)
     return (STRPTR)base->inet_ntoa_buf;
 }
 
-/* -180: inet_addr(cp) (TNET-019 & TNET-051) */
+/* -180: inet_addr(cp) (TNET-019 & TNET-051; pure parser in src/common/inet_parse.c) */
 in_addr_t tn_lvo_inet_addr(CONST_STRPTR cp, TnSocketBase *base)
 {
-    ULONG val[4];
-    const char *p = (const char *)cp;
-    int parts = 0;
     (void)base;
-
-    if (cp == NULL || *cp == '\0') return (in_addr_t)INADDR_NONE;
-
-    while (*p && parts < 4) {
-        ULONG num = 0;
-        int base_radix = 10;
-        int digits = 0;
-
-        if (*p == '0') {
-            if (*(p + 1) == 'x' || *(p + 1) == 'X') {
-                base_radix = 16;
-                p += 2;
-            } else {
-                base_radix = 8;
-                p++;
-                digits++;
-            }
-        }
-
-        while (*p) {
-            int d = -1;
-            if (*p >= '0' && *p <= '9') d = *p - '0';
-            else if (base_radix == 16 && *p >= 'a' && *p <= 'f') d = *p - 'a' + 10;
-            else if (base_radix == 16 && *p >= 'A' && *p <= 'F') d = *p - 'A' + 10;
-
-            if (d < 0 || d >= base_radix) break;
-            num = num * base_radix + d;
-            digits++;
-            p++;
-        }
-
-        if (digits == 0) return (in_addr_t)INADDR_NONE;
-        val[parts++] = num;
-
-        if (*p == '.') {
-            p++;
-            if (*p == '\0') return (in_addr_t)INADDR_NONE;
-        } else if (*p != '\0') {
-            return (in_addr_t)INADDR_NONE;
-        }
-    }
-
-    if (*p != '\0') return (in_addr_t)INADDR_NONE;
-
-    switch (parts) {
-    case 1:
-        return (in_addr_t)val[0];
-    case 2:
-        if (val[0] > 0xFF || val[1] > 0xFFFFFF) return (in_addr_t)INADDR_NONE;
-        return (in_addr_t)((val[0] << 24) | (val[1] & 0xFFFFFF));
-    case 3:
-        if (val[0] > 0xFF || val[1] > 0xFF || val[2] > 0xFFFF) return (in_addr_t)INADDR_NONE;
-        return (in_addr_t)((val[0] << 24) | ((val[1] & 0xFF) << 16) | (val[2] & 0xFFFF));
-    case 4:
-        if (val[0] > 0xFF || val[1] > 0xFF || val[2] > 0xFF || val[3] > 0xFF) return (in_addr_t)INADDR_NONE;
-        return (in_addr_t)((val[0] << 24) | ((val[1] & 0xFF) << 16) | ((val[2] & 0xFF) << 8) | (val[3] & 0xFF));
-    default:
-        return (in_addr_t)INADDR_NONE;
-    }
+    return (in_addr_t)tn_inet_addr_parse((const char *)cp);
 }
 
 /* -186: Inet_LnaOf(in) (COMPAT-3) */
@@ -854,129 +795,79 @@ in_addr_t tn_lvo_gethostid(TnSocketBase *base)
     return (in_addr_t)0x0A00020FUL; /* 10.0.2.15 */
 }
 
-/* -294: SocketBaseTagList(tags) (COMPAT-1) */
+/* -294: SocketBaseTagList(tags) (COMPAT-1 / TNET-036; per-tag logic in
+ * src/common/sbtc_dispatch.c — host-tested by test_sbtc.c) */
 LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
 {
     struct TagItem *tstate = tags;
     struct TagItem *tag;
     LONG count = 0;
 
+    /* The portable dispatcher's code values must match the SDK header */
+    _Static_assert(TN_SBTC_BREAKMASK == SBTC_BREAKMASK, "SBTC code drift");
+    _Static_assert(TN_SBTC_SIGIOMASK == SBTC_SIGIOMASK, "SBTC code drift");
+    _Static_assert(TN_SBTC_ERRNOLONGPTR == SBTC_ERRNOLONGPTR, "SBTC code drift");
+    _Static_assert(TN_SBTC_HERRNOLONGPTR == SBTC_HERRNOLONGPTR, "SBTC code drift");
+    _Static_assert(TN_SBTC_DTABLESIZE == SBTC_DTABLESIZE, "SBTC code drift");
+    _Static_assert(TN_SBTC_RELEASESTRPTR == SBTC_RELEASESTRPTR, "SBTC code drift");
+    _Static_assert(TN_SBTC_HAVE_DNS_API == SBTC_HAVE_DNS_API, "SBTC code drift");
+    _Static_assert(TN_SBTC_HAVE_STATUS_API == SBTC_HAVE_STATUS_API, "SBTC code drift");
+
     if (base == NULL || tags == NULL) return 0;
 
     while ((tag = NextTagItem(&tstate)) != NULL) {
-        ULONG raw_tag = tag->ti_Tag;
-        ULONG code    = SBTM_CODE(raw_tag);
-        BOOL  is_set  = (raw_tag & SBTF_SET) != 0;
-        BOOL  is_ref  = (raw_tag & SBTF_REF) != 0;
-        ULONG data    = tag->ti_Data;
+        TnSbtcState st;
+        TnSbtcResult r;
 
-        switch (code) {
-        case SBTC_BREAKMASK:
-            if (is_set) base->sig_int = is_ref ? *(ULONG *)data : data;
-            else if (is_ref && data) *(ULONG *)data = base->sig_int;
-            else tag->ti_Data = base->sig_int;
-            break;
+        st.sig_int     = base->sig_int;
+        st.sig_io      = base->sig_io;
+        st.sig_urg     = base->sig_urg;
+        st.errno_val   = base->task_errno;
+        st.herrno_val  = base->task_herrno;
+        st.dtablesize  = TN_MAX_FDS_PER_TASK;
+        st.have_bits   = TN_SBTC_HAVE_DNS_API_BIT | TN_SBTC_HAVE_LOCAL_DB_API_BIT |
+                         TN_SBTC_HAVE_ADDR_CONV_API_BIT;
+        st.release_str = (uint32_t)(uintptr_t)"tolunnet 1.1.0 (bsdsocket 4.1)";
 
-        case SBTC_SIGIOMASK:
-            if (is_set) base->sig_io = is_ref ? *(ULONG *)data : data;
-            else if (is_ref && data) *(ULONG *)data = base->sig_io;
-            else tag->ti_Data = base->sig_io;
-            break;
+        if (!tn_sbtc_dispatch_tag((uint32_t)tag->ti_Tag, (uint32_t)tag->ti_Data, &st, &r)) {
+            count++; /* count unknown tags only (TNET-036) */
+            continue;
+        }
 
-        case SBTC_SIGURGMASK:
-            if (is_set) base->sig_urg = is_ref ? *(ULONG *)data : data;
-            else if (is_ref && data) *(ULONG *)data = base->sig_urg;
-            else tag->ti_Data = base->sig_urg;
-            break;
-
-        case SBTC_ERRNO:
-            if (is_set) {
-                LONG e = is_ref ? *(LONG *)data : (LONG)data;
-                tn_set_errno_val(base, e);
-            } else if (is_ref && data) {
-                *(LONG *)data = base->task_errno;
+        /* The dispatcher is pure; apply its op (pointer accesses happen here,
+         * on the Amiga, where ti_Data really is a 32-bit pointer). */
+        switch (r.op) {
+        case TN_SBTC_OP_GET:
+            if (r.is_ref && tag->ti_Data != 0) {
+                *(ULONG *)(uintptr_t)tag->ti_Data = r.value;
             } else {
-                tag->ti_Data = (ULONG)base->task_errno;
+                tag->ti_Data = r.value;
             }
             break;
-
-        case SBTC_HERRNO:
-            if (is_set) {
-                LONG he = is_ref ? *(LONG *)data : (LONG)data;
-                tn_set_herrno_val(base, he);
-            } else if (is_ref && data) {
-                *(LONG *)data = base->task_herrno;
-            } else {
-                tag->ti_Data = (ULONG)base->task_herrno;
-            }
+        case TN_SBTC_OP_SET_SIGINT:
+            base->sig_int = (r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value;
             break;
-
-        case SBTC_DTABLESIZE:
-            if (!is_set) {
-                if (is_ref && data) *(LONG *)data = TN_MAX_FDS_PER_TASK;
-                else tag->ti_Data = TN_MAX_FDS_PER_TASK;
-            }
+        case TN_SBTC_OP_SET_SIGIO:
+            base->sig_io = (r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value;
             break;
-
-        case SBTC_ERRNOBYTEPTR:
-            if (is_set) {
-                base->errno_ptr = (LONG *)data;
-                base->errno_width = 1;
-            }
+        case TN_SBTC_OP_SET_SIGURG:
+            base->sig_urg = (r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value;
             break;
-
-        case SBTC_ERRNOWORDPTR:
-            if (is_set) {
-                base->errno_ptr = (LONG *)data;
-                base->errno_width = 2;
-            }
+        case TN_SBTC_OP_SET_ERRNO:
+            tn_set_errno_val(base, (LONG)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value));
             break;
-
-        case SBTC_ERRNOLONGPTR:
-            if (is_set) {
-                base->errno_ptr = (LONG *)data;
-                base->errno_width = 4;
-            }
+        case TN_SBTC_OP_SET_HERRNO:
+            tn_set_herrno_val(base, (LONG)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value));
             break;
-
-        case SBTC_HERRNOLONGPTR:
-            if (is_set) {
-                base->herrno_ptr = (LONG *)data;
-            }
+        case TN_SBTC_OP_SET_ERRNO_PTR:
+            base->errno_ptr   = (LONG *)(uintptr_t)r.value;
+            base->errno_width = (UBYTE)r.errno_ptr_width;
             break;
-
-        case SBTC_RELEASESTRPTR:
-            if (!is_set) {
-                static const char release_str[] = "tolunnet 1.1.0 (bsdsocket 4.1)";
-                if (is_ref && data) *(CONST_STRPTR *)data = release_str;
-                else tag->ti_Data = (ULONG)release_str;
-            }
+        case TN_SBTC_OP_SET_HERRNO_PTR:
+            base->herrno_ptr = (LONG *)(uintptr_t)r.value;
             break;
-
-        /* Capability queries (Tier 2 honesty per TOLUNNET-COMPAT §1.6) */
-        case SBTC_HAVE_DNS_API:
-        case SBTC_HAVE_LOCAL_DATABASE_API:
-        case SBTC_HAVE_ADDRESS_CONVERSION_API:
-            if (!is_set) {
-                if (is_ref && data) *(LONG *)data = 1;
-                else tag->ti_Data = 1;
-            }
-            break;
-
-        case SBTC_HAVE_ROUTING_API:
-        case SBTC_HAVE_INTERFACE_API:
-        case SBTC_HAVE_MONITORING_API:
-        case SBTC_CAN_SHARE_LIBRARY_BASES:
-        case SBTC_HAVE_STATUS_API:
-            if (!is_set) {
-                if (is_ref && data) *(LONG *)data = 0;
-                else tag->ti_Data = 0;
-            }
-            break;
-
         default:
-            count++; /* Increment count ONLY for unhandled/unrecognized tags */
-            break;
+            break; /* handled no-ops (e.g. SET on GET-only tags) */
         }
     }
     return count;

@@ -41,3 +41,22 @@ Status: `open` · `answered` · `superseded`.
 
 1. **[active] Hardware Validation:** Live network testing on real Amiga 1200 / Amiga 500 + PiStorm / A2065 ethernet controllers.
 2. **[active] Application Suite Gauntlet:** Validating AmiSSL 5.x, IBrowse 2.5.x, smbfs, and Aminet downloaders against the stack.
+
+---
+
+## Open Questions (Round 3)
+
+3. **[open] SFD vector count: 133 or 139?** `TOLUNNET-SCOPE-v4-full-api.md` §0 says the
+   SFD declares "133 public functions (LVO −30 … −828)". Parsing
+   `sfd/bsdsocket_lib.sfd` as shipped (==varargs twins share slots, ==reserve
+   slots counted) yields **139 slots, −30 … −858** (121 named functions +
+   18 reserved: 10 + 2 + 6). The C-side parser in
+   `tests/host/test_lvo_table.c` and the §D generator follow the SFD (139).
+   Please confirm the intended counting convention — if "133" was meant to
+   exclude the final `==reserve 6` plus one more slot, the §D table size
+   needs an explicit owner decision. Until answered, the SFD is normative.
+4. **[open] MuForce/Enforcer for the bench second pass (Round 3 §B.3):** neither tool
+   is present on this bench (searched `E:\amiga` and Downloads on
+   2026-09-05). Supply an ADF/LhA with MuForce + MuGuardianAngel (68020
+   config) or Enforcer + Wipeout and set `MUFORCE_ADF` in `ci/bench.sh` to
+   enable the memory-hit pass; it currently prints an explicit SKIP.

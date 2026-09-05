@@ -1,11 +1,28 @@
 /*
  * tolunnet — Persistent Preferences Engine (ENVARC: / ENV:)
+ *
+ * Host-tolerant (Round 3 §B.1): the text parse/format logic lives in
+ * config_text.c and is unit-tested with host gcc; on Amiga builds we use the
+ * real Exec types, on host builds minimal stdint typedefs with identical
+ * 32-bit layout.
  */
 
 #ifndef TOLUNNET_PREFS_H
 #define TOLUNNET_PREFS_H
 
+#if defined(__AMIGA__) || defined(__amigaos__) || defined(TN_AMIGA_BUILD)
 #include <exec/types.h>
+#else
+#include <stdint.h>
+#include <stddef.h>
+typedef uint32_t ULONG;
+typedef int32_t  LONG;
+typedef int      BOOL;
+#ifndef TRUE
+#define TRUE  1
+#define FALSE 0
+#endif
+#endif
 
 #define TN_CONFIG_FILE_DEVS  "DEVS:tolunnet.config"
 #define TN_PREFS_FILE_ENVARC "ENVARC:tolunnet.prefs"

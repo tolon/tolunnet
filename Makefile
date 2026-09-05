@@ -55,7 +55,12 @@ LWIP_CORE_SRCS = \
 LWIP_OBJS = $(patsubst %.c,$(BUILD)/%.o,$(LWIP_CORE_SRCS))
 
 # Common & SANA-II Objects
-COMMON_OBJS = $(BUILD)/src/common/log.o $(BUILD)/src/common/mem.o $(BUILD)/src/common/prefs.o $(BUILD)/src/task/timers.o
+# inet_parse/config_text/sbtc_dispatch/fdset_util are the pure, host-testable
+# units (Round 3 §B.1) shared by daemon, library and host tests.
+COMMON_OBJS = $(BUILD)/src/common/log.o $(BUILD)/src/common/mem.o $(BUILD)/src/common/prefs.o \
+              $(BUILD)/src/common/inet_parse.o $(BUILD)/src/common/config_text.o \
+              $(BUILD)/src/common/sbtc_dispatch.o $(BUILD)/src/common/fdset_util.o \
+              $(BUILD)/src/task/timers.o
 SANA2_OBJS  = $(BUILD)/src/sana2/sana2_netif.o $(BUILD)/src/sana2/sana2_stubs.o $(BUILD)/src/sana2/buffers.o
 LIB_OBJS    = $(BUILD)/src/lib/lib_init.o $(BUILD)/src/lib/lib_vectors.o $(BUILD)/src/lib/lib_stubs.o
 TASK_OBJS   = $(BUILD)/src/task/main.o
@@ -67,12 +72,39 @@ TEST_BIN     = $(BUILD)/TestSocket
 PING_BIN     = $(BUILD)/TolunnetPing
 GET_BIN      = $(BUILD)/TolunnetGet
 PREFS_BIN    = $(BUILD)/TolunnetPrefs
+CONF_BIN     = $(BUILD)/SocketConformance
 INSTALL_BIN  = $(BUILD)/Install_Tolunnet
 
 .PHONY: all clean test-host package
-all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN)
+all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(CONF_BIN)
 
-test-host:
+# --- Host unit tests (Round 3 §B.1) -----------------------------------------
+# Every tests/host/test_*.c runs under native gcc with sanitizers + Werror;
+# exit code is the number of failed tests (TAP output on stdout).
+HOSTCC      ?= cc
+HOST_CFLAGS  = -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -g \
+               -Itests/host -Isrc/common -Isrc
+HOST_UNITS   = src/common/inet_parse.c src/common/config_text.c \
+               src/common/sbtc_dispatch.c src/common/fdset_util.c
+HOST_TESTS   = $(wildcard tests/host/test_*.c)
+HOST_BINS    = $(patsubst tests/host/%.c,$(BUILD)/host/%,$(HOST_TESTS))
+
+test-host: $(HOST_BINS) python-checks
+	@set -e; fails=0; total=0; \
+	for t in $(HOST_BINS); do \
+	  total=$$((total+1)); \
+	  if ./$$t > $$t.tap 2>&1; then :; else fails=$$((fails+1)); fi; \
+	  echo "--- $$t"; cat $$t.tap; \
+	done; \
+	echo "host tests: $$total binaries, $$fails failed (TAP above; TODO rows do not fail)"; \
+	test $$fails -eq 0
+
+$(BUILD)/host/%: tests/host/%.c $(HOST_UNITS) tests/host/tn_test.h
+	@mkdir -p $(BUILD)/host
+	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_UNITS) -o $@
+
+.PHONY: python-checks
+python-checks:
 	python3 scripts/gen_lvo_table.py
 	python3 scripts/verify_icons.py
 
@@ -93,7 +125,7 @@ $(TOLUNNET_BIN): $(TASK_OBJS) $(LIB_OBJS) $(SANA2_OBJS) $(COMMON_OBJS) $(LWIP_OB
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetStatus Diagnostic Tool (M1/M2)
-$(STATUS_BIN): $(BUILD)/src/cmds/TolunnetStatus.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/log.o
+$(STATUS_BIN): $(BUILD)/src/cmds/TolunnetStatus.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/config_text.o $(BUILD)/src/common/log.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TestSocket Client Binary (M3)
@@ -109,7 +141,11 @@ $(GET_BIN): $(BUILD)/src/cmds/TolunnetGet.o $(BUILD)/src/common/log.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetPrefs Native Workbench GadTools GUI Panel
-$(PREFS_BIN): $(BUILD)/src/cmds/TolunnetPrefs.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/log.o
+$(PREFS_BIN): $(BUILD)/src/cmds/TolunnetPrefs.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/log.o $(BUILD)/src/common/config_text.o $(BUILD)/src/common/inet_parse.o $(BUILD)/src/common/sbtc_dispatch.o $(BUILD)/src/common/fdset_util.o
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+# Target: SocketConformance Amiga-side TAP binary (Round 3 §B.2)
+$(CONF_BIN): $(BUILD)/tests/amiga/SocketConformance.o $(BUILD)/src/common/log.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Release Packaging Target (M7)
@@ -151,4 +187,4 @@ package: all
 	@echo "Package successfully created: $(LHA_ARCHIVE)"
 
 clean:
-	rm -rf $(BUILD)/src $(BUILD)/release $(BUILD)/*.o $(BUILD)/*.lha $(BUILD)/tolunnet $(BUILD)/Tolunnet* $(BUILD)/TestSocket
+	rm -rf $(BUILD)

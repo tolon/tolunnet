@@ -16,6 +16,10 @@ vendor/lwip/**/*.o
 vendor/lwip/**/*.orig
 vendor/lwip/**/.git/
 
+# Python
+__pycache__/
+*.pyc
+
 # Editor / OS
 *~
 .*.swp

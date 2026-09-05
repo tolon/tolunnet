@@ -1,25 +1,36 @@
-# tolunet CI — master prompt §3.
+# tolunnet CI — Round 3 §B.1.
 #
-# Two jobs, run on every push and every branch (trigger: push with no branch
-# filter). Job 1 cross-compiles with amiga-gcc and uploads the artefact tree.
-# Job 2 runs the host-side unit tests natively.
+# Two jobs on every push (no branch filter) + manual dispatch:
+#   host  — native gcc unit tests (make test-host, TAP output, sanitizers)
+#   amiga — cross-compile with amiga-gcc, package, upload artefacts
 #
-# Container: sebastianbergmann/amiga-gcc (purpose-built Bebbo amiga-gcc image;
-# provides m68k-amigaos-gcc). The exact GCC version is recorded in STATUS.md on
-# the first green run. If this image is ever unavailable, fall back to the
-# AmigaPorts prebuilt (see QUESTIONS.md #9) — do not change flags.
+# Container: sebastianbergmann/amiga-gcc (Bebbo amiga-gcc). If the image is
+# ever unavailable, fall back to the AmigaPorts prebuilt (QUESTIONS.md) — do
+# not change the compiler flags.
 
 name: build
 
 on:
   push:
-    # Every branch, every push (no branches: filter = all).
   workflow_dispatch:
 
 jobs:
-  # --- Job 1: cross-compile for m68k AmigaOS -------------------------------
+  host:
+    name: host unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host toolchain
+        run: |
+          gcc --version | head -1
+          python3 --version
+
+      - name: Run host tests (TAP)
+        run: make test-host HOSTCC=gcc
+
   amiga:
-    name: amiga-gcc build
+    name: amiga-gcc build + package
     runs-on: ubuntu-latest
     container:
       image: sebastianbergmann/amiga-gcc:latest
@@ -31,33 +42,25 @@ jobs:
           which m68k-amigaos-gcc || { echo "m68k-amigaos-gcc not found in image"; exit 1; }
           m68k-amigaos-gcc --version | head -1
 
-      - name: Build
+      - name: Build binaries (incl. SocketConformance)
         run: make all
 
-      - name: Artefact listing
-        run: |
-          echo "=== build/ contents ==="
-          ls -l build || true
-          echo "=== file type ==="
-          file build/tolunet-hello || true
+      - name: Package LhA
+        run: make package
 
-      - name: Upload artefact tree
+      - name: Artefact listing
+        run: ls -l build build/release/tolunnet/C || true
+
+      - name: Upload LhA archive
         uses: actions/upload-artifact@v4
         with:
-          name: tolunet-amiga-build
-          path: build/
+          name: tolunnet-lha
+          path: build/*.lha
           if-no-files-found: error
 
-  # --- Job 2: host-side unit tests (native) --------------------------------
-  host:
-    name: host tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build & run host tests
-        # tests/host/ holds host-compilable logic (protocol encode/decode,
-        # socket table). M0: skeleton present, real tests arrive with M3/M4.
-        run: |
-          echo "tests/host: skeleton only in M0; nothing to run yet."
-          ls -R tests/host || true
+      - name: Upload release tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: tolunnet-release
+          path: build/release/
+          if-no-files-found: error

@@ -1,0 +1,28 @@
+;BEGIN tolunnet conformance bench (Round 3 B.3)
+; Staged into the bench HDF by ci/bench.sh. Two full start/conformance/stop
+; cycles prove the TNET-059/060 restart path; logs land on WORK: (host dir).
+
+Stack 32768
+
+If EXISTS WORK:
+  Delete >NIL: WORK:conformance.log QUIET
+  Delete >NIL: WORK:conformance2.log QUIET
+  Delete >NIL: WORK:bench-done QUIET
+
+  ; ---- cycle 1 ----------------------------------------------------------
+  Run >NIL: C:tolunnet
+  Wait 15
+  C:SocketConformance >WORK:conformance.log
+  ; SocketConformance signals the daemon to stop on exit (TNET-059 guard:
+  ; refuses while clients are open — the conformance suite closes them all)
+  Wait 4
+
+  ; ---- cycle 2: restart without reboot (TNET-059/060 proof) -------------
+  Run >NIL: C:tolunnet
+  Wait 15
+  C:SocketConformance >WORK:conformance2.log
+  Wait 4
+
+  Echo >WORK:bench-done "bench complete"
+EndIf
+;END tolunnet

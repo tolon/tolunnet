@@ -1,0 +1,15 @@
+;BEGIN tolunnet diagnostic boot
+Stack 32768
+If EXISTS WORK:
+  Delete >NIL: WORK:diag QUIET
+  Echo >WORK:diag "boot-ok"
+  Run >NIL: C:tolunnet
+  Wait 10
+  Echo >>WORK:diag "daemon-wait-done"
+  C:TolunnetStatus >>WORK:diag
+  Echo >>WORK:diag "status-rc-ok"
+  C:SocketConformance >>WORK:diag
+  Echo >>WORK:diag "conformance-done"
+  Echo >WORK:bench-done "diag complete"
+EndIf
+;END
