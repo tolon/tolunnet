@@ -17,10 +17,12 @@
 #include <exec/memory.h>
 #include <exec/execbase.h>
 #include <utility/tagitem.h>
+#include <devices/timer.h>
 #include <libraries/bsdsocket.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/errno.h>
+#include "../common/fdset_util.h"
 
 /* Helper to set errno respecting width */
 static inline void tn_set_errno_val(TnSocketBase *base, LONG err)
@@ -146,6 +148,8 @@ struct Library *tn_lib_open(struct Library *lib, ULONG version)
     base->sig_io       = 0;
     base->sig_urg      = 0;
     base->sig_int      = 0;
+    base->timer_port   = NULL;
+    base->timer_io     = NULL;
     base->inet_ntoa_buf[0] = '\0';
     base->hostname[0]  = '\0';
 
@@ -169,6 +173,19 @@ BPTR tn_lib_close(struct Library *lib)
     if (base != NULL) {
         /* Close all remaining open sockets for this task */
         tn_ipc_call(base, TN_IPC_CMD_CLOSE);
+
+        if (base->timer_io != NULL) {
+            struct timerequest *tm = (struct timerequest *)base->timer_io;
+            if (tm->tr_node.io_Device != NULL) {
+                CloseDevice((struct IORequest *)tm);
+            }
+            FreeVec(tm);
+            base->timer_io = NULL;
+        }
+        if (base->timer_port != NULL) {
+            DeleteMsgPort(base->timer_port);
+            base->timer_port = NULL;
+        }
 
         if (base->reply_port != NULL) {
             DeleteMsgPort(base->reply_port);
@@ -375,57 +392,163 @@ LONG tn_lvo_closesocket(LONG sock, TnSocketBase *base)
     return tn_ipc_call(base, TN_IPC_CMD_CLOSESOCKET);
 }
 
+static BOOL tn_ensure_timer(TnSocketBase *base)
+{
+    if (base == NULL) return FALSE;
+    if (base->timer_port == NULL) {
+        base->timer_port = CreateMsgPort();
+        if (base->timer_port == NULL) return FALSE;
+    }
+    if (base->timer_io == NULL) {
+        struct timerequest *tm = (struct timerequest *)AllocVec(sizeof(struct timerequest), MEMF_CLEAR | MEMF_PUBLIC);
+        if (tm == NULL) return FALSE;
+        tm->tr_node.io_Message.mn_ReplyPort = base->timer_port;
+        tm->tr_node.io_Message.mn_Length = sizeof(struct timerequest);
+        tm->tr_node.io_Message.mn_Node.ln_Type = NT_MESSAGE;
+        if (OpenDevice((CONST_STRPTR)TIMERNAME, UNIT_MICROHZ, (struct IORequest *)tm, 0UL) != 0) {
+            FreeVec(tm);
+            return FALSE;
+        }
+        base->timer_io = (APTR)tm;
+    }
+    return TRUE;
+}
+
 /* -126: WaitSelect(nfds, read_fds, write_fds, except_fds, timeout, signals) */
 LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
                        fd_set *except_fds, struct timeval *timeout,
                        ULONG *signals, TnSocketBase *base)
 {
     LONG res;
-    ULONG timeout_ms = 0;
+    ULONG orig_r = 0, orig_w = 0, orig_e = 0;
     ULONG sig_mask = 0;
     ULONG received_sigs = 0;
+    BOOL has_timeout = (timeout != NULL);
+    BOOL zero_timeout = (has_timeout && timeout->tv_secs == 0 && timeout->tv_micro == 0);
+    int chk;
 
     if (base == NULL) return -1;
 
+    chk = tn_fdset_check_nfds((int)nfds);
+    if (chk != 0) {
+        tn_set_errno_val(base, chk);
+        return -1;
+    }
+
+    if (read_fds)   orig_r = read_fds->fds_bits[0];
+    if (write_fds)  orig_w = write_fds->fds_bits[0];
+    if (except_fds) orig_e = except_fds->fds_bits[0];
+
+    if (signals != NULL) {
+        sig_mask = *signals;
+    }
+
+    /* Check AmigaOS user signals already pending */
+    if (sig_mask != 0) {
+        received_sigs = SetSignal(0, 0) & sig_mask;
+        if (received_sigs != 0) {
+            SetSignal(0, received_sigs);
+            *signals = received_sigs;
+            return 0;
+        }
+    }
+
+    /* Initial immediate check */
     base->ipc_msg.args[0] = nfds;
     base->ipc_msg.ptrs[0] = (APTR)read_fds;
     base->ipc_msg.ptrs[1] = (APTR)write_fds;
     base->ipc_msg.ptrs[2] = (APTR)except_fds;
     base->ipc_msg.ptrs[3] = (APTR)timeout;
 
-    if (timeout != NULL) {
-        timeout_ms = timeout->tv_secs * 1000UL + timeout->tv_micro / 1000UL;
+    res = tn_ipc_call(base, TN_IPC_CMD_WAITSELECT);
+    if (res > 0) {
+        if (signals != NULL) *signals = 0;
+        return res;
     }
 
-    if (signals != NULL) {
-        sig_mask = *signals;
+    if (zero_timeout) {
+        if (signals != NULL) *signals = 0;
+        return 0;
     }
 
-    /* WaitSelect loop with responsive signal checking and sleep (TNET-041) */
-    ULONG elapsed_ms = 0;
+    /* High precision wait using timer.device when:
+     * 1) nfds == 0 (pure select-based sleep) OR
+     * 2) sig_io != 0 (SIGIO delivery active)
+     */
+    if ((nfds == 0 || base->sig_io != 0) && tn_ensure_timer(base)) {
+        struct timerequest *tm = (struct timerequest *)base->timer_io;
+        ULONG tm_sig = 1UL << base->timer_port->mp_SigBit;
+        ULONG wait_mask = sig_mask;
+        BOOL timer_active = FALSE;
+
+        if (base->sig_io != 0 && nfds > 0) {
+            wait_mask |= base->sig_io;
+        }
+
+        if (has_timeout) {
+            tm->tr_node.io_Command = TR_ADDREQUEST;
+            tm->tr_time.tv_secs    = timeout->tv_secs;
+            tm->tr_time.tv_micro   = timeout->tv_micro;
+            SendIO((struct IORequest *)tm);
+            timer_active = TRUE;
+            wait_mask |= tm_sig;
+        }
+
+        ULONG fired = Wait(wait_mask);
+
+        if (timer_active) {
+            if (!CheckIO((struct IORequest *)tm)) {
+                AbortIO((struct IORequest *)tm);
+            }
+            WaitIO((struct IORequest *)tm);
+        }
+
+        if (sig_mask != 0 && (fired & sig_mask)) {
+            received_sigs = fired & sig_mask;
+            SetSignal(0, received_sigs);
+            *signals = received_sigs;
+            return 0;
+        }
+
+        /* Socket activity or timeout: re-poll readiness with original masks */
+        if (read_fds)   read_fds->fds_bits[0] = orig_r;
+        if (write_fds)  write_fds->fds_bits[0] = orig_w;
+        if (except_fds) except_fds->fds_bits[0] = orig_e;
+
+        res = tn_ipc_call(base, TN_IPC_CMD_WAITSELECT);
+        if (signals != NULL) *signals = 0;
+        return (res >= 0) ? res : 0;
+    }
+
+    /* Fallback: 20 ms poll loop when sig_io == 0 and nfds > 0 (TNET-041 / TNET-067) */
+    uint32_t timeout_ms = has_timeout ? tn_waitselect_timeout_ms(timeout->tv_secs, timeout->tv_micro) : 0xFFFFFFFFu;
+    uint32_t elapsed_ms = 0;
+
     while (1) {
+        if (read_fds)   read_fds->fds_bits[0] = orig_r;
+        if (write_fds)  write_fds->fds_bits[0] = orig_w;
+        if (except_fds) except_fds->fds_bits[0] = orig_e;
+
         res = tn_ipc_call(base, TN_IPC_CMD_WAITSELECT);
         if (res > 0) {
             if (signals != NULL) *signals = 0;
             return res;
         }
 
-        /* Check AmigaOS user/break signals */
         if (sig_mask != 0) {
             received_sigs = SetSignal(0, 0) & sig_mask;
             if (received_sigs != 0) {
                 SetSignal(0, received_sigs);
-                if (signals != NULL) *signals = received_sigs;
+                *signals = received_sigs;
                 return 0;
             }
         }
 
-        if (timeout != NULL && elapsed_ms >= timeout_ms) {
+        if (has_timeout && elapsed_ms >= timeout_ms) {
             if (signals != NULL) *signals = 0;
             return 0;
         }
 
-        /* 1 tick (20 ms) slice to prevent CPU spinning and remain signal-responsive */
         Delay(1);
         elapsed_ms += 20;
     }

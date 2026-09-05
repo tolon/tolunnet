@@ -15,6 +15,7 @@
 #include <proto/dos.h>
 #include <exec/types.h>
 #include <exec/ports.h>
+#include <devices/timer.h>
 #include <libraries/bsdsocket.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -271,6 +272,46 @@ static LONG call_socketbasetaglist(struct TagItem *tags)
     __asm__ __volatile__ ("jsr -294(%%a6)" : "=r"(d0)
         : "r"(a6), "r"(a0) : "d1", "a1", "memory");
     return d0;
+}
+
+static LONG call_sendto(LONG s, const void *b, LONG l, LONG fl, struct sockaddr *to, socklen_t tolen)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = s;
+    register const void *a0 __asm__("a0") = b;
+    register LONG d1 __asm__("d1") = l;
+    register LONG d2 __asm__("d2") = fl;
+    register struct sockaddr *a1 __asm__("a1") = to;
+    register LONG d3 __asm__("d3") = (LONG)tolen;
+    __asm__ __volatile__ ("jsr -60(%%a6)" : "+r"(d0)
+        : "r"(a6), "r"(d0), "r"(a0), "r"(d1), "r"(d2), "r"(a1), "r"(d3)
+        : "d1", "d2", "d3", "a0", "a1", "memory");
+    return d0;
+}
+
+static LONG call_waitselect(LONG nfds, APTR rfds, APTR wfds, APTR efds, struct timeval *to, ULONG *sigs)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = nfds;
+    register APTR a0 __asm__("a0") = rfds;
+    register APTR a1 __asm__("a1") = wfds;
+    register APTR a2 __asm__("a2") = efds;
+    register struct timeval *a3 __asm__("a3") = to;
+    register ULONG *d1 __asm__("d1") = sigs;
+    __asm__ __volatile__ ("jsr -126(%%a6)" : "+r"(d0), "+r"(d1)
+        : "r"(a6), "r"(d0), "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(d1)
+        : "a0", "a1", "a2", "a3", "memory");
+    return d0;
+}
+
+static VOID call_setsocketsignals(ULONG int_mask, ULONG io_mask, ULONG urg_mask)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register ULONG d0 __asm__("d0") = int_mask;
+    register ULONG d1 __asm__("d1") = io_mask;
+    register ULONG d2 __asm__("d2") = urg_mask;
+    __asm__ __volatile__ ("jsr -132(%%a6)"
+        : : "r"(a6), "r"(d0), "r"(d1), "r"(d2) : "d0", "d1", "d2", "a0", "a1", "memory");
 }
 
 /* ------------------------------------------------------------- test cases */
@@ -574,12 +615,123 @@ static void tc_dup2(void)
 
 static void tc_waitselect_timeout(void)
 {
-    TAP_SKIP("tc_waitselect_timeout", "200ms timing check runs with the §C11 WaitSelect rework (timer precision)");
+    struct timeval tv;
+    struct MsgPort *tm_port;
+    struct timerequest *tm_io;
+    struct timeval t1, t2;
+    LONG diff_ms;
+    LONG res;
+
+    tm_port = CreateMsgPort();
+    if (!tm_port) { TAP_NOTOK("tc_waitselect_timeout", "CreateMsgPort failed"); return; }
+    tm_io = (struct timerequest *)AllocVec(sizeof(struct timerequest), MEMF_CLEAR | MEMF_PUBLIC);
+    if (!tm_io) { DeleteMsgPort(tm_port); TAP_NOTOK("tc_waitselect_timeout", "AllocVec failed"); return; }
+    tm_io->tr_node.io_Message.mn_ReplyPort = tm_port;
+    if (OpenDevice((CONST_STRPTR)TIMERNAME, UNIT_MICROHZ, (struct IORequest *)tm_io, 0) != 0) {
+        FreeVec(tm_io);
+        DeleteMsgPort(tm_port);
+        TAP_NOTOK("tc_waitselect_timeout", "OpenDevice failed");
+        return;
+    }
+
+    /* Measure 200 ms timeout in WaitSelect */
+    tv.tv_secs = 0;
+    tv.tv_micro = 200000; /* 200 ms */
+
+    tm_io->tr_node.io_Command = TR_GETSYSTIME;
+    DoIO((struct IORequest *)tm_io);
+    t1 = tm_io->tr_time;
+
+    res = call_waitselect(0, NULL, NULL, NULL, &tv, NULL);
+
+    tm_io->tr_node.io_Command = TR_GETSYSTIME;
+    DoIO((struct IORequest *)tm_io);
+    t2 = tm_io->tr_time;
+
+    {
+        LONG sec_diff = (LONG)t2.tv_secs - (LONG)t1.tv_secs;
+        LONG us_diff  = (LONG)t2.tv_micro - (LONG)t1.tv_micro;
+        if (us_diff < 0) {
+            sec_diff--;
+            us_diff += 1000000L;
+        }
+        diff_ms = sec_diff * 1000L + us_diff / 1000L;
+    }
+
+    CloseDevice((struct IORequest *)tm_io);
+    FreeVec(tm_io);
+    DeleteMsgPort(tm_port);
+
+    /* 200 ms timeout should take between 150 ms and 400 ms */
+    if (res == 0 && diff_ms >= 150 && diff_ms <= 400) {
+        TAP_OK("tc_waitselect_timeout");
+    } else {
+        tapf("# diff_ms = %ld, res = %ld\n", diff_ms, res);
+        TAP_NOTOK("tc_waitselect_timeout", "timeout precision outside 150-400ms window");
+    }
 }
 
 static void tc_sigio(void)
 {
-    TAP_SKIP("tc_sigio", "SIGIO delivery not implemented (TNET-067, §C11)");
+    BYTE sig_bit;
+    ULONG sig_mask;
+    LONG s1, s2;
+    struct sockaddr_in sin;
+    char msg[] = "ping";
+    int i;
+
+    sig_bit = AllocSignal(-1);
+    if (sig_bit < 0) {
+        TAP_NOTOK("tc_sigio", "AllocSignal failed");
+        return;
+    }
+    sig_mask = 1UL << sig_bit;
+
+    /* Set SIGIO mask for this SocketBase */
+    call_setsocketsignals(0, sig_mask, 0);
+
+    s1 = call_socket(AF_INET, SOCK_DGRAM, 0);
+    s2 = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (s1 < 0 || s2 < 0) {
+        if (s1 >= 0) call_closesocket(s1);
+        if (s2 >= 0) call_closesocket(s2);
+        FreeSignal(sig_bit);
+        TAP_NOTOK("tc_sigio", "socket creation failed");
+        return;
+    }
+
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len         = sizeof(sin);
+    sin.sin_family      = AF_INET;
+    sin.sin_port        = htons(54323);
+    sin.sin_addr.s_addr = htonl(0x7F000001UL);
+
+    if (call_bind(s1, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+        call_closesocket(s1);
+        call_closesocket(s2);
+        FreeSignal(sig_bit);
+        TAP_NOTOK("tc_sigio", "bind failed");
+        return;
+    }
+
+    /* Clear any pending signal */
+    SetSignal(0, sig_mask);
+
+    /* Send packet to s1 via loopback */
+    call_sendto(s2, msg, sizeof(msg), 0, (struct sockaddr *)&sin, sizeof(sin));
+
+    /* Check if signal was received */
+    if (SetSignal(0, 0) & sig_mask) {
+        TAP_OK("tc_sigio");
+    } else {
+        TAP_NOTOK("tc_sigio", "SIGIO signal not delivered on packet arrival");
+    }
+
+    /* Clear signal mask */
+    call_setsocketsignals(0, 0, 0);
+    call_closesocket(s1);
+    call_closesocket(s2);
+    FreeSignal(sig_bit);
 }
 
 static void tc_icmp_raw(void)

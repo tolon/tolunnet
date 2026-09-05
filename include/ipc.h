@@ -129,6 +129,8 @@ typedef struct TnSocketBase {
     struct Task    *owner_task;             /* Task owning this base instance */
     struct MsgPort *reply_port;             /* Dedicated private reply port */
     struct MsgPort *tolunnet_port;           /* Reference to tolunnet.port */
+    struct MsgPort *timer_port;             /* Per-task timer port for WaitSelect */
+    APTR            timer_io;               /* Per-task struct timerequest * for WaitSelect */
     TnIpcMsg        ipc_msg;                /* Embedded zero-allocation IPC message */
     LONG           *errno_ptr;              /* Pointer to client task's errno variable */
     LONG            task_errno;             /* Fallback task errno if no ptr set */

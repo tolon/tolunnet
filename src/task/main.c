@@ -17,6 +17,7 @@
 #include "../common/prefs.h"
 #include "timers.h"
 #include "../../include/ipc.h"
+#include "../common/fdset_util.h"
 
 #include <proto/exec.h>
 #include <proto/dos.h>
@@ -147,6 +148,17 @@ static void tn_apply_live_config(void)
     }
 }
 
+/* Deliver SIGIO to socket owner task if mask is set (TNET-067) */
+static void tn_signal_socket(TnSocketSlot *slot)
+{
+    if (slot != NULL && slot->in_use && slot->owner_task != NULL && slot->owner_base != NULL) {
+        ULONG sig_io = slot->owner_base->sig_io;
+        if (sig_io != 0) {
+            Signal(slot->owner_task, sig_io);
+        }
+    }
+}
+
 /* Callback from lwIP when a UDP datagram arrives on a listening PCB */
 static void tn_udp_recv_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p,
                            const ip_addr_t *addr, u16_t port)
@@ -193,6 +205,7 @@ static void tn_udp_recv_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p,
         slot->rx_tail       = pkt;
     }
     slot->rx_count++;
+    tn_signal_socket(slot);
 }
 
 /* Callback from lwIP when a RAW packet arrives */
@@ -244,6 +257,7 @@ static u8_t tn_raw_recv_cb(void *arg, struct raw_pcb *pcb, struct pbuf *p,
         slot->rx_tail       = pkt;
     }
     slot->rx_count++;
+    tn_signal_socket(slot);
 
     /* Return 0: do not eat packet so stack/ICMP echo replier can also process it */
     return 0;
@@ -271,6 +285,7 @@ static err_t tn_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_
     /* Peer closed connection (FIN received) */
     if (p == NULL) {
         slot->tcp_state = TN_TCP_STATE_PEER_CLOSED;
+        tn_signal_socket(slot);
         return ERR_OK;
     }
 
@@ -297,6 +312,7 @@ static err_t tn_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_
         slot->rx_head       = pkt;
         slot->rx_tail       = pkt;
     }
+    tn_signal_socket(slot);
 
     return ERR_OK;
 }
@@ -314,6 +330,7 @@ static err_t tn_tcp_connected_cb(void *arg, struct tcp_pcb *pcb, err_t err)
     if (!slot->in_use) return ERR_OK;
 
     slot->tcp_state = TN_TCP_STATE_ESTABLISHED;
+    tn_signal_socket(slot);
 
     if (slot->pending_connect_msg != NULL) {
         slot->pending_connect_msg->result = 0;
@@ -337,6 +354,7 @@ static void tn_tcp_err_cb(void *arg, err_t err)
     slot = &g_sockets[slot_idx];
     slot->tcp_state = TN_TCP_STATE_ERROR;
     slot->tcp_pcb   = NULL; /* lwIP frees PCB before calling err_cb */
+    tn_signal_socket(slot);
 
     if (slot->pending_connect_msg != NULL) {
         slot->pending_connect_msg->result = -1;
@@ -452,6 +470,7 @@ static err_t tn_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
         }
         slot->accept_tail = entry;
         slot->accept_count++;
+        tn_signal_socket(slot);
     }
 
     return ERR_OK;
@@ -1823,13 +1842,20 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             ULONG out_r = 0, out_w = 0, out_e = 0;
             LONG ready_cnt = 0;
 
-            if (base == NULL || nfds < 0) {
+            int chk;
+
+            if (base == NULL) {
                 imsg->result = -1;
                 imsg->err_no = EINVAL;
                 return TRUE;
             }
 
-            if (nfds > TN_MAX_FDS_PER_TASK) nfds = TN_MAX_FDS_PER_TASK;
+            chk = tn_fdset_check_nfds((int)nfds);
+            if (chk != 0) {
+                imsg->result = -1;
+                imsg->err_no = chk;
+                return TRUE;
+            }
 
             for (i = 0; i < nfds; i++) {
                 slot_idx = base->fd_map[i];
