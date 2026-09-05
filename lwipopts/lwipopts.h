@@ -34,10 +34,19 @@
 #define LWIP_IPV6            0
 #define LWIP_IPV4            1
 
-/* --- Memory tuning --- */
+/* --- Memory tuning (TNET-069) --- */
 #define MEM_ALIGNMENT        4
-#define MEM_SIZE             (64 * 1024)
-#define PBUF_POOL_SIZE       24
+#define MEM_SIZE             (96 * 1024)
+#define PBUF_POOL_SIZE       32
+#define MEMP_NUM_TCP_PCB     32
+#define MEMP_NUM_TCP_PCB_LISTEN 8
+#define MEMP_NUM_UDP_PCB     16
+#define MEMP_NUM_RAW_PCB     8
+#define MEMP_NUM_TCP_SEG     64
+#define DNS_MAX_SERVERS      2
+#define DNS_TABLE_SIZE       8
+#define LWIP_DHCP_PROVIDE_DNS_SERVERS 2
+#define SO_REUSE             1
 
 /* TNET-085 (v3 contract §3.5): two pad bytes BEFORE the ethernet header so
  * the IP header (eth header + 14) lands on a 4-byte boundary. Without this,
@@ -52,7 +61,6 @@
 #define TCP_WND              (8 * TCP_MSS)
 #define TCP_SND_BUF          (8 * TCP_MSS)
 #define TCP_SND_QUEUELEN     (2 * (TCP_SND_BUF) / (TCP_MSS))
-#define MEMP_NUM_TCP_SEG     TCP_SND_QUEUELEN
 #define TCP_LISTEN_BACKLOG   1
 #define TCP_DEFAULT_LISTEN_BACKLOG 8
 

@@ -56,6 +56,12 @@ typedef struct TnRxPacket {
     u16_t              src_port;
 } TnRxPacket;
 
+/* Queued pending connection on listening TCP sockets */
+typedef struct TnAcceptEntry {
+    struct TnAcceptEntry *next;
+    struct tcp_pcb       *new_pcb;
+} TnAcceptEntry;
+
 #define TN_MAX_RX_QUEUE_PER_SOCKET 32
 
 /* Internal socket descriptor representation */
@@ -78,7 +84,11 @@ typedef struct TnSocketSlot {
     struct tcp_pcb *tcp_pcb;
     TnRxPacket     *rx_head;
     TnRxPacket     *rx_tail;
+    TnAcceptEntry  *accept_head;
+    TnAcceptEntry  *accept_tail;
+    ULONG           accept_count;
     TnIpcMsg       *pending_connect_msg;
+    TnIpcMsg       *pending_accept_msg;
 } TnSocketSlot;
 
 static TnSana2If     g_s2if;
@@ -279,6 +289,117 @@ static void tn_tcp_err_cb(void *arg, err_t err)
     }
 }
 
+/* Callback from lwIP when a listening TCP socket receives an incoming connection */
+static err_t tn_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
+{
+    int slot_idx = (int)(intptr_t)arg;
+    TnSocketSlot *slot;
+
+    if (slot_idx < 0 || slot_idx >= TN_MAX_GLOBAL_SOCKETS) return ERR_VAL;
+    slot = &g_sockets[slot_idx];
+    if (!slot->in_use || slot->tcp_state != TN_TCP_STATE_LISTENING) return ERR_VAL;
+    if (err != ERR_OK || newpcb == NULL) return ERR_VAL;
+
+    /* If a client task is synchronously blocked waiting inside accept() */
+    if (slot->pending_accept_msg != NULL) {
+        TnIpcMsg *imsg = slot->pending_accept_msg;
+        TnSocketBase *base = (TnSocketBase *)imsg->socket_base;
+        struct sockaddr_in *addr = (struct sockaddr_in *)imsg->ptrs[0];
+        socklen_t *addrlen = (socklen_t *)imsg->ptrs[1];
+        int client_fd = -1;
+        int new_slot_idx = -1;
+        int i;
+
+        slot->pending_accept_msg = NULL;
+
+        if (base != NULL) {
+            for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
+                if (base->fd_map[i] == -1) { client_fd = i; break; }
+            }
+        }
+        for (i = 0; i < TN_MAX_GLOBAL_SOCKETS; i++) {
+            if (!g_sockets[i].in_use) { new_slot_idx = i; break; }
+        }
+
+        if (client_fd < 0 || new_slot_idx < 0) {
+            tcp_abort(newpcb);
+            imsg->result = -1;
+            imsg->err_no = (client_fd < 0) ? EMFILE : ENFILE;
+            ReplyMsg((struct Message *)imsg);
+            return ERR_ABRT;
+        }
+
+        g_sockets[new_slot_idx].in_use              = TRUE;
+        g_sockets[new_slot_idx].owner_base          = base;
+        g_sockets[new_slot_idx].owner_task          = imsg->client_task;
+        g_sockets[new_slot_idx].domain              = 2 /* AF_INET */;
+        g_sockets[new_slot_idx].type                = 1 /* SOCK_STREAM */;
+        g_sockets[new_slot_idx].protocol            = 0;
+        g_sockets[new_slot_idx].tcp_state           = TN_TCP_STATE_ESTABLISHED;
+        g_sockets[new_slot_idx].is_nonblocking      = FALSE;
+        g_sockets[new_slot_idx].opt_reuseaddr       = FALSE;
+        g_sockets[new_slot_idx].opt_keepalive       = FALSE;
+        g_sockets[new_slot_idx].opt_nodelay         = FALSE;
+        g_sockets[new_slot_idx].last_error          = 0;
+        g_sockets[new_slot_idx].rx_count            = 0;
+        g_sockets[new_slot_idx].ref_count           = 1;
+        g_sockets[new_slot_idx].udp_pcb             = NULL;
+        g_sockets[new_slot_idx].tcp_pcb             = newpcb;
+        g_sockets[new_slot_idx].rx_head             = NULL;
+        g_sockets[new_slot_idx].rx_tail             = NULL;
+        g_sockets[new_slot_idx].accept_head         = NULL;
+        g_sockets[new_slot_idx].accept_tail         = NULL;
+        g_sockets[new_slot_idx].accept_count        = 0;
+        g_sockets[new_slot_idx].pending_connect_msg = NULL;
+        g_sockets[new_slot_idx].pending_accept_msg  = NULL;
+
+        base->fd_map[client_fd] = new_slot_idx;
+
+        tcp_arg(newpcb, (void *)(intptr_t)new_slot_idx);
+        tcp_recv(newpcb, tn_tcp_recv_cb);
+        tcp_err(newpcb, tn_tcp_err_cb);
+
+        if (addr != NULL && addrlen != NULL && *addrlen >= sizeof(struct sockaddr_in)) {
+            addr->sin_len    = sizeof(struct sockaddr_in);
+            addr->sin_family = 2 /* AF_INET */;
+            addr->sin_port   = lwip_htons(newpcb->remote_port);
+            addr->sin_addr.s_addr = ip_2_ip4(&newpcb->remote_ip)->addr;
+            *addrlen = sizeof(struct sockaddr_in);
+        }
+
+        imsg->result = client_fd;
+        imsg->err_no = 0;
+        ReplyMsg((struct Message *)imsg);
+        return ERR_OK;
+    }
+
+    /* Queue incoming connection into accept queue (bounded to 8) */
+    if (slot->accept_count >= 8) {
+        tcp_abort(newpcb);
+        return ERR_ABRT;
+    }
+
+    {
+        TnAcceptEntry *entry = (TnAcceptEntry *)AllocVec(sizeof(TnAcceptEntry), MEMF_PUBLIC | MEMF_CLEAR);
+        if (entry == NULL) {
+            tcp_abort(newpcb);
+            return ERR_ABRT;
+        }
+        entry->new_pcb = newpcb;
+        entry->next    = NULL;
+
+        if (slot->accept_tail != NULL) {
+            slot->accept_tail->next = entry;
+        } else {
+            slot->accept_head = entry;
+        }
+        slot->accept_tail = entry;
+        slot->accept_count++;
+    }
+
+    return ERR_OK;
+}
+
 static void ip_to_str(char *buf, const ip4_addr_t *addr)
 {
     ULONG ip = lwip_ntohl(addr->addr);
@@ -311,6 +432,7 @@ static void tn_free_socket_slot(int slot_idx)
         tcp_arg(g_sockets[slot_idx].tcp_pcb, NULL);
         tcp_recv(g_sockets[slot_idx].tcp_pcb, NULL);
         tcp_err(g_sockets[slot_idx].tcp_pcb, NULL);
+        tcp_accept(g_sockets[slot_idx].tcp_pcb, NULL);
         tcp_close(g_sockets[slot_idx].tcp_pcb);
         g_sockets[slot_idx].tcp_pcb = NULL;
     }
@@ -320,12 +442,37 @@ static void tn_free_socket_slot(int slot_idx)
         if (pkt->p != NULL) pbuf_free(pkt->p);
         FreeVec(pkt);
     }
+    while (g_sockets[slot_idx].accept_head != NULL) {
+        TnAcceptEntry *ent = g_sockets[slot_idx].accept_head;
+        g_sockets[slot_idx].accept_head = ent->next;
+        if (ent->new_pcb != NULL) {
+            tcp_abort(ent->new_pcb);
+        }
+        FreeVec(ent);
+    }
+    g_sockets[slot_idx].accept_tail  = NULL;
+    g_sockets[slot_idx].accept_count = 0;
+
+    if (g_sockets[slot_idx].pending_connect_msg != NULL) {
+        TnIpcMsg *cmsg = g_sockets[slot_idx].pending_connect_msg;
+        g_sockets[slot_idx].pending_connect_msg = NULL;
+        cmsg->result = -1;
+        cmsg->err_no = EBADF;
+        ReplyMsg((struct Message *)cmsg);
+    }
+    if (g_sockets[slot_idx].pending_accept_msg != NULL) {
+        TnIpcMsg *amsg = g_sockets[slot_idx].pending_accept_msg;
+        g_sockets[slot_idx].pending_accept_msg = NULL;
+        amsg->result = -1;
+        amsg->err_no = EBADF;
+        ReplyMsg((struct Message *)amsg);
+    }
+
     g_sockets[slot_idx].rx_tail             = NULL;
     g_sockets[slot_idx].rx_count            = 0;
     g_sockets[slot_idx].ref_count           = 0;
     g_sockets[slot_idx].in_use              = FALSE;
     g_sockets[slot_idx].owner_base          = NULL;
-    g_sockets[slot_idx].pending_connect_msg = NULL;
 }
 
 /*
@@ -388,6 +535,29 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 return TRUE;
             }
 
+            if (type == 1 /* SOCK_STREAM */) {
+                if (protocol != 0 && protocol != 6 /* IPPROTO_TCP */) {
+                    imsg->result = -1;
+                    imsg->err_no = EPROTONOSUPPORT;
+                    return TRUE;
+                }
+            } else if (type == 2 /* SOCK_DGRAM */) {
+                if (protocol != 0 && protocol != 17 /* IPPROTO_UDP */) {
+                    imsg->result = -1;
+                    imsg->err_no = EPROTONOSUPPORT;
+                    return TRUE;
+                }
+            } else if (type == 3 /* SOCK_RAW */) {
+                /* SOCK_RAW will be implemented in C9 (TNET-070); until then refuse */
+                imsg->result = -1;
+                imsg->err_no = ESOCKTNOSUPPORT;
+                return TRUE;
+            } else {
+                imsg->result = -1;
+                imsg->err_no = ESOCKTNOSUPPORT;
+                return TRUE;
+            }
+
             /* Find free client fd */
             if (base != NULL) {
                 for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
@@ -426,11 +596,22 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             g_sockets[slot_idx].type                = type;
             g_sockets[slot_idx].protocol            = protocol;
             g_sockets[slot_idx].tcp_state           = TN_TCP_STATE_CLOSED;
+            g_sockets[slot_idx].is_nonblocking      = FALSE;
+            g_sockets[slot_idx].opt_reuseaddr       = FALSE;
+            g_sockets[slot_idx].opt_keepalive       = FALSE;
+            g_sockets[slot_idx].opt_nodelay         = FALSE;
+            g_sockets[slot_idx].last_error          = 0;
+            g_sockets[slot_idx].rx_count            = 0;
+            g_sockets[slot_idx].ref_count           = 1;
             g_sockets[slot_idx].udp_pcb             = NULL;
             g_sockets[slot_idx].tcp_pcb             = NULL;
             g_sockets[slot_idx].rx_head             = NULL;
             g_sockets[slot_idx].rx_tail             = NULL;
+            g_sockets[slot_idx].accept_head         = NULL;
+            g_sockets[slot_idx].accept_tail         = NULL;
+            g_sockets[slot_idx].accept_count        = 0;
             g_sockets[slot_idx].pending_connect_msg = NULL;
+            g_sockets[slot_idx].pending_accept_msg  = NULL;
 
             /* UDP socket */
             if (type == 2 /* SOCK_DGRAM */) {
@@ -464,6 +645,235 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             imsg->result = client_fd;
             imsg->err_no = 0;
             return TRUE;
+        }
+
+    case TN_IPC_CMD_BIND:
+        {
+            int client_fd = (int)imsg->args[0];
+            const struct sockaddr_in *sin = (const struct sockaddr_in *)imsg->ptrs[0];
+            socklen_t namelen = (socklen_t)imsg->args[1];
+            ip_addr_t bind_ip;
+            u16_t port;
+            err_t berr;
+
+            if (base == NULL || client_fd < 0 || client_fd >= TN_MAX_FDS_PER_TASK || sin == NULL) {
+                imsg->result = -1;
+                imsg->err_no = EBADF;
+                return TRUE;
+            }
+
+            if (namelen < (socklen_t)sizeof(struct sockaddr_in)) {
+                imsg->result = -1;
+                imsg->err_no = EINVAL;
+                return TRUE;
+            }
+
+            if (sin->sin_family != 2 /* AF_INET */) {
+                imsg->result = -1;
+                imsg->err_no = EAFNOSUPPORT;
+                return TRUE;
+            }
+
+            slot_idx = base->fd_map[client_fd];
+            if (slot_idx < 0 || slot_idx >= TN_MAX_GLOBAL_SOCKETS || !g_sockets[slot_idx].in_use) {
+                imsg->result = -1;
+                imsg->err_no = EBADF;
+                return TRUE;
+            }
+
+            ip_addr_set_ip4_u32(&bind_ip, sin->sin_addr.s_addr);
+            port = lwip_ntohs(sin->sin_port);
+
+            if (g_sockets[slot_idx].type == 1 /* TCP */) {
+                if (g_sockets[slot_idx].tcp_pcb == NULL) {
+                    imsg->result = -1;
+                    imsg->err_no = EBADF;
+                    return TRUE;
+                }
+                if (g_sockets[slot_idx].opt_reuseaddr) {
+                    ip_set_option(g_sockets[slot_idx].tcp_pcb, SOF_REUSEADDR);
+                }
+                berr = tcp_bind(g_sockets[slot_idx].tcp_pcb, &bind_ip, port);
+            } else if (g_sockets[slot_idx].type == 2 /* UDP */) {
+                if (g_sockets[slot_idx].udp_pcb == NULL) {
+                    imsg->result = -1;
+                    imsg->err_no = EBADF;
+                    return TRUE;
+                }
+                if (g_sockets[slot_idx].opt_reuseaddr) {
+                    ip_set_option(g_sockets[slot_idx].udp_pcb, SOF_REUSEADDR);
+                }
+                berr = udp_bind(g_sockets[slot_idx].udp_pcb, &bind_ip, port);
+            } else {
+                imsg->result = -1;
+                imsg->err_no = EOPNOTSUPP;
+                return TRUE;
+            }
+
+            if (berr != ERR_OK) {
+                imsg->result = -1;
+                imsg->err_no = (berr == ERR_USE) ? EADDRINUSE : EINVAL;
+                return TRUE;
+            }
+
+            imsg->result = 0;
+            imsg->err_no = 0;
+            return TRUE;
+        }
+
+    case TN_IPC_CMD_LISTEN:
+        {
+            int client_fd = (int)imsg->args[0];
+            LONG backlog = imsg->args[1];
+            struct tcp_pcb *lpcb;
+            u8_t bl;
+
+            if (base == NULL || client_fd < 0 || client_fd >= TN_MAX_FDS_PER_TASK) {
+                imsg->result = -1;
+                imsg->err_no = EBADF;
+                return TRUE;
+            }
+
+            slot_idx = base->fd_map[client_fd];
+            if (slot_idx < 0 || slot_idx >= TN_MAX_GLOBAL_SOCKETS || !g_sockets[slot_idx].in_use) {
+                imsg->result = -1;
+                imsg->err_no = EBADF;
+                return TRUE;
+            }
+
+            if (g_sockets[slot_idx].type != 1 /* TCP */ || g_sockets[slot_idx].tcp_pcb == NULL) {
+                imsg->result = -1;
+                imsg->err_no = EOPNOTSUPP;
+                return TRUE;
+            }
+
+            if (g_sockets[slot_idx].tcp_state == TN_TCP_STATE_LISTENING) {
+                imsg->result = 0;
+                imsg->err_no = 0;
+                return TRUE;
+            }
+
+            bl = (backlog <= 0) ? 1 : ((backlog > 8) ? 8 : (u8_t)backlog);
+            lpcb = tcp_listen_with_backlog(g_sockets[slot_idx].tcp_pcb, bl);
+            if (lpcb == NULL) {
+                imsg->result = -1;
+                imsg->err_no = ENOBUFS;
+                return TRUE;
+            }
+
+            g_sockets[slot_idx].tcp_pcb   = lpcb;
+            g_sockets[slot_idx].tcp_state = TN_TCP_STATE_LISTENING;
+            tcp_arg(lpcb, (void *)(intptr_t)slot_idx);
+            tcp_accept(lpcb, tn_tcp_accept_cb);
+
+            imsg->result = 0;
+            imsg->err_no = 0;
+            return TRUE;
+        }
+
+    case TN_IPC_CMD_ACCEPT:
+        {
+            int client_fd = (int)imsg->args[0];
+            struct sockaddr_in *addr = (struct sockaddr_in *)imsg->ptrs[0];
+            socklen_t *addrlen = (socklen_t *)imsg->ptrs[1];
+
+            if (base == NULL || client_fd < 0 || client_fd >= TN_MAX_FDS_PER_TASK) {
+                imsg->result = -1;
+                imsg->err_no = EBADF;
+                return TRUE;
+            }
+
+            slot_idx = base->fd_map[client_fd];
+            if (slot_idx < 0 || slot_idx >= TN_MAX_GLOBAL_SOCKETS || !g_sockets[slot_idx].in_use) {
+                imsg->result = -1;
+                imsg->err_no = EBADF;
+                return TRUE;
+            }
+
+            if (g_sockets[slot_idx].tcp_state != TN_TCP_STATE_LISTENING) {
+                imsg->result = -1;
+                imsg->err_no = EINVAL;
+                return TRUE;
+            }
+
+            if (g_sockets[slot_idx].accept_head != NULL) {
+                TnAcceptEntry *ent = g_sockets[slot_idx].accept_head;
+                int new_fd = -1;
+                int new_slot = -1;
+
+                g_sockets[slot_idx].accept_head = ent->next;
+                if (g_sockets[slot_idx].accept_head == NULL) {
+                    g_sockets[slot_idx].accept_tail = NULL;
+                }
+                g_sockets[slot_idx].accept_count--;
+
+                for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
+                    if (base->fd_map[i] == -1) { new_fd = i; break; }
+                }
+                for (i = 0; i < TN_MAX_GLOBAL_SOCKETS; i++) {
+                    if (!g_sockets[i].in_use) { new_slot = i; break; }
+                }
+
+                if (new_fd < 0 || new_slot < 0) {
+                    tcp_abort(ent->new_pcb);
+                    FreeVec(ent);
+                    imsg->result = -1;
+                    imsg->err_no = (new_fd < 0) ? EMFILE : ENFILE;
+                    return TRUE;
+                }
+
+                g_sockets[new_slot].in_use              = TRUE;
+                g_sockets[new_slot].owner_base          = base;
+                g_sockets[new_slot].owner_task          = imsg->client_task;
+                g_sockets[new_slot].domain              = 2 /* AF_INET */;
+                g_sockets[new_slot].type                = 1 /* SOCK_STREAM */;
+                g_sockets[new_slot].protocol            = 0;
+                g_sockets[new_slot].tcp_state           = TN_TCP_STATE_ESTABLISHED;
+                g_sockets[new_slot].is_nonblocking      = FALSE;
+                g_sockets[new_slot].opt_reuseaddr       = FALSE;
+                g_sockets[new_slot].opt_keepalive       = FALSE;
+                g_sockets[new_slot].opt_nodelay         = FALSE;
+                g_sockets[new_slot].last_error          = 0;
+                g_sockets[new_slot].rx_count            = 0;
+                g_sockets[new_slot].ref_count           = 1;
+                g_sockets[new_slot].tcp_pcb             = ent->new_pcb;
+                g_sockets[new_slot].udp_pcb             = NULL;
+                g_sockets[new_slot].rx_head             = NULL;
+                g_sockets[new_slot].rx_tail             = NULL;
+                g_sockets[new_slot].accept_head         = NULL;
+                g_sockets[new_slot].accept_tail         = NULL;
+                g_sockets[new_slot].accept_count        = 0;
+                g_sockets[new_slot].pending_connect_msg = NULL;
+                g_sockets[new_slot].pending_accept_msg  = NULL;
+
+                base->fd_map[new_fd] = new_slot;
+                tcp_arg(ent->new_pcb, (void *)(intptr_t)new_slot);
+                tcp_recv(ent->new_pcb, tn_tcp_recv_cb);
+                tcp_err(ent->new_pcb, tn_tcp_err_cb);
+
+                if (addr != NULL && addrlen != NULL && *addrlen >= sizeof(struct sockaddr_in)) {
+                    addr->sin_len    = sizeof(struct sockaddr_in);
+                    addr->sin_family = 2 /* AF_INET */;
+                    addr->sin_port   = lwip_htons(ent->new_pcb->remote_port);
+                    addr->sin_addr.s_addr = ip_2_ip4(&ent->new_pcb->remote_ip)->addr;
+                    *addrlen = sizeof(struct sockaddr_in);
+                }
+
+                FreeVec(ent);
+                imsg->result = new_fd;
+                imsg->err_no = 0;
+                return TRUE;
+            }
+
+            if (g_sockets[slot_idx].is_nonblocking) {
+                imsg->result = -1;
+                imsg->err_no = EWOULDBLOCK;
+                return TRUE;
+            }
+
+            /* Wait for incoming connection */
+            g_sockets[slot_idx].pending_accept_msg = imsg;
+            return FALSE;
         }
 
     case TN_IPC_CMD_CONNECT:
@@ -510,6 +920,14 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
 
                 /* Delayed reply: tn_tcp_connected_cb or tn_tcp_err_cb will call ReplyMsg */
                 return FALSE;
+            } else if (g_sockets[slot_idx].type == 2 /* SOCK_DGRAM */ && g_sockets[slot_idx].udp_pcb != NULL) {
+                ip_addr_t dst_ip;
+                u16_t dst_port = lwip_ntohs(sin->sin_port);
+                ip_addr_set_ip4_u32(&dst_ip, sin->sin_addr.s_addr);
+                udp_connect(g_sockets[slot_idx].udp_pcb, &dst_ip, dst_port);
+                imsg->result = 0;
+                imsg->err_no = 0;
+                return TRUE;
             }
 
             imsg->result = 0;
@@ -759,6 +1177,60 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             return TRUE;
         }
 
+    case TN_IPC_CMD_SHUTDOWN:
+        {
+            int client_fd = (int)imsg->args[0];
+            LONG how = imsg->args[1];
+            int shut_rx, shut_tx;
+            err_t serr;
+
+            if (base == NULL || client_fd < 0 || client_fd >= TN_MAX_FDS_PER_TASK) {
+                imsg->result = -1;
+                imsg->err_no = EBADF;
+                return TRUE;
+            }
+
+            slot_idx = base->fd_map[client_fd];
+            if (slot_idx < 0 || slot_idx >= TN_MAX_GLOBAL_SOCKETS || !g_sockets[slot_idx].in_use) {
+                imsg->result = -1;
+                imsg->err_no = EBADF;
+                return TRUE;
+            }
+
+            if (g_sockets[slot_idx].type != 1 /* TCP */ || g_sockets[slot_idx].tcp_pcb == NULL) {
+                imsg->result = -1;
+                imsg->err_no = ENOTCONN;
+                return TRUE;
+            }
+
+            shut_rx = (how == 0 || how == 2) ? 1 : 0;
+            shut_tx = (how == 1 || how == 2) ? 1 : 0;
+
+            if (g_sockets[slot_idx].tcp_state == TN_TCP_STATE_CLOSED) {
+                if (shut_tx) {
+                    g_sockets[slot_idx].tcp_state = TN_TCP_STATE_PEER_CLOSED;
+                }
+                imsg->result = 0;
+                imsg->err_no = 0;
+                return TRUE;
+            }
+
+            serr = tcp_shutdown(g_sockets[slot_idx].tcp_pcb, shut_rx, shut_tx);
+            if (serr != ERR_OK) {
+                imsg->result = -1;
+                imsg->err_no = ECONNRESET;
+                return TRUE;
+            }
+
+            if (shut_tx) {
+                g_sockets[slot_idx].tcp_state = TN_TCP_STATE_PEER_CLOSED;
+            }
+
+            imsg->result = 0;
+            imsg->err_no = 0;
+            return TRUE;
+        }
+
     case TN_IPC_CMD_GETHOSTBYNAME:
         {
             const char *hostname = (const char *)imsg->ptrs[0];
@@ -836,31 +1308,11 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 return TRUE;
             }
 
-            if (g_sockets[slot_idx].udp_pcb != NULL) {
-                udp_remove(g_sockets[slot_idx].udp_pcb);
-                g_sockets[slot_idx].udp_pcb = NULL;
-            }
-
-            if (g_sockets[slot_idx].tcp_pcb != NULL) {
-                tcp_arg(g_sockets[slot_idx].tcp_pcb, NULL);
-                tcp_recv(g_sockets[slot_idx].tcp_pcb, NULL);
-                tcp_err(g_sockets[slot_idx].tcp_pcb, NULL);
-                tcp_close(g_sockets[slot_idx].tcp_pcb);
-                g_sockets[slot_idx].tcp_pcb = NULL;
-            }
-
-            while (g_sockets[slot_idx].rx_head != NULL) {
-                TnRxPacket *pkt = g_sockets[slot_idx].rx_head;
-                g_sockets[slot_idx].rx_head = pkt->next;
-                if (pkt->p != NULL) pbuf_free(pkt->p);
-                FreeVec(pkt);
-            }
-            g_sockets[slot_idx].rx_tail             = NULL;
-            g_sockets[slot_idx].rx_count            = 0;
-            g_sockets[slot_idx].in_use              = FALSE;
-            g_sockets[slot_idx].owner_base          = NULL;
-            g_sockets[slot_idx].pending_connect_msg = NULL;
             base->fd_map[client_fd] = -1;
+            g_sockets[slot_idx].ref_count--;
+            if (g_sockets[slot_idx].ref_count <= 0) {
+                tn_free_socket_slot(slot_idx);
+            }
 
             tn_logf(TN_LOG_BASIC, "tolunnet: CloseSocket(fd=%d, slot=%d) -> ok\n",
                     client_fd, slot_idx);
@@ -1020,6 +1472,108 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             return TRUE;
         }
 
+    case TN_IPC_CMD_GETSOCKNAME:
+        {
+            int client_fd = (int)imsg->args[0];
+            struct sockaddr_in *sin = (struct sockaddr_in *)imsg->ptrs[0];
+            socklen_t *namelen = (socklen_t *)imsg->ptrs[1];
+
+            if (base == NULL || client_fd < 0 || client_fd >= TN_MAX_FDS_PER_TASK || sin == NULL || namelen == NULL) {
+                imsg->result = -1;
+                imsg->err_no = EBADF;
+                return TRUE;
+            }
+
+            if (*namelen < (socklen_t)sizeof(struct sockaddr_in)) {
+                imsg->result = -1;
+                imsg->err_no = EINVAL;
+                return TRUE;
+            }
+
+            slot_idx = base->fd_map[client_fd];
+            if (slot_idx < 0 || slot_idx >= TN_MAX_GLOBAL_SOCKETS || !g_sockets[slot_idx].in_use) {
+                imsg->result = -1;
+                imsg->err_no = EBADF;
+                return TRUE;
+            }
+
+            sin->sin_len    = sizeof(struct sockaddr_in);
+            sin->sin_family = 2 /* AF_INET */;
+
+            if (g_sockets[slot_idx].type == 1 /* TCP */ && g_sockets[slot_idx].tcp_pcb != NULL) {
+                sin->sin_port        = lwip_htons(g_sockets[slot_idx].tcp_pcb->local_port);
+                sin->sin_addr.s_addr = ip_2_ip4(&g_sockets[slot_idx].tcp_pcb->local_ip)->addr;
+            } else if (g_sockets[slot_idx].type == 2 /* UDP */ && g_sockets[slot_idx].udp_pcb != NULL) {
+                sin->sin_port        = lwip_htons(g_sockets[slot_idx].udp_pcb->local_port);
+                sin->sin_addr.s_addr = ip_2_ip4(&g_sockets[slot_idx].udp_pcb->local_ip)->addr;
+            } else {
+                sin->sin_port        = 0;
+                sin->sin_addr.s_addr = 0;
+            }
+
+            *namelen = sizeof(struct sockaddr_in);
+            imsg->result = 0;
+            imsg->err_no = 0;
+            return TRUE;
+        }
+
+    case TN_IPC_CMD_GETPEERNAME:
+        {
+            int client_fd = (int)imsg->args[0];
+            struct sockaddr_in *sin = (struct sockaddr_in *)imsg->ptrs[0];
+            socklen_t *namelen = (socklen_t *)imsg->ptrs[1];
+
+            if (base == NULL || client_fd < 0 || client_fd >= TN_MAX_FDS_PER_TASK || sin == NULL || namelen == NULL) {
+                imsg->result = -1;
+                imsg->err_no = EBADF;
+                return TRUE;
+            }
+
+            if (*namelen < (socklen_t)sizeof(struct sockaddr_in)) {
+                imsg->result = -1;
+                imsg->err_no = EINVAL;
+                return TRUE;
+            }
+
+            slot_idx = base->fd_map[client_fd];
+            if (slot_idx < 0 || slot_idx >= TN_MAX_GLOBAL_SOCKETS || !g_sockets[slot_idx].in_use) {
+                imsg->result = -1;
+                imsg->err_no = EBADF;
+                return TRUE;
+            }
+
+            sin->sin_len    = sizeof(struct sockaddr_in);
+            sin->sin_family = 2 /* AF_INET */;
+
+            if (g_sockets[slot_idx].type == 1 /* TCP */ && g_sockets[slot_idx].tcp_pcb != NULL) {
+                if (g_sockets[slot_idx].tcp_state != TN_TCP_STATE_ESTABLISHED &&
+                    g_sockets[slot_idx].tcp_state != TN_TCP_STATE_CONNECTING) {
+                    imsg->result = -1;
+                    imsg->err_no = ENOTCONN;
+                    return TRUE;
+                }
+                sin->sin_port        = lwip_htons(g_sockets[slot_idx].tcp_pcb->remote_port);
+                sin->sin_addr.s_addr = ip_2_ip4(&g_sockets[slot_idx].tcp_pcb->remote_ip)->addr;
+            } else if (g_sockets[slot_idx].type == 2 /* UDP */ && g_sockets[slot_idx].udp_pcb != NULL) {
+                if (g_sockets[slot_idx].udp_pcb->remote_port == 0) {
+                    imsg->result = -1;
+                    imsg->err_no = ENOTCONN;
+                    return TRUE;
+                }
+                sin->sin_port        = lwip_htons(g_sockets[slot_idx].udp_pcb->remote_port);
+                sin->sin_addr.s_addr = ip_2_ip4(&g_sockets[slot_idx].udp_pcb->remote_ip)->addr;
+            } else {
+                imsg->result = -1;
+                imsg->err_no = ENOTCONN;
+                return TRUE;
+            }
+
+            *namelen = sizeof(struct sockaddr_in);
+            imsg->result = 0;
+            imsg->err_no = 0;
+            return TRUE;
+        }
+
     case TN_IPC_CMD_WAITSELECT:
         {
             LONG nfds = imsg->args[0];
@@ -1045,7 +1599,8 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                     /* Read readiness */
                     if (in_r & (1UL << i)) {
                         if (g_sockets[slot_idx].rx_head != NULL ||
-                            g_sockets[slot_idx].tcp_state == TN_TCP_STATE_PEER_CLOSED) {
+                            g_sockets[slot_idx].tcp_state == TN_TCP_STATE_PEER_CLOSED ||
+                            (g_sockets[slot_idx].tcp_state == TN_TCP_STATE_LISTENING && g_sockets[slot_idx].accept_head != NULL)) {
                             out_r |= (1UL << i);
                             ready_cnt++;
                         }
@@ -1193,7 +1748,11 @@ int main(int argc, char *argv[])
         g_sockets[i].tcp_pcb             = NULL;
         g_sockets[i].rx_head             = NULL;
         g_sockets[i].rx_tail             = NULL;
+        g_sockets[i].accept_head         = NULL;
+        g_sockets[i].accept_tail         = NULL;
+        g_sockets[i].accept_count        = 0;
         g_sockets[i].pending_connect_msg = NULL;
+        g_sockets[i].pending_accept_msg  = NULL;
     }
 
     /* Load persistent configuration first (defaults when absent) so every

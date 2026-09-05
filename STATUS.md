@@ -34,4 +34,4 @@
 - **Host Unit Tests (`make test-host`):** 6 binaries (`test_inet_addr`, `test_config`, `test_sbtc`, `test_fdset`, `test_lvo_table`, `test_route`) run with ASAN/UBSan — **0 failed**.
 - **Amiga Conformance Test (`SocketConformance`):** Built and executed under headless WinUAE across both `a1200` (68EC020) and `68000` (A600 ECS, 68000) configs.
 - **TNET-085 Resolved & Proven:** Zero Guru Meditations (#80000003 eliminated) on 68000. Real DHCP lease (`10.0.2.15`) negotiated on SANA-II interface. Two consecutive start/stop daemon cycles executed cleanly without reboot.
-- **Logs:** `docs/bench-logs/20260905-183850-3082b59/` (both `a1200` and `68000` baselines identical: `ok=11, not_ok=6, skip=6`).
+- **Logs:** `docs/bench-logs/20260905-183850-3082b59/` (baseline) and `docs/bench-logs/20260905-191511-3f06deb/` (both `a1200` and `68000`: `ok=16, not_ok=1, skip=5` proving TNET-077, TNET-084, TNET-069).

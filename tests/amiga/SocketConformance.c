@@ -177,6 +177,19 @@ static LONG call_ioctl(LONG s, ULONG req, APTR argp)
     return d0;
 }
 
+static LONG call_setsockopt(LONG s, LONG lvl, LONG opt, const void *val, socklen_t len)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = s;
+    register LONG d1 __asm__("d1") = lvl;
+    register LONG d2 __asm__("d2") = opt;
+    register const void *a0 __asm__("a0") = val;
+    register LONG d3 __asm__("d3") = (LONG)len;
+    __asm__ __volatile__ ("jsr -90(%%a6)" : "+r"(d0)
+        : "r"(a6), "r"(d0), "r"(d1), "r"(d2), "r"(a0), "r"(d3) : "d1", "d2", "d3", "a0", "a1", "memory");
+    return d0;
+}
+
 static LONG call_getsockopt(LONG s, LONG lvl, LONG opt, void *val, socklen_t *len)
 {
     register struct Library *a6 __asm__("a6") = SocketBase;
@@ -299,7 +312,36 @@ static void tc_bind_udp(void)
 
 static void tc_bind_reuse(void)
 {
-    TAP_SKIP("tc_bind_reuse", "needs BIND handler (TNET-077, Round 3 §C1)");
+    LONG s1 = call_socket(AF_INET, SOCK_DGRAM, 0);
+    LONG s2 = call_socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in sin;
+    LONG one = 1;
+    int i;
+
+    if (s1 < 0 || s2 < 0) {
+        if (s1 >= 0) call_closesocket(s1);
+        if (s2 >= 0) call_closesocket(s2);
+        TAP_NOTOK("tc_bind_reuse", "failed to create sockets");
+        return;
+    }
+
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len    = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port   = htons(54321);
+
+    call_setsockopt(s1, 0xffff /* SOL_SOCKET */, 0x0004 /* SO_REUSEADDR */, &one, sizeof(one));
+    call_setsockopt(s2, 0xffff /* SOL_SOCKET */, 0x0004 /* SO_REUSEADDR */, &one, sizeof(one));
+
+    if (call_bind(s1, (struct sockaddr *)&sin, sizeof(sin)) == 0 &&
+        call_bind(s2, (struct sockaddr *)&sin, sizeof(sin)) == 0) {
+        TAP_OK("tc_bind_reuse");
+    } else {
+        TAP_NOTOK("tc_bind_reuse", "bind with SO_REUSEADDR failed");
+    }
+
+    call_closesocket(s1);
+    call_closesocket(s2);
 }
 
 static void tc_listen_accept_loopback(void)
