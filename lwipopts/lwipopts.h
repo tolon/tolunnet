@@ -39,6 +39,14 @@
 #define MEM_SIZE             (64 * 1024)
 #define PBUF_POOL_SIZE       24
 
+/* TNET-085 (v3 contract §3.5): two pad bytes BEFORE the ethernet header so
+ * the IP header (eth header + 14) lands on a 4-byte boundary. Without this,
+ * lwIP's u32 accesses into the IP header are misaligned — silently tolerated
+ * on 68020+, a fatal Address Error (#80000003) on the 68000. Proven on the
+ * WinUAE 68000 bench: daemon Guru'd on the first received frame; green after
+ * this fix plus the SANA-II RX pad handling (sana2_netif.c). */
+#define ETH_PAD_SIZE         2
+
 /* --- TCP tuning --- */
 #define TCP_MSS              1460
 #define TCP_WND              (8 * TCP_MSS)

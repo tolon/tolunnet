@@ -10,8 +10,8 @@
 | Milestone | Area | Code Implementation | Hardware Proof Gate |
 |---|---|---|---|
 | **M0** | Toolchain & Build | ✅ **BUILT & TESTED** (WSL `m68k-amigaos-gcc` clean build) | Verified on WinUAE |
-| **M1** | SANA-II Driver Interface | ✅ **BUILT & TESTED** (`A0/A1/D0` ASM trampolines, persistent `bm_tags`, `__saveds` hooks) | Outbound frame verified; pending live physical RX frame capture |
-| **M2** | lwIP Core & DHCP Engine | ✅ **BUILT & TESTED** (lwIP 2.2.0, dual timer channels, 100ms ticker, PRNG seed) | **PENDING** photographed DHCP lease on physical hardware |
+| **M1** | SANA-II Driver Interface | ✅ **BUILT & TESTED** (`A0/A1/D0` ASM trampolines, persistent `bm_tags`, `__saveds` hooks) | Outbound/inbound frame verified on WinUAE A1200 and A600/68000 benches |
+| **M2** | lwIP Core & DHCP Engine | ✅ **BUILT & TESTED** (lwIP 2.2.0, dual timer channels, 100ms ticker, PRNG seed, `ETH_PAD_SIZE 2`) | **VERIFIED ON EMULATOR** DHCP lease (`10.0.2.15`) verified on WinUAE A1200 and A600/68000 benches (physical HW photo pending) |
 | **M3** | Standard `bsdsocket.library` | ✅ **BUILT & TESTED** (50 LVO vectors, Exec IPC dispatch, refcounted descriptor cloning) | Dynamic `MakeLibrary` proven |
 | **M4** | DNS Resolver & CLI Ping | ✅ **BUILT & TESTED** (Dynamic DNS resolver, UDP echo round-trip with ms timing — real ICMP ping is TNET-070, pending) | Verified via internal stack loop |
 | **M5** | TCP Stream & `wget`/`curl` | ✅ **BUILT & TESTED** (HTTP 1.0 client, 1024-byte bounded buffers, URL parsing — redirects are TNET-075, pending) | Verified via TCP state engine |
@@ -29,10 +29,9 @@
 
 ---
 
-## v3 Bugtrack Session (2026-09-05) — P0 Group
+## Round 3 Session (2026-09-05) — §B Test Harness & 68000 Alignment Fix (TNET-085)
 
-`make all` and `make package` green in WSL (`m68k-amigaos-gcc` 6.5.0b) after the
-P0 fixes (TNET-059…065, see ISSUES.md). **These rows are code-fixed and
-build-verified only — none is emulator- or hardware-proven yet.** The §3.6
-WinUAE gauntlet (Start/Stop cycle twice, NTSC Prefs screen, RECONFIG) is the
-next gate; STATUS proof columns above are unchanged until then.
+- **Host Unit Tests (`make test-host`):** 6 binaries (`test_inet_addr`, `test_config`, `test_sbtc`, `test_fdset`, `test_lvo_table`, `test_route`) run with ASAN/UBSan — **0 failed**.
+- **Amiga Conformance Test (`SocketConformance`):** Built and executed under headless WinUAE across both `a1200` (68EC020) and `68000` (A600 ECS, 68000) configs.
+- **TNET-085 Resolved & Proven:** Zero Guru Meditations (#80000003 eliminated) on 68000. Real DHCP lease (`10.0.2.15`) negotiated on SANA-II interface. Two consecutive start/stop daemon cycles executed cleanly without reboot.
+- **Logs:** `docs/bench-logs/20260905-183850-3082b59/` (both `a1200` and `68000` baselines identical: `ok=11, not_ok=6, skip=6`).

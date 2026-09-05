@@ -39,6 +39,11 @@ typedef uintptr_t  mem_ptr_t;
 #define PACK_STRUCT_STRUCT __attribute__((packed))
 #define PACK_STRUCT_END
 #define PACK_STRUCT_FIELD(x) x
+#define PACK_STRUCT_FLD_8(x) PACK_STRUCT_FIELD(x)
+#define PACK_STRUCT_FLD_S(x) PACK_STRUCT_FIELD(x)
+
+/* Memory alignment macro for GCC on 68k */
+#define LWIP_DECLARE_MEMORY_ALIGNED(variable_name, size) u8_t variable_name[size] __attribute__((aligned(4)))
 
 /* Random number generator for DNS/TCP */
 uint32_t tn_rand(void);

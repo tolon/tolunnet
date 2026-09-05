@@ -508,10 +508,25 @@ err_t tn_sana2_linkoutput(struct netif *netif, struct pbuf *p)
     LONG sent;
 
     if (nif == NULL || !nif->online || p == NULL) return ERR_IF;
-    if (p->tot_len < 14 || p->tot_len > sizeof(tx_buf)) return ERR_BUF;
+
+#if ETH_PAD_SIZE
+    pbuf_remove_header(p, ETH_PAD_SIZE);
+#endif
+
+    if (p->tot_len < 14 || p->tot_len > sizeof(tx_buf)) {
+#if ETH_PAD_SIZE
+        pbuf_add_header(p, ETH_PAD_SIZE);
+#endif
+        return ERR_BUF;
+    }
 
     copied = pbuf_copy_partial(p, tx_buf, p->tot_len, 0);
-    if (copied != p->tot_len) return ERR_BUF;
+    if (copied != p->tot_len) {
+#if ETH_PAD_SIZE
+        pbuf_add_header(p, ETH_PAD_SIZE);
+#endif
+        return ERR_BUF;
+    }
 
     dst_mac = &tx_buf[0];
     ethertype = ((ULONG)tx_buf[12] << 8) | (ULONG)tx_buf[13];
@@ -521,6 +536,11 @@ err_t tn_sana2_linkoutput(struct netif *netif, struct pbuf *p)
 
     sent = tn_s2_send(nif, &tx_buf[14], (LONG)(p->tot_len - 14),
                       is_bcast, ethertype, dst_mac);
+
+#if ETH_PAD_SIZE
+    pbuf_add_header(p, ETH_PAD_SIZE);
+#endif
+
     if (sent < 0) {
         return ERR_IF;
     }
@@ -569,8 +589,17 @@ void tn_sana2_poll_input(TnSana2If *nif, struct netif *netif)
 
             if (valid_packet) {
                 ULONG total_len = flen + 14;
-                struct pbuf *p = pbuf_alloc(PBUF_RAW, (u16_t)total_len, PBUF_POOL);
+                /* TNET-085 / ETH_PAD_SIZE: allocate pad bytes and advance payload so
+                 * the ethernet header sits at (payload % 4) == 2 and the IP header
+                 * at +14 is 4-aligned. Reclaim padding before passing to netif->input. */
+                struct pbuf *p = pbuf_alloc(PBUF_RAW, (u16_t)(total_len + ETH_PAD_SIZE), PBUF_POOL);
                 if (p != NULL) {
+#if ETH_PAD_SIZE
+                    if (pbuf_remove_header(p, ETH_PAD_SIZE) != 0) {
+                        pbuf_free(p);
+                        continue;
+                    }
+#endif
                     UBYTE *dst = (UBYTE *)p->payload;
 
                     CopyMem((CONST APTR)rio->ios2_DstAddr, (APTR)&dst[0], 6);
@@ -578,6 +607,10 @@ void tn_sana2_poll_input(TnSana2If *nif, struct netif *netif)
                     dst[12] = (UBYTE)((rio->ios2_PacketType >> 8) & 0xFF);
                     dst[13] = (UBYTE)(rio->ios2_PacketType & 0xFF);
                     CopyMem((CONST APTR)rio->ios2_Data, (APTR)&dst[14], flen);
+
+#if ETH_PAD_SIZE
+                    pbuf_add_header(p, ETH_PAD_SIZE);
+#endif
 
                     if (netif->input(p, netif) != ERR_OK) {
                         pbuf_free(p);
