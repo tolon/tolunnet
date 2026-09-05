@@ -1,5 +1,5 @@
 |
-| tolunet — SANA-II Buffer Management Hook Trampolines (TNET-006)
+| tolunnet — SANA-II Buffer Management Hook Trampolines (TNET-006)
 |
 | SANA-II Rev 7 convention: a0=to, a1=from, d0=length. Returns d0=BOOL.
 | Bridges driver register call convention to C copy implementations.

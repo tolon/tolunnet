@@ -1,12 +1,12 @@
 /*
- * tolunet — lwIP compiler and architecture definitions for 68k AmigaOS.
+ * tolunnet — lwIP compiler and architecture definitions for 68k AmigaOS.
  *
  * Included by lwIP headers via #include "arch/cc.h".
  * Target: Motorola 68020+ (Big-Endian), GCC (amiga-gcc / -m68020 -noixemul).
  */
 
-#ifndef TOLUNET_ARCH_CC_H
-#define TOLUNET_ARCH_CC_H
+#ifndef TOLUNNET_ARCH_CC_H
+#define TOLUNNET_ARCH_CC_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -47,12 +47,12 @@ uint32_t tn_rand(void);
 /* Diagnostics and assertions (AUDIT-2 TNET-018) */
 void tn_logf(int tier, const char *fmt, ...);
 
-#ifdef TOLUNET_DEBUG
+#ifdef TOLUNNET_DEBUG
 #define LWIP_PLATFORM_DIAG(x)   do { tn_logf(2, "%s", x); } while(0)
-#define LWIP_PLATFORM_ASSERT(x) do { tn_logf(1, "tolunet: ASSERTION FAILED: %s (%s:%d)\n", x, __FILE__, __LINE__); } while(0)
+#define LWIP_PLATFORM_ASSERT(x) do { tn_logf(1, "tolunnet: ASSERTION FAILED: %s (%s:%d)\n", x, __FILE__, __LINE__); } while(0)
 #else
 #define LWIP_PLATFORM_DIAG(x)   do { } while(0)
 #define LWIP_PLATFORM_ASSERT(x) do { } while(0)
 #endif
 
-#endif /* TOLUNET_ARCH_CC_H */
+#endif /* TOLUNNET_ARCH_CC_H */

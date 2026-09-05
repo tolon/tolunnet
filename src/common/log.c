@@ -1,5 +1,5 @@
 /*
- * tolunet logging implementation — DOS Write/Output (master prompt §3: no
+ * tolunnet logging implementation — DOS Write/Output (master prompt §3: no
  * stdio in resident code).
  *
  * Provides tn_log() and tn_logf() without libc printf/vprintf dependencies.

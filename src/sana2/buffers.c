@@ -1,5 +1,5 @@
 /*
- * tolunet — task-owned copy ring (M1, UNPROVEN skeleton).
+ * tolunnet — task-owned copy ring (M1, UNPROVEN skeleton).
  *
  * Master prompt §5: "buffers >4 KB via task-owned copy ring (buffers.c)" and
  * "task keeps no pointers into library memory after ReplyMsg". The rule: the

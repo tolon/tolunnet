@@ -1,12 +1,12 @@
 /*
- * tolunet — task-owned copy ring interface (M1, UNPROVEN).
+ * tolunnet — task-owned copy ring interface (M1, UNPROVEN).
  *
  * See buffers.c for the rationale (master prompt §5: large payloads are copied
  * into task-owned memory so the task holds no pointers into library memory
  * after ReplyMsg). Small payloads travel inline in the TnRequest.
  */
-#ifndef TOLUNET_BUFFERS_H
-#define TOLUNET_BUFFERS_H
+#ifndef TOLUNNET_BUFFERS_H
+#define TOLUNNET_BUFFERS_H
 
 #include <exec/types.h>
 
@@ -31,4 +31,4 @@ ULONG      tn_ring_length(TnRingHandle h);
 /* Mark a slot free. */
 void tn_ring_release(TnRingHandle h);
 
-#endif /* TOLUNET_BUFFERS_H */
+#endif /* TOLUNNET_BUFFERS_H */

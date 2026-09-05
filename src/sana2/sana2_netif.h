@@ -1,8 +1,8 @@
 /*
- * tolunet — SANA-II netif glue and lwIP adapter.
+ * tolunnet — SANA-II netif glue and lwIP adapter.
  */
-#ifndef TOLUNET_SANA2_NETIF_H
-#define TOLUNET_SANA2_NETIF_H
+#ifndef TOLUNNET_SANA2_NETIF_H
+#define TOLUNNET_SANA2_NETIF_H
 
 #include <exec/types.h>
 #include <exec/io.h>       /* struct IORequest */
@@ -80,4 +80,4 @@ err_t      tn_sana2_netif_init(struct netif *netif);
 err_t      tn_sana2_linkoutput(struct netif *netif, struct pbuf *p);
 void       tn_sana2_poll_input(TnSana2If *nif, struct netif *netif);
 
-#endif /* TOLUNET_SANA2_NETIF_H */
+#endif /* TOLUNNET_SANA2_NETIF_H */

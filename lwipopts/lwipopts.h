@@ -1,5 +1,5 @@
 /*
- * tolunet — lwIP build-time configuration.
+ * tolunnet — lwIP build-time configuration.
  *
  * Hardened Network Stack Configuration:
  * - NO_SYS single-task architecture.
@@ -26,6 +26,9 @@
 #define LWIP_ETHERNET        1
 #define LWIP_ICMP            1
 #define LWIP_RAW             1
+
+/* TNET-063: HOSTNAME= key → DHCP option 12 + netif hostname */
+#define LWIP_NETIF_HOSTNAME  1
 
 /* --- IPv4 only --- */
 #define LWIP_IPV6            0
@@ -68,7 +71,7 @@
 #define IP_REASS_MAX_PBUFS   8       /* Maximum number of pbufs queued for reassembly */
 
 /* --- Statistics: only in debug builds --- */
-#if defined(TOLUNET_DEBUG) && (TOLUNET_DEBUG + 0)
+#if defined(TOLUNNET_DEBUG) && (TOLUNNET_DEBUG + 0)
   #define LWIP_STATS          1
   #define LWIP_STATS_DISPLAY  1
 #else

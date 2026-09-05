@@ -1,5 +1,5 @@
 /*
- * tolunet — Milestone M6 & Event Engine Test Suite.
+ * tolunnet — Milestone M6 & Event Engine Test Suite.
  *
  * Verifies:
  * - OpenLibrary / CloseLibrary
@@ -202,7 +202,7 @@ int main(int argc, char *argv[])
     DOSBase = OpenLibrary((CONST_STRPTR)"dos.library", 0);
     if (DOSBase == NULL) return 20;
 
-    log_fh = Open((CONST_STRPTR)"WORK:tolunet-m3.log", MODE_NEWFILE);
+    log_fh = Open((CONST_STRPTR)"WORK:tolunnet-m3.log", MODE_NEWFILE);
     g_log_dos = DOSBase;
     g_log_file = log_fh;
     g_log_level = TN_LOG_VERBOSE;

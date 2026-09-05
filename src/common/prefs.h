@@ -19,15 +19,33 @@ typedef struct TnPrefs {
     char  netmask[20];
     char  gateway[20];
     char  dns_server[20];
+    /* TNET-063: previously cosmetic keys, now first-class config */
+    char  hostname[64];       /* RFC-952 charset; DHCP option 12 + gethostname */
+    char  dns2[20];           /* secondary resolver; empty = unset */
+    ULONG mtu;                /* 0 = driver default; 576..1500 honoured */
+    ULONG debug;              /* 0..2 log tier */
 } TnPrefs;
+
+/* TNET-064: Amiga Prefs convention.
+ * TN_PREFS_USE  = ENV: only  (current session; reverted by reboot).
+ * TN_PREFS_SAVE = ENV: + ENVARC: + DEVS:tolunnet.config (persistent). */
+typedef enum TnPrefsSaveMode {
+    TN_PREFS_USE  = 0,
+    TN_PREFS_SAVE = 1
+} TnPrefsSaveMode;
 
 /* Set factory defaults */
 void tn_prefs_default(TnPrefs *prefs);
 
-/* Load preferences from ENV: or ENVARC:; returns TRUE if loaded successfully */
+/* Load preferences. Precedence (classic ENV: session semantics, TNET-064):
+ * 1. ENV:tolunnet.prefs binary blob (live "Use" state; refreshed from ENVARC: at boot)
+ * 2. DEVS:tolunnet.config text    (ART integration API, master prompt §5.2)
+ * 3. DEVS:tolunet.config text     (pre-rename legacy install)
+ * 4. ENVARC:tolunnet.prefs blob   (last "Save")
+ * Returns TRUE if any store was found and parsed. */
 BOOL tn_prefs_load(TnPrefs *prefs);
 
-/* Save preferences to both ENV: and ENVARC:; returns TRUE on success */
-BOOL tn_prefs_save(const TnPrefs *prefs);
+/* Save preferences per Amiga Prefs convention (TNET-064). */
+BOOL tn_prefs_save(const TnPrefs *prefs, TnPrefsSaveMode mode);
 
 #endif /* TOLUNNET_PREFS_H */

@@ -23,6 +23,16 @@
 
 ## Working Tree Build Artifacts (Candidate Release)
 
-- 📦 **LhA Archive:** [`build/tolunnet-1.1.0.lha`](file:///d:/Projeler/tolunnet/build/tolunnet-1.1.0.lha) (520,562 bytes / 521 KB, universal `-m68000` + Depth=2 4-color icons)
+- 📦 **LhA Archive:** [`build/tolunnet-1.1.0.lha`](file:///d:/Projeler/tolunnet/build/tolunnet-1.1.0.lha) (529,589 bytes after the P0 fixes + installer grammar repair, universal `-m68000` + Depth=2 4-color icons)
 - 💾 **ADF Floppy Image:** [`build/tolunnet.adf`](file:///d:/Projeler/tolunnet/build/tolunnet.adf) (552 KB content / 901,120 bytes standard DD floppy image)
 - 💾 **Workbench Hard Drive Sync:** `E:\amiga\Amigatolon\hdf\Workbench v3.0 (1992)(Commodore).hdf` synchronized.
+
+---
+
+## v3 Bugtrack Session (2026-09-05) — P0 Group
+
+`make all` and `make package` green in WSL (`m68k-amigaos-gcc` 6.5.0b) after the
+P0 fixes (TNET-059…065, see ISSUES.md). **These rows are code-fixed and
+build-verified only — none is emulator- or hardware-proven yet.** The §3.6
+WinUAE gauntlet (Start/Stop cycle twice, NTSC Prefs screen, RECONFIG) is the
+next gate; STATUS proof columns above are unchanged until then.

@@ -1,12 +1,12 @@
 /*
- * tolunet — Network Task & lwIP Core Mainloop.
+ * tolunnet — Network Task & lwIP Core Mainloop.
  *
  * Master prompt §M2 (IP Alive), §M3 (bsdsocket.library Skeleton), §M4 (UDP / DNS), & §M5 (TCP).
  * - One Amiga task owns lwIP (NO_SYS=1).
  * - SANA-II driver (ethernet.device) wired to lwIP netif.
  * - Periodic 100 ms timer.device ticks drive sys_check_timeouts().
  * - bsdsocket.library instantiated and registered in Exec library list.
- * - Public IPC port ("tolunet.port") dispatches client socket requests.
+ * - Public IPC port ("tolunnet.port") dispatches client socket requests.
  * - Full UDP & TCP stream transport + DNS client support.
  * - Clean shutdown on Ctrl-C (SIGBREAKF_CTRL_C).
  */
@@ -87,6 +87,52 @@ static TnTimer       g_timer;
 static struct MsgPort *g_ipc_port = NULL;
 static struct Library *g_bsd_lib  = NULL;
 static TnSocketSlot  g_sockets[TN_MAX_GLOBAL_SOCKETS];
+static TnPrefs       g_prefs;                 /* Live config (TNET-063/064) */
+
+/* Plain string equality (no libc) */
+static BOOL tn_streq(const char *a, const char *b)
+{
+    if (a == NULL || b == NULL) return FALSE;
+    while (*a && *a == *b) { a++; b++; }
+    return (*a == '\0' && *b == '\0');
+}
+
+/*
+ * Apply the live-configurable part of g_prefs to the running stack (TNET-063).
+ * Used at startup and by TN_IPC_CMD_RECONFIG (TNET-064). Interface-level
+ * settings (device/unit/addressing mode) still require a stack restart.
+ */
+static void tn_apply_live_config(void)
+{
+    ip4_addr_t dns;
+
+    /* DNS1: configured server, or the slirp/QEMU default when unset */
+    if (g_prefs.dns_server[0] != '\0' && ip4addr_aton(g_prefs.dns_server, &dns)) {
+        dns_setserver(0, (const ip_addr_t *)&dns);
+    } else {
+        IP4_ADDR(&dns, 10, 0, 2, 3);
+        dns_setserver(0, (const ip_addr_t *)&dns);
+    }
+
+    /* DNS2: secondary resolver, only when configured */
+    if (g_prefs.dns2[0] != '\0' && ip4addr_aton(g_prefs.dns2, &dns)) {
+        dns_setserver(1, (const ip_addr_t *)&dns);
+        tn_logf(TN_LOG_BASIC, "tolunnet: secondary DNS %s\n", g_prefs.dns2);
+    }
+
+    /* HOSTNAME: DHCP option 12 + gethostname() for future library openers */
+    if (g_prefs.hostname[0] != '\0') {
+        netif_set_hostname(&g_netif, g_prefs.hostname);
+    }
+
+    /* MTU: clamp the netif below the driver-reported maximum */
+    if (g_prefs.mtu >= 576 && g_prefs.mtu <= 1500 && g_netif.mtu != 0 &&
+        g_prefs.mtu < g_netif.mtu) {
+        g_netif.mtu = (u16_t)g_prefs.mtu;
+        tn_logf(TN_LOG_BASIC, "tolunnet: MTU clamped to %lu (driver max %lu)\n",
+                g_prefs.mtu, (ULONG)g_s2if.mtu);
+    }
+}
 
 /* Callback from lwIP when a UDP datagram arrives on a listening PCB */
 static void tn_udp_recv_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p,
@@ -298,6 +344,15 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
     case TN_IPC_CMD_OPEN:
         tn_logf(TN_LOG_BASIC, "tolunnet: client task 0x%p opened bsdsocket.library\n",
                 imsg->client_task);
+        /* TNET-063: hand the configured hostname to gethostname() callers */
+        if (base != NULL && g_prefs.hostname[0] != '\0') {
+            int j = 0;
+            while (g_prefs.hostname[j] != '\0' && j < (int)sizeof(base->hostname) - 1) {
+                base->hostname[j] = g_prefs.hostname[j];
+                j++;
+            }
+            base->hostname[j] = '\0';
+        }
         imsg->result = 0;
         return TRUE;
 
@@ -1075,6 +1130,32 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             return TRUE;
         }
 
+    case TN_IPC_CMD_RECONFIG:
+        {
+            /* TNET-064: reload config from the prefs stores and apply the
+             * live-configurable subset. Interface-level changes require a
+             * stack restart, which is reported honestly in the log. */
+            TnPrefs old = g_prefs;
+            BOOL loaded = tn_prefs_load(&g_prefs);
+
+            g_log_level = TN_LOG_BASIC + ((g_prefs.debug > 0) ? 1 : 0);
+            tn_apply_live_config();
+
+            if (!tn_streq(old.device, g_prefs.device) || old.unit != g_prefs.unit ||
+                old.use_dhcp != g_prefs.use_dhcp ||
+                !tn_streq(old.ip_addr, g_prefs.ip_addr) ||
+                !tn_streq(old.netmask, g_prefs.netmask) ||
+                !tn_streq(old.gateway, g_prefs.gateway)) {
+                tn_log(TN_LOG_BASIC, "tolunnet: RECONFIG: interface settings changed - stop and start the stack to apply them\n");
+            } else {
+                tn_log(TN_LOG_BASIC, "tolunnet: RECONFIG applied (DNS, hostname, MTU, debug tier)\n");
+            }
+
+            imsg->result = loaded ? 0 : -1;
+            imsg->err_no = loaded ? 0 : ENOENT;
+            return TRUE;
+        }
+
     default:
         imsg->result = -1;
         imsg->err_no = ENOSYS;
@@ -1089,7 +1170,7 @@ int main(int argc, char *argv[])
     CONST_STRPTR device = (CONST_STRPTR)"ethernet.device";
     ULONG unit = 0;
     TnS2Result s2res;
-    ip4_addr_t ipaddr, netmask, gw, dns_server;
+    ip4_addr_t ipaddr, netmask, gw;
     ULONG s2_sig, timer_sig, ipc_sig, ctrl_c_sig, wait_mask;
     BOOL running = TRUE;
     BOOL use_dhcp = TRUE;
@@ -1115,6 +1196,25 @@ int main(int argc, char *argv[])
         g_sockets[i].pending_connect_msg = NULL;
     }
 
+    /* Load persistent configuration first (defaults when absent) so every
+     * key — including HOSTNAME/DNS2/MTU/DEBUG (TNET-063) — is honoured.
+     * CLI arguments override the interface-level keys. */
+    tn_prefs_load(&g_prefs);
+    g_log_level = TN_LOG_BASIC + ((g_prefs.debug > 0) ? 1 : 0);
+
+    device   = (CONST_STRPTR)g_prefs.device;
+    unit     = g_prefs.unit;
+    use_dhcp = g_prefs.use_dhcp;
+    if (!use_dhcp) {
+        ip4addr_aton(g_prefs.ip_addr, &ipaddr);
+        ip4addr_aton(g_prefs.netmask, &netmask);
+        ip4addr_aton(g_prefs.gateway, &gw);
+    } else {
+        IP4_ADDR(&ipaddr, 0, 0, 0, 0);
+        IP4_ADDR(&netmask, 0, 0, 0, 0);
+        IP4_ADDR(&gw, 0, 0, 0, 0);
+    }
+
     if (argc >= 2) {
         device = (CONST_STRPTR)argv[1];
         if (argc >= 3) {
@@ -1129,32 +1229,6 @@ int main(int argc, char *argv[])
             if (argc >= 6) ip4addr_aton(argv[5], &gw);
             else IP4_ADDR(&gw, 10, 0, 2, 2);
             use_dhcp = FALSE;
-        } else {
-            IP4_ADDR(&ipaddr, 0, 0, 0, 0);
-            IP4_ADDR(&netmask, 0, 0, 0, 0);
-            IP4_ADDR(&gw, 0, 0, 0, 0);
-        }
-    } else {
-        /* No CLI args: load from ENVARC:tolunnet.prefs / ENV:tolunnet.prefs */
-        TnPrefs prefs;
-        if (tn_prefs_load(&prefs)) {
-            device = (CONST_STRPTR)prefs.device;
-            unit = prefs.unit;
-            use_dhcp = prefs.use_dhcp;
-            if (!use_dhcp) {
-                ip4addr_aton(prefs.ip_addr, &ipaddr);
-                ip4addr_aton(prefs.netmask, &netmask);
-                ip4addr_aton(prefs.gateway, &gw);
-            } else {
-                IP4_ADDR(&ipaddr, 0, 0, 0, 0);
-                IP4_ADDR(&netmask, 0, 0, 0, 0);
-                IP4_ADDR(&gw, 0, 0, 0, 0);
-            }
-        } else {
-            /* Default fallback */
-            IP4_ADDR(&ipaddr, 0, 0, 0, 0);
-            IP4_ADDR(&netmask, 0, 0, 0, 0);
-            IP4_ADDR(&gw, 0, 0, 0, 0);
         }
     }
 
@@ -1231,9 +1305,8 @@ int main(int argc, char *argv[])
         return 20;
     }
 
-    /* Initialize DNS client server */
-    IP4_ADDR(&dns_server, 10, 0, 2, 3); /* Standard QEMU/slirp DNS */
-    dns_setserver(0, (const ip_addr_t *)&dns_server);
+    /* DNS servers, DHCP hostname (option 12), MTU clamp, debug tier (TNET-063) */
+    tn_apply_live_config();
 
     if (use_dhcp) {
         tn_log(TN_LOG_BASIC, "tolunnet: starting DHCP client...\n");
@@ -1301,11 +1374,22 @@ int main(int argc, char *argv[])
     while (running) {
         ULONG sigs = Wait(wait_mask);
 
-        /* Ctrl-C Signal -> Shutdown */
+        /* Ctrl-C Signal -> Shutdown.
+         * TNET-059: per-opener clones embed jump tables that point into this
+         * task's code segment. Exiting with lib_OpenCnt > 0 would unload that
+         * code under live clients → Guru on their next call. Refuse to exit
+         * and keep servicing IPC until every opener has closed. */
         if (sigs & ctrl_c_sig) {
-            tn_log(TN_LOG_BASIC, "\ntolunnet: Ctrl-C received, shutting down...\n");
-            running = FALSE;
-            break;
+            if (g_bsd_lib != NULL && g_bsd_lib->lib_OpenCnt > 0) {
+                tn_logf(TN_LOG_BASIC,
+                        "\ntolunnet: Ctrl-C: %lu client(s) still have bsdsocket.library open;\n"
+                        "tolunnet: not exiting - close them (or their apps) and press Ctrl-C again\n",
+                        (ULONG)g_bsd_lib->lib_OpenCnt);
+            } else {
+                tn_log(TN_LOG_BASIC, "\ntolunnet: Ctrl-C received, shutting down...\n");
+                running = FALSE;
+                break;
+            }
         }
 
         /* Client IPC Message Signal */

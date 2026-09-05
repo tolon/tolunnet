@@ -14,9 +14,10 @@ TCP/IP stack and bsdsocket.library v4.1 runtime for Commodore Amiga computers.
   @{" 1. Overview & Architecture        " link Overview}
   @{" 2. System Requirements            " link Requirements}
   @{" 3. Installation Guide             " link Installation}
-  @{" 4. Included Command Tools         " link Commands}
-  @{" 5. API Compatibility              " link Compatibility}
-  @{" 6. License & Credits              " link License}
+  @{" 4. Configuration File             " link Config}
+  @{" 5. Included Command Tools         " link Commands}
+  @{" 6. API Compatibility              " link Compatibility}
+  @{" 7. License & Credits              " link License}
 
 @endnode
 
@@ -69,8 +70,46 @@ Installer will guide you through choosing your network card and configuring DHCP
 
 @endnode
 
+@node Config "Configuration File"
+@{b}4. Configuration File@{ub}
+
+When started without command-line arguments, @{b}tolunnet@{ub} reads its
+configuration from @{b}DEVS:tolunnet.config@{ub} (plain @{i}KEY=VALUE@{ui}
+text, one key per line, @{i}#@{ui} starts a comment). All keys are optional:
+
+@{i}DEVICE=ethernet.device     SANA-II driver name
+UNIT=0                     SANA-II unit number
+DHCP=YES                   YES = automatic address; NO = use IP/NETMASK/GATEWAY
+IP=192.168.1.50            Static address (DHCP=NO)
+NETMASK=255.255.255.0      Static netmask (MASK= is also accepted)
+GATEWAY=192.168.1.1        Static default gateway (GW= is also accepted)
+DNS=192.168.1.1            Primary nameserver (DNS1=/NAMESERVER= also accepted)
+DNS2=1.1.1.1               Secondary nameserver; omit or leave empty for none
+HOSTNAME=amiga             Host name (sent as DHCP option 12; gethostname())
+MTU=1500                   576..1500 to clamp below the driver default; 0 = driver default
+DEBUG=0                    Log verbosity: 0 = normal, 1 = verbose, 2 = reserved@{ui}
+
+@{b}TolunnetPrefs@{ub} (in SYS:Prefs) edits this file with the standard Amiga
+Prefs buttons:
+
+* @{b}Save@{ub} writes DEVS:tolunnet.config plus the persistent
+  ENVARC:tolunnet.prefs copy, and applies the settings now.
+* @{b}Use@{ub} applies the settings now (ENV: session copy only) without
+  making them permanent — after a reboot the last Saved values return.
+* @{b}Start Stack / Stop Stack@{ub} starts or stops the network task.
+  Stop is refused while applications still have bsdsocket.library open;
+  close them and press Stop again.
+* @{b}Ping Test@{ub} runs a live probe against the configured gateway.
+
+Note for manual editing: a session copy in @{b}ENV:tolunnet.prefs@{ub}
+(written by Save/Use) takes precedence over DEVS:tolunnet.config until the
+next reboot. Delete ENV:tolunnet.prefs to make the daemon read a hand-edited
+DEVS: file directly.
+
+@endnode
+
 @node Commands "Included Command Tools"
-@{b}4. Included Command Tools@{ub}
+@{b}5. Included Command Tools@{ub}
 
 * @{b}tolunnet [DEVICE] [UNIT] [IP NETMASK GATEWAY]:@{ub}
   The primary TCP/IP stack network task. Starts bsdsocket.library v4.1.
@@ -92,7 +131,7 @@ Installer will guide you through choosing your network card and configuring DHCP
 @endnode
 
 @node Compatibility "API Compatibility"
-@{b}5. API Compatibility@{ub}
+@{b}6. API Compatibility@{ub}
 
 tolunnet instantiates a standard @{b}bsdsocket.library@{ub} v4.1 runtime.
 All standard Amiga networking applications (IBrowse, AWeb, AmIRC, AmiFTP,
@@ -107,7 +146,7 @@ YAM, SimpleMail, Wget, Lynx) work transparently using standard BSD socket calls:
 @endnode
 
 @node License "License & Credits"
-@{b}6. License & Credits@{ub}
+@{b}7. License & Credits@{ub}
 
 * @{b}tolunnet Core & Architecture:@{ub} Copyright (c) 2026 Tolon.
   Licensed under the MIT License.

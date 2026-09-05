@@ -1,11 +1,11 @@
 /*
- * tolunet — timer.device management for periodic lwIP ticks and precise time.
+ * tolunnet — timer.device management for periodic lwIP ticks and precise time.
  *
  * Master prompt §6 & AUDIT-2 TNET-013/TNET-014.
  */
 
-#ifndef TOLUNET_TIMERS_H
-#define TOLUNET_TIMERS_H
+#ifndef TOLUNNET_TIMERS_H
+#define TOLUNNET_TIMERS_H
 
 #include <exec/types.h>
 #include <exec/io.h>
@@ -44,4 +44,4 @@ uint32_t sys_now(void);
 /* Fast 32-bit PRNG seeded from hardware entropy (TNET-013) */
 uint32_t tn_rand(void);
 
-#endif /* TOLUNET_TIMERS_H */
+#endif /* TOLUNNET_TIMERS_H */

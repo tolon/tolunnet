@@ -42,6 +42,9 @@ When a client task calls standard BSD socket LVO vectors (e.g. `socket()`, `bind
 | `TN_IPC_CMD_GETHOSTBYNAME` | 18 | `gethostbyname(name)` |
 | `TN_IPC_CMD_GETHOSTBYADDR` | 19 | `gethostbyaddr(addr, len, type)` |
 | `TN_IPC_CMD_WAITSELECT` | 20 | `WaitSelect(nfds, read_fds, write_fds, except_fds, timeout, sigmask)` |
+| `TN_IPC_CMD_DUP2` | 21 | `Dup2Socket(old_fd, new_fd)` |
+| `TN_IPC_CMD_GETSTATUS` | 22 | Query live interface status + active socket count (TNET-043) |
+| `TN_IPC_CMD_RECONFIG` | 23 | Reload configuration from prefs stores and apply the live subset (TNET-064). Sent by TolunnetPrefs after Save/Use; `socket_base` may be NULL (not a per-socket operation). Applies DNS servers, hostname (DHCP option 12 + future openers), MTU clamp, and debug tier; interface-level changes (device/unit/addressing) are logged as requiring a stack restart. |
 
 ---
 

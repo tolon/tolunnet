@@ -1,13 +1,19 @@
 /*
- * tolunnet — Advanced Native Workbench Preferences & Control Panel (TolunnetPrefs)
+ * tolunnet — Native Workbench Preferences & Control Panel (TolunnetPrefs)
  *
- * Implements a clean, parametric, fully functional AmigaOS Intuition & GadTools GUI:
- * - SANA-II Hardware Adapter Section (Device, Unit, MTU)
- * - Protocol & IP Addressing Section (DHCP vs Static, IP, Netmask, Gateway, DNS1, DNS2)
- * - Hostname & Domain Identification
- * - Live Status Indicator & Daemon Control (Start/Restart Stack)
- * - Diagnostics (Ping Test Console)
- * - Native 3D Bevel Box layout rendering (ROM 2.04+ / 3.0+ compliant)
+ * TNET-062: window geometry is derived from the default public screen
+ *           (scr->Height / scr->Font / border sizes) and always fits a
+ *           640x200 NTSC Workbench. WA_Top/WA_Left are computed, never
+ *           hard-coded.
+ * TNET-063: Hostname / Secondary DNS / MTU gadgets are bound to TnPrefs and
+ *           persisted (HOSTNAME=, DNS2=, MTU=, DEBUG= keys).
+ * TNET-064: Amiga Prefs convention - Use = ENV: only (until reboot),
+ *           Save = ENV: + ENVARC: + DEVS:tolunnet.config. Both notify a
+ *           running daemon via TN_IPC_CMD_RECONFIG.
+ * TNET-065: Start/Stop stack control: Stop signals the daemon task found via
+ *           the public port (no blind second-instance spawn).
+ *
+ * GadTools/Intuition only, ROM 2.04+.
  */
 
 #include "../common/prefs.h"
@@ -45,6 +51,7 @@ struct Library *GadToolsBase = NULL;
 #define GID_PING        12
 #define GID_DAEMON      13
 #define GID_CANCEL      14
+#define GID_MTU         15
 
 static const STRPTR g_mode_labels[] = {
     (STRPTR)"DHCP (Automatic)",
@@ -53,34 +60,291 @@ static const STRPTR g_mode_labels[] = {
 };
 
 /*
- * GadTools requires a REAL TextAttr for every gadget.
- * topaz.font/8 with FPF_ROMFONT is always present in Kickstart ROM.
+ * GadTools requires a REAL TextAttr for every gadget. The screen font is
+ * preferred (TNET-062); topaz.font/8 with FPF_ROMFONT (always in ROM) is the
+ * fallback when the screen has no font or a nonsensical one.
  */
 static struct TextAttr g_gui_font = { (STRPTR)"topaz.font", 8, FS_NORMAL, FPF_ROMFONT };
 
-/* Render 3D Beveled Framing Boxes around visual groups */
-static void render_gui_frames(struct Window *win, APTR vi)
+/* Computed layout (all values in window-relative pixels) */
+typedef struct PrefsLayout {
+    struct TextAttr *font;      /* TextAttr actually used */
+    UWORD  fh;                  /* font height            */
+    UWORD  gh;                  /* gadget height          */
+    UWORD  pitch;               /* row pitch              */
+    UWORD  win_w, win_h;        /* window outer size      */
+    WORD  win_left, win_top;    /* window position on screen */
+    UWORD  col1_x, col2_x;      /* gadget column left edges */
+    UWORD  col1_w, col2_w;      /* gadget column widths   */
+    UWORD  row_y[5];            /* y of data rows 0..4    */
+    UWORD  btn_y, btn_w, btn_h; /* button bar geometry    */
+} PrefsLayout;
+
+/* ------------------------------------------------------------------ helpers */
+
+static struct MsgPort *find_daemon_port(void)
+{
+    return FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
+}
+
+static BOOL daemon_running(void)
+{
+    return (find_daemon_port() != NULL) ? TRUE : FALSE;
+}
+
+static void str_copy_len(char *dst, const char *src, ULONG dst_sz)
+{
+    ULONG i = 0;
+    if (dst == NULL || dst_sz == 0) return;
+    while (src && src[i] && i < dst_sz - 1) {
+        dst[i] = src[i];
+        i++;
+    }
+    dst[i] = '\0';
+}
+
+/* Read a STRING_KIND gadget's buffer into dst */
+static void gad_get_str(struct Gadget *g, char *dst, ULONG dst_sz)
+{
+    struct StringInfo *si;
+    if (g == NULL) return;
+    si = (struct StringInfo *)g->SpecialInfo;
+    if (si != NULL && si->Buffer != NULL) {
+        str_copy_len(dst, (const char *)si->Buffer, dst_sz);
+    }
+}
+
+/* Read an INTEGER_KIND gadget's value (fallback when conversion failed) */
+static LONG gad_get_int(struct Gadget *g, LONG fallback)
+{
+    struct StringInfo *si;
+    if (g == NULL) return fallback;
+    si = (struct StringInfo *)g->SpecialInfo;
+    if (si != NULL && (si->Buffer == NULL || si->Buffer[0] != '\0')) {
+        return si->LongInt;
+    }
+    return fallback;
+}
+
+/* TNET-064: tell a running daemon to reload its configuration */
+static void notify_daemon_reconfig(void)
+{
+    struct MsgPort *reply_port;
+    struct MsgPort *daemon_port = find_daemon_port();
+
+    if (daemon_port == NULL) return;
+
+    reply_port = CreateMsgPort();
+    if (reply_port != NULL) {
+        TnIpcMsg msg;
+        int i;
+
+        for (i = 0; i < (int)(sizeof(msg) / sizeof(LONG)); i++) {
+            ((LONG *)&msg)[i] = 0;
+        }
+        msg.msg.mn_Node.ln_Type = NT_MESSAGE;
+        msg.msg.mn_ReplyPort    = reply_port;
+        msg.msg.mn_Length       = sizeof(TnIpcMsg);
+        msg.cmd                 = TN_IPC_CMD_RECONFIG;
+        msg.client_task         = FindTask(NULL);
+        msg.socket_base         = NULL;
+
+        PutMsg(daemon_port, (struct Message *)&msg);
+        WaitPort(reply_port);
+        GetMsg(reply_port);
+        DeleteMsgPort(reply_port);
+    }
+}
+
+/* TNET-065: start the daemon (no args -> reads DEVS:/ENV: config) and wait
+ * briefly for its public port to appear. */
+static void daemon_start(void)
+{
+    int i;
+
+    if (daemon_running()) return;
+    Execute((CONST_STRPTR)"Run >NIL: C:tolunnet", (BPTR)0, (BPTR)0);
+
+    for (i = 0; i < 30 && !daemon_running(); i++) {
+        Delay(5); /* 100 ms slices: up to ~3 s */
+    }
+}
+
+/* TNET-065: ask the daemon task (found via the port's mp_SigTask) to exit.
+ * The daemon refuses while clients are open (TNET-059); report honestly. */
+static void daemon_stop(struct Window *win)
+{
+    struct MsgPort *port = find_daemon_port();
+    int i;
+
+    if (port == NULL) return;
+    if (port->mp_SigTask != NULL) {
+        Signal((struct Task *)port->mp_SigTask, SIGBREAKF_CTRL_C);
+    }
+
+    for (i = 0; i < 30 && daemon_running(); i++) {
+        Delay(5);
+    }
+
+    if (daemon_running()) {
+        struct EasyStruct es;
+        es.es_StructSize   = sizeof(struct EasyStruct);
+        es.es_Flags        = 0;
+        es.es_Title        = (STRPTR)"tolunnet";
+        es.es_TextFormat   = (STRPTR)"The stack is still running.\n"
+                                     "Applications still have bsdsocket.library\n"
+                                     "open (TNET-059 guard). Close them and\n"
+                                     "press Stop again.";
+        es.es_GadgetFormat = (STRPTR)"Ok";
+        EasyRequestArgs(win, &es, NULL, NULL);
+    }
+}
+
+/* TNET-065: relabel the Start/Stop button from live state */
+static void update_daemon_button(struct Window *win, struct Gadget *gad)
+{
+    if (gad == NULL) return;
+    SetGadgetAttrs(gad, win, NULL,
+                   GA_Text, (ULONG)(daemon_running() ? (STRPTR)"Stop Stack" : (STRPTR)"Start Stack"),
+                   TAG_END);
+}
+
+/* TNET-064: after Save/Use, notify the daemon; if it is not running,
+ * offer to start it (Amiga Prefs "Use now" behaviour). */
+static void after_save_use(struct Window *win)
+{
+    if (daemon_running()) {
+        notify_daemon_reconfig();
+    } else {
+        struct EasyStruct es;
+        es.es_StructSize   = sizeof(struct EasyStruct);
+        es.es_Flags        = 0;
+        es.es_Title        = (STRPTR)"tolunnet";
+        es.es_TextFormat   = (STRPTR)"Configuration written.\n\nStart the network stack now?";
+        es.es_GadgetFormat = (STRPTR)"Start|Not now";
+        if (EasyRequestArgs(win, &es, NULL, NULL) == 1) {
+            daemon_start();
+        }
+    }
+}
+
+static LONG strlen_local(const char *s)
+{
+    LONG n = 0;
+    while (s && s[n]) n++;
+    return n;
+}
+
+/* ------------------------------------------------------------ layout engine */
+
+#define TN_LABEL_PAD   8
+#define TN_BORDER_PAD  8
+#define TN_COL_GAP     16
+
+/*
+ * TNET-062: derive the whole layout from the locked public screen.
+ * All label widths come from TextLength() of the longest label; every row is
+ * font-height based; the result fits a 640x200 NTSC screen with topaz/8.
+ */
+static void compute_layout(PrefsLayout *lo, struct Screen *scr)
+{
+    static const char *const labels[] = {
+        "Device:", "Unit:", "Config Mode:", "IP Address:", "Netmask:",
+        "Gateway:", "DNS 1:", "DNS 2:", "Host Name:", "MTU:", NULL
+    };
+
+    struct TextAttr *sattr = scr->Font;
+    struct RastPort *rp    = &scr->RastPort;
+    UWORD lab_w = 0;
+    int i;
+
+    /* Screen font when sane; ROM topaz/8 otherwise */
+    if (sattr != NULL && sattr->ta_Name != NULL &&
+        sattr->ta_YSize >= 6 && sattr->ta_YSize <= 24) {
+        lo->font = sattr;
+    } else {
+        lo->font = &g_gui_font;
+    }
+
+    lo->fh    = lo->font->ta_YSize;
+    lo->gh    = lo->fh + 6;
+    lo->pitch = lo->fh + 12;
+
+    if (rp != NULL) {
+        for (i = 0; labels[i] != NULL; i++) {
+            UWORD w = (UWORD)TextLength(rp, (STRPTR)labels[i], (LONG)strlen_local(labels[i]));
+            if (w > lab_w) lab_w = w;
+        }
+    } else {
+        lab_w = (UWORD)(14 * lo->fh / 2); /* no rastport: rough topaz estimate */
+    }
+    lab_w += TN_LABEL_PAD;
+
+    lo->col1_w = (UWORD)(17 * lo->fh / 2);   /* "ethernet.device" = 15 chars */
+    lo->col2_w = (UWORD)(17 * lo->fh / 2);
+    lo->col1_x = TN_BORDER_PAD + lab_w;
+    lo->col2_x = lo->col1_x + lo->col1_w + TN_COL_GAP + lab_w;
+
+    for (i = 0; i < 5; i++) {
+        lo->row_y[i] = (UWORD)(6 + i * lo->pitch);
+    }
+
+    lo->btn_h = lo->gh + 2;
+    lo->btn_y = (UWORD)(6 + 5 * lo->pitch + 4);
+    lo->win_w = lo->col2_x + lo->col2_w + TN_BORDER_PAD;
+
+    /* Five equal buttons across the bottom */
+    lo->btn_w = (UWORD)((lo->win_w - 2 * TN_BORDER_PAD - 4 * 8) / 5);
+
+    /* Window OUTER height: rows + button bar + Intuition chrome estimate
+     * (title bar + bottom border) so OpenWindow never overflows NTSC. */
+    lo->win_h = (UWORD)(lo->btn_y + lo->btn_h + 8 +   /* interior bottom pad */
+                        (scr->WBorTop + lo->fh + 1) + scr->WBorBottom + 4);
+
+    /* Centre on the visible area; never hard-code WA_Top (TNET-062) */
+    {
+        WORD vis_top    = (WORD)(scr->WBorTop + lo->fh + 1);
+        WORD vis_left   = (WORD)scr->WBorLeft;
+        WORD vis_h      = (WORD)scr->Height - vis_top - (WORD)scr->WBorBottom;
+        WORD vis_w      = (WORD)scr->Width - vis_left - (WORD)scr->WBorRight;
+
+        if (vis_h < (WORD)lo->win_h) {
+            lo->win_top  = vis_top;
+            lo->win_h    = (UWORD)(vis_h < 0 ? 0 : vis_h);
+        } else {
+            lo->win_top  = (WORD)(vis_top + (vis_h - (WORD)lo->win_h) / 2);
+        }
+
+    if (vis_w < (WORD)lo->win_w) {
+        lo->win_left = vis_left;
+        lo->win_w    = (UWORD)(vis_w < 0 ? 0 : vis_w);
+    } else {
+        lo->win_left = (WORD)(vis_left + (vis_w - (WORD)lo->win_w) / 2);
+    }
+    }
+}
+
+/* Render 3D bevelled group frames (geometry follows the computed layout) */
+static void render_gui_frames(struct Window *win, APTR vi, const PrefsLayout *lo)
 {
     if (!win || !vi) return;
 
-    /* Group 1: Hardware & Network Interface */
-    DrawBevelBox(win->RPort, 12, 20, 460, 52,
+    /* Group 1: Interface (rows 0-1) */
+    DrawBevelBox(win->RPort, 4, (WORD)lo->row_y[0] - 3,
+                 (WORD)lo->win_w - 8, (WORD)(2 * lo->pitch + 4),
                  GT_VisualInfo, (ULONG)vi,
                  GTBB_Recessed, TRUE,
                  TAG_END);
 
-    /* Group 2: IP Addressing & Nameserver Configuration */
-    DrawBevelBox(win->RPort, 12, 78, 460, 110,
-                 GT_VisualInfo, (ULONG)vi,
-                 GTBB_Recessed, TRUE,
-                 TAG_END);
-
-    /* Group 3: Host Identity */
-    DrawBevelBox(win->RPort, 12, 194, 460, 36,
+    /* Group 2: Addressing & Identity (rows 2-4) */
+    DrawBevelBox(win->RPort, 4, (WORD)lo->row_y[2] - 3,
+                 (WORD)lo->win_w - 8, (WORD)(3 * lo->pitch + 4),
                  GT_VisualInfo, (ULONG)vi,
                  GTBB_Recessed, TRUE,
                  TAG_END);
 }
+
+/* -------------------------------------------------------------------- main */
 
 int main(int argc, char *argv[])
 {
@@ -90,25 +354,26 @@ int main(int argc, char *argv[])
     struct Gadget *glist = NULL;
     struct Gadget *gad = NULL;
     struct NewGadget ng;
+    PrefsLayout lo;
 
     /* Gadget Pointers */
-    struct Gadget *gad_dev = NULL;
-    struct Gadget *gad_unit = NULL;
-    struct Gadget *gad_mode = NULL;
-    struct Gadget *gad_ip = NULL;
-    struct Gadget *gad_nm = NULL;
-    struct Gadget *gad_gw = NULL;
-    struct Gadget *gad_dns1 = NULL;
-    struct Gadget *gad_dns2 = NULL;
-    struct Gadget *gad_host = NULL;
+    struct Gadget *gad_dev   = NULL;
+    struct Gadget *gad_unit  = NULL;
+    struct Gadget *gad_mode  = NULL;
+    struct Gadget *gad_ip    = NULL;
+    struct Gadget *gad_nm    = NULL;
+    struct Gadget *gad_gw    = NULL;
+    struct Gadget *gad_dns1  = NULL;
+    struct Gadget *gad_dns2  = NULL;
+    struct Gadget *gad_host  = NULL;
+    struct Gadget *gad_mtu   = NULL;
+    struct Gadget *gad_daemon = NULL;
 
     struct IntuiMessage *imsg = NULL;
     ULONG class;
     UWORD code;
     BOOL running = TRUE;
     TnPrefs prefs;
-    char hostname_buf[32] = "amiga";
-    char dns2_buf[20] = "1.0.0.1";
     (void)argc; (void)argv;
 
     GadToolsBase = OpenLibrary((CONST_STRPTR)"gadtools.library", 36);
@@ -122,6 +387,8 @@ int main(int argc, char *argv[])
     scr = LockPubScreen(NULL);
     if (!scr) goto cleanup;
 
+    compute_layout(&lo, scr);
+
     vi = GetVisualInfo(scr, TAG_END);
     if (!vi) goto cleanup;
 
@@ -130,20 +397,20 @@ int main(int argc, char *argv[])
     if (!gad) goto cleanup;
 
     /* Base NewGadget defaults */
-    ng.ng_TextAttr   = &g_gui_font;
+    ng.ng_TextAttr   = lo.font;
     ng.ng_VisualInfo = vi;
     ng.ng_UserData   = NULL;
+    ng.ng_Height     = lo.gh;
 
     /* =========================================================================
-     * SECTION 1: HARDWARE INTERFACE (Top: 26 - 68)
+     * GROUP 1: INTERFACE
      * ========================================================================= */
 
-    /* 1. Device Name String */
-    ng.ng_LeftEdge   = 120;
-    ng.ng_TopEdge    = 28;
-    ng.ng_Width      = 190;
-    ng.ng_Height     = 14;
-    ng.ng_GadgetText = (STRPTR)"SANA-II Dev:";
+    /* Device Name */
+    ng.ng_LeftEdge   = (WORD)lo.col1_x;
+    ng.ng_TopEdge    = (WORD)lo.row_y[0];
+    ng.ng_Width      = lo.col1_w;
+    ng.ng_GadgetText = (STRPTR)"Device:";
     ng.ng_GadgetID   = GID_DEVICE;
     ng.ng_Flags      = PLACETEXT_LEFT;
     gad_dev = CreateGadget(STRING_KIND, gad, &ng,
@@ -152,189 +419,162 @@ int main(int argc, char *argv[])
                            TAG_END);
     if (!gad_dev) goto cleanup;
 
-    /* 2. Unit Number Integer */
-    ng.ng_LeftEdge   = 390;
-    ng.ng_TopEdge    = 28;
-    ng.ng_Width      = 60;
-    ng.ng_Height     = 14;
+    /* Unit Number */
+    ng.ng_LeftEdge   = (WORD)lo.col2_x;
+    ng.ng_Width      = (UWORD)(6 * lo.fh / 2);
     ng.ng_GadgetText = (STRPTR)"Unit:";
     ng.ng_GadgetID   = GID_UNIT;
-    ng.ng_Flags      = PLACETEXT_LEFT;
     gad_unit = CreateGadget(INTEGER_KIND, gad_dev, &ng,
                             GTIN_Number, prefs.unit,
                             GTIN_MaxChars, 5,
                             TAG_END);
     if (!gad_unit) goto cleanup;
 
-    /* 3. IP Addressing Mode Cycle */
-    ng.ng_LeftEdge   = 120;
-    ng.ng_TopEdge    = 48;
-    ng.ng_Width      = 190;
-    ng.ng_Height     = 14;
+    /* Addressing Mode Cycle */
+    ng.ng_LeftEdge   = (WORD)lo.col1_x;
+    ng.ng_TopEdge    = (WORD)lo.row_y[1];
+    ng.ng_Width      = lo.col1_w;
     ng.ng_GadgetText = (STRPTR)"Config Mode:";
     ng.ng_GadgetID   = GID_MODE;
-    ng.ng_Flags      = PLACETEXT_LEFT;
     gad_mode = CreateGadget(CYCLE_KIND, gad_unit, &ng,
                             GTCY_Labels, (ULONG)g_mode_labels,
                             GTCY_Active, prefs.use_dhcp ? 0 : 1,
                             TAG_END);
     if (!gad_mode) goto cleanup;
 
+    /* MTU (TNET-063) */
+    ng.ng_LeftEdge   = (WORD)lo.col2_x;
+    ng.ng_Width      = (UWORD)(6 * lo.fh / 2);
+    ng.ng_GadgetText = (STRPTR)"MTU:";
+    ng.ng_GadgetID   = GID_MTU;
+    gad_mtu = CreateGadget(INTEGER_KIND, gad_mode, &ng,
+                           GTIN_Number, prefs.mtu,
+                           GTIN_MaxChars, 5,
+                           TAG_END);
+    if (!gad_mtu) goto cleanup;
+
     /* =========================================================================
-     * SECTION 2: TCP/IP ADDRESSING (Top: 84 - 180)
+     * GROUP 2: ADDRESSING & IDENTITY
      * ========================================================================= */
 
-    /* 4. IP Address String */
-    ng.ng_LeftEdge   = 120;
-    ng.ng_TopEdge    = 86;
-    ng.ng_Width      = 140;
-    ng.ng_Height     = 14;
+    /* IP Address */
+    ng.ng_LeftEdge   = (WORD)lo.col1_x;
+    ng.ng_TopEdge    = (WORD)lo.row_y[2];
+    ng.ng_Width      = lo.col1_w;
     ng.ng_GadgetText = (STRPTR)"IP Address:";
     ng.ng_GadgetID   = GID_IP;
-    ng.ng_Flags      = PLACETEXT_LEFT;
-    gad_ip = CreateGadget(STRING_KIND, gad_mode, &ng,
+    gad_ip = CreateGadget(STRING_KIND, gad_mtu, &ng,
                           GTST_String, (ULONG)prefs.ip_addr,
                           GTST_MaxChars, 19,
                           TAG_END);
     if (!gad_ip) goto cleanup;
 
-    /* 5. Subnet Mask String */
-    ng.ng_LeftEdge   = 330;
-    ng.ng_TopEdge    = 86;
-    ng.ng_Width      = 120;
-    ng.ng_Height     = 14;
+    /* Subnet Mask */
+    ng.ng_LeftEdge   = (WORD)lo.col2_x;
+    ng.ng_Width      = lo.col2_w;
     ng.ng_GadgetText = (STRPTR)"Netmask:";
     ng.ng_GadgetID   = GID_NETMASK;
-    ng.ng_Flags      = PLACETEXT_LEFT;
     gad_nm = CreateGadget(STRING_KIND, gad_ip, &ng,
                           GTST_String, (ULONG)prefs.netmask,
                           GTST_MaxChars, 19,
                           TAG_END);
     if (!gad_nm) goto cleanup;
 
-    /* 6. Default Gateway String */
-    ng.ng_LeftEdge   = 120;
-    ng.ng_TopEdge    = 108;
-    ng.ng_Width      = 140;
-    ng.ng_Height     = 14;
+    /* Default Gateway */
+    ng.ng_LeftEdge   = (WORD)lo.col1_x;
+    ng.ng_TopEdge    = (WORD)lo.row_y[3];
+    ng.ng_Width      = lo.col1_w;
     ng.ng_GadgetText = (STRPTR)"Gateway:";
     ng.ng_GadgetID   = GID_GATEWAY;
-    ng.ng_Flags      = PLACETEXT_LEFT;
     gad_gw = CreateGadget(STRING_KIND, gad_nm, &ng,
                           GTST_String, (ULONG)prefs.gateway,
                           GTST_MaxChars, 19,
                           TAG_END);
     if (!gad_gw) goto cleanup;
 
-    /* 7. Primary DNS Server */
-    ng.ng_LeftEdge   = 120;
-    ng.ng_TopEdge    = 130;
-    ng.ng_Width      = 140;
-    ng.ng_Height     = 14;
-    ng.ng_GadgetText = (STRPTR)"Primary DNS:";
+    /* Primary DNS */
+    ng.ng_LeftEdge   = (WORD)lo.col2_x;
+    ng.ng_Width      = lo.col2_w;
+    ng.ng_GadgetText = (STRPTR)"DNS 1:";
     ng.ng_GadgetID   = GID_DNS1;
-    ng.ng_Flags      = PLACETEXT_LEFT;
     gad_dns1 = CreateGadget(STRING_KIND, gad_gw, &ng,
                             GTST_String, (ULONG)prefs.dns_server,
                             GTST_MaxChars, 19,
                             TAG_END);
     if (!gad_dns1) goto cleanup;
 
-    /* 8. Secondary DNS Server */
-    ng.ng_LeftEdge   = 330;
-    ng.ng_TopEdge    = 130;
-    ng.ng_Width      = 120;
-    ng.ng_Height     = 14;
-    ng.ng_GadgetText = (STRPTR)"Sec DNS:";
+    /* Secondary DNS (TNET-063: bound to TnPrefs, persisted as DNS2=) */
+    ng.ng_LeftEdge   = (WORD)lo.col1_x;
+    ng.ng_TopEdge    = (WORD)lo.row_y[4];
+    ng.ng_Width      = lo.col1_w;
+    ng.ng_GadgetText = (STRPTR)"DNS 2:";
     ng.ng_GadgetID   = GID_DNS2;
-    ng.ng_Flags      = PLACETEXT_LEFT;
     gad_dns2 = CreateGadget(STRING_KIND, gad_dns1, &ng,
-                            GTST_String, (ULONG)dns2_buf,
+                            GTST_String, (ULONG)prefs.dns2,
                             GTST_MaxChars, 19,
                             TAG_END);
     if (!gad_dns2) goto cleanup;
 
-    /* =========================================================================
-     * SECTION 3: HOST IDENTITY (Top: 200)
-     * ========================================================================= */
-
-    /* 9. Hostname String */
-    ng.ng_LeftEdge   = 120;
-    ng.ng_TopEdge    = 202;
-    ng.ng_Width      = 140;
-    ng.ng_Height     = 14;
+    /* Host Name (TNET-063: bound to TnPrefs, DHCP option 12 + gethostname) */
+    ng.ng_LeftEdge   = (WORD)lo.col2_x;
+    ng.ng_Width      = lo.col2_w;
     ng.ng_GadgetText = (STRPTR)"Host Name:";
     ng.ng_GadgetID   = GID_HOSTNAME;
-    ng.ng_Flags      = PLACETEXT_LEFT;
     gad_host = CreateGadget(STRING_KIND, gad_dns2, &ng,
-                            GTST_String, (ULONG)hostname_buf,
-                            GTST_MaxChars, 31,
+                            GTST_String, (ULONG)prefs.hostname,
+                            GTST_MaxChars, 63,
                             TAG_END);
     if (!gad_host) goto cleanup;
 
     /* =========================================================================
-     * SECTION 4: ACTION BUTTON BAR (Top: 242)
+     * BUTTON BAR (TNET-064/065)
      * ========================================================================= */
 
-    /* Save Button */
-    ng.ng_LeftEdge   = 14;
-    ng.ng_TopEdge    = 242;
-    ng.ng_Width      = 84;
-    ng.ng_Height     = 18;
-    ng.ng_GadgetText = (STRPTR)"Save";
+    ng.ng_TopEdge    = (WORD)lo.btn_y;
+    ng.ng_Height     = lo.btn_h;
     ng.ng_Flags      = PLACETEXT_IN;
+
+    ng.ng_LeftEdge   = (WORD)(TN_BORDER_PAD);
+    ng.ng_Width      = lo.btn_w;
+    ng.ng_GadgetText = (STRPTR)"Save";
     ng.ng_GadgetID   = GID_SAVE;
     gad = CreateGadget(BUTTON_KIND, gad_host, &ng, TAG_END);
     if (!gad) goto cleanup;
 
-    /* Use / Apply Button */
-    ng.ng_LeftEdge   = 104;
-    ng.ng_TopEdge    = 242;
-    ng.ng_Width      = 84;
-    ng.ng_Height     = 18;
+    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 8);
     ng.ng_GadgetText = (STRPTR)"Use";
     ng.ng_GadgetID   = GID_USE;
     gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
     if (!gad) goto cleanup;
 
-    /* Test Ping Button */
-    ng.ng_LeftEdge   = 196;
-    ng.ng_TopEdge    = 242;
-    ng.ng_Width      = 90;
-    ng.ng_Height     = 18;
+    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 8);
     ng.ng_GadgetText = (STRPTR)"Ping Test";
     ng.ng_GadgetID   = GID_PING;
     gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
     if (!gad) goto cleanup;
 
-    /* Start / Restart Daemon Button */
-    ng.ng_LeftEdge   = 294;
-    ng.ng_TopEdge    = 242;
-    ng.ng_Width      = 92;
-    ng.ng_Height     = 18;
-    ng.ng_GadgetText = (STRPTR)"Start Stack";
+    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 8);
+    ng.ng_GadgetText = (STRPTR)"Start Stack";   /* relabelled live (TNET-065) */
     ng.ng_GadgetID   = GID_DAEMON;
-    gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
-    if (!gad) goto cleanup;
+    gad_daemon = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
+    if (!gad_daemon) goto cleanup;
 
-    /* Cancel Button */
-    ng.ng_LeftEdge   = 394;
-    ng.ng_TopEdge    = 242;
-    ng.ng_Width      = 78;
-    ng.ng_Height     = 18;
+    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 8);
     ng.ng_GadgetText = (STRPTR)"Cancel";
     ng.ng_GadgetID   = GID_CANCEL;
-    gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
+    gad = CreateGadget(BUTTON_KIND, gad_daemon, &ng, TAG_END);
     if (!gad) goto cleanup;
 
-    /* Open Centered Intuition Window */
+    /* Open window: position/size computed from the screen (TNET-062) */
     win = OpenWindowTags(NULL,
-                         WA_Left,          50,
-                         WA_Top,           25,
-                         WA_Width,         484,
-                         WA_Height,        272,
-                         WA_IDCMP,         IDCMP_CLOSEWINDOW | IDCMP_REFRESHWINDOW | IDCMP_GADGETUP | IDCMP_GADGETDOWN,
-                         WA_Flags,         WFLG_DRAGBAR | WFLG_DEPTHGADGET | WFLG_CLOSEGADGET | WFLG_ACTIVATE | WFLG_SMART_REFRESH,
+                         WA_Left,          (ULONG)lo.win_left,
+                         WA_Top,           (ULONG)lo.win_top,
+                         WA_Width,         (ULONG)lo.win_w,
+                         WA_Height,        (ULONG)lo.win_h,
+                         WA_IDCMP,         IDCMP_CLOSEWINDOW | IDCMP_REFRESHWINDOW |
+                                           IDCMP_GADGETUP | IDCMP_VANILLAKEY,
+                         WA_Flags,         WFLG_DRAGBAR | WFLG_DEPTHGADGET | WFLG_CLOSEGADGET |
+                                           WFLG_ACTIVATE | WFLG_SMART_REFRESH,
                          WA_Gadgets,       (ULONG)glist,
                          WA_Title,         (ULONG)"tolunnet Network Preferences",
                          WA_PubScreen,     (ULONG)scr,
@@ -342,8 +582,10 @@ int main(int argc, char *argv[])
 
     if (!win) goto cleanup;
 
+    update_daemon_button(win, gad_daemon);
+
     GT_RefreshWindow(win, NULL);
-    render_gui_frames(win, vi);
+    render_gui_frames(win, vi, &lo);
 
     /* Event Message Loop */
     while (running) {
@@ -364,45 +606,31 @@ int main(int argc, char *argv[])
                     case GID_SAVE:
                     case GID_USE:
                         {
-                            struct StringInfo *si;
+                            LONG mtu;
 
-                            si = (struct StringInfo *)gad_unit->SpecialInfo;
-                            if (si) {
-                                prefs.unit = (ULONG)si->LongInt;
+                            prefs.unit = (ULONG)gad_get_int(gad_unit, (LONG)prefs.unit);
+
+                            gad_get_str(gad_dev, prefs.device, sizeof(prefs.device));
+                            gad_get_str(gad_ip, prefs.ip_addr, sizeof(prefs.ip_addr));
+                            gad_get_str(gad_nm, prefs.netmask, sizeof(prefs.netmask));
+                            gad_get_str(gad_gw, prefs.gateway, sizeof(prefs.gateway));
+                            gad_get_str(gad_dns1, prefs.dns_server, sizeof(prefs.dns_server));
+                            gad_get_str(gad_dns2, prefs.dns2, sizeof(prefs.dns2));       /* TNET-063 */
+                            gad_get_str(gad_host, prefs.hostname, sizeof(prefs.hostname));/* TNET-063 */
+
+                            /* TNET-063: MTU key - 0 keeps the driver default;
+                             * out-of-range values fall back to 0 */
+                            mtu = gad_get_int(gad_mtu, 0);
+                            if (mtu >= 576 && mtu <= 1500) {
+                                prefs.mtu = (ULONG)mtu;
+                            } else {
+                                prefs.mtu = 0;
                             }
 
-                            si = (struct StringInfo *)gad_dev->SpecialInfo;
-                            if (si && si->Buffer) {
-                                CopyMem(si->Buffer, prefs.device, sizeof(prefs.device) - 1);
-                                prefs.device[sizeof(prefs.device) - 1] = '\0';
-                            }
-
-                            si = (struct StringInfo *)gad_ip->SpecialInfo;
-                            if (si && si->Buffer) {
-                                CopyMem(si->Buffer, prefs.ip_addr, sizeof(prefs.ip_addr) - 1);
-                                prefs.ip_addr[sizeof(prefs.ip_addr) - 1] = '\0';
-                            }
-
-                            si = (struct StringInfo *)gad_nm->SpecialInfo;
-                            if (si && si->Buffer) {
-                                CopyMem(si->Buffer, prefs.netmask, sizeof(prefs.netmask) - 1);
-                                prefs.netmask[sizeof(prefs.netmask) - 1] = '\0';
-                            }
-
-                            si = (struct StringInfo *)gad_gw->SpecialInfo;
-                            if (si && si->Buffer) {
-                                CopyMem(si->Buffer, prefs.gateway, sizeof(prefs.gateway) - 1);
-                                prefs.gateway[sizeof(prefs.gateway) - 1] = '\0';
-                            }
-
-                            si = (struct StringInfo *)gad_dns1->SpecialInfo;
-                            if (si && si->Buffer) {
-                                CopyMem(si->Buffer, prefs.dns_server, sizeof(prefs.dns_server) - 1);
-                                prefs.dns_server[sizeof(prefs.dns_server) - 1] = '\0';
-                            }
-
-                            /* Persist changes */
-                            tn_prefs_save(&prefs);
+                            /* TNET-064: Use = ENV: only; Save = ENV:+ENVARC:+DEVS: */
+                            tn_prefs_save(&prefs,
+                                          (g->GadgetID == GID_SAVE) ? TN_PREFS_SAVE : TN_PREFS_USE);
+                            after_save_use(win);
 
                             if (g->GadgetID == GID_SAVE) {
                                 running = FALSE;
@@ -412,7 +640,7 @@ int main(int argc, char *argv[])
 
                     case GID_PING:
                         {
-                            char ping_cmd[160];
+                            char ping_cmd[192];
                             CONST_STRPTR target = (prefs.gateway[0] != '\0') ? (CONST_STRPTR)prefs.gateway : (CONST_STRPTR)"1.1.1.1";
                             char *p = ping_cmd;
                             CONST_STRPTR s1 = (CONST_STRPTR)"ping ";
@@ -426,10 +654,13 @@ int main(int argc, char *argv[])
                         break;
 
                     case GID_DAEMON:
-                        {
-                            /* Start or restart tolunnet background daemon */
-                            Execute((CONST_STRPTR)"Run >NIL: C:tolunnet", (BPTR)0, (BPTR)0);
+                        /* TNET-065: state-aware Start/Stop */
+                        if (daemon_running()) {
+                            daemon_stop(win);
+                        } else {
+                            daemon_start();
                         }
+                        update_daemon_button(win, gad_daemon);
                         break;
 
                     case GID_CANCEL:
@@ -439,10 +670,12 @@ int main(int argc, char *argv[])
                 }
             } else if (class == IDCMP_CLOSEWINDOW) {
                 running = FALSE;
+            } else if (class == IDCMP_VANILLAKEY) {
+                if (code == 27) running = FALSE;   /* ESC = Cancel */
             } else if (class == IDCMP_REFRESHWINDOW) {
                 GT_BeginRefresh(win);
                 GT_EndRefresh(win, TRUE);
-                render_gui_frames(win, vi);
+                render_gui_frames(win, vi, &lo);
             }
 
             GT_ReplyIMsg(imsg);

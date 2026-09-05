@@ -60,9 +60,9 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
 
     if (base == NULL) return -1;
 
-    if (base->tolunet_port == NULL) {
-        base->tolunet_port = FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
-        if (base->tolunet_port == NULL) {
+    if (base->tolunnet_port == NULL) {
+        base->tolunnet_port = FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
+        if (base->tolunnet_port == NULL) {
             tn_set_errno_val(base, ENETDOWN);
             return -1;
         }
@@ -77,7 +77,7 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
     msg->client_task         = base->owner_task;
     msg->socket_base         = (APTR)base;
 
-    PutMsg(base->tolunet_port, (struct Message *)msg);
+    PutMsg(base->tolunnet_port, (struct Message *)msg);
     WaitPort(base->reply_port);
     GetMsg(base->reply_port);
 
@@ -135,7 +135,7 @@ struct Library *tn_lib_open(struct Library *lib, ULONG version)
         return NULL;
     }
 
-    base->tolunet_port = FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
+    base->tolunnet_port = FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
     base->errno_ptr    = &base->task_errno;
     base->task_errno   = 0;
     base->errno_width  = 4;

@@ -44,7 +44,8 @@ typedef enum TnIpcCmd {
     TN_IPC_CMD_GETHOSTBYADDR,   /* gethostbyaddr(addr, len, type) */
     TN_IPC_CMD_WAITSELECT,      /* WaitSelect(...) */
     TN_IPC_CMD_DUP2,            /* Dup2Socket(old_fd, new_fd) */
-    TN_IPC_CMD_GETSTATUS        /* Query live daemon interface status and socket count */
+    TN_IPC_CMD_GETSTATUS,       /* Query live daemon interface status and socket count */
+    TN_IPC_CMD_RECONFIG         /* Reload configuration (TNET-064; TolunnetPrefs Save/Use) */
 } TnIpcCmd;
 
 /* IPC Message passed via Exec PutMsg/GetMsg/ReplyMsg */
@@ -68,7 +69,7 @@ typedef struct TnSocketBase {
     UWORD           pad;
     struct Task    *owner_task;             /* Task owning this base instance */
     struct MsgPort *reply_port;             /* Dedicated private reply port */
-    struct MsgPort *tolunet_port;           /* Reference to tolunet.port */
+    struct MsgPort *tolunnet_port;           /* Reference to tolunnet.port */
     TnIpcMsg        ipc_msg;                /* Embedded zero-allocation IPC message */
     LONG           *errno_ptr;              /* Pointer to client task's errno variable */
     LONG            task_errno;             /* Fallback task errno if no ptr set */

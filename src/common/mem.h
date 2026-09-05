@@ -1,5 +1,5 @@
 /*
- * tolunet memory helpers — placeholder for M2.
+ * tolunnet memory helpers — placeholder for M2.
  *
  * Master prompt §2: src/common/mem.c. In M2 the network task wires lwIP's
  * memory callbacks (lwip_malloc/free → Amiga AllocVec/FreeVec under NO_SYS=1)
@@ -8,8 +8,8 @@
  *
  * Nothing here is called by the M0 hello-task.
  */
-#ifndef TOLUNET_MEM_H
-#define TOLUNET_MEM_H
+#ifndef TOLUNNET_MEM_H
+#define TOLUNNET_MEM_H
 
 #include <exec/types.h>
 
@@ -18,4 +18,4 @@
  * `TolunetStatus MEM` budget print (§9). */
 ULONG tn_mem_resident_bytes(void);
 
-#endif /* TOLUNET_MEM_H */
+#endif /* TOLUNNET_MEM_H */

@@ -1,5 +1,5 @@
 /*
- * tolunet memory helpers — M0 stub.
+ * tolunnet memory helpers — M0 stub.
  *
  * Real accounting arrives with the network task (M2): the task will track
  * AllocVec allocations for pbuf pools and resident structures and report via

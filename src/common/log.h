@@ -1,9 +1,9 @@
 /*
- * tolunet logging interface — DOS Write/Output (master prompt §3: no stdio in
+ * tolunnet logging interface — DOS Write/Output (master prompt §3: no stdio in
  * resident code).
  */
-#ifndef TOLUNET_LOG_H
-#define TOLUNET_LOG_H
+#ifndef TOLUNNET_LOG_H
+#define TOLUNNET_LOG_H
 
 #include <exec/types.h>
 #include <dos/dos.h>
@@ -23,4 +23,4 @@ void tn_log(int tier, const char *msg);
 /* Formatted log to Output() (no libc stdio; supports %s, %d, %u, %x, %X, %02x, %p). */
 void tn_logf(int tier, const char *fmt, ...);
 
-#endif /* TOLUNET_LOG_H */
+#endif /* TOLUNNET_LOG_H */

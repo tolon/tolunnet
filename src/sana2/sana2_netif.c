@@ -1,5 +1,5 @@
 /*
- * tolunet — SANA-II netif glue and lwIP adapter implementation.
+ * tolunnet — SANA-II netif glue and lwIP adapter implementation.
  */
 
 #include "sana2_netif.h"
@@ -36,7 +36,7 @@ static void tn_delete_extio(struct IORequest *io)
 
 void tn_log_s2err(const char *step, LONG err, LONG wire)
 {
-    tn_logf(TN_LOG_BASIC, "tolunet: %s failed err=%ld wire=%ld\n",
+    tn_logf(TN_LOG_BASIC, "tolunnet: %s failed err=%ld wire=%ld\n",
             step, err, wire);
 }
 
@@ -115,7 +115,7 @@ TnS2Result tn_s2_open(TnSana2If *nif, CONST_STRPTR device_name, ULONG unit)
 
     err = OpenDevice((STRPTR)device_name, unit, (struct IORequest *)io, 0UL);
     if (err != 0) {
-        tn_logf(TN_LOG_BASIC, "tolunet: OpenDevice(%s, %lu) failed err=%d\n",
+        tn_logf(TN_LOG_BASIC, "tolunnet: OpenDevice(%s, %lu) failed err=%d\n",
                 device_name, unit, (int)err);
         tn_delete_extio((struct IORequest *)io);
         nif->io = NULL;
@@ -230,8 +230,17 @@ TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac)
     io->ios2_Req.io_Error   = 0;
     DoIO((struct IORequest *)io);
     if (io->ios2_Req.io_Error != 0) {
-        tn_log_s2err("S2_CONFIGINTERFACE", io->ios2_Req.io_Error, io->ios2_WireError);
-        return TN_S2_CONFIG_FAIL;
+        if (io->ios2_Req.io_Error == S2ERR_BAD_STATE &&
+            io->ios2_WireError == S2WERR_IS_CONFIGURED) {
+            /* TNET-060: on a daemon restart (stop/start without reboot) most
+             * drivers answer BAD_STATE/IS_CONFIGURED because the unit kept
+             * our station address. Treat as success; the station address was
+             * already read back above via S2_GETSTATIONADDRESS. */
+            tn_log(TN_LOG_BASIC, "tolunnet: S2_CONFIGINTERFACE: already configured (ok)\n");
+        } else {
+            tn_log_s2err("S2_CONFIGINTERFACE", io->ios2_Req.io_Error, io->ios2_WireError);
+            return TN_S2_CONFIG_FAIL;
+        }
     }
 
     /* S2_TRACKTYPE for IPv4 and ARP */
@@ -251,7 +260,7 @@ TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac)
     if (io->ios2_Req.io_Error != 0) {
         if (io->ios2_Req.io_Error == S2ERR_BAD_STATE &&
             io->ios2_WireError == S2WERR_UNIT_ONLINE) {
-            tn_log(TN_LOG_BASIC, "tolunet: S2_ONLINE: already online (ok)\n");
+            tn_log(TN_LOG_BASIC, "tolunnet: S2_ONLINE: already online (ok)\n");
         } else {
             tn_log_s2err("S2_ONLINE", io->ios2_Req.io_Error, io->ios2_WireError);
             return TN_S2_ONLINE_FAIL;
