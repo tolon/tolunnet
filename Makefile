@@ -60,7 +60,7 @@ LWIP_OBJS = $(patsubst %.c,$(BUILD)/%.o,$(LWIP_CORE_SRCS))
 COMMON_OBJS = $(BUILD)/src/common/log.o $(BUILD)/src/common/mem.o $(BUILD)/src/common/prefs.o \
               $(BUILD)/src/common/inet_parse.o $(BUILD)/src/common/config_text.o \
               $(BUILD)/src/common/sbtc_dispatch.o $(BUILD)/src/common/fdset_util.o \
-              $(BUILD)/src/common/ipc_client.o \
+              $(BUILD)/src/common/ipc_client.o $(BUILD)/src/common/http_url.o \
               $(BUILD)/src/task/timers.o
 SANA2_OBJS  = $(BUILD)/src/sana2/sana2_netif.o $(BUILD)/src/sana2/sana2_stubs.o $(BUILD)/src/sana2/buffers.o
 LIB_OBJS    = $(BUILD)/src/lib/lib_init.o $(BUILD)/src/lib/lib_vectors.o $(BUILD)/src/lib/lib_stubs.o
@@ -87,7 +87,7 @@ HOST_CFLAGS  = -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -g \
                -Itests/host -Isrc/common -Isrc
 HOST_UNITS   = src/common/inet_parse.c src/common/config_text.c \
                src/common/sbtc_dispatch.c src/common/fdset_util.c \
-               src/common/ipc_client.c
+               src/common/ipc_client.c src/common/http_url.c
 HOST_TESTS   = $(wildcard tests/host/test_*.c)
 HOST_BINS    = $(patsubst tests/host/%.c,$(BUILD)/host/%,$(HOST_TESTS))
 
@@ -139,7 +139,7 @@ $(PING_BIN): $(BUILD)/src/cmds/TolunnetPing.o $(BUILD)/src/common/log.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetGet HTTP Client CLI Binary (M5)
-$(GET_BIN): $(BUILD)/src/cmds/TolunnetGet.o $(BUILD)/src/common/log.o
+$(GET_BIN): $(BUILD)/src/cmds/TolunnetGet.o $(BUILD)/src/common/log.o $(BUILD)/src/common/http_url.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetPrefs Native Workbench GadTools GUI Panel
