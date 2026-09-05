@@ -32,7 +32,9 @@
 #include <graphics/gfxbase.h>
 #include <graphics/text.h>
 #include <dos/dos.h>
+#include <dos/dostags.h>
 #include <exec/execbase.h>
+#include <devices/timer.h>
 
 struct Library *GadToolsBase = NULL;
 
@@ -48,10 +50,11 @@ struct Library *GadToolsBase = NULL;
 #define GID_HOSTNAME    9
 #define GID_SAVE        10
 #define GID_USE         11
-#define GID_PING        12
-#define GID_DAEMON      13
-#define GID_CANCEL      14
-#define GID_MTU         15
+#define GID_START       12
+#define GID_STOP        13
+#define GID_PING        14
+#define GID_CANCEL      15
+#define GID_MTU         16
 
 static const STRPTR g_mode_labels[] = {
     (STRPTR)"DHCP (Automatic)",
@@ -156,62 +159,51 @@ static void notify_daemon_reconfig(void)
     }
 }
 
-/* TNET-065: start the daemon (no args -> reads DEVS:/ENV: config) and wait
- * briefly for its public port to appear. */
+/* TNET-065/080: start the daemon with guaranteed 32 KB stack (non-blocking) */
 static void daemon_start(void)
 {
-    int i;
-
     if (daemon_running()) return;
-    Execute((CONST_STRPTR)"Run >NIL: C:tolunnet", (BPTR)0, (BPTR)0);
-
-    for (i = 0; i < 30 && !daemon_running(); i++) {
-        Delay(5); /* 100 ms slices: up to ~3 s */
-    }
+    PutStr((CONST_STRPTR)"TolunnetPrefs: starting daemon with 32 KB stack...\n");
+    SystemTags((CONST_STRPTR)"C:tolunnet",
+               SYS_Asynch, TRUE,
+               SYS_Input, (BPTR)0,
+               SYS_Output, (BPTR)0,
+               NP_StackSize, 32768,
+               TAG_END);
 }
 
-/* TNET-065: ask the daemon task (found via the port's mp_SigTask) to exit.
- * The daemon refuses while clients are open (TNET-059); report honestly. */
+/* TNET-065/079/081: ask the daemon task to exit (non-blocking, no Delay loops) */
 static void daemon_stop(struct Window *win)
 {
     struct MsgPort *port = find_daemon_port();
-    int i;
 
     if (port == NULL) return;
+    PutStr((CONST_STRPTR)"TolunnetPrefs: sending stop signal to daemon...\n");
     if (port->mp_SigTask != NULL) {
         Signal((struct Task *)port->mp_SigTask, SIGBREAKF_CTRL_C);
     }
-
-    for (i = 0; i < 30 && daemon_running(); i++) {
-        Delay(5);
-    }
-
-    if (daemon_running()) {
-        struct EasyStruct es;
-        es.es_StructSize   = sizeof(struct EasyStruct);
-        es.es_Flags        = 0;
-        es.es_Title        = (STRPTR)"tolunnet";
-        es.es_TextFormat   = (STRPTR)"The stack is still running.\n"
-                                     "Applications still have bsdsocket.library\n"
-                                     "open (TNET-059 guard). Close them and\n"
-                                     "press Stop again.";
-        es.es_GadgetFormat = (STRPTR)"Ok";
-        EasyRequestArgs(win, &es, NULL, NULL);
-    }
+    (void)win;
 }
 
-/* TNET-065: relabel the Start/Stop button from live state */
-static void update_daemon_button(struct Window *win, struct Gadget *gad)
+/* TNET-079/081: toggle Start/Stop buttons via GT_SetGadgetAttrs (GA_Disabled) */
+static void update_daemon_buttons(struct Window *win, struct Gadget *gad_start, struct Gadget *gad_stop)
 {
-    if (gad == NULL) return;
-    SetGadgetAttrs(gad, win, NULL,
-                   GA_Text, (ULONG)(daemon_running() ? (STRPTR)"Stop Stack" : (STRPTR)"Start Stack"),
-                   TAG_END);
+    BOOL running = daemon_running();
+    if (gad_start != NULL) {
+        GT_SetGadgetAttrs(gad_start, win, NULL,
+                          GA_Disabled, running ? TRUE : FALSE,
+                          TAG_END);
+    }
+    if (gad_stop != NULL) {
+        GT_SetGadgetAttrs(gad_stop, win, NULL,
+                          GA_Disabled, running ? FALSE : TRUE,
+                          TAG_END);
+    }
 }
 
 /* TNET-064: after Save/Use, notify the daemon; if it is not running,
  * offer to start it (Amiga Prefs "Use now" behaviour). */
-static void after_save_use(struct Window *win)
+static void after_save_use(struct Window *win, struct Gadget *gad_start, struct Gadget *gad_stop)
 {
     if (daemon_running()) {
         notify_daemon_reconfig();
@@ -224,6 +216,7 @@ static void after_save_use(struct Window *win)
         es.es_GadgetFormat = (STRPTR)"Start|Not now";
         if (EasyRequestArgs(win, &es, NULL, NULL) == 1) {
             daemon_start();
+            update_daemon_buttons(win, gad_start, gad_stop);
         }
     }
 }
@@ -292,9 +285,12 @@ static void compute_layout(PrefsLayout *lo, struct Screen *scr)
     lo->btn_h = lo->gh + 2;
     lo->btn_y = (UWORD)(6 + 5 * lo->pitch + 4);
     lo->win_w = lo->col2_x + lo->col2_w + TN_BORDER_PAD;
+    if (lo->win_w < 440) {
+        lo->win_w = 440;
+    }
 
-    /* Five equal buttons across the bottom */
-    lo->btn_w = (UWORD)((lo->win_w - 2 * TN_BORDER_PAD - 4 * 8) / 5);
+    /* Six equal buttons across the bottom (TNET-079/081) */
+    lo->btn_w = (UWORD)((lo->win_w - 2 * TN_BORDER_PAD - 5 * 8) / 6);
 
     /* Window OUTER height: rows + button bar + Intuition chrome estimate
      * (title bar + bottom border) so OpenWindow never overflows NTSC. */
@@ -367,7 +363,13 @@ int main(int argc, char *argv[])
     struct Gadget *gad_dns2  = NULL;
     struct Gadget *gad_host  = NULL;
     struct Gadget *gad_mtu   = NULL;
-    struct Gadget *gad_daemon = NULL;
+    struct Gadget *gad_start = NULL;
+    struct Gadget *gad_stop  = NULL;
+
+    struct MsgPort     *timer_port = NULL;
+    struct timerequest *timer_io   = NULL;
+    BOOL                timer_active = FALSE;
+    ULONG               timer_sig = 0;
 
     struct IntuiMessage *imsg = NULL;
     ULONG class;
@@ -548,21 +550,31 @@ int main(int argc, char *argv[])
     if (!gad) goto cleanup;
 
     ng.ng_LeftEdge  += (WORD)(lo.btn_w + 8);
-    ng.ng_GadgetText = (STRPTR)"Ping Test";
-    ng.ng_GadgetID   = GID_PING;
-    gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
-    if (!gad) goto cleanup;
+    ng.ng_GadgetText = (STRPTR)"Start";
+    ng.ng_GadgetID   = GID_START;
+    gad_start = CreateGadget(BUTTON_KIND, gad, &ng,
+                             GA_Disabled, daemon_running() ? TRUE : FALSE,
+                             TAG_END);
+    if (!gad_start) goto cleanup;
 
     ng.ng_LeftEdge  += (WORD)(lo.btn_w + 8);
-    ng.ng_GadgetText = (STRPTR)"Start Stack";   /* relabelled live (TNET-065) */
-    ng.ng_GadgetID   = GID_DAEMON;
-    gad_daemon = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
-    if (!gad_daemon) goto cleanup;
+    ng.ng_GadgetText = (STRPTR)"Stop";
+    ng.ng_GadgetID   = GID_STOP;
+    gad_stop = CreateGadget(BUTTON_KIND, gad_start, &ng,
+                            GA_Disabled, daemon_running() ? FALSE : TRUE,
+                            TAG_END);
+    if (!gad_stop) goto cleanup;
+
+    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 8);
+    ng.ng_GadgetText = (STRPTR)"Ping";
+    ng.ng_GadgetID   = GID_PING;
+    gad = CreateGadget(BUTTON_KIND, gad_stop, &ng, TAG_END);
+    if (!gad) goto cleanup;
 
     ng.ng_LeftEdge  += (WORD)(lo.btn_w + 8);
     ng.ng_GadgetText = (STRPTR)"Cancel";
     ng.ng_GadgetID   = GID_CANCEL;
-    gad = CreateGadget(BUTTON_KIND, gad_daemon, &ng, TAG_END);
+    gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
     if (!gad) goto cleanup;
 
     /* Open window: position/size computed from the screen (TNET-062) */
@@ -582,14 +594,39 @@ int main(int argc, char *argv[])
 
     if (!win) goto cleanup;
 
-    update_daemon_button(win, gad_daemon);
+    /* Set up 1-second non-blocking timer for polling daemon state (TNET-079) */
+    timer_port = CreateMsgPort();
+    if (timer_port != NULL) {
+        timer_io = (struct timerequest *)CreateIORequest(timer_port, sizeof(struct timerequest));
+        if (timer_io != NULL) {
+            if (OpenDevice((CONST_STRPTR)TIMERNAME, UNIT_VBLANK, (struct IORequest *)timer_io, 0) == 0) {
+                timer_sig = 1UL << timer_port->mp_SigBit;
+                timer_io->tr_node.io_Command = TR_ADDREQUEST;
+                timer_io->tr_time.tv_secs = 1;
+                timer_io->tr_time.tv_micro = 0;
+                SendIO((struct IORequest *)timer_io);
+                timer_active = TRUE;
+            }
+        }
+    }
+
+    update_daemon_buttons(win, gad_start, gad_stop);
 
     GT_RefreshWindow(win, NULL);
     render_gui_frames(win, vi, &lo);
 
-    /* Event Message Loop */
+    /* Event Message Loop (TNET-079: non-blocking timer in Wait mask) */
     while (running) {
-        Wait(1UL << win->UserPort->mp_SigBit);
+        ULONG sigs = Wait((1UL << win->UserPort->mp_SigBit) | timer_sig);
+
+        if (timer_active && (sigs & timer_sig)) {
+            WaitIO((struct IORequest *)timer_io);
+            update_daemon_buttons(win, gad_start, gad_stop);
+            timer_io->tr_node.io_Command = TR_ADDREQUEST;
+            timer_io->tr_time.tv_secs = 1;
+            timer_io->tr_time.tv_micro = 0;
+            SendIO((struct IORequest *)timer_io);
+        }
 
         while ((imsg = GT_GetIMsg(win->UserPort)) != NULL) {
             class = imsg->Class;
@@ -630,7 +667,7 @@ int main(int argc, char *argv[])
                             /* TNET-064: Use = ENV: only; Save = ENV:+ENVARC:+DEVS: */
                             tn_prefs_save(&prefs,
                                           (g->GadgetID == GID_SAVE) ? TN_PREFS_SAVE : TN_PREFS_USE);
-                            after_save_use(win);
+                            after_save_use(win, gad_start, gad_stop);
 
                             if (g->GadgetID == GID_SAVE) {
                                 running = FALSE;
@@ -653,14 +690,14 @@ int main(int argc, char *argv[])
                         }
                         break;
 
-                    case GID_DAEMON:
-                        /* TNET-065: state-aware Start/Stop */
-                        if (daemon_running()) {
-                            daemon_stop(win);
-                        } else {
-                            daemon_start();
-                        }
-                        update_daemon_button(win, gad_daemon);
+                    case GID_START:
+                        daemon_start();
+                        update_daemon_buttons(win, gad_start, gad_stop);
+                        break;
+
+                    case GID_STOP:
+                        daemon_stop(win);
+                        update_daemon_buttons(win, gad_start, gad_stop);
                         break;
 
                     case GID_CANCEL:
@@ -683,6 +720,16 @@ int main(int argc, char *argv[])
     }
 
 cleanup:
+    if (timer_active && timer_io != NULL) {
+        if (!CheckIO((struct IORequest *)timer_io)) {
+            AbortIO((struct IORequest *)timer_io);
+            WaitIO((struct IORequest *)timer_io);
+        }
+        CloseDevice((struct IORequest *)timer_io);
+    }
+    if (timer_io != NULL) DeleteIORequest((struct IORequest *)timer_io);
+    if (timer_port != NULL) DeleteMsgPort(timer_port);
+
     if (win) CloseWindow(win);
     if (glist) FreeGadgets(glist);
     if (vi) FreeVisualInfo(vi);

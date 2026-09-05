@@ -21,6 +21,8 @@
 #include <proto/exec.h>
 #include <proto/dos.h>
 #include <dos/dos.h>
+#include <dos/dosextens.h>
+#include <exec/tasks.h>
 #include <sys/errno.h>
 
 #include "lwip/init.h"
@@ -116,11 +118,8 @@ static void tn_apply_live_config(void)
 {
     ip4_addr_t dns;
 
-    /* DNS1: configured server, or the slirp/QEMU default when unset */
+    /* DNS1: configured server, only touched when explicitly set (TNET-078) */
     if (g_prefs.dns_server[0] != '\0' && ip4addr_aton(g_prefs.dns_server, &dns)) {
-        dns_setserver(0, (const ip_addr_t *)&dns);
-    } else {
-        IP4_ADDR(&dns, 10, 0, 2, 3);
         dns_setserver(0, (const ip_addr_t *)&dns);
     }
 
@@ -1718,10 +1717,15 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
     }
 }
 
-int main(int argc, char *argv[])
+static BOOL  g_stack_swapped = FALSE;
+static ULONG g_orig_stack_size = 0;
+
+static int tn_task_real_main(int argc, char *argv[])
 {
     struct ExecBase *SysBase;
     struct Library  *DOSBase;
+    struct Task     *self_task;
+    BYTE             old_pri;
     CONST_STRPTR device = (CONST_STRPTR)"ethernet.device";
     ULONG unit = 0;
     TnS2Result s2res;
@@ -1761,6 +1765,10 @@ int main(int argc, char *argv[])
     tn_prefs_load(&g_prefs);
     g_log_level = TN_LOG_BASIC + ((g_prefs.debug > 0) ? 1 : 0);
 
+    /* TNET-066: Set task priority from prefs (default 5) */
+    self_task = FindTask(NULL);
+    old_pri = SetTaskPri(self_task, (BYTE)g_prefs.priority);
+
     device   = (CONST_STRPTR)g_prefs.device;
     unit     = g_prefs.unit;
     use_dhcp = g_prefs.use_dhcp;
@@ -1795,12 +1803,19 @@ int main(int argc, char *argv[])
     tn_log(TN_LOG_BASIC, "tolunnet: network task starting...\n");
     tn_log(TN_LOG_BASIC, "========================================\n");
 
+    if (g_stack_swapped) {
+        tn_logf(TN_LOG_BASIC, "tolunnet: switched to 32 KB stack (was %lu bytes)\n", g_orig_stack_size);
+    }
+    tn_logf(TN_LOG_BASIC, "tolunnet: task priority set to %ld (was %ld)\n",
+            (LONG)g_prefs.priority, (LONG)old_pri);
+
     log_fh = Open((CONST_STRPTR)"WORK:tolunnet-task.log", MODE_NEWFILE);
     g_log_file = log_fh;
 
     /* 1. Initialize timer.device */
     if (!tn_timer_init(&g_timer)) {
         tn_log(TN_LOG_BASIC, "tolunnet: failed to initialize timer.device\n");
+        SetTaskPri(self_task, old_pri);
         CloseLibrary(DOSBase);
         return 20;
     }
@@ -2029,7 +2044,45 @@ int main(int argc, char *argv[])
         Close(log_fh);
     }
 
-    CloseLibrary(DOSBase);
+    /* Restore original task priority */
+    tn_log(TN_LOG_BASIC, "tolunnet: restoring task priority...\n");
+    SetTaskPri(self_task, old_pri);
+
     tn_log(TN_LOG_BASIC, "tolunnet: shutdown complete.\n");
+    CloseLibrary(DOSBase);
     return 0;
+}
+
+int main(int argc, char *argv[])
+{
+    struct Process *proc = (struct Process *)FindTask(NULL);
+    ULONG stack_size = 0;
+
+    if (proc != NULL && proc->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
+        stack_size = proc->pr_StackSize;
+    }
+
+    if (stack_size < 32768) {
+        struct StackSwapStruct stk;
+        APTR new_stk = AllocMem(32768, MEMF_PUBLIC | MEMF_CLEAR);
+        int rc;
+        if (new_stk == NULL) {
+            return 20;
+        }
+        g_stack_swapped = TRUE;
+        g_orig_stack_size = stack_size;
+
+        stk.stk_Lower   = new_stk;
+        stk.stk_Upper   = (ULONG)new_stk + 32768;
+        stk.stk_Pointer = (APTR)stk.stk_Upper;
+
+        StackSwap(&stk);
+        rc = tn_task_real_main(argc, argv);
+        StackSwap(&stk);
+
+        FreeMem(new_stk, 32768);
+        return rc;
+    }
+
+    return tn_task_real_main(argc, argv);
 }

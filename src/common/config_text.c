@@ -17,14 +17,15 @@ void tn_prefs_default(TnPrefs *prefs)
     tn_str_copy_clean(prefs->device, "ethernet.device", sizeof(prefs->device));
     prefs->unit = 0;
     prefs->use_dhcp = TRUE;
-    tn_str_copy_clean(prefs->ip_addr, "10.0.2.15", sizeof(prefs->ip_addr));
-    tn_str_copy_clean(prefs->netmask, "255.255.255.0", sizeof(prefs->netmask));
-    tn_str_copy_clean(prefs->gateway, "10.0.2.2", sizeof(prefs->gateway));
-    tn_str_copy_clean(prefs->dns_server, "10.0.2.3", sizeof(prefs->dns_server));
+    prefs->ip_addr[0] = '\0';
+    prefs->netmask[0] = '\0';
+    prefs->gateway[0] = '\0';
+    prefs->dns_server[0] = '\0';
     tn_str_copy_clean(prefs->hostname, "amiga", sizeof(prefs->hostname));
     prefs->dns2[0] = 0;
     prefs->mtu  = 0;   /* 0 = use driver-reported MTU */
     prefs->debug = 0;
+    prefs->priority = 5; /* TNET-066 */
 }
 
 
@@ -103,6 +104,9 @@ void tn_config_parse_line(TnPrefs *prefs, const char *key, const char *val)
     } else if (tn_str_equal_nocase(key, "DEBUG")) {
         LONG d = 0;
         if (tn_str_to_long(val, &d) && d >= 0 && d <= 2) prefs->debug = (ULONG)d;
+    } else if (tn_str_equal_nocase(key, "PRIORITY")) {
+        LONG p = 5;
+        if (tn_str_to_long(val, &p) && p >= -128 && p <= 127) prefs->priority = p;
     }
 }
 
@@ -142,6 +146,32 @@ static void tn_cfg_put_kv_int(struct tn_cfg_out *o, const char *key, ULONG v)
     tn_cfg_put(o, "\n");
 }
 
+static void tn_cfg_put_kv_long(struct tn_cfg_out *o, const char *key, LONG v)
+{
+    char num[16];
+    int i = 0, j;
+    ULONG uv;
+    if (v < 0) {
+        num[i++] = '-';
+        uv = (ULONG)(-v);
+    } else {
+        uv = (ULONG)v;
+    }
+    if (uv == 0) {
+        num[i++] = '0';
+        num[i] = '\0';
+    } else {
+        char tmp[16];
+        int ti = 0;
+        while (uv > 0 && ti < 15) { tmp[ti++] = (char)('0' + (uv % 10)); uv /= 10; }
+        for (j = 0; j < ti; j++) num[i++] = tmp[ti - 1 - j];
+        num[i] = '\0';
+    }
+    tn_cfg_put(o, key);
+    tn_cfg_put(o, num);
+    tn_cfg_put(o, "\n");
+}
+
 static void tn_cfg_put_kv_str(struct tn_cfg_out *o, const char *key, const char *val)
 {
     tn_cfg_put(o, key);
@@ -166,6 +196,7 @@ int tn_config_format(const TnPrefs *prefs, char *buf, int buf_size)
     tn_cfg_put_kv_str(&o, "HOSTNAME=", prefs->hostname);
     tn_cfg_put_kv_int(&o, "MTU=", prefs->mtu);
     tn_cfg_put_kv_int(&o, "DEBUG=", prefs->debug);
+    tn_cfg_put_kv_long(&o, "PRIORITY=", prefs->priority);
 
     if (o.overflow) {
         return -1; /* buffer too small; TN_CONFIG_TEXT_MAX is always sufficient */

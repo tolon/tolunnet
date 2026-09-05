@@ -23,6 +23,7 @@ TN_TEST(round_trip_all_keys)
     strcpy(in.hostname, "amiga");
     in.mtu = 1400;
     in.debug = 2;
+    in.priority = 10;
 
     TN_ASSERT_TRUE(tn_config_format(&in, text, sizeof(text)) > 0);
 
@@ -58,6 +59,7 @@ TN_TEST(round_trip_all_keys)
     TN_ASSERT_STREQ(out.hostname, "amiga");
     TN_ASSERT_EQ(out.mtu, 1400u);
     TN_ASSERT_EQ(out.debug, 2u);
+    TN_ASSERT_EQ(out.priority, 10);
 }
 
 TN_TEST(key_dialects_and_case)
@@ -118,6 +120,10 @@ TN_TEST(debug_bounds_and_unknown_keys)
     TN_ASSERT_EQ(p.debug, 0u);
     tn_config_parse_line(&p, "DEBUG", "2");
     TN_ASSERT_EQ(p.debug, 2u);
+    tn_config_parse_line(&p, "PRIORITY", "200"); /* out of range (>127) -> ignored */
+    TN_ASSERT_EQ(p.priority, 0);
+    tn_config_parse_line(&p, "PRIORITY", "-5");
+    TN_ASSERT_EQ(p.priority, -5);
     tn_config_parse_line(&p, "TOTALLY_UNKNOWN", "42"); /* ignored silently */
     TN_ASSERT_EQ(p.unit, 0u);
 }
@@ -126,9 +132,7 @@ TN_TEST(defaults_have_no_slirp_literals)
 {
     /* TNET-078: defaults must be EMPTY (no 10.0.2.x literals) so a RECONFIG
      * cannot clobber DHCP-supplied DNS. tn_prefs_default lives in
-     * config_text.c, so this asserts the real shipping defaults; it is
-     * TODO-marked until the §C3 fix flips them. */
-    TN_TODO("TNET-078 fix lands in Round 3 §C3");
+     * config_text.c, so this asserts the real shipping defaults. */
     {
         TnPrefs d;
         memset(&d, 'x', sizeof(d));
@@ -137,6 +141,7 @@ TN_TEST(defaults_have_no_slirp_literals)
         TN_ASSERT_STREQ(d.ip_addr, "");
         TN_ASSERT_STREQ(d.gateway, "");
         TN_ASSERT_STREQ(d.dns2, "");
+        TN_ASSERT_EQ(d.priority, 5);
     }
 }
 

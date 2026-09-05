@@ -788,11 +788,14 @@ LONG tn_lvo_gethostname(STRPTR name, LONG namelen, TnSocketBase *base)
     return 0;
 }
 
-/* -288: gethostid() (COMPAT-3) */
+/* -288: gethostid() (COMPAT-3 / TNET-078) */
 in_addr_t tn_lvo_gethostid(TnSocketBase *base)
 {
-    (void)base;
-    return (in_addr_t)0x0A00020FUL; /* 10.0.2.15 */
+    if (base == NULL) return INADDR_NONE;
+    if (tn_ipc_call(base, TN_IPC_CMD_GETSTATUS) == 0) {
+        return (in_addr_t)base->ipc_msg.args[0];
+    }
+    return INADDR_NONE;
 }
 
 /* -294: SocketBaseTagList(tags) (COMPAT-1 / TNET-036; per-tag logic in

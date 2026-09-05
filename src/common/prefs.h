@@ -41,6 +41,7 @@ typedef struct TnPrefs {
     char  dns2[20];           /* secondary resolver; empty = unset */
     ULONG mtu;                /* 0 = driver default; 576..1500 honoured */
     ULONG debug;              /* 0..2 log tier */
+    LONG  priority;           /* task priority (-128..127, default 5) (TNET-066) */
 } TnPrefs;
 
 /* TNET-064: Amiga Prefs convention.

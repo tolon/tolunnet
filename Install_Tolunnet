@@ -145,8 +145,8 @@
 )
 
 (if (= #ip-mode 0)
-  (set #startup-line (cat "Run <NIL: >NIL: C:tolunnet " #device-name " " #unit-num))
-  (set #startup-line (cat "Run <NIL: >NIL: C:tolunnet " #device-name " " #unit-num " " #static-ip " " #static-nm " " #static-gw))
+  (set #startup-line (cat "Stack 32768\nRun <NIL: >NIL: C:tolunnet " #device-name " " #unit-num))
+  (set #startup-line (cat "Stack 32768\nRun <NIL: >NIL: C:tolunnet " #device-name " " #unit-num " " #static-ip " " #static-nm " " #static-gw))
 )
 
 (startup "tolunnet"
