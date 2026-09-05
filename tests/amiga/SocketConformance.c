@@ -124,6 +124,27 @@ static LONG call_bind(LONG s, struct sockaddr *n, socklen_t l)
     return d0;
 }
 
+static LONG call_listen(LONG s, LONG backlog)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = s;
+    register LONG d1 __asm__("d1") = backlog;
+    __asm__ __volatile__ ("jsr -42(%%a6)" : "+r"(d0)
+        : "r"(a6), "r"(d0), "r"(d1) : "d1", "a0", "a1", "memory");
+    return d0;
+}
+
+static LONG call_accept(LONG s, struct sockaddr *n, socklen_t *l)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = s;
+    register struct sockaddr *a0 __asm__("a0") = n;
+    register socklen_t *a1 __asm__("a1") = l;
+    __asm__ __volatile__ ("jsr -48(%%a6)" : "+r"(d0)
+        : "r"(a6), "r"(d0), "r"(a0), "r"(a1) : "d1", "a0", "a1", "memory");
+    return d0;
+}
+
 static LONG call_shutdown(LONG s, LONG how)
 {
     register struct Library *a6 __asm__("a6") = SocketBase;
@@ -347,7 +368,68 @@ static void tc_bind_reuse(void)
 
 static void tc_listen_accept_loopback(void)
 {
-    TAP_SKIP("tc_listen_accept_loopback", "needs loopback + listen/accept (TNET-071/077, §C1/C10)");
+    LONG srv, cli, conn;
+    struct sockaddr_in sin;
+    struct sockaddr_in from;
+    socklen_t fromlen = sizeof(from);
+    int i;
+
+    srv = call_socket(AF_INET, SOCK_STREAM, 0);
+    if (srv < 0) { TAP_NOTOK("tc_listen_accept_loopback", "server socket failed"); return; }
+
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len         = sizeof(sin);
+    sin.sin_family      = AF_INET;
+    sin.sin_port        = htons(54322);
+    sin.sin_addr.s_addr = htonl(0x7F000001UL); /* 127.0.0.1 */
+
+    if (call_bind(srv, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+        call_closesocket(srv);
+        TAP_NOTOK("tc_listen_accept_loopback", "bind failed");
+        return;
+    }
+
+    if (call_listen(srv, 1) != 0) {
+        call_closesocket(srv);
+        TAP_NOTOK("tc_listen_accept_loopback", "listen failed");
+        return;
+    }
+
+    cli = call_socket(AF_INET, SOCK_STREAM, 0);
+    if (cli < 0) {
+        call_closesocket(srv);
+        TAP_NOTOK("tc_listen_accept_loopback", "client socket failed");
+        return;
+    }
+
+    if (call_connect(cli, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+        call_closesocket(cli);
+        call_closesocket(srv);
+        TAP_NOTOK("tc_listen_accept_loopback", "connect loopback failed");
+        return;
+    }
+
+    for (i = 0; i < (int)sizeof(from); i++) ((char *)&from)[i] = 0;
+    conn = call_accept(srv, (struct sockaddr *)&from, &fromlen);
+    if (conn < 0) {
+        call_closesocket(cli);
+        call_closesocket(srv);
+        TAP_NOTOK("tc_listen_accept_loopback", "accept failed");
+        return;
+    }
+
+    if (from.sin_addr.s_addr != htonl(0x7F000001UL)) {
+        call_closesocket(conn);
+        call_closesocket(cli);
+        call_closesocket(srv);
+        TAP_NOTOK("tc_listen_accept_loopback", "accepted peer not 127.0.0.1");
+        return;
+    }
+
+    call_closesocket(conn);
+    call_closesocket(cli);
+    call_closesocket(srv);
+    TAP_OK("tc_listen_accept_loopback");
 }
 
 static void tc_connect_refused(void)
@@ -502,17 +584,16 @@ static void tc_sigio(void)
 
 static void tc_icmp_raw(void)
 {
-    /* socket() currently performs NO type validation (harness finding,
-     * 2026-09-05): SOCK_RAW is "accepted" as an unusable fd. Roadmap-honest
-     * assertion: an accepted fd is a defect until raw is real (§C1 validates
-     * types, §C9 implements raw); a proper refusal is the correct behaviour
-     * in between. */
+    /* C9 (TNET-070): SOCK_RAW is implemented for IPPROTO_ICMP (1) and IPPROTO_RAW (255) */
     LONG s = call_socket(AF_INET, 3 /* SOCK_RAW */, 1 /* IPPROTO_ICMP */);
-    if (s >= 0) {
+    LONG bad = call_socket(AF_INET, 3 /* SOCK_RAW */, 99 /* unsupported raw protocol */);
+    if (s >= 0 && bad < 0) {
         call_closesocket(s);
-        TAP_NOTOK("tc_icmp_raw", "SOCK_RAW fd granted without raw support (no type validation; §C1/C9)");
-    } else {
         TAP_OK("tc_icmp_raw");
+    } else {
+        if (s >= 0) call_closesocket(s);
+        if (bad >= 0) call_closesocket(bad);
+        TAP_NOTOK("tc_icmp_raw", "SOCK_RAW ICMP failed or invalid proto accepted");
     }
 }
 

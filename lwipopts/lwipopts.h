@@ -27,6 +27,11 @@
 #define LWIP_ICMP            1
 #define LWIP_RAW             1
 
+/* Loopback support (TNET-071) */
+#define LWIP_NETIF_LOOPBACK               1
+#define LWIP_HAVE_LOOPIF                  1
+#define LWIP_NETIF_LOOPBACK_MULTITHREADING 0
+
 /* TNET-063: HOSTNAME= key → DHCP option 12 + netif hostname */
 #define LWIP_NETIF_HOSTNAME  1
 

@@ -36,6 +36,7 @@
 #include "lwip/etharp.h"
 #include "lwip/udp.h"
 #include "lwip/tcp.h"
+#include "lwip/raw.h"
 #include "lwip/dns.h"
 #include "netif/ethernet.h"
 
@@ -86,6 +87,7 @@ typedef struct TnSocketSlot {
     int             ref_count;
     struct udp_pcb *udp_pcb;
     struct tcp_pcb *tcp_pcb;
+    struct raw_pcb *raw_pcb;
     TnRxPacket     *rx_head;
     TnRxPacket     *rx_tail;
     TnAcceptEntry  *accept_head;
@@ -191,6 +193,60 @@ static void tn_udp_recv_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p,
         slot->rx_tail       = pkt;
     }
     slot->rx_count++;
+}
+
+/* Callback from lwIP when a RAW packet arrives */
+static u8_t tn_raw_recv_cb(void *arg, struct raw_pcb *pcb, struct pbuf *p,
+                           const ip_addr_t *addr)
+{
+    int slot_idx = (int)(intptr_t)arg;
+    TnSocketSlot *slot;
+    TnRxPacket *pkt;
+    struct pbuf *q;
+    (void)pcb;
+
+    if (slot_idx < 0 || slot_idx >= TN_MAX_GLOBAL_SOCKETS) {
+        return 0;
+    }
+
+    slot = &g_sockets[slot_idx];
+    if (!slot->in_use || p == NULL) {
+        return 0;
+    }
+
+    if (slot->rx_count >= TN_MAX_RX_QUEUE_PER_SOCKET) {
+        return 0;
+    }
+
+    /* Clone pbuf so raw socket has independent copy with full IP header */
+    q = pbuf_clone(PBUF_RAW, PBUF_RAM, p);
+    if (q == NULL) {
+        return 0;
+    }
+
+    pkt = (TnRxPacket *)AllocVec(sizeof(TnRxPacket), MEMF_CLEAR | MEMF_PUBLIC);
+    if (pkt == NULL) {
+        pbuf_free(q);
+        return 0;
+    }
+
+    pkt->p        = q;
+    pkt->offset   = 0;
+    pkt->src_ip   = *addr;
+    pkt->src_port = 0;
+    pkt->next     = NULL;
+
+    if (slot->rx_tail != NULL) {
+        slot->rx_tail->next = pkt;
+        slot->rx_tail       = pkt;
+    } else {
+        slot->rx_head       = pkt;
+        slot->rx_tail       = pkt;
+    }
+    slot->rx_count++;
+
+    /* Return 0: do not eat packet so stack/ICMP echo replier can also process it */
+    return 0;
 }
 
 /* Callback from lwIP when TCP stream data or FIN arrives */
@@ -437,6 +493,10 @@ static void tn_free_socket_slot(int slot_idx)
         tcp_close(g_sockets[slot_idx].tcp_pcb);
         g_sockets[slot_idx].tcp_pcb = NULL;
     }
+    if (g_sockets[slot_idx].raw_pcb != NULL) {
+        raw_remove(g_sockets[slot_idx].raw_pcb);
+        g_sockets[slot_idx].raw_pcb = NULL;
+    }
     while (g_sockets[slot_idx].rx_head != NULL) {
         TnRxPacket *pkt = g_sockets[slot_idx].rx_head;
         g_sockets[slot_idx].rx_head = pkt->next;
@@ -549,10 +609,11 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                     return TRUE;
                 }
             } else if (type == 3 /* SOCK_RAW */) {
-                /* SOCK_RAW will be implemented in C9 (TNET-070); until then refuse */
-                imsg->result = -1;
-                imsg->err_no = ESOCKTNOSUPPORT;
-                return TRUE;
+                if (protocol != 1 /* IPPROTO_ICMP */ && protocol != 255 /* IPPROTO_RAW */) {
+                    imsg->result = -1;
+                    imsg->err_no = EPROTONOSUPPORT;
+                    return TRUE;
+                }
             } else {
                 imsg->result = -1;
                 imsg->err_no = ESOCKTNOSUPPORT;
@@ -606,6 +667,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             g_sockets[slot_idx].ref_count           = 1;
             g_sockets[slot_idx].udp_pcb             = NULL;
             g_sockets[slot_idx].tcp_pcb             = NULL;
+            g_sockets[slot_idx].raw_pcb             = NULL;
             g_sockets[slot_idx].rx_head             = NULL;
             g_sockets[slot_idx].rx_tail             = NULL;
             g_sockets[slot_idx].accept_head         = NULL;
@@ -636,6 +698,20 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 }
                 tcp_arg(g_sockets[slot_idx].tcp_pcb, (void *)(intptr_t)slot_idx);
                 tcp_err(g_sockets[slot_idx].tcp_pcb, tn_tcp_err_cb);
+            }
+            /* RAW socket (TNET-070) */
+            else if (type == 3 /* SOCK_RAW */) {
+                g_sockets[slot_idx].raw_pcb = raw_new((u8_t)protocol);
+                if (g_sockets[slot_idx].raw_pcb == NULL) {
+                    g_sockets[slot_idx].in_use = FALSE;
+                    imsg->result = -1;
+                    imsg->err_no = ENOBUFS;
+                    return TRUE;
+                }
+                raw_recv(g_sockets[slot_idx].raw_pcb, tn_raw_recv_cb, (void *)(intptr_t)slot_idx);
+                if (protocol == 255 /* IPPROTO_RAW */) {
+                    raw_set_flags(g_sockets[slot_idx].raw_pcb, RAW_FLAGS_HDRINCL);
+                }
             }
 
             base->fd_map[client_fd] = slot_idx;
@@ -705,6 +781,13 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                     ip_set_option(g_sockets[slot_idx].udp_pcb, SOF_REUSEADDR);
                 }
                 berr = udp_bind(g_sockets[slot_idx].udp_pcb, &bind_ip, port);
+            } else if (g_sockets[slot_idx].type == 3 /* RAW */) {
+                if (g_sockets[slot_idx].raw_pcb == NULL) {
+                    imsg->result = -1;
+                    imsg->err_no = EBADF;
+                    return TRUE;
+                }
+                berr = raw_bind(g_sockets[slot_idx].raw_pcb, &bind_ip);
             } else {
                 imsg->result = -1;
                 imsg->err_no = EOPNOTSUPP;
@@ -929,6 +1012,13 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 imsg->result = 0;
                 imsg->err_no = 0;
                 return TRUE;
+            } else if (g_sockets[slot_idx].type == 3 /* SOCK_RAW */ && g_sockets[slot_idx].raw_pcb != NULL) {
+                ip_addr_t dst_ip;
+                ip_addr_set_ip4_u32(&dst_ip, sin->sin_addr.s_addr);
+                raw_connect(g_sockets[slot_idx].raw_pcb, &dst_ip);
+                imsg->result = 0;
+                imsg->err_no = 0;
+                return TRUE;
             }
 
             imsg->result = 0;
@@ -983,6 +1073,30 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 }
 
                 tcp_output(g_sockets[slot_idx].tcp_pcb);
+                imsg->result = (LONG)send_len;
+                imsg->err_no = 0;
+                return TRUE;
+            } else if (g_sockets[slot_idx].type == 3 /* SOCK_RAW */ && g_sockets[slot_idx].raw_pcb != NULL) {
+                struct pbuf *p;
+                u16_t send_len = (len > 0xFFFF) ? 0xFFFF : (u16_t)len;
+                err_t serr;
+
+                p = pbuf_alloc(PBUF_IP, send_len, PBUF_RAM);
+                if (p == NULL) {
+                    imsg->result = -1;
+                    imsg->err_no = ENOBUFS;
+                    return TRUE;
+                }
+                pbuf_take(p, buf, send_len);
+
+                serr = raw_send(g_sockets[slot_idx].raw_pcb, p);
+                pbuf_free(p);
+
+                if (serr != ERR_OK) {
+                    imsg->result = -1;
+                    imsg->err_no = (serr == ERR_MEM) ? ENOBUFS : EHOSTUNREACH;
+                    return TRUE;
+                }
                 imsg->result = (LONG)send_len;
                 imsg->err_no = 0;
                 return TRUE;
@@ -1053,6 +1167,32 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                     imsg->err_no = EWOULDBLOCK;
                     return TRUE;
                 }
+            } else if (g_sockets[slot_idx].type == 3 /* SOCK_RAW */) {
+                if (g_sockets[slot_idx].rx_head != NULL) {
+                    TnRxPacket *pkt = g_sockets[slot_idx].rx_head;
+                    u16_t avail = pkt->p->tot_len;
+                    u16_t to_copy = (avail < (u16_t)len) ? avail : (u16_t)len;
+
+                    pbuf_copy_partial(pkt->p, buf, to_copy, 0);
+
+                    g_sockets[slot_idx].rx_head = pkt->next;
+                    if (g_sockets[slot_idx].rx_head == NULL) {
+                        g_sockets[slot_idx].rx_tail = NULL;
+                    }
+                    pbuf_free(pkt->p);
+                    FreeVec(pkt);
+                    if (g_sockets[slot_idx].rx_count > 0) {
+                        g_sockets[slot_idx].rx_count--;
+                    }
+
+                    imsg->result = (LONG)to_copy;
+                    imsg->err_no = 0;
+                    return TRUE;
+                } else {
+                    imsg->result = -1;
+                    imsg->err_no = EWOULDBLOCK;
+                    return TRUE;
+                }
             }
 
             imsg->result = -1;
@@ -1105,6 +1245,38 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
 
                 udp_sendto(g_sockets[slot_idx].udp_pcb, p, &dst_ip, dst_port);
                 pbuf_free(p);
+
+                imsg->result = (LONG)send_len;
+                imsg->err_no = 0;
+                return TRUE;
+            } else if (g_sockets[slot_idx].type == 3 /* SOCK_RAW */ && g_sockets[slot_idx].raw_pcb != NULL) {
+                struct pbuf *p;
+                ip_addr_t dst_ip;
+                u16_t send_len = (len > 0xFFFF) ? 0xFFFF : (u16_t)len;
+                err_t serr;
+
+                p = pbuf_alloc(PBUF_IP, send_len, PBUF_RAM);
+                if (p == NULL) {
+                    imsg->result = -1;
+                    imsg->err_no = ENOBUFS;
+                    return TRUE;
+                }
+                pbuf_take(p, buf, send_len);
+
+                if (to != NULL) {
+                    ip_addr_set_ip4_u32(&dst_ip, to->sin_addr.s_addr);
+                } else {
+                    dst_ip = g_sockets[slot_idx].raw_pcb->remote_ip;
+                }
+
+                serr = raw_sendto(g_sockets[slot_idx].raw_pcb, p, &dst_ip);
+                pbuf_free(p);
+
+                if (serr != ERR_OK) {
+                    imsg->result = -1;
+                    imsg->err_no = (serr == ERR_MEM) ? ENOBUFS : EHOSTUNREACH;
+                    return TRUE;
+                }
 
                 imsg->result = (LONG)send_len;
                 imsg->err_no = 0;
@@ -1164,6 +1336,40 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                     }
 
                     imsg->result = (LONG)copied;
+                    imsg->err_no = 0;
+                    return TRUE;
+                } else {
+                    imsg->result = -1;
+                    imsg->err_no = EWOULDBLOCK;
+                    return TRUE;
+                }
+            } else if (g_sockets[slot_idx].type == 3 /* SOCK_RAW */) {
+                if (g_sockets[slot_idx].rx_head != NULL) {
+                    TnRxPacket *pkt = g_sockets[slot_idx].rx_head;
+                    u16_t avail = pkt->p->tot_len;
+                    u16_t to_copy = (avail < (u16_t)len) ? avail : (u16_t)len;
+
+                    pbuf_copy_partial(pkt->p, buf, to_copy, 0);
+
+                    if (from != NULL) {
+                        from->sin_len = sizeof(struct sockaddr_in);
+                        from->sin_family = 2 /* AF_INET */;
+                        from->sin_port   = 0;
+                        from->sin_addr.s_addr = ip_addr_get_ip4_u32(&pkt->src_ip);
+                        if (fromlen != NULL) *fromlen = sizeof(struct sockaddr_in);
+                    }
+
+                    g_sockets[slot_idx].rx_head = pkt->next;
+                    if (g_sockets[slot_idx].rx_head == NULL) {
+                        g_sockets[slot_idx].rx_tail = NULL;
+                    }
+                    pbuf_free(pkt->p);
+                    FreeVec(pkt);
+                    if (g_sockets[slot_idx].rx_count > 0) {
+                        g_sockets[slot_idx].rx_count--;
+                    }
+
+                    imsg->result = (LONG)to_copy;
                     imsg->err_no = 0;
                     return TRUE;
                 } else {
@@ -1413,6 +1619,18 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 }
                 imsg->result = 0;
                 imsg->err_no = 0;
+            } else if (level == 0 /* IPPROTO_IP */) {
+                if (optname == 2 /* IP_HDRINCL */) {
+                    if (g_sockets[slot_idx].raw_pcb != NULL) {
+                        if (*(const int *)optval != 0) {
+                            raw_set_flags(g_sockets[slot_idx].raw_pcb, RAW_FLAGS_HDRINCL);
+                        } else {
+                            raw_clear_flags(g_sockets[slot_idx].raw_pcb, RAW_FLAGS_HDRINCL);
+                        }
+                    }
+                }
+                imsg->result = 0;
+                imsg->err_no = 0;
             } else {
                 imsg->result = 0;
                 imsg->err_no = 0;
@@ -1464,6 +1682,19 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 if (optlen != NULL) *optlen = sizeof(int);
                 imsg->result = 0;
                 imsg->err_no = 0;
+            } else if (level == 0 /* IPPROTO_IP */) {
+                if (optname == 2 /* IP_HDRINCL */) {
+                    if (g_sockets[slot_idx].raw_pcb != NULL) {
+                        *(int *)optval = raw_is_flag_set(g_sockets[slot_idx].raw_pcb, RAW_FLAGS_HDRINCL) ? 1 : 0;
+                    } else {
+                        *(int *)optval = 0;
+                    }
+                } else {
+                    *(int *)optval = 0;
+                }
+                if (optlen != NULL) *optlen = sizeof(int);
+                imsg->result = 0;
+                imsg->err_no = 0;
             } else {
                 if (optlen != NULL) *optlen = sizeof(int);
                 *(int *)optval = 0;
@@ -1507,6 +1738,9 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             } else if (g_sockets[slot_idx].type == 2 /* UDP */ && g_sockets[slot_idx].udp_pcb != NULL) {
                 sin->sin_port        = lwip_htons(g_sockets[slot_idx].udp_pcb->local_port);
                 sin->sin_addr.s_addr = ip_2_ip4(&g_sockets[slot_idx].udp_pcb->local_ip)->addr;
+            } else if (g_sockets[slot_idx].type == 3 /* RAW */ && g_sockets[slot_idx].raw_pcb != NULL) {
+                sin->sin_port        = lwip_htons((u16_t)g_sockets[slot_idx].protocol);
+                sin->sin_addr.s_addr = ip_2_ip4(&g_sockets[slot_idx].raw_pcb->local_ip)->addr;
             } else {
                 sin->sin_port        = 0;
                 sin->sin_addr.s_addr = 0;
@@ -1563,6 +1797,9 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 }
                 sin->sin_port        = lwip_htons(g_sockets[slot_idx].udp_pcb->remote_port);
                 sin->sin_addr.s_addr = ip_2_ip4(&g_sockets[slot_idx].udp_pcb->remote_ip)->addr;
+            } else if (g_sockets[slot_idx].type == 3 /* RAW */ && g_sockets[slot_idx].raw_pcb != NULL) {
+                sin->sin_port        = 0;
+                sin->sin_addr.s_addr = ip_2_ip4(&g_sockets[slot_idx].raw_pcb->remote_ip)->addr;
             } else {
                 imsg->result = -1;
                 imsg->err_no = ENOTCONN;
@@ -1609,7 +1846,8 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                     /* Write readiness */
                     if (in_w & (1UL << i)) {
                         if (g_sockets[slot_idx].tcp_state == TN_TCP_STATE_ESTABLISHED ||
-                            g_sockets[slot_idx].type == 2 /* UDP */) {
+                            g_sockets[slot_idx].type == 2 /* UDP */ ||
+                            g_sockets[slot_idx].type == 3 /* RAW */) {
                             out_w |= (1UL << i);
                             ready_cnt++;
                         }
@@ -1709,6 +1947,58 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
 
             imsg->result = loaded ? 0 : -1;
             imsg->err_no = loaded ? 0 : ENOENT;
+            return TRUE;
+        }
+
+    case TN_IPC_CMD_ENUMSOCKETS:
+        {
+            LONG max_entries = imsg->args[0];
+            TnSocketInfo *out_info = (TnSocketInfo *)imsg->ptrs[0];
+            LONG count = 0;
+            int s;
+
+            if (out_info == NULL || max_entries <= 0) {
+                imsg->result = -1;
+                imsg->err_no = EINVAL;
+                return TRUE;
+            }
+
+            for (s = 0; s < TN_MAX_GLOBAL_SOCKETS && count < max_entries; s++) {
+                if (g_sockets[s].in_use) {
+                    TnSocketInfo *ent = &out_info[count];
+                    ent->proto = (UBYTE)g_sockets[s].type;
+                    ent->state = (UBYTE)g_sockets[s].tcp_state;
+                    ent->recv_q = g_sockets[s].rx_count;
+                    ent->send_q = 0;
+
+                    if (g_sockets[s].type == 1 /* TCP */ && g_sockets[s].tcp_pcb != NULL) {
+                        ent->local_port  = g_sockets[s].tcp_pcb->local_port;
+                        ent->remote_port = g_sockets[s].tcp_pcb->remote_port;
+                        ent->local_ip    = ip_2_ip4(&g_sockets[s].tcp_pcb->local_ip)->addr;
+                        ent->remote_ip   = ip_2_ip4(&g_sockets[s].tcp_pcb->remote_ip)->addr;
+                        ent->send_q      = (ULONG)tcp_sndbuf(g_sockets[s].tcp_pcb);
+                    } else if (g_sockets[s].type == 2 /* UDP */ && g_sockets[s].udp_pcb != NULL) {
+                        ent->local_port  = g_sockets[s].udp_pcb->local_port;
+                        ent->remote_port = g_sockets[s].udp_pcb->remote_port;
+                        ent->local_ip    = ip_2_ip4(&g_sockets[s].udp_pcb->local_ip)->addr;
+                        ent->remote_ip   = ip_2_ip4(&g_sockets[s].udp_pcb->remote_ip)->addr;
+                    } else if (g_sockets[s].type == 3 /* RAW */ && g_sockets[s].raw_pcb != NULL) {
+                        ent->local_port  = (UWORD)g_sockets[s].protocol;
+                        ent->remote_port = 0;
+                        ent->local_ip    = ip_2_ip4(&g_sockets[s].raw_pcb->local_ip)->addr;
+                        ent->remote_ip   = ip_2_ip4(&g_sockets[s].raw_pcb->remote_ip)->addr;
+                    } else {
+                        ent->local_port  = 0;
+                        ent->remote_port = 0;
+                        ent->local_ip    = 0;
+                        ent->remote_ip   = 0;
+                    }
+                    count++;
+                }
+            }
+
+            imsg->result = count;
+            imsg->err_no = 0;
             return TRUE;
         }
 
@@ -1998,11 +2288,13 @@ static int tn_task_real_main(int argc, char *argv[])
                     ReplyMsg(msg);
                 }
             }
+            netif_poll_all();
         }
 
         /* SANA-II Packet Arrival Signal */
         if (sigs & s2_sig) {
             tn_sana2_poll_input(&g_s2if, &g_netif);
+            netif_poll_all();
         }
 
         /* 100 ms Timer Tick Signal */
@@ -2012,6 +2304,7 @@ static int tn_task_real_main(int argc, char *argv[])
 
             /* Drive lwIP timeouts */
             sys_check_timeouts();
+            netif_poll_all();
 
             /* Check DHCP lease progress */
             if (use_dhcp && !dhcp_logged && dhcp_supplied_address(&g_netif)) {

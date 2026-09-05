@@ -45,6 +45,28 @@ static void ip_to_str(ULONG ip, char *buf)
              buf);
 }
 
+static void format_ip_port(ULONG ip, UWORD port, char *buf)
+{
+    ULONG b0 = (ip >> 24) & 0xFF;
+    ULONG b1 = (ip >> 16) & 0xFF;
+    ULONG b2 = (ip >> 8)  & 0xFF;
+    ULONG b3 = ip & 0xFF;
+
+    if (port == 0) {
+        ULONG args[4] = {b0, b1, b2, b3};
+        RawDoFmt((CONST_STRPTR)"%lu.%lu.%lu.%lu:*",
+                 (APTR)args,
+                 (VOID (*)())"\x16\xc0\x4e\x75",
+                 buf);
+    } else {
+        ULONG args[5] = {b0, b1, b2, b3, (ULONG)port};
+        RawDoFmt((CONST_STRPTR)"%lu.%lu.%lu.%lu:%lu",
+                 (APTR)args,
+                 (VOID (*)())"\x16\xc0\x4e\x75",
+                 buf);
+    }
+}
+
 int main(int argc, char *argv[])
 {
     struct Library *DOSBase;
@@ -99,9 +121,45 @@ int main(int argc, char *argv[])
     }
 
     if (is_netstat) {
+        TnSocketInfo sock_list[32];
+        int count = 0;
+        TnIpcMsg emsg;
+        emsg.args[0] = 32;
+        emsg.ptrs[0] = (APTR)sock_list;
+
+        if (tn_ipc_oneshot(TN_IPC_CMD_ENUMSOCKETS, emsg.args, 1, &emsg) == 0 && emsg.result >= 0) {
+            count = (int)emsg.result;
+        }
+
         PutStr((CONST_STRPTR)"Active Internet Connections (servers and established):\n");
-        tn_logf(TN_LOG_BASIC, "Proto Recv-Q Send-Q Local Address           Foreign Address         State\n");
-        tn_logf(TN_LOG_BASIC, "active socket descriptors: %d\n", active_socks);
+        PutStr((CONST_STRPTR)"Proto Recv-Q Send-Q Local Address           Foreign Address         State\n");
+        for (int s = 0; s < count; s++) {
+            char l_addr[24], r_addr[24];
+            const char *proto_str = "raw";
+            const char *state_str = "";
+
+            format_ip_port(sock_list[s].local_ip, sock_list[s].local_port, l_addr);
+            format_ip_port(sock_list[s].remote_ip, sock_list[s].remote_port, r_addr);
+
+            if (sock_list[s].proto == 1) {
+                proto_str = "tcp";
+                switch (sock_list[s].state) {
+                case 1:  state_str = "SYN_SENT"; break;
+                case 2:  state_str = "ESTABLISHED"; break;
+                case 3:  state_str = "LISTEN"; break;
+                case 4:  state_str = "CLOSE_WAIT"; break;
+                case 5:  state_str = "ERROR"; break;
+                default: state_str = "CLOSED"; break;
+                }
+            } else if (sock_list[s].proto == 2) {
+                proto_str = "udp";
+            }
+
+            tn_logf(TN_LOG_BASIC, "%-5s %6lu %6lu %-23s %-23s %s\n",
+                    proto_str, sock_list[s].recv_q, sock_list[s].send_q,
+                    l_addr, r_addr, state_str);
+        }
+        tn_logf(TN_LOG_BASIC, "active socket descriptors: %d\n", (count > 0) ? count : active_socks);
         PutStr((CONST_STRPTR)"\nKernel IP routing table:\n");
         PutStr((CONST_STRPTR)"Destination     Gateway         Genmask         Flags Metric Ref    Use Iface\n");
         tn_logf(TN_LOG_BASIC, "default         %-15s 0.0.0.0         UG    0      0        0 %s%lu\n",
@@ -110,7 +168,8 @@ int main(int argc, char *argv[])
                 ip_str[0] ? ip_str : "10.0.2.0",
                 nm_str[0] ? nm_str : "255.255.255.0",
                 prefs.device, prefs.unit);
-    } else {
+    }
+ else {
         tn_logf(TN_LOG_BASIC, "%s (unit %lu): flags=0x8063<UP,BROADCAST,RUNNING,MULTICAST> mtu 1500\n",
                 prefs.device, prefs.unit);
         tn_logf(TN_LOG_BASIC, "        inet %s  netmask %s  gateway %s\n",

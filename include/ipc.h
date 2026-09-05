@@ -91,8 +91,21 @@ typedef enum TnIpcCmd {
     TN_IPC_CMD_WAITSELECT,      /* WaitSelect(...) */
     TN_IPC_CMD_DUP2,            /* Dup2Socket(old_fd, new_fd) */
     TN_IPC_CMD_GETSTATUS,       /* Query live daemon interface status and socket count */
-    TN_IPC_CMD_RECONFIG         /* Reload configuration (TNET-064; TolunnetPrefs Save/Use) */
+    TN_IPC_CMD_RECONFIG,        /* Reload configuration (TNET-064; TolunnetPrefs Save/Use) */
+    TN_IPC_CMD_ENUMSOCKETS      /* Enumerate active sockets (TNET-071; netstat) */
 } TnIpcCmd;
+
+/* Active socket description for TN_IPC_CMD_ENUMSOCKETS (TNET-071) */
+typedef struct TnSocketInfo {
+    UBYTE proto;        /* 1=TCP, 2=UDP, 3=RAW */
+    UBYTE state;        /* TnTcpState */
+    UWORD local_port;   /* host order */
+    UWORD remote_port;  /* host order */
+    ULONG local_ip;     /* network order */
+    ULONG remote_ip;    /* network order */
+    ULONG recv_q;       /* queued bytes / packets */
+    ULONG send_q;       /* available send buffer */
+} TnSocketInfo;
 
 /* IPC Message passed via Exec PutMsg/GetMsg/ReplyMsg */
 typedef struct TnIpcMsg {
