@@ -15,6 +15,7 @@
 
 #include "../common/log.h"
 #include "../common/prefs.h"
+#include "../common/ipc_client.h"
 #include "../../include/ipc.h"
 
 static int str_ends_with(const char *s, const char *suffix)
@@ -46,13 +47,10 @@ static void ip_to_str(ULONG ip, char *buf)
 
 int main(int argc, char *argv[])
 {
-    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
     struct Library *DOSBase;
     struct Library *SocketBase;
     TnPrefs prefs;
     BOOL is_netstat = FALSE;
-    struct MsgPort *reply_port = NULL;
-    struct MsgPort *daemon_port = NULL;
     ULONG live_ip = 0, live_nm = 0, live_gw = 0;
     int active_socks = 0;
     char ip_str[24], nm_str[24], gw_str[24];
@@ -78,31 +76,15 @@ int main(int argc, char *argv[])
     /* Load persistent configuration */
     tn_prefs_load(&prefs);
 
-    /* Query live daemon status via Exec IPC (TNET-043) */
-    reply_port = CreateMsgPort();
-    daemon_port = FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
-
-    if (reply_port != NULL && daemon_port != NULL) {
+    /* Query live daemon status via Exec IPC (TNET-043/082) */
+    {
         TnIpcMsg msg;
-        msg.msg.mn_Node.ln_Type = NT_MESSAGE;
-        msg.msg.mn_Node.ln_Pri  = 0;
-        msg.msg.mn_ReplyPort    = reply_port;
-        msg.msg.mn_Length       = sizeof(TnIpcMsg);
-        msg.cmd                 = TN_IPC_CMD_GETSTATUS;
-        msg.client_task         = SysBase->ThisTask;
-        msg.socket_base         = (APTR)SocketBase;
-
-        PutMsg(daemon_port, (struct Message *)&msg);
-        WaitPort(reply_port);
-        GetMsg(reply_port);
-
-        if (msg.result == 0) {
+        if (tn_ipc_oneshot(TN_IPC_CMD_GETSTATUS, NULL, 0, &msg) == 0) {
             live_ip      = (ULONG)msg.args[0];
             live_nm      = (ULONG)msg.args[1];
             live_gw      = (ULONG)msg.args[2];
             active_socks = (int)msg.args[3];
         }
-        DeleteMsgPort(reply_port);
     }
 
     if (live_ip != 0) {

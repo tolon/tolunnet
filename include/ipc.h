@@ -8,10 +8,56 @@
 #ifndef TOLUNNET_IPC_H
 #define TOLUNNET_IPC_H
 
+#if defined(__AMIGA__) || defined(__amigaos__) || defined(TN_AMIGA_BUILD)
 #include <exec/types.h>
 #include <exec/ports.h>
 #include <exec/libraries.h>
 #include <netdb.h>
+#else
+#include <stdint.h>
+#include <stddef.h>
+typedef uint32_t ULONG;
+typedef int32_t  LONG;
+typedef uint16_t UWORD;
+typedef uint8_t  UBYTE;
+typedef void    *APTR;
+typedef char    *STRPTR;
+typedef const char *CONST_STRPTR;
+typedef int      BOOL;
+#ifndef TRUE
+#define TRUE  1
+#define FALSE 0
+#endif
+struct Node {
+    void *ln_Succ;
+    void *ln_Pred;
+    uint8_t ln_Type;
+    int8_t ln_Pri;
+    char *ln_Name;
+};
+struct Message {
+    struct Node mn_Node;
+    void *mn_ReplyPort;
+    uint16_t mn_Length;
+};
+struct Task;
+struct MsgPort;
+struct Library {
+    struct Node lib_Node;
+    uint8_t lib_Flags;
+    uint8_t lib_pad;
+    uint16_t lib_NegSize;
+    uint16_t lib_PosSize;
+    uint16_t lib_Version;
+    uint16_t lib_Revision;
+    char *lib_IdString;
+    uint32_t lib_Sum;
+    uint16_t lib_OpenCnt;
+};
+struct hostent { char *h_name; char **h_aliases; int h_addrtype; int h_length; char **h_addr_list; };
+struct servent { char *s_name; char **s_aliases; int s_port; char *s_proto; };
+struct protoent { char *p_name; char **p_aliases; int p_proto; };
+#endif
 
 #define TOLUNNET_PORT_NAME "tolunnet.port"
 #define BSDSOCKET_NAME     "bsdsocket.library"

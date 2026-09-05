@@ -22,7 +22,9 @@
 #include <proto/dos.h>
 #include <dos/dos.h>
 #include <dos/dosextens.h>
+#include <dos/dostags.h>
 #include <exec/tasks.h>
+#include "../common/ipc_client.h"
 #include <sys/errno.h>
 
 #include "lwip/init.h"
@@ -1717,8 +1719,13 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
     }
 }
 
-static BOOL  g_stack_swapped = FALSE;
-static ULONG g_orig_stack_size = 0;
+static BOOL        g_stack_swapped = FALSE;
+static ULONG       g_orig_stack_size = 0;
+static const char *g_cli_device = NULL;
+static const LONG *g_cli_unit = NULL;
+static const char *g_cli_ip = NULL;
+static const char *g_cli_netmask = NULL;
+static const char *g_cli_gateway = NULL;
 
 static int tn_task_real_main(int argc, char *argv[])
 {
@@ -1782,7 +1789,24 @@ static int tn_task_real_main(int argc, char *argv[])
         IP4_ADDR(&gw, 0, 0, 0, 0);
     }
 
-    if (argc >= 2) {
+    if (g_cli_device != NULL) {
+        device = (CONST_STRPTR)g_cli_device;
+    }
+    if (g_cli_unit != NULL) {
+        unit = (ULONG)*g_cli_unit;
+    }
+    if (g_cli_ip != NULL) {
+        ip4addr_aton(g_cli_ip, &ipaddr);
+        use_dhcp = FALSE;
+    }
+    if (g_cli_netmask != NULL) {
+        ip4addr_aton(g_cli_netmask, &netmask);
+    }
+    if (g_cli_gateway != NULL) {
+        ip4addr_aton(g_cli_gateway, &gw);
+    }
+
+    if (argc >= 2 && g_cli_device == NULL) {
         device = (CONST_STRPTR)argv[1];
         if (argc >= 3) {
             LONG parsed = 0;
@@ -2053,35 +2077,176 @@ static int tn_task_real_main(int argc, char *argv[])
     return 0;
 }
 
+enum {
+    OPT_START = 0,
+    OPT_STOP,
+    OPT_STATUS,
+    OPT_RECONFIG,
+    OPT_DEVICE,
+    OPT_UNIT,
+    OPT_IP,
+    OPT_NETMASK,
+    OPT_GATEWAY,
+    OPT_COUNT
+};
+
 int main(int argc, char *argv[])
 {
-    struct Process *proc = (struct Process *)FindTask(NULL);
-    ULONG stack_size = 0;
+    struct Library *dos_base = OpenLibrary((CONST_STRPTR)"dos.library", 0);
+    if (dos_base == NULL) return 20;
 
-    if (proc != NULL && proc->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
-        stack_size = proc->pr_StackSize;
-    }
+    if (argc > 0) {
+        LONG opts[OPT_COUNT];
+        struct RDArgs *rdargs;
+        int i;
+        for (i = 0; i < OPT_COUNT; i++) opts[i] = 0;
 
-    if (stack_size < 32768) {
-        struct StackSwapStruct stk;
-        APTR new_stk = AllocMem(32768, MEMF_PUBLIC | MEMF_CLEAR);
-        int rc;
-        if (new_stk == NULL) {
+        rdargs = ReadArgs((CONST_STRPTR)"START/S,STOP/S,STATUS/S,RECONFIG/S,DEVICE,UNIT/N,IP,NETMASK,GATEWAY", opts, NULL);
+        if (rdargs == NULL) {
+            PrintFault(IoErr(), (CONST_STRPTR)"tolunnet");
+            CloseLibrary(dos_base);
             return 20;
         }
-        g_stack_swapped = TRUE;
-        g_orig_stack_size = stack_size;
 
-        stk.stk_Lower   = new_stk;
-        stk.stk_Upper   = (ULONG)new_stk + 32768;
-        stk.stk_Pointer = (APTR)stk.stk_Upper;
+        if (opts[OPT_STOP]) {
+            struct MsgPort *dp = FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
+            FreeArgs(rdargs);
+            if (dp == NULL) {
+                PutStr((CONST_STRPTR)"tolunnet: daemon is not running\n");
+                CloseLibrary(dos_base);
+                return 5;
+            }
+            if (dp->mp_SigTask != NULL) {
+                Signal((struct Task *)dp->mp_SigTask, SIGBREAKF_CTRL_C);
+            }
+            PutStr((CONST_STRPTR)"tolunnet: stop signal sent to daemon\n");
+            CloseLibrary(dos_base);
+            return 0;
+        }
 
-        StackSwap(&stk);
-        rc = tn_task_real_main(argc, argv);
-        StackSwap(&stk);
+        if (opts[OPT_RECONFIG]) {
+            int res;
+            FreeArgs(rdargs);
+            res = tn_ipc_oneshot(TN_IPC_CMD_RECONFIG, NULL, 0, NULL);
+            if (res != 0) {
+                PutStr((CONST_STRPTR)"tolunnet: daemon is not running\n");
+                CloseLibrary(dos_base);
+                return 5;
+            }
+            PutStr((CONST_STRPTR)"tolunnet: configuration reloaded\n");
+            CloseLibrary(dos_base);
+            return 0;
+        }
 
-        FreeMem(new_stk, 32768);
-        return rc;
+        if (opts[OPT_STATUS]) {
+            TnIpcMsg msg;
+            int res;
+            FreeArgs(rdargs);
+            res = tn_ipc_oneshot(TN_IPC_CMD_GETSTATUS, NULL, 0, &msg);
+            if (res != 0) {
+                PutStr((CONST_STRPTR)"tolunnet: daemon is not running\n");
+                CloseLibrary(dos_base);
+                return 5;
+            }
+            {
+                ULONG ip = (ULONG)msg.args[0];
+                ULONG nm = (ULONG)msg.args[1];
+                ULONG gw = (ULONG)msg.args[2];
+                LONG socks = msg.args[3];
+                char buf[80];
+                ULONG ip_parts[4] = { (ip >> 24) & 0xFF, (ip >> 16) & 0xFF, (ip >> 8) & 0xFF, ip & 0xFF };
+                ULONG nm_parts[4] = { (nm >> 24) & 0xFF, (nm >> 16) & 0xFF, (nm >> 8) & 0xFF, nm & 0xFF };
+                ULONG gw_parts[4] = { (gw >> 24) & 0xFF, (gw >> 16) & 0xFF, (gw >> 8) & 0xFF, gw & 0xFF };
+
+                PutStr((CONST_STRPTR)"tolunnet daemon status: RUNNING\n");
+
+                RawDoFmt((CONST_STRPTR)"  IP Address : %lu.%lu.%lu.%lu\n", (APTR)ip_parts, (VOID (*)())"\x16\xc0\x4e\x75", buf);
+                PutStr((CONST_STRPTR)buf);
+
+                RawDoFmt((CONST_STRPTR)"  Netmask    : %lu.%lu.%lu.%lu\n", (APTR)nm_parts, (VOID (*)())"\x16\xc0\x4e\x75", buf);
+                PutStr((CONST_STRPTR)buf);
+
+                RawDoFmt((CONST_STRPTR)"  Gateway    : %lu.%lu.%lu.%lu\n", (APTR)gw_parts, (VOID (*)())"\x16\xc0\x4e\x75", buf);
+                PutStr((CONST_STRPTR)buf);
+
+                RawDoFmt((CONST_STRPTR)"  Sockets    : %ld active\n", (APTR)&socks, (VOID (*)())"\x16\xc0\x4e\x75", buf);
+                PutStr((CONST_STRPTR)buf);
+            }
+            CloseLibrary(dos_base);
+            return 0;
+        }
+
+        if (opts[OPT_START]) {
+            FreeArgs(rdargs);
+            if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
+                PutStr((CONST_STRPTR)"tolunnet: daemon is already running\n");
+                CloseLibrary(dos_base);
+                return 5;
+            }
+            SystemTags((CONST_STRPTR)"C:tolunnet",
+                       SYS_Asynch, TRUE,
+                       SYS_Input, (BPTR)0,
+                       SYS_Output, (BPTR)0,
+                       NP_StackSize, 32768,
+                       TAG_END);
+            PutStr((CONST_STRPTR)"tolunnet: daemon started in background (32 KB stack)\n");
+            CloseLibrary(dos_base);
+            return 0;
+        }
+
+        if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
+            PutStr((CONST_STRPTR)"tolunnet: daemon is already running\n");
+            FreeArgs(rdargs);
+            CloseLibrary(dos_base);
+            return 5;
+        }
+
+        g_cli_device  = (const char *)opts[OPT_DEVICE];
+        g_cli_unit    = (const LONG *)opts[OPT_UNIT];
+        g_cli_ip      = (const char *)opts[OPT_IP];
+        g_cli_netmask = (const char *)opts[OPT_NETMASK];
+        g_cli_gateway = (const char *)opts[OPT_GATEWAY];
+
+        FreeArgs(rdargs);
+    } else {
+        /* Workbench startup */
+        if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
+            CloseLibrary(dos_base);
+            return 5;
+        }
+    }
+
+    CloseLibrary(dos_base);
+
+    {
+        struct Process *proc = (struct Process *)FindTask(NULL);
+        ULONG stack_size = 0;
+
+        if (proc != NULL && proc->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
+            stack_size = proc->pr_StackSize;
+        }
+
+        if (stack_size < 32768) {
+            struct StackSwapStruct stk;
+            APTR new_stk = AllocMem(32768, MEMF_PUBLIC | MEMF_CLEAR);
+            int rc;
+            if (new_stk == NULL) {
+                return 20;
+            }
+            g_stack_swapped = TRUE;
+            g_orig_stack_size = stack_size;
+
+            stk.stk_Lower   = new_stk;
+            stk.stk_Upper   = (ULONG)new_stk + 32768;
+            stk.stk_Pointer = (APTR)stk.stk_Upper;
+
+            StackSwap(&stk);
+            rc = tn_task_real_main(argc, argv);
+            StackSwap(&stk);
+
+            FreeMem(new_stk, 32768);
+            return rc;
+        }
     }
 
     return tn_task_real_main(argc, argv);

@@ -18,6 +18,7 @@
 
 #include "../common/prefs.h"
 #include "../common/log.h"
+#include "../common/ipc_client.h"
 #include "../../include/ipc.h"
 
 #include <proto/exec.h>
@@ -129,34 +130,10 @@ static LONG gad_get_int(struct Gadget *g, LONG fallback)
     return fallback;
 }
 
-/* TNET-064: tell a running daemon to reload its configuration */
+/* TNET-064/082: tell a running daemon to reload its configuration */
 static void notify_daemon_reconfig(void)
 {
-    struct MsgPort *reply_port;
-    struct MsgPort *daemon_port = find_daemon_port();
-
-    if (daemon_port == NULL) return;
-
-    reply_port = CreateMsgPort();
-    if (reply_port != NULL) {
-        TnIpcMsg msg;
-        int i;
-
-        for (i = 0; i < (int)(sizeof(msg) / sizeof(LONG)); i++) {
-            ((LONG *)&msg)[i] = 0;
-        }
-        msg.msg.mn_Node.ln_Type = NT_MESSAGE;
-        msg.msg.mn_ReplyPort    = reply_port;
-        msg.msg.mn_Length       = sizeof(TnIpcMsg);
-        msg.cmd                 = TN_IPC_CMD_RECONFIG;
-        msg.client_task         = FindTask(NULL);
-        msg.socket_base         = NULL;
-
-        PutMsg(daemon_port, (struct Message *)&msg);
-        WaitPort(reply_port);
-        GetMsg(reply_port);
-        DeleteMsgPort(reply_port);
-    }
+    tn_ipc_oneshot(TN_IPC_CMD_RECONFIG, NULL, 0, NULL);
 }
 
 /* TNET-065/080: start the daemon with guaranteed 32 KB stack (non-blocking) */
