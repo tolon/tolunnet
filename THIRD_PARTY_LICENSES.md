@@ -1,6 +1,6 @@
 # THIRD_PARTY_LICENSES.md
 
-tolunet vendors third-party code under licences that require notice retention.
+tolunnet vendors third-party code under licences that require notice retention.
 The notices below are reproduced verbatim from the vendored sources.
 
 ## lwIP — `vendor/lwip/`

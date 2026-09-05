@@ -84,12 +84,25 @@ The definitive architecture and design document for the `tolunnet` AmigaOS TCP/I
 
 ## 4. Configuration Architecture
 
-- **Single Source of Truth (`DEVS:tolunnet.config`):**  
-  Standard `KEY=VALUE` text file storing `DEVICE`, `UNIT`, `DHCP`, `IP`, `NETMASK`, `GATEWAY`, and `DNS`.
-- **Persistent Mirroring:**  
-  `TolunnetPrefs` writes both `DEVS:tolunnet.config` and `ENVARC:tolunnet.prefs`, ensuring full compatibility with ART pre-seeded environments and Workbench user preferences.
-
----
+- **Persistent source of truth (`DEVS:tolunnet.config`):**
+  Standard `KEY=VALUE` text file storing `DEVICE`, `UNIT`, `DHCP`, `IP`,
+  `NETMASK`, `GATEWAY`, `DNS` (primary nameserver), `DNS2` (secondary),
+  `HOSTNAME` (DHCP option 12 + `gethostname()`), `MTU` (576-1500 clamp,
+  0 = driver default) and `DEBUG` (log tier) - full grammar in
+  `README.guide` Section 4.
+- **Amiga Prefs session semantics (TNET-064):** `TolunnetPrefs` **Use**
+  writes only the `ENV:tolunnet.prefs` session copy (reverted by the next
+  reboot); **Save** writes `ENV:` + `ENVARC:` + `DEVS:tolunnet.config`.
+  The daemon's load precedence is `ENV:` -> `DEVS:` -> legacy
+  `DEVS:tolunet.config` -> `ENVARC:`, so a live "Use" takes effect and a
+  reboot restores the last Saved values.
+- **Live reload:** after Save/Use the GUI sends `TN_IPC_CMD_RECONFIG`; the
+  daemon re-reads the stores and applies the live subset (DNS servers,
+  hostname, MTU, debug tier). Interface-level changes (device/unit/
+  DHCP-vs-static addresses) are logged as requiring a stack restart.
+- **Daemon CLI overrides:** `tolunnet <device> <unit> [ip mask gw]`
+  overrides the interface-level keys for that run; `HOSTNAME`/`DNS`/
+  `DNS2`/`MTU`/`DEBUG` still apply from the prefs stores.
 
 ## 5. Memory & Performance
 

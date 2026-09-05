@@ -66,10 +66,10 @@ applicable to the current scope (with reason).
 
 | # | Item | Where | Verdict | Evidence |
 |---|---|---|---|---|
-| 5.1 | `objdump` scan: no 68020+ opcodes in any shipped binary (`extb`, `bfext*`, `link.l`, scaled index, `mul*.l`, `div*.l`, `rtd`, `cmp2`, `pack`) — TNET-074 | `build/release/…` binaries | TBD | |
+| 5.1 | `objdump` scan: no 68020+ opcodes in any shipped binary (`extb`, `bfext*`, `link.l`, scaled index, `mul*.l`, `div*.l`, `rtd`, `cmp2`, `pack`) — TNET-074 | `build/release/…` binaries | **PASS** | 2026-09-05: `m68k-amigaos-objdump -d` + mnemonic grep over all six release binaries → 0 real hits (one raw hit `rtd` in TestSocket 0x1fa = ASCII "NtoA" string literal, verified by byte inspection). Command + list recorded in ISSUES.md TNET-074. |
 | 5.2 | No unaligned long/word access to packet data on 68000: `ETH_PAD_SIZE`/`MEM_ALIGNMENT` analysis; `cc.h` PACK_STRUCT correctness; chksum 16-bit path; A500 (68000) emulator test | `include/arch/cc.h`, `lwipopts/lwipopts.h`, `vendor/lwip/src/core/inet_chksum.c` | TBD | |
 | 5.3 | `-msoft-float`: map file grep shows no `__mulsf3`/`__addsf3` float runtime linked | `build/tolunnet` map | TBD | |
-| 5.4 | Single CPU-target truth in docs: universal `-m68000`, runs 68000–68060 (TNET-074) | `README.md`, `Makefile`, `STATUS.md`, `QUESTIONS.md` | TBD | |
+| 5.4 | Single CPU-target truth in docs: universal `-m68000`, runs 68000–68060 (TNET-074) | `README.md`, `Makefile`, `STATUS.md`, `QUESTIONS.md` | **FIXED** | 2026-09-05: README "Universal 68k Architecture (-m68000 -msoft-float)", QUESTIONS #2 rewritten (68000–68060), Makefile header comment fixed to `-m68000`, STATUS.md header already correct. TNET-074 row in ISSUES.md. |
 
 ## 3.6 Application gauntlet (WinUAE, logs archived in `docs/`)
 

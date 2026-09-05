@@ -113,30 +113,34 @@ family** (where to write errno) and **SBTC_HERRNOLONGPTR** (h_errno).
 
 ═══════════════════════════════════════════════════════════════════════
 2. GAP TABLE — tolunnet today vs 100% (Tier 1)
-═══════════════════════════════════════════════════════════════════════
-| Function(s) | Status now | Action for 100% |
+Statuses audited 2026-09-05 against the source tree (`lib_vectors.c` marshals,
+`src/task/main.c` `tn_handle_ipc` dispatches — a call whose IPC command has no
+daemon-side handler returns -1/ENOSYS via the `default:` arm):
+
+| Function(s) | Status now (2026-09-05) | Action for 100% |
 |---|---|---|
-| socket/bind/listen/accept/connect | present (IPC) | verify semantics vs probe |
-| send/recv/sendto/recvfrom | present | verify flags, EOF=0, errors |
-| shutdown/CloseSocket | present | ok; verify SHUT_* values |
-| setsockopt/getsockopt | present | verify SO_* level/name values vs SDK |
-| getsockname/getpeername | present | verify sockaddr_in fill (1.4) |
-| IoctlSocket | present | ensure FIONBIO/FIONREAD/FIOASYNC (1.5) |
-| WaitSelect | present | verify signal-mask + timeout semantics (probe) |
-| SetSocketSignals | present | ok |
-| getdtablesize | present | ok |
-| Errno / SetErrnoPtr | present | ok; but see SocketBaseTagList |
-| Inet_NtoA / inet_addr | fixed | ok |
-| **SocketBaseTagList / …Tags** | **-1 STUB** | **IMPLEMENT (blocker)** |
-| gethostbyname | present | verify hostent layout (1.2), per-opener buf |
-| gethostbyaddr | NULL stub | implement reverse or honest NULL+h_errno |
-| getservbyname/byport | NULL stub | built-in services table |
-| getprotobyname/bynumber | NULL stub | built-in protocols table |
-| Inet_LnaOf/NetOf/MakeAddr/network | -1 stub | implement (trivial bit math) |
-| Dup2Socket | -1 stub | implement (M4 dup semantics) |
-| ObtainSocket/ReleaseSocket(+Copy) | -1 stub | implement (inter-process socket handoff) |
-| gethostname/gethostid | -1 stub | return configured hostname / id |
-| GetSocketEvents | -1 stub | implement or answer honestly |
+| socket / connect / send / recv / sendto / recvfrom | implemented (wired end-to-end) | verify semantics vs probe |
+| **bind / listen / accept** | **BROKEN: marshaled to IPC but the daemon has no handler → ENOSYS. Server-style apps cannot run (TNET-077).** | implement daemon-side handlers (udp/tcp bind, tcp_listen, tcp_accept) |
+| **shutdown / getsockname / getpeername** | **BROKEN: same — marshaled, no daemon handler → ENOSYS (TNET-077).** | implement daemon-side |
+| CloseSocket | implemented | ok |
+| setsockopt/getsockopt | implemented (subset: SO_REUSEADDR, SO_KEEPALIVE, TCP_NODELAY, SO_ERROR; others silently return 0) | verify SO_* values vs SDK; ENOPROTOOPT for unsupported |
+| IoctlSocket | implemented (FIONBIO, FIONREAD; FIOASYNC accepted as no-op) | verify vs SDK §1.5 |
+| WaitSelect | implemented (20 ms poll loop, TNET-041; SIGIO delivery is TNET-067) | convert to event Wait + probe |
+| SetSocketSignals | implemented (masks stored; delivery pending TNET-067) | deliver signals from daemon |
+| getdtablesize | implemented | ok |
+| Errno / SetErrnoPtr | implemented | ok; see SocketBaseTagList |
+| Inet_NtoA / inet_addr | implemented (TNET-008/019/051) | ok |
+| SocketBaseTagList / …Tags | implemented (COMPAT-1 done; TNET-036) | verify return convention vs doc/bsdsocket.doc |
+| gethostbyname | implemented | verify hostent layout (§1.2), per-opener buf |
+| gethostbyaddr | NULL stub (TNET-068 tracks) | implement reverse or honest NULL+h_errno |
+| getservbyname/byport | implemented (built-in table, COMPAT-2) | verify s_port byte order via probe |
+| getprotobyname/bynumber | implemented (built-in table) | ok |
+| Inet_LnaOf/NetOf/MakeAddr/network | implemented (COMPAT-3) | ok |
+| Dup2Socket | implemented (TNET-048 refcount) | verify dup semantics |
+| ObtainSocket/ReleaseSocket(+Copy) | stub: ENOSYS | implement (inter-process socket handoff) |
+| gethostname/gethostid | implemented (hostname config-driven since TNET-063) | ok |
+| GetSocketEvents | stub: ENOSYS | implement or answer honestly |
+| SOCK_RAW / IPPROTO_ICMP | not exposed (TNET-070 tracks) | raw_pcb support for real ping/traceroute |
 | getaddrinfo/freeaddrinfo/getnameinfo | ABSENT (Tier1.5) | add for newest apps; most fall back to gethostbyname |
 
 ═══════════════════════════════════════════════════════════════════════
@@ -207,18 +211,27 @@ Only after 1–5 pass may README say "compatible with Roadshow apps."
 ═══════════════════════════════════════════════════════════════════════
 5. VERDICT & ORDER
 ═══════════════════════════════════════════════════════════════════════
-Today: core socket shape present; **not 100%** — SocketBaseTagList is a
--1 stub (apps die in init), service DB is NULL, several helpers are -1
-stubs, hostent/errno layouts unverified, getaddrinfo absent.
+Today (2026-09-05): client-style socket apps work (socket/connect/send/
+recv/sendto/recvfrom, DNS, tags, errno, services table). **Not 100%** —
+steps 1–3 below are done in code, but:
+  a. server-side calls (bind/listen/accept, shutdown/getsockname/getpeername)
+     return ENOSYS from the daemon — TNET-077, found in the 2026-09-05 doc
+     audit;
+  b. nothing has been probe-verified against a Roadshow oracle yet (§4);
+  c. ObtainSocket/ReleaseSocket, GetSocketEvents, gethostbyaddr (TNET-068),
+     SOCK_RAW (TNET-070), getaddrinfo are still missing.
 Order to reach 100% (Tier 1):
-  0. AUDIT TNET-023 (bm_tags) so packets actually flow.
-  1. COMPAT-1 SocketBaseTagList (+ SocketBaseTags varargs).
-  2. COMPAT-3 errno source + hostent layout (build asserts).
-  3. COMPAT-2 services/protocols tables; Inet_* helpers; gethostname/id;
-     Dup2Socket; Obtain/ReleaseSocket.
-  4. getaddrinfo/freeaddrinfo/getnameinfo (Tier 1.5, for newest apps).
-  5. COMPAT-4 Tier-2 capability queries answered honestly.
-  6. §4 proof matrix — probe oracle + AmiSSL/amiget/Amelinium/smbfs, logs
+  1. ✅ COMPAT-1 SocketBaseTagList (done, TNET-036).
+  2. ✅ COMPAT-3 errno source + hostent layout (done; probe still required).
+  3. ✅ COMPAT-2 services/protocols tables; Inet_* helpers; gethostname/id;
+     Dup2Socket.
+  4. TNET-077: daemon-side bind/listen/accept/shutdown/getsockname/
+     getpeername handlers (server apps!).
+  5. Obtain/ReleaseSocket; gethostbyaddr (TNET-068); SOCK_RAW (TNET-070);
+     getaddrinfo/freeaddrinfo/getnameinfo (Tier 1.5).
+  6. COMPAT-4 Tier-2 capability queries answered honestly (done in
+     SocketBaseTagList; keep aligned when new APIs land).
+  7. §4 proof matrix — probe oracle + AmiSSL/amiget/Amelinium/smbfs, logs
      pasted. THEN and only then: "100% compatible" in the README.
 Tier-2 control/monitor API: decide per wanted tool; not needed for app
 compatibility.

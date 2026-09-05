@@ -7,7 +7,10 @@ Canonical bench configuration for testing `tolunnet` on WinUAE and physical Amig
 ## 1. Emulated Test Bench (WinUAE)
 
 - **Emulator:** WinUAE (<https://www.winuae.net/>)
-- **CPU:** Motorola 68020 / 68030 / 68040 (24-bit or 32-bit addressing)
+- **CPU:** Motorola 68020 / 68030 / 68040 (24-bit or 32-bit addressing) — the
+  shipped binaries are universal `-m68000` and also run on 68000; use an A500
+  (68000, NTSC 640x200) config for the TolunnetPrefs small-screen test (§3.6 /
+  TNET-062).
 - **FPU:** None required (`-msoft-float`)
 - **OS:** AmigaOS 3.0 / 3.1 / 3.2 (Clean Workbench install)
 - **RAM:** 2 MB Chip RAM + 4–8 MB Fast RAM

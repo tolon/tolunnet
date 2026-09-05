@@ -18,16 +18,16 @@ Classic AmigaOS has lacked a modern, actively maintained, fully open-source TCP/
 
 ## Key Features & Architecture
 
-- **Complete `bsdsocket.library` v4.1 API:** Standard 50-vector LVO table fully verified against Roadshow SDK `bsdsocket_lib.sfd`.
+- **`bsdsocket.library` v4.1 runtime:** 50-vector LVO table generated from and validated against the Roadshow SDK `bsdsocket_lib.sfd` (`scripts/gen_lvo_table.py`). Semantics are implemented and build-verified; probe-vs-Roadshow oracle validation is tracked in `TOLUNNET-COMPAT.md` §4.
 - **Roadshow / Miami DX Compatibility Layer (Tier 1):** Full support for `SocketBaseTagList` (-294), `getservbyname`, `getservbyport`, `getprotobyname`, `getprotobynumber`, `Inet_LnaOf`, `Inet_NetOf`, `Inet_MakeAddr`, `inet_network`, `gethostname`, `gethostid`, and `Dup2Socket`.
 - **Zero-Allocation Exec IPC:** Fast message-passing between client applications and the network daemon with zero per-packet allocation overhead.
 - **SANA-II Rev 7 Network Driver Interface:** Standard register trampolines (`A0/A1/D0`) with persistent BufferManagement and multi-request DMA/IO read pump.
 - **Hardware-Seeded Entropy:** Cryptographically secure PRNG pool seeded from `GetSysTime` (microseconds), network MAC address, and memory pool allocations before core stack initialization.
-- **Universal 68k Architecture (`-m68000 -msoft-float`):** Runs seamlessly on all Motorola 68k processors (68000, 68010, 68020, 68030, 68040, 68060) without requiring an FPU coprocessor or triggering CPU instruction exceptions.
-- **Standard CLI Network Suite:** Includes `ping` (with true bidirectional RTT timing), `ifconfig`, `netstat`, `wget`, and `curl` in `SYS:C/`.
-- **Unified Text Configuration:** Single source of truth in `DEVS:tolunnet.config` (`KEY=VALUE` format) with `ENVARC:` persistent mirroring.
-- **Native GadTools GUI Panel:** `SYS:Prefs/TolunnetPrefs` allows live configuration of network devices, units, DHCP vs Static IP, live ping tests, and persistent saving with zero external MUI dependencies.
-- **Floppy-Optimized Packaging:** Release ADF disk image (`build/tolunnet-install.adf`) takes only **551 KB**, easily fitting standard 880 KB DD floppy disks with >328 KB free.
+- **Universal 68k Architecture (`-m68000 -msoft-float`):** One binary runs on all Motorola 68k processors (68000 through 68060) without an FPU; shipped binaries carry no 68020+ opcodes (see ISSUES.md TNET-074 for the `objdump` scan evidence).
+- **Standard CLI Network Suite:** Includes `ping` (UDP echo probe with true round-trip timing — real ICMP ping is tracked as TNET-070), `ifconfig`, `netstat`, `wget`, and `curl` in `SYS:C/`.
+- **Unified Text Configuration:** `DEVS:tolunnet.config` (`KEY=VALUE`) is the persistent source of truth — `DEVICE`, `UNIT`, `DHCP`, `IP`, `NETMASK`, `GATEWAY`, `DNS`, `DNS2`, `HOSTNAME`, `MTU`, `DEBUG` — with Amiga Prefs `Use`/`Save` semantics via `ENV:`/`ENVARC:` mirroring.
+- **Native GadTools GUI Panel:** `SYS:Prefs/TolunnetPrefs` — screen-derived layout that fits a 640×200 NTSC Workbench, live Start/Stop stack control, and configuration of all keys above.
+- **Floppy-Optimized Packaging:** Release ADF disk image (`build/tolunnet.adf`, 901,120-byte standard DD image) carries the ~530 KB LhA archive's install set with room to spare.
 
 ---
 
@@ -37,7 +37,7 @@ Classic AmigaOS has lacked a modern, actively maintained, fully open-source TCP/
 |---|---|---|
 | **`tolunnet`** | `SYS:C/tolunnet` | Core background TCP/IP daemon and `bsdsocket.library` provider |
 | **`TolunnetPrefs`** | `SYS:Prefs/TolunnetPrefs` | Native GadTools GUI configuration panel |
-| **`ping`** | `SYS:C/ping` | Real bidirectional round-trip time ICMP/UDP echo network diagnostic tool |
+| **`ping`** | `SYS:C/ping` | Round-trip echo diagnostic (UDP echo probe; ICMP via raw sockets tracked as TNET-070) |
 | **`ifconfig`** | `SYS:C/ifconfig` | Network interface and IP address status viewer |
 | **`netstat`** | `SYS:C/netstat` | Active socket connections, routing table, and protocol statistics |
 | **`wget` / `curl`** | `SYS:C/wget`, `SYS:C/curl` | HTTP client for downloading files and web pages with URL parsing |

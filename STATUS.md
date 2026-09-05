@@ -13,19 +13,19 @@
 | **M1** | SANA-II Driver Interface | ✅ **BUILT & TESTED** (`A0/A1/D0` ASM trampolines, persistent `bm_tags`, `__saveds` hooks) | Outbound frame verified; pending live physical RX frame capture |
 | **M2** | lwIP Core & DHCP Engine | ✅ **BUILT & TESTED** (lwIP 2.2.0, dual timer channels, 100ms ticker, PRNG seed) | **PENDING** photographed DHCP lease on physical hardware |
 | **M3** | Standard `bsdsocket.library` | ✅ **BUILT & TESTED** (50 LVO vectors, Exec IPC dispatch, refcounted descriptor cloning) | Dynamic `MakeLibrary` proven |
-| **M4** | DNS Resolver & CLI Ping | ✅ **BUILT & TESTED** (Dynamic DNS resolver, UDP echo round-trip with ms timing) | Verified via internal stack loop |
-| **M5** | TCP Stream & `wget`/`curl` | ✅ **BUILT & TESTED** (HTTP 1.0 client, 1024-byte bounded buffers, URL parsing) | Verified via TCP state engine |
-| **M6** | Roadshow / Miami DX Suite | ✅ **BUILT & TESTED** (`SocketBaseTagList` -294, `getservby*`, `getproto*`, `Inet_*`, `Dup2Socket`) | Validated against Roadshow SFD |
-| **M7** | Release Packaging | ✅ **BUILT & TESTED** (Candidate `tolunnet-1.1.0.lha` 521 KB, `tolunnet.adf` 552 KB) | Verified via `xdftool` |
-| **M8** | Workbench Preferences GUI | ✅ **BUILT & TESTED** (`TolunnetPrefs` 3D beveled native GadTools GUI with hardware, IP, host, live controls & 4-color Depth=2 icon) | **VERIFIED ON LIVE WORKBENCH 3.0 SCREEN** |
+| **M4** | DNS Resolver & CLI Ping | ✅ **BUILT & TESTED** (Dynamic DNS resolver, UDP echo round-trip with ms timing — real ICMP ping is TNET-070, pending) | Verified via internal stack loop |
+| **M5** | TCP Stream & `wget`/`curl` | ✅ **BUILT & TESTED** (HTTP 1.0 client, 1024-byte bounded buffers, URL parsing — redirects are TNET-075, pending) | Verified via TCP state engine |
+| **M6** | Roadshow / Miami DX Suite | ✅ **BUILT & TESTED** (`SocketBaseTagList` -294, `getservby*`, `getproto*`, `Inet_*`, `Dup2Socket`) | Validated against Roadshow SFD; app gauntlet (AmiSSL/IBrowse/smbfs) not yet run |
+| **M7** | Release Packaging | ✅ **BUILT & TESTED** (Candidate `tolunnet-1.1.0.lha` 529,589 bytes, `tolunnet.adf`) | Verified via `xdftool` |
+| **M8** | Workbench Preferences GUI | ✅ **BUILT & TESTED** (GadTools GUI, screen-derived layout fitting 640×200 NTSC, Save/Use Prefs semantics, Start/Stop stack control, 4-color Depth=2 icon) | Pre-v3 GUI was verified on a live Workbench 3.0 screen; the v3 rework (TNET-062/064/065) is **build-verified only and needs re-proof on the emulator gauntlet** |
 
 ---
 
 ## Working Tree Build Artifacts (Candidate Release)
 
 - 📦 **LhA Archive:** [`build/tolunnet-1.1.0.lha`](file:///d:/Projeler/tolunnet/build/tolunnet-1.1.0.lha) (529,589 bytes after the P0 fixes + installer grammar repair, universal `-m68000` + Depth=2 4-color icons)
-- 💾 **ADF Floppy Image:** [`build/tolunnet.adf`](file:///d:/Projeler/tolunnet/build/tolunnet.adf) (552 KB content / 901,120 bytes standard DD floppy image)
-- 💾 **Workbench Hard Drive Sync:** `E:\amiga\Amigatolon\hdf\Workbench v3.0 (1992)(Commodore).hdf` synchronized.
+- 💾 **ADF Floppy Image:** [`build/tolunnet.adf`](file:///d:/Projeler/tolunnet/build/tolunnet.adf) (901,120-byte standard DD image) — **STALE: still contains the pre-v3-P0 binaries; `make package` does not regenerate it. Rebuild the ADF before the next release.**
+- 💾 **Workbench Hard Drive Sync:** `E:\amiga\Amigatolon\hdf\Workbench v3.0 (1992)(Commodore).hdf` synchronized (pre-v3 state — resync after the emulator gauntlet).
 
 ---
 

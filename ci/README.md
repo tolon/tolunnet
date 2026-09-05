@@ -1,6 +1,7 @@
 # ci/
 
-Build/test automation helpers. Not shipped in the release archive.
+Bench and automation helpers. Not shipped in the release archive (except the
+files the `package` target copies explicitly).
 
 ## write_stdint.sh
 
@@ -16,31 +17,35 @@ wsl -d Ubuntu-24.04 -- bash /mnt/d/<repo>/ci/write_stdint.sh
 This is a toolchain install fix, not a vendor change (the vendored tree is
 untouched). If a future toolchain ships stdint.h, this becomes a no-op.
 
-## tolunet-m0.uae
+## WinUAE bench configs (`*.uae`)
 
-WinUAE bench config skeleton for the M0 exit test (master prompt §8). It mounts
-the bench's WB39.hdf as the boot drive and the host dir `E:\amiga\Amigatolon\work`
-as `WORK:` (logs survive reboot).
+- `tolunet-m0.uae`, `tolunet-m1.uae`, `tolunet-m2.uae` — historical M0–M2
+  bench skeletons (kept for provenance). Known issue (2026-08-13): they mount
+  a bare hardfile (no RDB) whose geometry WinUAE does not guess; fix the
+  geometry in the GUI or boot a known-good OS 3.x image instead.
+- `test_adf.uae` — config for booting the release ADF.
 
-**Known issue (2026-08-13):** the bench's WB39.hdf is a *bare* hardfile (no
-RDB — it starts `DOS\0` at offset 0). WinUAE needs explicit geometry for such
-images and the config's `hardfile=` line did not boot in automated runs. To use
-it: load in the WinUAE GUI, fix the hardfile geometry (or boot from a known-good
-OS 3.x image), confirm `WORK:` mounts, then run the hello-task.
+## User-Startup variants
 
-## User-Startup
+`User-Startup`, `User-Startup-M4`, `User-Startup-M5`, `User-Startup-Normal`,
+`User-Startup-PrefsTest`, `User-Startup-InstallTest`,
+`User-Startup-LauncherTest` — bench snippets for the various milestone /
+installer runs. The plain `User-Startup` runs
+`Run <NIL: >NIL: C:tolunnet ethernet.device 0` at boot. Note for reinstalls
+after the v3 P0 work: the daemon refuses to exit while clients are open
+(TNET-059) and no-argument startup now reads `DEVS:tolunnet.config` /
+`ENV:tolunnet.prefs`, so the device/unit arguments are optional.
 
-An AmigaDOS snippet appended to `S:User-Startup` on the bench boot drive so the
-hello-task runs at boot and writes `WORK:tolunet-hello.log`:
+## mkicon.py, tolunnet.info
 
-```
-;BEGIN tolunet M0 exit test
-If EXISTS WORK:
-  C:tolunet-hello
-EndIf
-;END tolunet
-```
+`mkicon.py` generates 4-colour (Depth=2) `.info` icons;
+`ci/tolunnet.info` is the `C:tolunnet` icon copied into the release archive.
+Icon format is validated by `scripts/verify_icons.py` (runs under
+`make test-host`).
 
-To install on the bench: `xdftool -f WB39.hdf write User-Startup S/User-Startup`
-(after deleting the old one), and copy `build/tolunet-hello` to `C:` on the
-same image. See STATUS.md "M0 exit test" section.
+## GitHub Actions
+
+`.github/workflows/build.yml` still references removed artifacts
+(`build/tolunet-hello`, artifact name `tolunet-amiga-build`) and its
+host-tests job does nothing useful — tracked as TNET-073 in ISSUES.md;
+fix pending.

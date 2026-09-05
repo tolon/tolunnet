@@ -1,7 +1,7 @@
 # tolunnet — top-level Makefile.
 #
-# Target OS: AmigaOS 3.1+, 68020+, no FPU.
-# Flags per §3: -O2 -fomit-frame-pointer -m68020 -noixemul.
+# Target OS: AmigaOS 3.0+, universal 68k (68000-68060), no FPU.
+# Flags: -O2 -fomit-frame-pointer -m68000 -msoft-float -noixemul (TNET-074).
 
 CROSS      ?= m68k-amigaos-
 CC          = $(CROSS)gcc
