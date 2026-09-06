@@ -153,8 +153,11 @@ $(CONF_BIN): $(BUILD)/tests/amiga/SocketConformance.o $(BUILD)/src/common/log.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Release Packaging Target (M7)
+VERSION ?= 1.2.0-rc1
 PACKAGE_DIR = $(BUILD)/release/tolunnet
-LHA_ARCHIVE = $(BUILD)/tolunnet-1.1.0.lha
+LHA_ARCHIVE = $(BUILD)/tolunnet-$(VERSION).lha
+ADF_IMAGE = $(BUILD)/tolunnet.adf
+XDFTOOL ?= $(shell PATH="$$PATH:$$HOME/.local/bin" which xdftool 2>/dev/null || echo $$HOME/.local/bin/xdftool)
 
 package: all
 	@echo "--- Creating Release Directory ---"
@@ -189,6 +192,13 @@ package: all
 	@echo "--- Building LhA Archive ---"
 	python3 scripts/create_lha.py $(PACKAGE_DIR) $(LHA_ARCHIVE)
 	@echo "Package successfully created: $(LHA_ARCHIVE)"
+	@$(MAKE) adf
+
+.PHONY: adf
+adf:
+	@echo "--- Building ADF Floppy Image ---"
+	$(XDFTOOL) -f $(ADF_IMAGE) pack $(PACKAGE_DIR) tolunnet
+	@echo "ADF successfully created: $(ADF_IMAGE)"
 
 clean:
 	rm -rf $(BUILD)

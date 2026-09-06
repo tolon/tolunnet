@@ -1,6 +1,6 @@
-@database "tolunnet.guide"
-@author "Tolon"
-@$VER: tolunnet.guide 1.1.0 (15.08.2026)
+@database "tolunnet"
+@author "Tolon" "tolunnet TCP/IP Stack User Guide"
+@$VER: tolunnet.guide 1.2.0-rc1 (06.09.2026)
 
 @node Main "tolunnet TCP/IP Stack User Guide"
 @{b}tolunnet — Modern TCP/IP Stack for AmigaOS 3.0+@{ub}

@@ -970,7 +970,7 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
         st.dtablesize  = TN_MAX_FDS_PER_TASK;
         st.have_bits   = TN_SBTC_HAVE_DNS_API_BIT | TN_SBTC_HAVE_LOCAL_DB_API_BIT |
                          TN_SBTC_HAVE_ADDR_CONV_API_BIT;
-        st.release_str = (uint32_t)(uintptr_t)"tolunnet 1.1.0 (bsdsocket 4.1)";
+        st.release_str = (uint32_t)(uintptr_t)"tolunnet 1.2.0-rc1 (bsdsocket 4.1)";
 
         if (!tn_sbtc_dispatch_tag((uint32_t)tag->ti_Tag, (uint32_t)tag->ti_Data, &st, &r)) {
             count++; /* count unknown tags only (TNET-036) */

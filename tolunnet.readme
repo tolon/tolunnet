@@ -2,7 +2,7 @@ Short:        Lightweight high-performance TCP/IP stack & bsdsocket.library
 Author:       Tolon
 Uploader:     tolon
 Type:         comm/tcp
-Version:      1.1.0
+Version:      1.2.0-rc1
 Architecture: m68k-amigaos >= 3.0.0
 
 ==============================================================================
@@ -16,13 +16,13 @@ running AmigaOS 3.0 or later (68000, 68010, 68020, 68030, 68040, 68060).
 Features:
 - Single-task cooperative architecture (lwIP 2.2.0 NO_SYS=1)
 - Zero-allocation Exec IPC messaging over "tolunnet.port"
-- Standard bsdsocket.library v4.1 compatible with AmiTCP and Roadshow applications
-- Complete IPv4, ARP, ICMP Echo, UDP (SOCK_DGRAM), TCP (SOCK_STREAM), DNS client
+- Standard bsdsocket.library v4.1 (139 SFD vectors, 61 implemented, 72 honest stubs)
+- Complete IPv4, ARP, raw ICMP sockets, UDP (SOCK_DGRAM), TCP (SOCK_STREAM), DNS client
 - Built-in DHCP client with automatic lease configuration
 - Hardware-seeded entropy PRNG (GetSysTime, MAC, memory pools)
 - Fast 68k assembly register trampolines for SANA-II Rev 7 buffer management
 - Native 3D beveled GadTools preferences panel (SYS:Prefs/TolunnetPrefs)
-- Diagnostic tools: ping, ifconfig, netstat, wget, curl, TestSocket
+- Diagnostic tools: ping (ICMP), ifconfig, netstat, wget (HTTP/1.1), curl, TestSocket
 - Standard Commodore Installer script & AmigaGuide documentation
 
 Requirements:

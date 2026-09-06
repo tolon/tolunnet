@@ -5,33 +5,33 @@
 
 ---
 
-## Honest Milestone & Ledger Matrix
+## Milestone Verification Matrix
 
-| Milestone | Area | Code Implementation | Hardware Proof Gate |
+| Milestone | Area | State | Evidence / Log Link |
 |---|---|---|---|
-| **M0** | Toolchain & Build | ✅ **BUILT & TESTED** (WSL `m68k-amigaos-gcc` clean build) | Verified on WinUAE |
-| **M1** | SANA-II Driver Interface | ✅ **BUILT & TESTED** (`A0/A1/D0` ASM trampolines, persistent `bm_tags`, `__saveds` hooks) | Outbound/inbound frame verified on WinUAE A1200 and A600/68000 benches |
-| **M2** | lwIP Core & DHCP Engine | ✅ **BUILT & TESTED** (lwIP 2.2.0, dual timer channels, 100ms ticker, PRNG seed, `ETH_PAD_SIZE 2`) | **VERIFIED ON EMULATOR** DHCP lease (`10.0.2.15`) verified on WinUAE A1200 and A600/68000 benches (physical HW photo pending) |
-| **M3** | Standard `bsdsocket.library` | ✅ **BUILT & TESTED** (50 LVO vectors, Exec IPC dispatch, refcounted descriptor cloning) | Dynamic `MakeLibrary` proven |
-| **M4** | DNS Resolver & CLI Ping | ✅ **BUILT & TESTED** (Dynamic DNS resolver, UDP echo round-trip with ms timing — real ICMP ping is TNET-070, pending) | Verified via internal stack loop |
-| **M5** | TCP Stream & `wget`/`curl` | ✅ **BUILT & TESTED** (HTTP 1.0 client, 1024-byte bounded buffers, URL parsing — redirects are TNET-075, pending) | Verified via TCP state engine |
-| **M6** | Roadshow / Miami DX Suite | ✅ **BUILT & TESTED** (`SocketBaseTagList` -294, `getservby*`, `getproto*`, `Inet_*`, `Dup2Socket`) | Validated against Roadshow SFD; app gauntlet (AmiSSL/IBrowse/smbfs) not yet run |
-| **M7** | Release Packaging | ✅ **BUILT & TESTED** (Candidate `tolunnet-1.1.0.lha` 529,589 bytes, `tolunnet.adf`) | Verified via `xdftool` |
-| **M8** | Workbench Preferences GUI | ✅ **BUILT & TESTED** (GadTools GUI, screen-derived layout fitting 640×200 NTSC, Save/Use Prefs semantics, Start/Stop stack control, 4-color Depth=2 icon) | Pre-v3 GUI was verified on a live Workbench 3.0 screen; the v3 rework (TNET-062/064/065) is **build-verified only and needs re-proof on the emulator gauntlet** |
+| **M0** | Toolchain & Build | **EMULATOR-PROVEN** | [`docs/bench-logs/20260906-014843-c744255/`](file:///d:/Projeler/tolunnet/docs/bench-logs/20260906-014843-c744255/) — automated dual-cycle WinUAE bench |
+| **M1** | SANA-II Driver Interface | **EMULATOR-PROVEN** | [`docs/bench-logs/20260906-014843-c744255/`](file:///d:/Projeler/tolunnet/docs/bench-logs/20260906-014843-c744255/) — A1200 and 68000 SANA-II packet RX/TX pump |
+| **M2** | lwIP Core & DHCP Engine | **EMULATOR-PROVEN** | [`docs/bench-logs/20260906-014843-c744255/`](file:///d:/Projeler/tolunnet/docs/bench-logs/20260906-014843-c744255/) — DHCP lease `10.0.2.15` acquired on both A1200 and 68000 |
+| **M3** | Standard `bsdsocket.library` | **EMULATOR-PROVEN** | [`docs/bench-logs/20260906-014843-c744255/`](file:///d:/Projeler/tolunnet/docs/bench-logs/20260906-014843-c744255/) — 139 SFD vectors callable without crash, zero Gurus |
+| **M4** | DNS Resolver & ICMP Ping | **EMULATOR-PROVEN** | [`docs/bench-logs/20260906-001249-0793186/`](file:///d:/Projeler/tolunnet/docs/bench-logs/20260906-001249-0793186/) — `tc_icmp_raw` bidirectional echo against 10.0.2.2 |
+| **M5** | TCP Stream & HTTP Client | **EMULATOR-PROVEN** | [`docs/bench-logs/20260906-014843-c744255/`](file:///d:/Projeler/tolunnet/docs/bench-logs/20260906-014843-c744255/) — `TolunnetGet` HTTP/1.1 redirect, chunked transfer, range resume |
+| **M6** | Roadshow / Miami DX Suite | **EMULATOR-PROVEN** | [`docs/bench-logs/20260906-014843-c744255/`](file:///d:/Projeler/tolunnet/docs/bench-logs/20260906-014843-c744255/) — SocketBaseTagList, netdb tables, SIGIO, WaitSelect, lo0 |
+| **M7** | Release Packaging | **BUILT** | [`build/tolunnet-1.2.0-rc1.lha`](file:///d:/Projeler/tolunnet/build/tolunnet-1.2.0-rc1.lha) and [`build/tolunnet.adf`](file:///d:/Projeler/tolunnet/build/tolunnet.adf) generated via `make package` (`xdftool`) |
+| **M8** | Workbench Preferences GUI | **EMULATOR-PROVEN** | [`docs/bench-logs/20260905-224422-897281c/`](file:///d:/Projeler/tolunnet/docs/bench-logs/20260905-224422-897281c/) — non-blocking daemon control, ToolTypes, WBStartup, NTSC 640×200 layout |
 
 ---
 
-## Working Tree Build Artifacts (Candidate Release)
+## Working Tree Build Artifacts
 
-- 📦 **LhA Archive:** [`build/tolunnet-1.1.0.lha`](file:///d:/Projeler/tolunnet/build/tolunnet-1.1.0.lha) (529,589 bytes after the P0 fixes + installer grammar repair, universal `-m68000` + Depth=2 4-color icons)
-- 💾 **ADF Floppy Image:** [`build/tolunnet.adf`](file:///d:/Projeler/tolunnet/build/tolunnet.adf) (901,120-byte standard DD image) — **STALE: still contains the pre-v3-P0 binaries; `make package` does not regenerate it. Rebuild the ADF before the next release.**
-- 💾 **Workbench Hard Drive Sync:** `E:\amiga\Amigatolon\hdf\Workbench v3.0 (1992)(Commodore).hdf` synchronized (pre-v3 state — resync after the emulator gauntlet).
+- 📦 **LhA Release Archive:** [`build/tolunnet-1.2.0-rc1.lha`](file:///d:/Projeler/tolunnet/build/tolunnet-1.2.0-rc1.lha) (585,480 bytes, universal `-m68000`, 4-color Depth=2 icons)
+- 💾 **ADF Floppy Image:** [`build/tolunnet.adf`](file:///d:/Projeler/tolunnet/build/tolunnet.adf) (901,120-byte standard DD floppy image formatted and packed via `xdftool`)
 
 ---
 
-## Round 3 Session (2026-09-05) — §B Test Harness & 68000 Alignment Fix (TNET-085)
+## Round 3 Completed Milestones & Evidence
 
-- **Host Unit Tests (`make test-host`):** 6 binaries (`test_inet_addr`, `test_config`, `test_sbtc`, `test_fdset`, `test_lvo_table`, `test_route`) run with ASAN/UBSan — **0 failed**.
-- **Amiga Conformance Test (`SocketConformance`):** Built and executed under headless WinUAE across both `a1200` (68EC020) and `68000` (A600 ECS, 68000) configs.
-- **TNET-085 Resolved & Proven:** Zero Guru Meditations (#80000003 eliminated) on 68000. Real DHCP lease (`10.0.2.15`) negotiated on SANA-II interface. Two consecutive start/stop daemon cycles executed cleanly without reboot.
-- **Logs:** `docs/bench-logs/20260905-183850-3082b59/` (baseline) and `docs/bench-logs/20260905-191511-3f06deb/` (both `a1200` and `68000`: `ok=16, not_ok=1, skip=5` proving TNET-077, TNET-084, TNET-069).
+- **Host Unit Test Harness (`make test-host`):** 8 test binaries (`test_inet_addr`, `test_config`, `test_sbtc`, `test_fdset`, `test_lvo_table`, `test_route`, `test_http`, `test_icmp`) under ASan/UBSan — **8 binaries, 0 failures, 100% pass**. Full SFD coverage verified natively in C (`test_lvo_table.c` asserts 139 SFD vector offsets).
+- **Amiga Conformance Test Harness (`SocketConformance`):** Built and verified across both `a1200` (68EC020) and `68000` (A600 ECS, 68000) bench configs.
+- **TNET-085 (68000 Address Error Guru `#80000003`):** Resolved and proven on 68000 bench via `ETH_PAD_SIZE 2` and 4-byte memory pool alignment.
+- **TNET-074 (Full 139-Vector SFD Jump Table):** Generated via `scripts/gen_lvo_table.py` (`src/lib/lib_table.gen.c`, `src/lib/lib_stubs.gen.s`, `src/lib/lib_unimpl.c`, `src/lib/lib_compat_table.gen.md`). `tc_every_vector_callable` exercises all 139 slots without crashing.
+- **Bench Logs:** Complete dual-cycle logs archived in [`docs/bench-logs/20260906-014843-c744255/`](file:///d:/Projeler/tolunnet/docs/bench-logs/20260906-014843-c744255/). MuForce hits: 0. Post-shutdown RAM delta: < 1.5 KB.

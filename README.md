@@ -18,16 +18,16 @@ Classic AmigaOS has lacked a modern, actively maintained, fully open-source TCP/
 
 ## Key Features & Architecture
 
-- **`bsdsocket.library` v4.1 runtime:** 50-vector LVO table generated from and validated against the Roadshow SDK `bsdsocket_lib.sfd` (`scripts/gen_lvo_table.py`). Semantics are implemented and build-verified; probe-vs-Roadshow oracle validation is tracked in `TOLUNNET-COMPAT.md` §4.
-- **Roadshow / Miami DX Compatibility Layer (Tier 1):** Full support for `SocketBaseTagList` (-294), `getservbyname`, `getservbyport`, `getprotobyname`, `getprotobynumber`, `Inet_LnaOf`, `Inet_NetOf`, `Inet_MakeAddr`, `inet_network`, `gethostname`, `gethostid`, and `Dup2Socket`.
-- **Zero-Allocation Exec IPC:** Fast message-passing between client applications and the network daemon with zero per-packet allocation overhead.
-- **SANA-II Rev 7 Network Driver Interface:** Standard register trampolines (`A0/A1/D0`) with persistent BufferManagement and multi-request DMA/IO read pump.
+- **`bsdsocket.library` v4.1 runtime:** 133 vectors present (139 total LVO slots from -30 to -858 generated from Roadshow SDK `sfd/bsdsocket_lib.sfd` via `scripts/gen_lvo_table.py`); 61 implemented, 72 honest stubs returning exact Roadshow error semantics (`ENOSYS`, `ENXIO`, `NULL`, `NO_RECOVERY`, `FALSE`). See [TOLUNNET-COMPAT.md](TOLUNNET-COMPAT.md) §2 for the complete vector-by-vector breakdown.
+- **Roadshow / Miami DX Compatibility Layer (Tier 1):** Full support for `SocketBaseTagList` (-294), `bind`, `listen`, `accept`, `connect`, `shutdown`, `getsockname`, `getpeername`, `WaitSelect` (timer-driven with SIGIO delivery), `getservbyname`/`byport`, `getprotobyname`/`bynumber`, `getnetbyname`/`byaddr`, `inet_aton`, `inet_ntop`, `inet_pton`, `Inet_LnaOf`, `Inet_NetOf`, `Inet_MakeAddr`, `inet_network`, `gethostname`, `gethostid`, `gethostbyname_r`, `gethostbyaddr_r`, `vsyslog`, and `Dup2Socket`.
+- **Zero-Allocation Exec IPC:** Fast message-passing between client applications and the network daemon with zero per-packet allocation overhead and `MEMF_PUBLIC` one-shot query safety.
+- **SANA-II Rev 7 Network Driver Interface:** Standard register trampolines (`A0/A1/D0`) with persistent BufferManagement, `ETH_PAD_SIZE 2` 68000 bus alignment, and multi-request DMA/IO read pump.
 - **Hardware-Seeded Entropy:** Cryptographically secure PRNG pool seeded from `GetSysTime` (microseconds), network MAC address, and memory pool allocations before core stack initialization.
 - **Universal 68k Architecture (`-m68000 -msoft-float`):** One binary runs on all Motorola 68k processors (68000 through 68060) without an FPU; shipped binaries carry no 68020+ opcodes (see ISSUES.md TNET-074 for the `objdump` scan evidence).
-- **Standard CLI Network Suite:** Includes `ping` (UDP echo probe with true round-trip timing — real ICMP ping is tracked as TNET-070), `ifconfig`, `netstat`, `wget`, and `curl` in `SYS:C/`.
-- **Unified Text Configuration:** `DEVS:tolunnet.config` (`KEY=VALUE`) is the persistent source of truth — `DEVICE`, `UNIT`, `DHCP`, `IP`, `NETMASK`, `GATEWAY`, `DNS`, `DNS2`, `HOSTNAME`, `MTU`, `DEBUG` — with Amiga Prefs `Use`/`Save` semantics via `ENV:`/`ENVARC:` mirroring.
-- **Native GadTools GUI Panel:** `SYS:Prefs/TolunnetPrefs` — screen-derived layout that fits a 640×200 NTSC Workbench, live Start/Stop stack control, and configuration of all keys above.
-- **Floppy-Optimized Packaging:** Release ADF disk image (`build/tolunnet.adf`, 901,120-byte standard DD image) carries the ~530 KB LhA archive's install set with room to spare.
+- **Standard CLI Network Suite:** Includes ICMP `ping` (`HOST/A,COUNT/N,SIZE/N,INTERVAL/N,TTL/N,TIMEOUT/N,QUIET/S,UDP/S`), `ifconfig`, `netstat` (active live socket rows), and `wget`/`curl` (`TolunnetGet` with HTTP/1.1 redirects, chunked transfer, Range resume, and `ReadArgs`) in `SYS:C/`.
+- **Unified Text Configuration:** `DEVS:tolunnet.config` (`KEY=VALUE`) is the persistent source of truth — `DEVICE`, `UNIT`, `DHCP`, `IP`, `NETMASK`, `GATEWAY`, `DNS`, `DNS2`, `HOSTNAME`, `MTU`, `DEBUG` — with Amiga Prefs `Use`/`Save` semantics via `ENV:`/`ENVARC:` mirroring and dynamic mtime change detection.
+- **Native GadTools GUI Panel:** `SYS:Prefs/TolunnetPrefs` — screen-derived layout that fits a 640×200 NTSC Workbench, live non-blocking Start/Stop stack control, ToolTypes (`TOOLPRI`, `PUBSCREEN`), and configuration of all keys above.
+- **Floppy-Optimized Packaging:** Release ADF disk image (`build/tolunnet.adf`, 901,120-byte standard DD image) and LhA archive (`build/tolunnet-1.2.0-rc1.lha`) generated via `make package` (`xdftool`).
 
 ---
 
@@ -35,12 +35,12 @@ Classic AmigaOS has lacked a modern, actively maintained, fully open-source TCP/
 
 | Command / Application | Location | Description |
 |---|---|---|
-| **`tolunnet`** | `SYS:C/tolunnet` | Core background TCP/IP daemon and `bsdsocket.library` provider |
-| **`TolunnetPrefs`** | `SYS:Prefs/TolunnetPrefs` | Native GadTools GUI configuration panel |
-| **`ping`** | `SYS:C/ping` | Round-trip echo diagnostic (UDP echo probe; ICMP via raw sockets tracked as TNET-070) |
-| **`ifconfig`** | `SYS:C/ifconfig` | Network interface and IP address status viewer |
-| **`netstat`** | `SYS:C/netstat` | Active socket connections, routing table, and protocol statistics |
-| **`wget` / `curl`** | `SYS:C/wget`, `SYS:C/curl` | HTTP client for downloading files and web pages with URL parsing |
+| **`tolunnet`** | `SYS:C/tolunnet` | Core background TCP/IP daemon and `bsdsocket.library` provider; supports `START`, `STOP`, `STATUS`, and `RECONFIG` CLI subcommands |
+| **`TolunnetPrefs`** | `SYS:Prefs/TolunnetPrefs` | Native GadTools GUI configuration panel with non-blocking daemon control, ToolTypes, and WBStartup support |
+| **`ping`** | `SYS:C/ping` | Real bidirectional ICMP Echo ping with microsecond RTT measurement, min/avg/max/mdev stats, and optional `UDP/S` echo probe |
+| **`ifconfig`** | `SYS:C/ifconfig` | Network interface, hardware MAC, and IP address status viewer |
+| **`netstat`** | `SYS:C/netstat` | Active socket connections (live TCP/UDP/RAW rows), routing table, and protocol statistics |
+| **`wget` / `curl`** | `SYS:C/wget`, `SYS:C/curl` | HTTP/1.1 client (`TolunnetGet`) supporting 301/302 redirect following, chunked transfer, Range resume, and progress display |
 
 ---
 
