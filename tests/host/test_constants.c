@@ -1,9 +1,15 @@
 /*
  * test_constants.c — Verify Tolunnet definitions match Roadshow SDK 1.8.
  */
+struct timeval {
+    unsigned int tv_secs;
+    unsigned int tv_micro;
+};
 #define DEVICES_TIMER_H 1
 #include <sys/socket.h>
 #include <sys/filio.h>
+#include <sys/ioctl.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/errno.h>
@@ -65,6 +71,12 @@ TN_TEST(ioctls)
     TN_ASSERT_EQ((unsigned long)FIONREAD, 0x4004667fUL);
     TN_ASSERT_EQ((unsigned long)FIONBIO,  0x8004667eUL);
     TN_ASSERT_EQ((unsigned long)FIOASYNC, 0x8004667dUL);
+    TN_ASSERT_EQ((unsigned long)SIOCATMARK, 0x40047307UL);
+    TN_ASSERT_EQ((unsigned long)SIOCGIFFLAGS, 0xc0206911UL);
+    TN_ASSERT_EQ((unsigned long)SIOCGIFADDR, 0xc0206921UL);
+    TN_ASSERT_EQ((unsigned long)SIOCGIFNETMASK, 0xc0206925UL);
+    TN_ASSERT_EQ((unsigned long)SIOCGIFBRDADDR, 0xc0206923UL);
+    TN_ASSERT_EQ((unsigned long)SIOCGIFMTU, 0xc0206933UL);
 }
 
 TN_TEST(errnos)

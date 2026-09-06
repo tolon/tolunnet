@@ -49,6 +49,8 @@
 #undef ntohl
 #include <sys/socket.h>
 #include <sys/filio.h>
+#include <sys/ioctl.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 
@@ -1207,7 +1209,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                     imsg->err_no = EWOULDBLOCK;
                     return TRUE;
                 }
-            } else if (g_sockets[slot_idx].type == SOCK_RAW) {
+            } else if (g_sockets[slot_idx].type == SOCK_DGRAM || g_sockets[slot_idx].type == SOCK_RAW) {
                 if (g_sockets[slot_idx].rx_head != NULL) {
                     TnRxPacket *pkt = g_sockets[slot_idx].rx_head;
                     u16_t avail = pkt->p->tot_len;
@@ -1604,9 +1606,171 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 *(ULONG *)argp = total;
                 imsg->result = 0;
                 imsg->err_no = 0;
-            } else {
+            } else if (req == SIOCATMARK) {
+                *(int *)argp = 0; /* Not at out-of-band mark */
                 imsg->result = 0;
                 imsg->err_no = 0;
+            } else if (req == SIOCADDRT || req == SIOCDELRT) {
+                /* Routing stubs: honest ENOSYS per C2 specification */
+                imsg->result = -1;
+                imsg->err_no = ENOSYS;
+            } else if (req == SIOCGIFCONF || req == OSIOCGIFCONF) {
+                struct ifconf *ifc = (struct ifconf *)argp;
+                struct ifreq *ifr = ifc->ifc_req;
+                LONG space = ifc->ifc_len;
+                LONG written = 0;
+                struct netif *netif;
+
+                NETIF_FOREACH(netif) {
+                    if (ifr != NULL && space >= (LONG)sizeof(struct ifreq)) {
+                        char name[IFNAMSIZ];
+                        int i;
+                        for (i = 0; i < IFNAMSIZ; i++) ifr->ifr_name[i] = 0;
+                        if (netif->name[0] == 'e' && netif->name[1] == 't') {
+                            int eth_num = 0;
+                            if (netif->state != NULL) {
+                                eth_num = (int)((TnSana2If *)netif->state)->unit;
+                            }
+                            name[0] = 'e'; name[1] = 't'; name[2] = 'h';
+                            name[3] = (char)('0' + eth_num);
+                            name[4] = '\0';
+                        } else {
+                            name[0] = netif->name[0];
+                            name[1] = netif->name[1];
+                            name[2] = '0';
+                            name[3] = '\0';
+                        }
+                        for (i = 0; name[i] && i < IFNAMSIZ - 1; i++) {
+                            ifr->ifr_name[i] = name[i];
+                        }
+                        ifr->ifr_name[i] = '\0';
+
+                        {
+                            struct sockaddr_in *sin = (struct sockaddr_in *)&ifr->ifr_addr;
+                            for (i = 0; i < (int)sizeof(struct sockaddr_in); i++) ((char *)sin)[i] = 0;
+                            sin->sin_len = sizeof(struct sockaddr_in);
+                            sin->sin_family = AF_INET;
+                            sin->sin_port = 0;
+                            sin->sin_addr.s_addr = netif_ip4_addr(netif)->addr;
+                        }
+                        ifr++;
+                        space -= sizeof(struct ifreq);
+                    }
+                    written += sizeof(struct ifreq);
+                }
+                ifc->ifc_len = written;
+                imsg->result = 0;
+                imsg->err_no = 0;
+            } else if (req == SIOCGIFFLAGS || req == SIOCGIFADDR || req == OSIOCGIFADDR ||
+                       req == SIOCGIFNETMASK || req == OSIOCGIFNETMASK ||
+                       req == SIOCGIFBRDADDR || req == OSIOCGIFBRDADDR ||
+                       req == SIOCGIFMTU) {
+                struct ifreq *ifr = (struct ifreq *)argp;
+                struct netif *netif = NULL;
+                struct netif *n;
+
+                /* Match interface: handle ethX, etX, loX */
+                NETIF_FOREACH(n) {
+                    char standard_name[IFNAMSIZ];
+                    char lwip_name[IFNAMSIZ];
+                    int i;
+                    int if_num = 0;
+                    BOOL match_std = TRUE;
+                    BOOL match_lwip = TRUE;
+
+                    if (n->name[0] == 'e' && n->name[1] == 't') {
+                        if (n->state != NULL) {
+                            if_num = (int)((TnSana2If *)n->state)->unit;
+                        }
+                        standard_name[0] = 'e'; standard_name[1] = 't'; standard_name[2] = 'h';
+                        standard_name[3] = (char)('0' + if_num); standard_name[4] = '\0';
+                    } else {
+                        standard_name[0] = n->name[0]; standard_name[1] = n->name[1];
+                        standard_name[2] = '0'; standard_name[3] = '\0';
+                    }
+                    lwip_name[0] = n->name[0]; lwip_name[1] = n->name[1];
+                    lwip_name[2] = (char)('0' + if_num); lwip_name[3] = '\0';
+
+                    for (i = 0; ifr->ifr_name[i] || standard_name[i]; i++) {
+                        char c1 = ifr->ifr_name[i];
+                        char c2 = standard_name[i];
+                        if (c1 >= 'A' && c1 <= 'Z') c1 = (char)(c1 + 32);
+                        if (c2 >= 'A' && c2 <= 'Z') c2 = (char)(c2 + 32);
+                        if (c1 != c2) { match_std = FALSE; break; }
+                    }
+                    for (i = 0; ifr->ifr_name[i] || lwip_name[i]; i++) {
+                        char c1 = ifr->ifr_name[i];
+                        char c2 = lwip_name[i];
+                        if (c1 >= 'A' && c1 <= 'Z') c1 = (char)(c1 + 32);
+                        if (c2 >= 'A' && c2 <= 'Z') c2 = (char)(c2 + 32);
+                        if (c1 != c2) { match_lwip = FALSE; break; }
+                    }
+                    if (match_std || match_lwip) {
+                        netif = n;
+                        break;
+                    }
+                }
+
+                if (netif == NULL && ifr->ifr_name[0] == '\0') {
+                    netif = (netif_default != NULL) ? netif_default : netif_list;
+                }
+
+                if (netif == NULL) {
+                    imsg->result = -1;
+                    imsg->err_no = ENXIO;
+                    return TRUE;
+                }
+
+                if (req == SIOCGIFFLAGS) {
+                    short flags = 0;
+                    if (netif_is_up(netif)) flags |= IFF_UP;
+                    if (netif_is_link_up(netif) || netif_is_up(netif)) flags |= IFF_RUNNING;
+                    if (netif->flags & NETIF_FLAG_BROADCAST) flags |= IFF_BROADCAST;
+                    if (netif->flags & NETIF_FLAG_IGMP) flags |= IFF_MULTICAST;
+                    ifr->ifr_flags = flags;
+                    imsg->result = 0;
+                    imsg->err_no = 0;
+                } else if (req == SIOCGIFADDR || req == OSIOCGIFADDR) {
+                    struct sockaddr_in *sin = (struct sockaddr_in *)&ifr->ifr_addr;
+                    int i;
+                    for (i = 0; i < (int)sizeof(struct sockaddr_in); i++) ((char *)sin)[i] = 0;
+                    sin->sin_len = sizeof(struct sockaddr_in);
+                    sin->sin_family = AF_INET;
+                    sin->sin_port = 0;
+                    sin->sin_addr.s_addr = netif_ip4_addr(netif)->addr;
+                    imsg->result = 0;
+                    imsg->err_no = 0;
+                } else if (req == SIOCGIFNETMASK || req == OSIOCGIFNETMASK) {
+                    struct sockaddr_in *sin = (struct sockaddr_in *)&ifr->ifr_addr;
+                    int i;
+                    for (i = 0; i < (int)sizeof(struct sockaddr_in); i++) ((char *)sin)[i] = 0;
+                    sin->sin_len = sizeof(struct sockaddr_in);
+                    sin->sin_family = AF_INET;
+                    sin->sin_port = 0;
+                    sin->sin_addr.s_addr = netif_ip4_netmask(netif)->addr;
+                    imsg->result = 0;
+                    imsg->err_no = 0;
+                } else if (req == SIOCGIFBRDADDR || req == OSIOCGIFBRDADDR) {
+                    struct sockaddr_in *sin = (struct sockaddr_in *)&ifr->ifr_broadaddr;
+                    int i;
+                    u32_t ip = netif_ip4_addr(netif)->addr;
+                    u32_t nm = netif_ip4_netmask(netif)->addr;
+                    for (i = 0; i < (int)sizeof(struct sockaddr_in); i++) ((char *)sin)[i] = 0;
+                    sin->sin_len = sizeof(struct sockaddr_in);
+                    sin->sin_family = AF_INET;
+                    sin->sin_port = 0;
+                    sin->sin_addr.s_addr = ip | ~nm;
+                    imsg->result = 0;
+                    imsg->err_no = 0;
+                } else if (req == SIOCGIFMTU) {
+                    ifr->ifr_mtu = (LONG)netif->mtu;
+                    imsg->result = 0;
+                    imsg->err_no = 0;
+                }
+            } else {
+                /* Unknown ioctl -> EINVAL per C2 specification */
+                imsg->result = -1;
+                imsg->err_no = EINVAL;
             }
             return TRUE;
         }
@@ -2736,13 +2900,41 @@ static int tn_task_real_main(int argc, char *argv[])
                     ReplyMsg(msg);
                 }
             }
-            netif_poll_all();
+            {
+                struct netif *n;
+                int guard = 0;
+                BOOL had;
+                do {
+                    had = FALSE;
+                    NETIF_FOREACH(n) {
+                        if (n->loop_first != NULL) {
+                            netif_poll(n);
+                            had = TRUE;
+                        }
+                    }
+                    guard++;
+                } while (had && guard < 64);
+            }
         }
 
         /* SANA-II Packet Arrival Signal */
         if (sigs & s2_sig) {
             tn_sana2_poll_input(&g_s2if, &g_netif);
-            netif_poll_all();
+            {
+                struct netif *n;
+                int guard = 0;
+                BOOL had;
+                do {
+                    had = FALSE;
+                    NETIF_FOREACH(n) {
+                        if (n->loop_first != NULL) {
+                            netif_poll(n);
+                            had = TRUE;
+                        }
+                    }
+                    guard++;
+                } while (had && guard < 64);
+            }
         }
 
         /* 100 ms Timer Tick Signal */
@@ -2752,7 +2944,21 @@ static int tn_task_real_main(int argc, char *argv[])
 
             /* Drive lwIP timeouts */
             sys_check_timeouts();
-            netif_poll_all();
+            {
+                struct netif *n;
+                int guard = 0;
+                BOOL had;
+                do {
+                    had = FALSE;
+                    NETIF_FOREACH(n) {
+                        if (n->loop_first != NULL) {
+                            netif_poll(n);
+                            had = TRUE;
+                        }
+                    }
+                    guard++;
+                } while (had && guard < 64);
+            }
 
             /* Check DHCP lease progress */
             if (use_dhcp && !dhcp_logged && dhcp_supplied_address(&g_netif)) {

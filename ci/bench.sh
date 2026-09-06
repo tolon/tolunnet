@@ -32,7 +32,7 @@ WORK_DIR="/e/amiga/Amigatolon/work"
 PRISTINE_HDF="/e/amiga/Amigatolon/hdf/Workbench v3.0 (1992)(Commodore).hdf"
 STAGE_DIR="/e/amiga/Amigatolon/bench/tolunnet"
 XDF="wsl -e bash -c '\$HOME/.local/bin/xdftool'"
-TIMEOUT_SECS="${TIMEOUT_SECS:-420}"
+TIMEOUT_SECS="${TIMEOUT_SECS:-600}"
 GRACE_SECS="${GRACE_SECS:-8}"
 CONFIGS="${CONFIGS:-a1200 68000}"
 

@@ -20,6 +20,8 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <net/if.h>
 #include <sys/errno.h>
 
 #include "../../src/common/log.h"
@@ -287,6 +289,18 @@ static LONG call_sendto(LONG s, const void *b, LONG l, LONG fl, struct sockaddr 
     __asm__ __volatile__ ("jsr -60(%%a6)" : "+r"(d0)
         : "r"(a6), "r"(d0), "r"(a0), "r"(d1), "r"(d2), "r"(a1), "r"(d3)
         : "d1", "d2", "d3", "a0", "a1", "memory");
+    return d0;
+}
+
+static LONG call_recv(LONG s, void *b, LONG l, LONG fl)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = s;
+    register void *a0 __asm__("a0") = b;
+    register LONG d1 __asm__("d1") = l;
+    register LONG d2 __asm__("d2") = fl;
+    __asm__ __volatile__ ("jsr -78(%%a6)" : "+r"(d0)
+        : "r"(a6), "r"(d0), "r"(a0), "r"(d1), "r"(d2) : "d1", "d2", "a0", "a1", "memory");
     return d0;
 }
 
@@ -619,6 +633,177 @@ static void tc_multicast_join(void)
 
     call_closesocket(s);
     TAP_OK("tc_multicast_join");
+}
+
+static void tc_ioctl_ifconf(void)
+{
+    LONG s = call_socket(AF_INET, SOCK_DGRAM, 0);
+    struct ifconf ifc;
+    struct ifreq ifr_buf[4];
+    struct ifreq req;
+    LONG rc;
+    int found_eth0 = 0;
+    int i, n_interfaces;
+
+    if (s < 0) {
+        TAP_NOTOK("tc_ioctl_ifconf", "socket creation failed");
+        return;
+    }
+
+    /* Enumerate netifs via SIOCGIFCONF */
+    for (i = 0; i < (int)sizeof(ifr_buf); i++) ((char *)ifr_buf)[i] = 0;
+    ifc.ifc_len = sizeof(ifr_buf);
+    ifc.ifc_req = ifr_buf;
+
+    rc = call_ioctl(s, SIOCGIFCONF, &ifc);
+    if (rc != 0 || ifc.ifc_len <= 0) {
+        call_closesocket(s);
+        TAP_NOTOK("tc_ioctl_ifconf", "SIOCGIFCONF failed");
+        return;
+    }
+
+    n_interfaces = ifc.ifc_len / sizeof(struct ifreq);
+    for (i = 0; i < n_interfaces; i++) {
+        if (ifr_buf[i].ifr_name[0] == 'e' &&
+            ifr_buf[i].ifr_name[1] == 't' &&
+            ifr_buf[i].ifr_name[2] == 'h' &&
+            ifr_buf[i].ifr_name[3] == '0') {
+            found_eth0 = 1;
+            break;
+        }
+    }
+
+    if (!found_eth0) {
+        call_closesocket(s);
+        TAP_NOTOK("tc_ioctl_ifconf", "eth0 not found in SIOCGIFCONF enumeration");
+        return;
+    }
+
+    /* Verify SIOCGIFFLAGS on eth0 */
+    for (i = 0; i < (int)sizeof(req); i++) ((char *)&req)[i] = 0;
+    req.ifr_name[0] = 'e'; req.ifr_name[1] = 't'; req.ifr_name[2] = 'h'; req.ifr_name[3] = '0';
+    if (call_ioctl(s, SIOCGIFFLAGS, &req) != 0 || !(req.ifr_flags & IFF_UP)) {
+        call_closesocket(s);
+        TAP_NOTOK("tc_ioctl_ifconf", "SIOCGIFFLAGS failed or eth0 not UP");
+        return;
+    }
+
+    /* Verify SIOCGIFADDR on eth0 */
+    if (call_ioctl(s, SIOCGIFADDR, &req) != 0) {
+        call_closesocket(s);
+        TAP_NOTOK("tc_ioctl_ifconf", "SIOCGIFADDR failed");
+        return;
+    }
+
+    /* Verify SIOCGIFNETMASK on eth0 */
+    if (call_ioctl(s, SIOCGIFNETMASK, &req) != 0) {
+        call_closesocket(s);
+        TAP_NOTOK("tc_ioctl_ifconf", "SIOCGIFNETMASK failed");
+        return;
+    }
+
+    /* Verify SIOCGIFMTU on eth0 */
+    if (call_ioctl(s, SIOCGIFMTU, &req) != 0 || req.ifr_mtu <= 0) {
+        call_closesocket(s);
+        TAP_NOTOK("tc_ioctl_ifconf", "SIOCGIFMTU failed");
+        return;
+    }
+
+    /* Verify SIOCATMARK on socket */
+    {
+        int atmark = -1;
+        if (call_ioctl(s, SIOCATMARK, &atmark) != 0 || atmark != 0) {
+            call_closesocket(s);
+            TAP_NOTOK("tc_ioctl_ifconf", "SIOCATMARK failed");
+            return;
+        }
+    }
+
+    /* Verify routing stubs return ENOSYS */
+    if (call_ioctl(s, SIOCADDRT, &req) == 0 || call_errno() != ENOSYS) {
+        call_closesocket(s);
+        TAP_NOTOK("tc_ioctl_ifconf", "SIOCADDRT expected ENOSYS");
+        return;
+    }
+    if (call_ioctl(s, SIOCDELRT, &req) == 0 || call_errno() != ENOSYS) {
+        call_closesocket(s);
+        TAP_NOTOK("tc_ioctl_ifconf", "SIOCDELRT expected ENOSYS");
+        return;
+    }
+
+    /* Verify unknown ioctl returns EINVAL */
+    if (call_ioctl(s, 0x12345678UL, &req) == 0 || call_errno() != EINVAL) {
+        call_closesocket(s);
+        TAP_NOTOK("tc_ioctl_ifconf", "unknown ioctl expected EINVAL");
+        return;
+    }
+
+    call_closesocket(s);
+    TAP_OK("tc_ioctl_ifconf");
+}
+
+static void tc_ioctl_fionread(void)
+{
+    LONG s_srv = call_socket(AF_INET, SOCK_DGRAM, 0);
+    LONG s_cli = call_socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in sin;
+    ULONG nread = 999;
+    char buf[16];
+    int i;
+
+    if (s_srv < 0 || s_cli < 0) {
+        if (s_srv >= 0) call_closesocket(s_srv);
+        if (s_cli >= 0) call_closesocket(s_cli);
+        TAP_NOTOK("tc_ioctl_fionread", "socket creation failed");
+        return;
+    }
+
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(54323);
+    sin.sin_addr.s_addr = htonl(0x7F000001UL); /* 127.0.0.1 */
+
+    if (call_bind(s_srv, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+        call_closesocket(s_srv);
+        call_closesocket(s_cli);
+        TAP_NOTOK("tc_ioctl_fionread", "bind server failed");
+        return;
+    }
+
+    /* Initial FIONREAD should be 0 */
+    if (call_ioctl(s_srv, FIONREAD, &nread) != 0 || nread != 0) {
+        call_closesocket(s_srv);
+        call_closesocket(s_cli);
+        TAP_NOTOK("tc_ioctl_fionread", "initial FIONREAD non-zero");
+        return;
+    }
+
+    /* Send 5 bytes to server */
+    call_sendto(s_cli, "HELLO", 5, 0, (struct sockaddr *)&sin, sizeof(sin));
+
+    /* Check FIONREAD on receiver */
+    nread = 0;
+    if (call_ioctl(s_srv, FIONREAD, &nread) != 0 || nread != 5) {
+        call_closesocket(s_srv);
+        call_closesocket(s_cli);
+        TAP_NOTOK("tc_ioctl_fionread", "FIONREAD after send did not report 5 bytes");
+        return;
+    }
+
+    /* Read the bytes and check FIONREAD returns to 0 */
+    call_recv(s_srv, buf, sizeof(buf), 0);
+    nread = 999;
+    if (call_ioctl(s_srv, FIONREAD, &nread) != 0 || nread != 0) {
+        call_closesocket(s_srv);
+        call_closesocket(s_cli);
+        TAP_NOTOK("tc_ioctl_fionread", "FIONREAD after read non-zero");
+        return;
+    }
+
+    call_closesocket(s_srv);
+    call_closesocket(s_cli);
+    TAP_OK("tc_ioctl_fionread");
 }
 
 static void tc_listen_accept_loopback(void)
@@ -1043,6 +1228,8 @@ int main(int argc, char *argv[])
     tc_bind_reuse();
     tc_sockopt_matrix();
     tc_multicast_join();
+    tc_ioctl_ifconf();
+    tc_ioctl_fionread();
     tc_listen_accept_loopback();
     tc_connect_refused();
     tc_nonblock_connect();
