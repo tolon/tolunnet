@@ -1192,6 +1192,112 @@ static void tc_waitselect_timeout(void)
     }
 }
 
+static void tc_waitselect_eintr(void)
+{
+    BYTE sig_bit;
+    ULONG sig_mask;
+    ULONG sigs;
+    struct timeval tv;
+    LONG res;
+
+    sig_bit = AllocSignal(-1);
+    if (sig_bit < 0) {
+        TAP_NOTOK("tc_waitselect_eintr", "AllocSignal failed");
+        return;
+    }
+    sig_mask = 1UL << sig_bit;
+
+    /* Signal caller task before WaitSelect */
+    Signal((struct Task *)FindTask(NULL), sig_mask);
+
+    tv.tv_secs = 5;
+    tv.tv_micro = 0;
+    sigs = sig_mask;
+
+    res = call_waitselect(0, NULL, NULL, NULL, &tv, &sigs);
+    if (res != -1 || call_errno() != EINTR || (sigs & sig_mask) == 0) {
+        tapf("# res=%ld errno=%ld sigs=0x%lx (expected -1, EINTR, 0x%lx)\n",
+             res, call_errno(), sigs, sig_mask);
+        FreeSignal(sig_bit);
+        TAP_NOTOK("tc_waitselect_eintr", "WaitSelect did not return -1/EINTR on pending signal");
+        return;
+    }
+
+    /* Test break signal via SetSocketSignals */
+    call_setsocketsignals(sig_mask, 0, 0);
+    Signal((struct Task *)FindTask(NULL), sig_mask);
+    res = call_waitselect(0, NULL, NULL, NULL, &tv, NULL);
+    call_setsocketsignals(0, 0, 0);
+
+    if (res != -1 || call_errno() != EINTR) {
+        tapf("# sig_int res=%ld errno=%ld (expected -1, EINTR)\n", res, call_errno());
+        FreeSignal(sig_bit);
+        TAP_NOTOK("tc_waitselect_eintr", "WaitSelect did not return -1/EINTR on sig_int");
+        return;
+    }
+
+    FreeSignal(sig_bit);
+    TAP_OK("tc_waitselect_eintr");
+}
+
+static void tc_waitselect_badf(void)
+{
+    fd_set fds;
+    struct timeval tv_zero;
+    LONG res;
+    LONG s;
+
+    tv_zero.tv_secs = 0;
+    tv_zero.tv_micro = 0;
+
+    /* 1. nfds > table size (32) must return -1 with EBADF */
+    res = call_waitselect(33, NULL, NULL, NULL, &tv_zero, NULL);
+    if (res != -1 || call_errno() != EBADF) {
+        tapf("# nfds=33 res=%ld errno=%ld (expected -1, EBADF)\n", res, call_errno());
+        TAP_NOTOK("tc_waitselect_badf", "nfds > table did not return EBADF");
+        return;
+    }
+
+    /* 2. Unopened descriptor in read_fds with nfds covering it */
+    memset(&fds, 0, sizeof(fds));
+    fds.fds_bits[0] = (1UL << 7); /* fd 7 is unopened */
+    res = call_waitselect(8, &fds, NULL, NULL, &tv_zero, NULL);
+    if (res != -1 || call_errno() != EBADF) {
+        tapf("# unopened fd res=%ld errno=%ld (expected -1, EBADF)\n", res, call_errno());
+        TAP_NOTOK("tc_waitselect_badf", "unopened fd in read_fds did not return EBADF");
+        return;
+    }
+
+    /* 3. nfds honoured: bit 7 set, but nfds = 5 (so fd 7 is ignored) */
+    memset(&fds, 0, sizeof(fds));
+    fds.fds_bits[0] = (1UL << 7);
+    res = call_waitselect(5, &fds, NULL, NULL, &tv_zero, NULL);
+    if (res < 0 || (fds.fds_bits[0] & (1UL << 7)) != 0) {
+        tapf("# nfds=5 res=%ld fds=0x%lx\n", res, (ULONG)fds.fds_bits[0]);
+        TAP_NOTOK("tc_waitselect_badf", "nfds was not honoured");
+        return;
+    }
+
+    /* 4. except_fds on healthy UDP socket: returns 0 and bit cleared */
+    s = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (s < 0) {
+        TAP_NOTOK("tc_waitselect_badf", "call_socket failed");
+        return;
+    }
+    memset(&fds, 0, sizeof(fds));
+    fds.fds_bits[0] = (1UL << s);
+    res = call_waitselect(s + 1, NULL, NULL, &fds, &tv_zero, NULL);
+    if (res != 0 || (fds.fds_bits[0] & (1UL << s)) != 0) {
+        tapf("# except_fds res=%ld fds=0x%lx\n", res, (ULONG)fds.fds_bits[0]);
+        call_closesocket(s);
+        TAP_NOTOK("tc_waitselect_badf", "except_fds returned non-zero for healthy socket");
+        return;
+    }
+    call_closesocket(s);
+
+    TAP_OK("tc_waitselect_badf");
+}
+
 static void tc_sigio(void)
 {
     BYTE sig_bit;
@@ -2258,6 +2364,8 @@ int main(int argc, char *argv[])
     tc_errno_ptr();
     tc_dup2();
     tc_waitselect_timeout();
+    tc_waitselect_eintr();
+    tc_waitselect_badf();
     tc_sigio();
     tc_icmp_raw();
     tc_sendmsg_iov();

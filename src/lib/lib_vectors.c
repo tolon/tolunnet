@@ -496,14 +496,18 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
     if (signals != NULL) {
         sig_mask = *signals;
     }
+    if (base->sig_int != 0) {
+        sig_mask |= base->sig_int;
+    }
 
     /* Check AmigaOS user signals already pending */
     if (sig_mask != 0) {
         received_sigs = SetSignal(0, 0) & sig_mask;
         if (received_sigs != 0) {
             SetSignal(0, received_sigs);
-            *signals = received_sigs;
-            return 0;
+            if (signals != NULL) *signals = received_sigs;
+            tn_set_errno_val(base, EINTR);
+            return -1;
         }
     }
 
@@ -515,6 +519,9 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
     base->ipc_msg.ptrs[3] = (APTR)timeout;
 
     res = tn_ipc_call(base, TN_IPC_CMD_WAITSELECT);
+    if (res < 0) {
+        return -1;
+    }
     if (res > 0) {
         if (signals != NULL) *signals = 0;
         return res;
@@ -560,8 +567,9 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
         if (sig_mask != 0 && (fired & sig_mask)) {
             received_sigs = fired & sig_mask;
             SetSignal(0, received_sigs);
-            *signals = received_sigs;
-            return 0;
+            if (signals != NULL) *signals = received_sigs;
+            tn_set_errno_val(base, EINTR);
+            return -1;
         }
 
         /* Socket activity or timeout: re-poll readiness with original masks */
@@ -571,7 +579,7 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
 
         res = tn_ipc_call(base, TN_IPC_CMD_WAITSELECT);
         if (signals != NULL) *signals = 0;
-        return (res >= 0) ? res : 0;
+        return res;
     }
 
     /* Fallback: 20 ms poll loop when sig_io == 0 and nfds > 0 (TNET-041 / TNET-067) */
@@ -584,6 +592,9 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
         if (except_fds) except_fds->fds_bits[0] = orig_e;
 
         res = tn_ipc_call(base, TN_IPC_CMD_WAITSELECT);
+        if (res < 0) {
+            return -1;
+        }
         if (res > 0) {
             if (signals != NULL) *signals = 0;
             return res;
@@ -593,8 +604,9 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
             received_sigs = SetSignal(0, 0) & sig_mask;
             if (received_sigs != 0) {
                 SetSignal(0, received_sigs);
-                *signals = received_sigs;
-                return 0;
+                if (signals != NULL) *signals = received_sigs;
+                tn_set_errno_val(base, EINTR);
+                return -1;
             }
         }
 

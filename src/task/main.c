@@ -2585,6 +2585,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             ULONG *efds = (ULONG *)imsg->ptrs[2];
             ULONG in_r = rfds ? *rfds : 0;
             ULONG in_w = wfds ? *wfds : 0;
+            ULONG in_e = efds ? *efds : 0;
             ULONG out_r = 0, out_w = 0, out_e = 0;
             LONG ready_cnt = 0;
 
@@ -2604,23 +2605,37 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             }
 
             for (i = 0; i < nfds; i++) {
-                slot_idx = base->fd_map[i];
-                if (slot_idx >= 0 && slot_idx < TN_MAX_GLOBAL_SOCKETS && g_sockets[slot_idx].in_use) {
+                ULONG mask = (1UL << i);
+                if ((in_r | in_w | in_e) & mask) {
+                    slot_idx = base->fd_map[i];
+                    if (slot_idx < 0 || slot_idx >= TN_MAX_GLOBAL_SOCKETS || !g_sockets[slot_idx].in_use) {
+                        imsg->result = -1;
+                        imsg->err_no = EBADF;
+                        return TRUE;
+                    }
                     /* Read readiness */
-                    if (in_r & (1UL << i)) {
+                    if (in_r & mask) {
                         if (g_sockets[slot_idx].rx_head != NULL ||
                             g_sockets[slot_idx].tcp_state == TN_TCP_STATE_PEER_CLOSED ||
                             (g_sockets[slot_idx].tcp_state == TN_TCP_STATE_LISTENING && g_sockets[slot_idx].accept_head != NULL)) {
-                            out_r |= (1UL << i);
+                            out_r |= mask;
                             ready_cnt++;
                         }
                     }
                     /* Write readiness */
-                    if (in_w & (1UL << i)) {
+                    if (in_w & mask) {
                         if (g_sockets[slot_idx].tcp_state == TN_TCP_STATE_ESTABLISHED ||
                             g_sockets[slot_idx].type == 2 /* UDP */ ||
                             g_sockets[slot_idx].type == 3 /* RAW */) {
-                            out_w |= (1UL << i);
+                            out_w |= mask;
+                            ready_cnt++;
+                        }
+                    }
+                    /* Exception readiness (OOB data or socket error) */
+                    if (in_e & mask) {
+                        if (g_sockets[slot_idx].tcp_state == TN_TCP_STATE_ERROR ||
+                            g_sockets[slot_idx].last_error != 0) {
+                            out_e |= mask;
                             ready_cnt++;
                         }
                     }
