@@ -480,7 +480,7 @@ _tn_stub_sendmsg:
     move.l  d1,-(sp)
     move.l  a0,-(sp)
     move.l  d0,-(sp)
-    jsr     _tn_unimpl_sendmsg
+    jsr     _tn_lvo_sendmsg
     lea     16(sp),sp
     rts
 
@@ -491,7 +491,7 @@ _tn_stub_recvmsg:
     move.l  d1,-(sp)
     move.l  a0,-(sp)
     move.l  d0,-(sp)
-    jsr     _tn_unimpl_recvmsg
+    jsr     _tn_lvo_recvmsg
     lea     16(sp),sp
     rts
 

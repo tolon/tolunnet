@@ -48,6 +48,7 @@
 #undef htonl
 #undef ntohl
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <sys/filio.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
@@ -621,6 +622,23 @@ static void tn_free_socket_slot(int slot_idx)
     g_sockets[slot_idx].owner_base          = NULL;
 }
 
+static void tn_drain_loopback(void)
+{
+    struct netif *n;
+    int guard = 0;
+    BOOL had;
+    do {
+        had = FALSE;
+        NETIF_FOREACH(n) {
+            if (n->loop_first != NULL) {
+                netif_poll(n);
+                had = TRUE;
+            }
+        }
+        guard++;
+    } while (had && guard < 64);
+}
+
 /*
  * Handle client IPC requests inside the network task context.
  * Returns TRUE if message should be replied immediately, FALSE if delayed/async.
@@ -1115,6 +1133,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 }
 
                 tcp_output(g_sockets[slot_idx].tcp_pcb);
+                tn_drain_loopback();
                 imsg->result = (LONG)send_len;
                 imsg->err_no = 0;
                 return TRUE;
@@ -1154,6 +1173,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             int client_fd = (int)imsg->args[0];
             void *buf = imsg->ptrs[0];
             LONG len = imsg->args[1];
+            LONG flags = imsg->args[2];
 
             if (base == NULL || client_fd < 0 || client_fd >= TN_MAX_FDS_PER_TASK || buf == NULL || len < 0) {
                 imsg->result = -1;
@@ -1168,34 +1188,56 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 return TRUE;
             }
 
+            if (flags & MSG_OOB) {
+                imsg->result = -1;
+                imsg->err_no = EOPNOTSUPP;
+                return TRUE;
+            }
+
             if (g_sockets[slot_idx].type == SOCK_STREAM) {
                 if (g_sockets[slot_idx].rx_head != NULL) {
-                    TnRxPacket *pkt = g_sockets[slot_idx].rx_head;
-                    u16_t avail = pkt->p->tot_len - pkt->offset;
-                    u16_t to_copy = (avail < (u16_t)len) ? avail : (u16_t)len;
-
-                    pbuf_copy_partial(pkt->p, buf, to_copy, pkt->offset);
-                    pkt->offset += to_copy;
-
-                    if (g_sockets[slot_idx].tcp_pcb != NULL) {
-                        tcp_recved(g_sockets[slot_idx].tcp_pcb, to_copy);
-                    }
-
-                    if (pkt->offset >= pkt->p->tot_len) {
-                        g_sockets[slot_idx].rx_head = pkt->next;
-                        if (g_sockets[slot_idx].rx_head == NULL) {
-                            g_sockets[slot_idx].rx_tail = NULL;
+                    if (flags & MSG_PEEK) {
+                        TnRxPacket *cur = g_sockets[slot_idx].rx_head;
+                        u16_t copied = 0;
+                        while (cur != NULL && copied < (u16_t)len) {
+                            u16_t off = (cur == g_sockets[slot_idx].rx_head) ? cur->offset : 0;
+                            u16_t avail = cur->p->tot_len - off;
+                            u16_t chunk = (avail < ((u16_t)len - copied)) ? avail : ((u16_t)len - copied);
+                            pbuf_copy_partial(cur->p, (char *)buf + copied, chunk, off);
+                            copied += chunk;
+                            cur = cur->next;
                         }
-                        pbuf_free(pkt->p);
-                        FreeVec(pkt);
-                        if (g_sockets[slot_idx].rx_count > 0) {
-                            g_sockets[slot_idx].rx_count--;
-                        }
-                    }
+                        imsg->result = (LONG)copied;
+                        imsg->err_no = 0;
+                        return TRUE;
+                    } else {
+                        TnRxPacket *pkt = g_sockets[slot_idx].rx_head;
+                        u16_t avail = pkt->p->tot_len - pkt->offset;
+                        u16_t to_copy = (avail < (u16_t)len) ? avail : (u16_t)len;
 
-                    imsg->result = (LONG)to_copy;
-                    imsg->err_no = 0;
-                    return TRUE;
+                        pbuf_copy_partial(pkt->p, buf, to_copy, pkt->offset);
+                        pkt->offset += to_copy;
+
+                        if (g_sockets[slot_idx].tcp_pcb != NULL) {
+                            tcp_recved(g_sockets[slot_idx].tcp_pcb, to_copy);
+                        }
+
+                        if (pkt->offset >= pkt->p->tot_len) {
+                            g_sockets[slot_idx].rx_head = pkt->next;
+                            if (g_sockets[slot_idx].rx_head == NULL) {
+                                g_sockets[slot_idx].rx_tail = NULL;
+                            }
+                            pbuf_free(pkt->p);
+                            FreeVec(pkt);
+                            if (g_sockets[slot_idx].rx_count > 0) {
+                                g_sockets[slot_idx].rx_count--;
+                            }
+                        }
+
+                        imsg->result = (LONG)to_copy;
+                        imsg->err_no = 0;
+                        return TRUE;
+                    }
                 } else if (g_sockets[slot_idx].tcp_state == TN_TCP_STATE_PEER_CLOSED) {
                     imsg->result = 0; /* EOF */
                     imsg->err_no = 0;
@@ -1217,14 +1259,16 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
 
                     pbuf_copy_partial(pkt->p, buf, to_copy, 0);
 
-                    g_sockets[slot_idx].rx_head = pkt->next;
-                    if (g_sockets[slot_idx].rx_head == NULL) {
-                        g_sockets[slot_idx].rx_tail = NULL;
-                    }
-                    pbuf_free(pkt->p);
-                    FreeVec(pkt);
-                    if (g_sockets[slot_idx].rx_count > 0) {
-                        g_sockets[slot_idx].rx_count--;
+                    if (!(flags & MSG_PEEK)) {
+                        g_sockets[slot_idx].rx_head = pkt->next;
+                        if (g_sockets[slot_idx].rx_head == NULL) {
+                            g_sockets[slot_idx].rx_tail = NULL;
+                        }
+                        pbuf_free(pkt->p);
+                        FreeVec(pkt);
+                        if (g_sockets[slot_idx].rx_count > 0) {
+                            g_sockets[slot_idx].rx_count--;
+                        }
                     }
 
                     imsg->result = (LONG)to_copy;
@@ -1262,7 +1306,40 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 return TRUE;
             }
 
-            if (g_sockets[slot_idx].type == SOCK_DGRAM && g_sockets[slot_idx].udp_pcb != NULL) {
+            if (g_sockets[slot_idx].type == SOCK_STREAM && g_sockets[slot_idx].tcp_pcb != NULL) {
+                err_t werr;
+                u16_t send_len;
+                u16_t snd_buf;
+
+                if (g_sockets[slot_idx].tcp_state != TN_TCP_STATE_ESTABLISHED) {
+                    imsg->result = -1;
+                    imsg->err_no = (g_sockets[slot_idx].tcp_state == TN_TCP_STATE_ERROR) ? ECONNRESET : ENOTCONN;
+                    return TRUE;
+                }
+
+                snd_buf = tcp_sndbuf(g_sockets[slot_idx].tcp_pcb);
+                if (snd_buf == 0) {
+                    imsg->result = -1;
+                    imsg->err_no = EWOULDBLOCK;
+                    return TRUE;
+                }
+
+                send_len = (len > 0xFFFF) ? 0xFFFF : (u16_t)len;
+                if (send_len > snd_buf) send_len = snd_buf;
+
+                werr = tcp_write(g_sockets[slot_idx].tcp_pcb, buf, send_len, TCP_WRITE_FLAG_COPY);
+                if (werr != ERR_OK) {
+                    imsg->result = -1;
+                    imsg->err_no = ENOBUFS;
+                    return TRUE;
+                }
+
+                tcp_output(g_sockets[slot_idx].tcp_pcb);
+                tn_drain_loopback();
+                imsg->result = (LONG)send_len;
+                imsg->err_no = 0;
+                return TRUE;
+            } else if (g_sockets[slot_idx].type == SOCK_DGRAM && g_sockets[slot_idx].udp_pcb != NULL) {
                 struct pbuf *p;
                 ip_addr_t dst_ip;
                 u16_t dst_port;
@@ -1287,6 +1364,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
 
                 udp_sendto(g_sockets[slot_idx].udp_pcb, p, &dst_ip, dst_port);
                 pbuf_free(p);
+                tn_drain_loopback();
 
                 imsg->result = (LONG)send_len;
                 imsg->err_no = 0;
@@ -1335,6 +1413,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             int client_fd = (int)imsg->args[0];
             void *buf = imsg->ptrs[0];
             LONG len = imsg->args[1];
+            LONG flags = imsg->args[2];
             struct sockaddr_in *from = (struct sockaddr_in *)imsg->ptrs[1];
             socklen_t *fromlen = (socklen_t *)imsg->ptrs[2];
 
@@ -1351,17 +1430,16 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 return TRUE;
             }
 
+            if (flags & MSG_OOB) {
+                imsg->result = -1;
+                imsg->err_no = EOPNOTSUPP;
+                return TRUE;
+            }
+
             if (g_sockets[slot_idx].type == SOCK_DGRAM) {
                 if (g_sockets[slot_idx].rx_head != NULL) {
                     TnRxPacket *pkt = g_sockets[slot_idx].rx_head;
-                    u16_t copied;
-
-                    g_sockets[slot_idx].rx_head = pkt->next;
-                    if (g_sockets[slot_idx].rx_head == NULL) {
-                        g_sockets[slot_idx].rx_tail = NULL;
-                    }
-
-                    copied = pbuf_copy_partial(pkt->p, buf, (u16_t)len, 0);
+                    u16_t copied = pbuf_copy_partial(pkt->p, buf, (u16_t)len, 0);
 
                     if (from != NULL) {
                         from->sin_len = sizeof(struct sockaddr_in); /* TNET-055 */
@@ -1371,10 +1449,16 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                         if (fromlen != NULL) *fromlen = sizeof(struct sockaddr_in);
                     }
 
-                    pbuf_free(pkt->p);
-                    FreeVec(pkt);
-                    if (g_sockets[slot_idx].rx_count > 0) {
-                        g_sockets[slot_idx].rx_count--;
+                    if (!(flags & MSG_PEEK)) {
+                        g_sockets[slot_idx].rx_head = pkt->next;
+                        if (g_sockets[slot_idx].rx_head == NULL) {
+                            g_sockets[slot_idx].rx_tail = NULL;
+                        }
+                        pbuf_free(pkt->p);
+                        FreeVec(pkt);
+                        if (g_sockets[slot_idx].rx_count > 0) {
+                            g_sockets[slot_idx].rx_count--;
+                        }
                     }
 
                     imsg->result = (LONG)copied;
@@ -1401,14 +1485,16 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                         if (fromlen != NULL) *fromlen = sizeof(struct sockaddr_in);
                     }
 
-                    g_sockets[slot_idx].rx_head = pkt->next;
-                    if (g_sockets[slot_idx].rx_head == NULL) {
-                        g_sockets[slot_idx].rx_tail = NULL;
-                    }
-                    pbuf_free(pkt->p);
-                    FreeVec(pkt);
-                    if (g_sockets[slot_idx].rx_count > 0) {
-                        g_sockets[slot_idx].rx_count--;
+                    if (!(flags & MSG_PEEK)) {
+                        g_sockets[slot_idx].rx_head = pkt->next;
+                        if (g_sockets[slot_idx].rx_head == NULL) {
+                            g_sockets[slot_idx].rx_tail = NULL;
+                        }
+                        pbuf_free(pkt->p);
+                        FreeVec(pkt);
+                        if (g_sockets[slot_idx].rx_count > 0) {
+                            g_sockets[slot_idx].rx_count--;
+                        }
                     }
 
                     imsg->result = (LONG)to_copy;
@@ -2614,6 +2700,373 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             return TRUE;
         }
 
+    case TN_IPC_CMD_SENDMSG:
+        {
+            int client_fd = (int)imsg->args[0];
+            const struct msghdr *msg = (const struct msghdr *)imsg->ptrs[0];
+            LONG flags = imsg->args[1];
+            const struct sockaddr_in *to = NULL;
+            ULONG total_len = 0;
+            ULONG i;
+
+            if (base == NULL || client_fd < 0 || client_fd >= TN_MAX_FDS_PER_TASK || msg == NULL) {
+                imsg->result = -1;
+                imsg->err_no = (msg == NULL) ? EINVAL : EBADF;
+                return TRUE;
+            }
+
+            slot_idx = base->fd_map[client_fd];
+            if (slot_idx < 0 || slot_idx >= TN_MAX_GLOBAL_SOCKETS || !g_sockets[slot_idx].in_use) {
+                imsg->result = -1;
+                imsg->err_no = EBADF;
+                return TRUE;
+            }
+
+            if (flags & MSG_OOB) {
+                imsg->result = -1;
+                imsg->err_no = EOPNOTSUPP;
+                return TRUE;
+            }
+
+            if (msg->msg_iov == NULL || msg->msg_iovlen == 0 || msg->msg_iovlen > 1024) {
+                imsg->result = -1;
+                imsg->err_no = EINVAL;
+                return TRUE;
+            }
+
+            for (i = 0; i < msg->msg_iovlen; i++) {
+                if (msg->msg_iov[i].iov_len > 0 && msg->msg_iov[i].iov_base == NULL) {
+                    imsg->result = -1;
+                    imsg->err_no = EFAULT;
+                    return TRUE;
+                }
+                total_len += msg->msg_iov[i].iov_len;
+            }
+
+            if (msg->msg_name != NULL) {
+                if (msg->msg_namelen < sizeof(struct sockaddr_in)) {
+                    imsg->result = -1;
+                    imsg->err_no = EINVAL;
+                    return TRUE;
+                }
+                to = (const struct sockaddr_in *)msg->msg_name;
+            }
+
+            if (g_sockets[slot_idx].type == SOCK_STREAM && g_sockets[slot_idx].tcp_pcb != NULL) {
+                u16_t snd_buf;
+                u16_t to_send;
+                u16_t remaining;
+                u16_t sent_bytes = 0;
+
+                if (g_sockets[slot_idx].tcp_state != TN_TCP_STATE_ESTABLISHED) {
+                    imsg->result = -1;
+                    imsg->err_no = (g_sockets[slot_idx].tcp_state == TN_TCP_STATE_ERROR) ? ECONNRESET : ENOTCONN;
+                    return TRUE;
+                }
+
+                snd_buf = tcp_sndbuf(g_sockets[slot_idx].tcp_pcb);
+                if (snd_buf == 0 && total_len > 0) {
+                    imsg->result = -1;
+                    imsg->err_no = EWOULDBLOCK;
+                    return TRUE;
+                }
+
+                to_send = (total_len > (ULONG)snd_buf) ? snd_buf : (u16_t)total_len;
+                remaining = to_send;
+
+                for (i = 0; i < msg->msg_iovlen && remaining > 0; i++) {
+                    u16_t chunk = (msg->msg_iov[i].iov_len > (size_t)remaining) ? remaining : (u16_t)msg->msg_iov[i].iov_len;
+                    if (chunk > 0) {
+                        err_t werr = tcp_write(g_sockets[slot_idx].tcp_pcb, msg->msg_iov[i].iov_base, chunk, TCP_WRITE_FLAG_COPY);
+                        if (werr != ERR_OK) {
+                            if (sent_bytes == 0) {
+                                imsg->result = -1;
+                                imsg->err_no = ENOBUFS;
+                                return TRUE;
+                            }
+                            break;
+                        }
+                        sent_bytes += chunk;
+                        remaining -= chunk;
+                    }
+                }
+
+                tcp_output(g_sockets[slot_idx].tcp_pcb);
+                tn_drain_loopback();
+                imsg->result = (LONG)sent_bytes;
+                imsg->err_no = 0;
+                return TRUE;
+            } else if (g_sockets[slot_idx].type == SOCK_DGRAM && g_sockets[slot_idx].udp_pcb != NULL) {
+                struct pbuf *p;
+                ip_addr_t dst_ip;
+                u16_t dst_port;
+                u16_t send_len = (total_len > 0xFFFF) ? 0xFFFF : (u16_t)total_len;
+                u16_t offset = 0;
+
+                p = pbuf_alloc(PBUF_TRANSPORT, send_len, PBUF_RAM);
+                if (p == NULL) {
+                    imsg->result = -1;
+                    imsg->err_no = ENOBUFS;
+                    return TRUE;
+                }
+
+                for (i = 0; i < msg->msg_iovlen && offset < send_len; i++) {
+                    u16_t chunk = (msg->msg_iov[i].iov_len > (size_t)(send_len - offset)) ? (u16_t)(send_len - offset) : (u16_t)msg->msg_iov[i].iov_len;
+                    if (chunk > 0) {
+                        pbuf_take_at(p, msg->msg_iov[i].iov_base, chunk, offset);
+                        offset += chunk;
+                    }
+                }
+
+                if (to != NULL) {
+                    ip_addr_set_ip4_u32(&dst_ip, to->sin_addr.s_addr);
+                    dst_port = lwip_ntohs(to->sin_port);
+                } else {
+                    dst_ip = g_sockets[slot_idx].udp_pcb->remote_ip;
+                    dst_port = g_sockets[slot_idx].udp_pcb->remote_port;
+                }
+
+                udp_sendto(g_sockets[slot_idx].udp_pcb, p, &dst_ip, dst_port);
+                pbuf_free(p);
+                tn_drain_loopback();
+
+                imsg->result = (LONG)send_len;
+                imsg->err_no = 0;
+                return TRUE;
+            } else if (g_sockets[slot_idx].type == SOCK_RAW && g_sockets[slot_idx].raw_pcb != NULL) {
+                struct pbuf *p;
+                ip_addr_t dst_ip;
+                u16_t send_len = (total_len > 0xFFFF) ? 0xFFFF : (u16_t)total_len;
+                u16_t offset = 0;
+                err_t serr;
+
+                p = pbuf_alloc(PBUF_IP, send_len, PBUF_RAM);
+                if (p == NULL) {
+                    imsg->result = -1;
+                    imsg->err_no = ENOBUFS;
+                    return TRUE;
+                }
+
+                for (i = 0; i < msg->msg_iovlen && offset < send_len; i++) {
+                    u16_t chunk = (msg->msg_iov[i].iov_len > (size_t)(send_len - offset)) ? (u16_t)(send_len - offset) : (u16_t)msg->msg_iov[i].iov_len;
+                    if (chunk > 0) {
+                        pbuf_take_at(p, msg->msg_iov[i].iov_base, chunk, offset);
+                        offset += chunk;
+                    }
+                }
+
+                if (to != NULL) {
+                    ip_addr_set_ip4_u32(&dst_ip, to->sin_addr.s_addr);
+                } else {
+                    dst_ip = g_sockets[slot_idx].raw_pcb->remote_ip;
+                }
+
+                serr = raw_sendto(g_sockets[slot_idx].raw_pcb, p, &dst_ip);
+                pbuf_free(p);
+
+                if (serr != ERR_OK) {
+                    imsg->result = -1;
+                    imsg->err_no = (serr == ERR_MEM) ? ENOBUFS : EHOSTUNREACH;
+                    return TRUE;
+                }
+
+                imsg->result = (LONG)send_len;
+                imsg->err_no = 0;
+                return TRUE;
+            }
+
+            imsg->result = -1;
+            imsg->err_no = EOPNOTSUPP;
+            return TRUE;
+        }
+
+    case TN_IPC_CMD_RECVMSG:
+        {
+            int client_fd = (int)imsg->args[0];
+            struct msghdr *msg = (struct msghdr *)imsg->ptrs[0];
+            LONG flags = imsg->args[1];
+            ULONG total_space = 0;
+            ULONG i;
+
+            if (base == NULL || client_fd < 0 || client_fd >= TN_MAX_FDS_PER_TASK || msg == NULL) {
+                imsg->result = -1;
+                imsg->err_no = (msg == NULL) ? EINVAL : EBADF;
+                return TRUE;
+            }
+
+            slot_idx = base->fd_map[client_fd];
+            if (slot_idx < 0 || slot_idx >= TN_MAX_GLOBAL_SOCKETS || !g_sockets[slot_idx].in_use) {
+                imsg->result = -1;
+                imsg->err_no = EBADF;
+                return TRUE;
+            }
+
+            if (flags & MSG_OOB) {
+                imsg->result = -1;
+                imsg->err_no = EOPNOTSUPP;
+                return TRUE;
+            }
+
+            if (msg->msg_iov == NULL || msg->msg_iovlen == 0 || msg->msg_iovlen > 1024) {
+                imsg->result = -1;
+                imsg->err_no = EINVAL;
+                return TRUE;
+            }
+
+            for (i = 0; i < msg->msg_iovlen; i++) {
+                if (msg->msg_iov[i].iov_len > 0 && msg->msg_iov[i].iov_base == NULL) {
+                    imsg->result = -1;
+                    imsg->err_no = EFAULT;
+                    return TRUE;
+                }
+                total_space += msg->msg_iov[i].iov_len;
+            }
+
+            msg->msg_flags = 0;
+            if (msg->msg_control != NULL) {
+                msg->msg_controllen = 0;
+            }
+
+            if (g_sockets[slot_idx].type == SOCK_STREAM) {
+                if (g_sockets[slot_idx].rx_head != NULL) {
+                    ULONG cur_iov = 0;
+                    ULONG iov_offset = 0;
+                    ULONG total_copied = 0;
+
+                    if (flags & MSG_PEEK) {
+                        TnRxPacket *cur = g_sockets[slot_idx].rx_head;
+                        while (cur != NULL && cur_iov < msg->msg_iovlen && total_copied < total_space) {
+                            u16_t off = (cur == g_sockets[slot_idx].rx_head) ? cur->offset : 0;
+                            u16_t avail = cur->p->tot_len - off;
+                            while (avail > 0 && cur_iov < msg->msg_iovlen) {
+                                u16_t space = (u16_t)(msg->msg_iov[cur_iov].iov_len - iov_offset);
+                                if (space == 0) {
+                                    cur_iov++;
+                                    iov_offset = 0;
+                                    continue;
+                                }
+                                u16_t chunk = (avail < space) ? avail : space;
+                                pbuf_copy_partial(cur->p, (char *)msg->msg_iov[cur_iov].iov_base + iov_offset, chunk, off);
+                                off += chunk;
+                                avail -= chunk;
+                                iov_offset += chunk;
+                                total_copied += chunk;
+                            }
+                            cur = cur->next;
+                        }
+                    } else {
+                        while (g_sockets[slot_idx].rx_head != NULL && cur_iov < msg->msg_iovlen && total_copied < total_space) {
+                            TnRxPacket *pkt = g_sockets[slot_idx].rx_head;
+                            u16_t avail = pkt->p->tot_len - pkt->offset;
+                            while (avail > 0 && cur_iov < msg->msg_iovlen) {
+                                u16_t space = (u16_t)(msg->msg_iov[cur_iov].iov_len - iov_offset);
+                                if (space == 0) {
+                                    cur_iov++;
+                                    iov_offset = 0;
+                                    continue;
+                                }
+                                u16_t chunk = (avail < space) ? avail : space;
+                                pbuf_copy_partial(pkt->p, (char *)msg->msg_iov[cur_iov].iov_base + iov_offset, chunk, pkt->offset);
+                                pkt->offset += chunk;
+                                avail -= chunk;
+                                iov_offset += chunk;
+                                total_copied += chunk;
+                                if (g_sockets[slot_idx].tcp_pcb != NULL) {
+                                    tcp_recved(g_sockets[slot_idx].tcp_pcb, chunk);
+                                }
+                            }
+                            if (pkt->offset >= pkt->p->tot_len) {
+                                g_sockets[slot_idx].rx_head = pkt->next;
+                                if (g_sockets[slot_idx].rx_head == NULL) {
+                                    g_sockets[slot_idx].rx_tail = NULL;
+                                }
+                                pbuf_free(pkt->p);
+                                FreeVec(pkt);
+                                if (g_sockets[slot_idx].rx_count > 0) g_sockets[slot_idx].rx_count--;
+                            }
+                        }
+                    }
+
+                    if (msg->msg_name != NULL) msg->msg_namelen = 0;
+                    imsg->result = (LONG)total_copied;
+                    imsg->err_no = 0;
+                    return TRUE;
+                } else if (g_sockets[slot_idx].tcp_state == TN_TCP_STATE_PEER_CLOSED) {
+                    if (msg->msg_name != NULL) msg->msg_namelen = 0;
+                    imsg->result = 0; /* EOF */
+                    imsg->err_no = 0;
+                    return TRUE;
+                } else if (g_sockets[slot_idx].tcp_state == TN_TCP_STATE_ERROR) {
+                    imsg->result = -1;
+                    imsg->err_no = ECONNRESET;
+                    return TRUE;
+                } else {
+                    imsg->result = -1;
+                    imsg->err_no = EWOULDBLOCK;
+                    return TRUE;
+                }
+            } else if (g_sockets[slot_idx].type == SOCK_DGRAM || g_sockets[slot_idx].type == SOCK_RAW) {
+                if (g_sockets[slot_idx].rx_head != NULL) {
+                    TnRxPacket *pkt = g_sockets[slot_idx].rx_head;
+                    u16_t avail = pkt->p->tot_len;
+                    ULONG cur_iov = 0;
+                    ULONG iov_offset = 0;
+                    u16_t pkt_offset = 0;
+                    ULONG total_copied = 0;
+
+                    while (cur_iov < msg->msg_iovlen && pkt_offset < avail) {
+                        u16_t space = (u16_t)(msg->msg_iov[cur_iov].iov_len - iov_offset);
+                        if (space == 0) {
+                            cur_iov++;
+                            iov_offset = 0;
+                            continue;
+                        }
+                        u16_t remaining = avail - pkt_offset;
+                        u16_t chunk = (remaining < space) ? remaining : space;
+                        pbuf_copy_partial(pkt->p, (char *)msg->msg_iov[cur_iov].iov_base + iov_offset, chunk, pkt_offset);
+                        pkt_offset += chunk;
+                        iov_offset += chunk;
+                        total_copied += chunk;
+                    }
+
+                    if (avail > total_copied) {
+                        msg->msg_flags |= MSG_TRUNC;
+                    }
+
+                    if (msg->msg_name != NULL && msg->msg_namelen >= sizeof(struct sockaddr_in)) {
+                        struct sockaddr_in *from = (struct sockaddr_in *)msg->msg_name;
+                        from->sin_len = sizeof(struct sockaddr_in);
+                        from->sin_family = AF_INET;
+                        from->sin_port   = (g_sockets[slot_idx].type == SOCK_DGRAM) ? lwip_htons(pkt->src_port) : 0;
+                        from->sin_addr.s_addr = ip_addr_get_ip4_u32(&pkt->src_ip);
+                        msg->msg_namelen = sizeof(struct sockaddr_in);
+                    }
+
+                    if (!(flags & MSG_PEEK)) {
+                        g_sockets[slot_idx].rx_head = pkt->next;
+                        if (g_sockets[slot_idx].rx_head == NULL) {
+                            g_sockets[slot_idx].rx_tail = NULL;
+                        }
+                        pbuf_free(pkt->p);
+                        FreeVec(pkt);
+                        if (g_sockets[slot_idx].rx_count > 0) g_sockets[slot_idx].rx_count--;
+                    }
+
+                    imsg->result = (LONG)total_copied;
+                    imsg->err_no = 0;
+                    return TRUE;
+                } else {
+                    imsg->result = -1;
+                    imsg->err_no = EWOULDBLOCK;
+                    return TRUE;
+                }
+            }
+
+            imsg->result = -1;
+            imsg->err_no = EOPNOTSUPP;
+            return TRUE;
+        }
+
     default:
         imsg->result = -1;
         imsg->err_no = ENOSYS;
@@ -2900,41 +3353,13 @@ static int tn_task_real_main(int argc, char *argv[])
                     ReplyMsg(msg);
                 }
             }
-            {
-                struct netif *n;
-                int guard = 0;
-                BOOL had;
-                do {
-                    had = FALSE;
-                    NETIF_FOREACH(n) {
-                        if (n->loop_first != NULL) {
-                            netif_poll(n);
-                            had = TRUE;
-                        }
-                    }
-                    guard++;
-                } while (had && guard < 64);
-            }
+            tn_drain_loopback();
         }
 
         /* SANA-II Packet Arrival Signal */
         if (sigs & s2_sig) {
             tn_sana2_poll_input(&g_s2if, &g_netif);
-            {
-                struct netif *n;
-                int guard = 0;
-                BOOL had;
-                do {
-                    had = FALSE;
-                    NETIF_FOREACH(n) {
-                        if (n->loop_first != NULL) {
-                            netif_poll(n);
-                            had = TRUE;
-                        }
-                    }
-                    guard++;
-                } while (had && guard < 64);
-            }
+            tn_drain_loopback();
         }
 
         /* 100 ms Timer Tick Signal */
@@ -2944,21 +3369,7 @@ static int tn_task_real_main(int argc, char *argv[])
 
             /* Drive lwIP timeouts */
             sys_check_timeouts();
-            {
-                struct netif *n;
-                int guard = 0;
-                BOOL had;
-                do {
-                    had = FALSE;
-                    NETIF_FOREACH(n) {
-                        if (n->loop_first != NULL) {
-                            netif_poll(n);
-                            had = TRUE;
-                        }
-                    }
-                    guard++;
-                } while (had && guard < 64);
-            }
+            tn_drain_loopback();
 
             /* Check DHCP lease progress */
             if (use_dhcp && !dhcp_logged && dhcp_supplied_address(&g_netif)) {

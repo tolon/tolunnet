@@ -21,6 +21,7 @@
 #include <libraries/bsdsocket.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <sys/errno.h>
 #include "../common/fdset_util.h"
 
@@ -910,6 +911,50 @@ LONG tn_lvo_dup2socket(LONG old_sock, LONG new_sock, TnSocketBase *base)
     base->ipc_msg.args[0] = old_sock;
     base->ipc_msg.args[1] = new_sock;
     return tn_ipc_call(base, TN_IPC_CMD_DUP2);
+}
+
+/* -270: sendmsg(sock, msg, flags) */
+LONG tn_lvo_sendmsg(LONG sock, struct msghdr *msg, LONG flags, TnSocketBase *base)
+{
+    if (base == NULL) return -1;
+    if (sock < 0 || sock >= TN_MAX_FDS_PER_TASK || base->fd_map[sock] < 0) {
+        tn_set_errno_val(base, EBADF);
+        return -1;
+    }
+    if (msg == NULL) {
+        tn_set_errno_val(base, EINVAL);
+        return -1;
+    }
+    if (flags & MSG_OOB) {
+        tn_set_errno_val(base, EOPNOTSUPP);
+        return -1;
+    }
+    base->ipc_msg.args[0] = sock;
+    base->ipc_msg.ptrs[0] = (APTR)msg;
+    base->ipc_msg.args[1] = flags;
+    return tn_ipc_call(base, TN_IPC_CMD_SENDMSG);
+}
+
+/* -276: recvmsg(sock, msg, flags) */
+LONG tn_lvo_recvmsg(LONG sock, struct msghdr *msg, LONG flags, TnSocketBase *base)
+{
+    if (base == NULL) return -1;
+    if (sock < 0 || sock >= TN_MAX_FDS_PER_TASK || base->fd_map[sock] < 0) {
+        tn_set_errno_val(base, EBADF);
+        return -1;
+    }
+    if (msg == NULL) {
+        tn_set_errno_val(base, EINVAL);
+        return -1;
+    }
+    if (flags & MSG_OOB) {
+        tn_set_errno_val(base, EOPNOTSUPP);
+        return -1;
+    }
+    base->ipc_msg.args[0] = sock;
+    base->ipc_msg.ptrs[0] = (APTR)msg;
+    base->ipc_msg.args[1] = flags;
+    return tn_ipc_call(base, TN_IPC_CMD_RECVMSG);
 }
 
 /* -282: gethostname(name, namelen) (COMPAT-3) */

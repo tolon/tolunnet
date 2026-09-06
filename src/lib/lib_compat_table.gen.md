@@ -42,8 +42,8 @@
 | `-252` | `getprotobynumber` | `struct protoent * getprotobynumber(LONG proto)` | **Implemented** | Real implementation via daemon IPC or per-task base |
 | `-258` | `vsyslog` | `VOID vsyslog(LONG pri,STRPTR msg,APTR args)` | **Implemented** | Real implementation via daemon IPC or per-task base |
 | `-264` | `Dup2Socket` | `LONG Dup2Socket(LONG old_socket,LONG new_socket)` | **Implemented** | Real implementation via daemon IPC or per-task base |
-| `-270` | `sendmsg` | `LONG sendmsg(LONG sock,struct msghdr *msg,LONG flags)` | *Honest Stub* | `ENOSYS` / safe error sentinel |
-| `-276` | `recvmsg` | `LONG recvmsg(LONG sock,struct msghdr *msg,LONG flags)` | *Honest Stub* | `ENOSYS` / safe error sentinel |
+| `-270` | `sendmsg` | `LONG sendmsg(LONG sock,struct msghdr *msg,LONG flags)` | **Implemented** | Real implementation via daemon IPC or per-task base |
+| `-276` | `recvmsg` | `LONG recvmsg(LONG sock,struct msghdr *msg,LONG flags)` | **Implemented** | Real implementation via daemon IPC or per-task base |
 | `-282` | `gethostname` | `LONG gethostname(STRPTR name,LONG namelen)` | **Implemented** | Real implementation via daemon IPC or per-task base |
 | `-288` | `gethostid` | `in_addr_t gethostid()` | **Implemented** | Real implementation via daemon IPC or per-task base |
 | `-294` | `SocketBaseTagList` | `LONG SocketBaseTagList(struct TagItem *tags)` | **Implemented** | Real implementation via daemon IPC or per-task base |

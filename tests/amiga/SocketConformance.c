@@ -20,6 +20,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
 #include <sys/errno.h>
@@ -292,6 +293,18 @@ static LONG call_sendto(LONG s, const void *b, LONG l, LONG fl, struct sockaddr 
     return d0;
 }
 
+static LONG call_send(LONG s, const void *b, LONG l, LONG fl)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = s;
+    register const void *a0 __asm__("a0") = b;
+    register LONG d1 __asm__("d1") = l;
+    register LONG d2 __asm__("d2") = fl;
+    __asm__ __volatile__ ("jsr -66(%%a6)" : "+r"(d0)
+        : "r"(a6), "r"(d0), "r"(a0), "r"(d1), "r"(d2) : "d1", "d2", "a0", "a1", "memory");
+    return d0;
+}
+
 static LONG call_recv(LONG s, void *b, LONG l, LONG fl)
 {
     register struct Library *a6 __asm__("a6") = SocketBase;
@@ -301,6 +314,28 @@ static LONG call_recv(LONG s, void *b, LONG l, LONG fl)
     register LONG d2 __asm__("d2") = fl;
     __asm__ __volatile__ ("jsr -78(%%a6)" : "+r"(d0)
         : "r"(a6), "r"(d0), "r"(a0), "r"(d1), "r"(d2) : "d1", "d2", "a0", "a1", "memory");
+    return d0;
+}
+
+static LONG call_sendmsg(LONG s, struct msghdr *m, LONG fl)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = s;
+    register struct msghdr *a0 __asm__("a0") = m;
+    register LONG d1 __asm__("d1") = fl;
+    __asm__ __volatile__ ("jsr -270(%%a6)" : "+r"(d0)
+        : "r"(a6), "r"(d0), "r"(a0), "r"(d1) : "d1", "a0", "a1", "memory");
+    return d0;
+}
+
+static LONG call_recvmsg(LONG s, struct msghdr *m, LONG fl)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = s;
+    register struct msghdr *a0 __asm__("a0") = m;
+    register LONG d1 __asm__("d1") = fl;
+    __asm__ __volatile__ ("jsr -276(%%a6)" : "+r"(d0)
+        : "r"(a6), "r"(d0), "r"(a0), "r"(d1) : "d1", "a0", "a1", "memory");
     return d0;
 }
 
@@ -1148,6 +1183,369 @@ static void tc_icmp_raw(void)
     }
 }
 
+static void tc_sendmsg_iov(void)
+{
+    LONG s_rx, s_tx;
+    struct sockaddr_in sin_rx, sin_from;
+    struct iovec iov_tx[3];
+    struct iovec iov_rx[2];
+    struct msghdr msg_tx, msg_rx;
+    char p1[] = "HELLO ";
+    char p2[] = "FROM ";
+    char p3[] = "TOLUNNET!";
+    char r1[8];
+    char r2[12];
+    char rxbuf[32];
+    LONG res;
+    int i;
+
+    s_rx = call_socket(AF_INET, SOCK_DGRAM, 0);
+    s_tx = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (s_rx < 0 || s_tx < 0) {
+        if (s_rx >= 0) call_closesocket(s_rx);
+        if (s_tx >= 0) call_closesocket(s_tx);
+        TAP_NOTOK("tc_sendmsg_iov", "failed to create UDP sockets");
+        return;
+    }
+
+    for (i = 0; i < (int)sizeof(sin_rx); i++) ((char *)&sin_rx)[i] = 0;
+    sin_rx.sin_len         = sizeof(sin_rx);
+    sin_rx.sin_family      = AF_INET;
+    sin_rx.sin_port        = htons(54330);
+    sin_rx.sin_addr.s_addr = htonl(0x7F000001UL);
+
+    if (call_bind(s_rx, (struct sockaddr *)&sin_rx, sizeof(sin_rx)) != 0) {
+        call_closesocket(s_rx);
+        call_closesocket(s_tx);
+        TAP_NOTOK("tc_sendmsg_iov", "bind failed");
+        return;
+    }
+
+    /* Test 1: Error handling on sendmsg */
+    if (call_sendmsg(s_tx, NULL, 0) >= 0 || call_errno() != EINVAL) {
+        call_closesocket(s_rx);
+        call_closesocket(s_tx);
+        TAP_NOTOK("tc_sendmsg_iov", "sendmsg NULL msg did not fail with EINVAL");
+        return;
+    }
+
+    /* Test 2: Gather send (sendmsg with 3 iovecs) */
+    iov_tx[0].iov_base = (APTR)p1;
+    iov_tx[0].iov_len  = 6;
+    iov_tx[1].iov_base = (APTR)p2;
+    iov_tx[1].iov_len  = 5;
+    iov_tx[2].iov_base = (APTR)p3;
+    iov_tx[2].iov_len  = 9;
+
+    for (i = 0; i < (int)sizeof(msg_tx); i++) ((char *)&msg_tx)[i] = 0;
+    msg_tx.msg_name    = (APTR)&sin_rx;
+    msg_tx.msg_namelen = sizeof(sin_rx);
+    msg_tx.msg_iov     = iov_tx;
+    msg_tx.msg_iovlen  = 3;
+
+    if (call_sendmsg(s_tx, &msg_tx, MSG_OOB) >= 0 || call_errno() != EOPNOTSUPP) {
+        call_closesocket(s_rx);
+        call_closesocket(s_tx);
+        TAP_NOTOK("tc_sendmsg_iov", "sendmsg MSG_OOB did not fail with EOPNOTSUPP");
+        return;
+    }
+
+    res = call_sendmsg(s_tx, &msg_tx, 0);
+    if (res != 20) {
+        tapf("# sendmsg res = %ld (expected 20)\n", res);
+        call_closesocket(s_rx);
+        call_closesocket(s_tx);
+        TAP_NOTOK("tc_sendmsg_iov", "sendmsg gather returned wrong byte count");
+        return;
+    }
+
+    for (i = 0; i < (int)sizeof(rxbuf); i++) rxbuf[i] = 0;
+    res = call_recv(s_rx, rxbuf, sizeof(rxbuf), 0);
+    if (res != 20) {
+        tapf("# recv res = %ld\n", res);
+        call_closesocket(s_rx);
+        call_closesocket(s_tx);
+        TAP_NOTOK("tc_sendmsg_iov", "recv did not receive gathered 20 bytes");
+        return;
+    }
+
+    /* Verify payload concatenation: "HELLO FROM TOLUNNET!" */
+    {
+        const char *expected = "HELLO FROM TOLUNNET!";
+        for (i = 0; i < 20; i++) {
+            if (rxbuf[i] != expected[i]) {
+                call_closesocket(s_rx);
+                call_closesocket(s_tx);
+                TAP_NOTOK("tc_sendmsg_iov", "gathered payload content mismatch");
+                return;
+            }
+        }
+    }
+
+    /* Test 3: Scatter receive (recvmsg into 2 iovecs) */
+    call_sendto(s_tx, "SCATTER123456789", 16, 0, (struct sockaddr *)&sin_rx, sizeof(sin_rx));
+
+    for (i = 0; i < 8; i++) r1[i] = 0;
+    for (i = 0; i < 12; i++) r2[i] = 0;
+    for (i = 0; i < (int)sizeof(sin_from); i++) ((char *)&sin_from)[i] = 0;
+
+    iov_rx[0].iov_base = (APTR)r1;
+    iov_rx[0].iov_len  = 7; /* "SCATTER" */
+    iov_rx[1].iov_base = (APTR)r2;
+    iov_rx[1].iov_len  = 9; /* "123456789" */
+
+    for (i = 0; i < (int)sizeof(msg_rx); i++) ((char *)&msg_rx)[i] = 0;
+    msg_rx.msg_name    = (APTR)&sin_from;
+    msg_rx.msg_namelen = sizeof(sin_from);
+    msg_rx.msg_iov     = iov_rx;
+    msg_rx.msg_iovlen  = 2;
+
+    res = call_recvmsg(s_rx, &msg_rx, 0);
+    if (res != 16) {
+        tapf("# recvmsg res = %ld (expected 16)\n", res);
+        call_closesocket(s_rx);
+        call_closesocket(s_tx);
+        TAP_NOTOK("tc_sendmsg_iov", "recvmsg scatter returned wrong byte count");
+        return;
+    }
+
+    {
+        const char *exp1 = "SCATTER";
+        const char *exp2 = "123456789";
+        for (i = 0; i < 7; i++) {
+            if (r1[i] != exp1[i]) {
+                call_closesocket(s_rx);
+                call_closesocket(s_tx);
+                TAP_NOTOK("tc_sendmsg_iov", "scatter chunk 1 mismatch");
+                return;
+            }
+        }
+        for (i = 0; i < 9; i++) {
+            if (r2[i] != exp2[i]) {
+                call_closesocket(s_rx);
+                call_closesocket(s_tx);
+                TAP_NOTOK("tc_sendmsg_iov", "scatter chunk 2 mismatch");
+                return;
+            }
+        }
+    }
+
+    if (sin_from.sin_family != AF_INET || sin_from.sin_addr.s_addr != htonl(0x7F000001UL)) {
+        call_closesocket(s_rx);
+        call_closesocket(s_tx);
+        TAP_NOTOK("tc_sendmsg_iov", "recvmsg msg_name from address mismatch");
+        return;
+    }
+
+    call_closesocket(s_rx);
+    call_closesocket(s_tx);
+    TAP_OK("tc_sendmsg_iov");
+}
+
+static void tc_recv_peek(void)
+{
+    LONG s1, s2;
+    struct sockaddr_in sin;
+    char pbuf1[32];
+    char pbuf2[32];
+    char pbuf3[32];
+    LONG res;
+    int i;
+    ULONG nread = 0;
+
+    /* 1. UDP MSG_PEEK test */
+    s1 = call_socket(AF_INET, SOCK_DGRAM, 0);
+    s2 = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (s1 < 0 || s2 < 0) {
+        if (s1 >= 0) call_closesocket(s1);
+        if (s2 >= 0) call_closesocket(s2);
+        TAP_NOTOK("tc_recv_peek", "socket creation failed");
+        return;
+    }
+
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len         = sizeof(sin);
+    sin.sin_family      = AF_INET;
+    sin.sin_port        = htons(54331);
+    sin.sin_addr.s_addr = htonl(0x7F000001UL);
+
+    if (call_bind(s1, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+        call_closesocket(s1);
+        call_closesocket(s2);
+        TAP_NOTOK("tc_recv_peek", "bind UDP s1 failed");
+        return;
+    }
+
+    call_sendto(s2, "PEEK_TEST_PAYLOAD", 17, 0, (struct sockaddr *)&sin, sizeof(sin));
+
+    for (i = 0; i < 32; i++) { pbuf1[i] = 0; pbuf2[i] = 0; }
+
+    /* Peek at the packet */
+    res = call_recv(s1, pbuf1, sizeof(pbuf1), MSG_PEEK);
+    if (res != 17) {
+        tapf("# UDP peek res = %ld\n", res);
+        call_closesocket(s1);
+        call_closesocket(s2);
+        TAP_NOTOK("tc_recv_peek", "UDP recv MSG_PEEK returned wrong len");
+        return;
+    }
+
+    /* Now consume the packet normally */
+    res = call_recv(s1, pbuf2, sizeof(pbuf2), 0);
+    if (res != 17) {
+        tapf("# UDP second recv res = %ld\n", res);
+        call_closesocket(s1);
+        call_closesocket(s2);
+        TAP_NOTOK("tc_recv_peek", "UDP second recv failed after peek");
+        return;
+    }
+
+    {
+        const char *expected = "PEEK_TEST_PAYLOAD";
+        for (i = 0; i < 17; i++) {
+            if (pbuf1[i] != expected[i] || pbuf2[i] != expected[i]) {
+                call_closesocket(s1);
+                call_closesocket(s2);
+                TAP_NOTOK("tc_recv_peek", "UDP peeked payload data mismatch");
+                return;
+            }
+        }
+    }
+
+    /* Verify socket is now empty via FIONREAD */
+    nread = 0xFFFFFFFFUL;
+    if (call_ioctl(s1, FIONREAD, (APTR)&nread) != 0 || nread != 0) {
+        call_closesocket(s1);
+        call_closesocket(s2);
+        TAP_NOTOK("tc_recv_peek", "UDP socket not empty after consuming peeked packet");
+        return;
+    }
+
+    call_closesocket(s1);
+    call_closesocket(s2);
+
+    /* 2. TCP MSG_PEEK test */
+    {
+        LONG s_listen, s_cli, s_srv;
+        struct sockaddr_in srv_sin, cli_sin;
+        socklen_t slen;
+
+        s_listen = call_socket(AF_INET, SOCK_STREAM, 0);
+        s_cli    = call_socket(AF_INET, SOCK_STREAM, 0);
+        if (s_listen < 0 || s_cli < 0) {
+            if (s_listen >= 0) call_closesocket(s_listen);
+            if (s_cli >= 0) call_closesocket(s_cli);
+            TAP_NOTOK("tc_recv_peek", "TCP socket creation failed");
+            return;
+        }
+
+        for (i = 0; i < (int)sizeof(srv_sin); i++) ((char *)&srv_sin)[i] = 0;
+        srv_sin.sin_len         = sizeof(srv_sin);
+        srv_sin.sin_family      = AF_INET;
+        srv_sin.sin_port        = htons(54332);
+        srv_sin.sin_addr.s_addr = htonl(0x7F000001UL);
+
+        if (call_bind(s_listen, (struct sockaddr *)&srv_sin, sizeof(srv_sin)) != 0 ||
+            call_listen(s_listen, 1) != 0) {
+            call_closesocket(s_listen);
+            call_closesocket(s_cli);
+            TAP_NOTOK("tc_recv_peek", "TCP bind/listen failed");
+            return;
+        }
+
+        if (call_connect(s_cli, (struct sockaddr *)&srv_sin, sizeof(srv_sin)) != 0) {
+            call_closesocket(s_listen);
+            call_closesocket(s_cli);
+            TAP_NOTOK("tc_recv_peek", "TCP connect failed");
+            return;
+        }
+
+        slen = sizeof(cli_sin);
+        s_srv = call_accept(s_listen, (struct sockaddr *)&cli_sin, &slen);
+        if (s_srv < 0) {
+            call_closesocket(s_listen);
+            call_closesocket(s_cli);
+            TAP_NOTOK("tc_recv_peek", "TCP accept failed");
+            return;
+        }
+
+        /* Send TCP data from client */
+        res = call_send(s_cli, "TCP_PEEK_DATA", 13, 0);
+        if (res != 13) {
+            tapf("# TCP send res = %ld, errno = %ld\n", res, call_errno());
+            call_closesocket(s_srv);
+            call_closesocket(s_cli);
+            call_closesocket(s_listen);
+            TAP_NOTOK("tc_recv_peek", "TCP send failed");
+            return;
+        }
+
+        for (i = 0; i < 32; i++) { pbuf1[i] = 0; pbuf2[i] = 0; pbuf3[i] = 0; }
+
+        /* Peek first 4 bytes */
+        res = call_recv(s_srv, pbuf1, 4, MSG_PEEK);
+        if (res != 4) {
+            tapf("# TCP partial peek res = %ld\n", res);
+            call_closesocket(s_srv);
+            call_closesocket(s_cli);
+            call_closesocket(s_listen);
+            TAP_NOTOK("tc_recv_peek", "TCP partial MSG_PEEK failed");
+            return;
+        }
+
+        /* Peek all 13 bytes */
+        res = call_recv(s_srv, pbuf2, 13, MSG_PEEK);
+        if (res != 13) {
+            tapf("# TCP full peek res = %ld\n", res);
+            call_closesocket(s_srv);
+            call_closesocket(s_cli);
+            call_closesocket(s_listen);
+            TAP_NOTOK("tc_recv_peek", "TCP full MSG_PEEK failed");
+            return;
+        }
+
+        /* Consume normally */
+        res = call_recv(s_srv, pbuf3, 13, 0);
+        if (res != 13) {
+            tapf("# TCP normal recv res = %ld\n", res);
+            call_closesocket(s_srv);
+            call_closesocket(s_cli);
+            call_closesocket(s_listen);
+            TAP_NOTOK("tc_recv_peek", "TCP normal recv failed after peek");
+            return;
+        }
+
+        {
+            const char *exp_part = "TCP_";
+            const char *exp_full = "TCP_PEEK_DATA";
+            for (i = 0; i < 4; i++) {
+                if (pbuf1[i] != exp_part[i]) {
+                    call_closesocket(s_srv);
+                    call_closesocket(s_cli);
+                    call_closesocket(s_listen);
+                    TAP_NOTOK("tc_recv_peek", "TCP partial peek content mismatch");
+                    return;
+                }
+            }
+            for (i = 0; i < 13; i++) {
+                if (pbuf2[i] != exp_full[i] || pbuf3[i] != exp_full[i]) {
+                    call_closesocket(s_srv);
+                    call_closesocket(s_cli);
+                    call_closesocket(s_listen);
+                    TAP_NOTOK("tc_recv_peek", "TCP full peek content mismatch");
+                    return;
+                }
+            }
+        }
+
+        call_closesocket(s_srv);
+        call_closesocket(s_cli);
+        call_closesocket(s_listen);
+    }
+
+    TAP_OK("tc_recv_peek");
+}
+
 static LONG call_lvo_generic(LONG lvo, LONG arg0)
 {
     register struct Library *a6 __asm__("a6") = SocketBase;
@@ -1242,6 +1640,8 @@ int main(int argc, char *argv[])
     tc_waitselect_timeout();
     tc_sigio();
     tc_icmp_raw();
+    tc_sendmsg_iov();
+    tc_recv_peek();
     tc_every_vector_callable();
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");

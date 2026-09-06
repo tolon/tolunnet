@@ -45,24 +45,6 @@ static inline void tn_unimpl_set_herrno(TnSocketBase *base, LONG herr)
     }
 }
 
-/* -270: sendmsg */
-LONG tn_unimpl_sendmsg(LONG sock, struct msghdr *msg, LONG flags, TnSocketBase *base)
-{
-    static int logged = 0; (void)sock; (void)msg; (void)flags; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "sendmsg"); }
-    tn_unimpl_set_errno(base, ENOSYS);
-    return -1;
-}
-
-/* -276: recvmsg */
-LONG tn_unimpl_recvmsg(LONG sock, struct msghdr *msg, LONG flags, TnSocketBase *base)
-{
-    static int logged = 0; (void)sock; (void)msg; (void)flags; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "recvmsg"); }
-    tn_unimpl_set_errno(base, ENOSYS);
-    return -1;
-}
-
 /* -300: GetSocketEvents */
 LONG tn_unimpl_getsocketevents(ULONG *event_ptr, TnSocketBase *base)
 {

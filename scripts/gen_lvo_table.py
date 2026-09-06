@@ -21,7 +21,7 @@ IMPLEMENTED_FUNCS = {
     "ioctlsocket", "closesocket", "waitselect", "setsocketsignals",
     "getdtablesize", "obtainsocket", "releasesocket", "releasecopyofsocket",
     "errno", "seterrnoptr",
-    "dup2socket", "gethostname", "gethostid", "socketbasetaglist",
+    "dup2socket", "sendmsg", "recvmsg", "gethostname", "gethostid", "socketbasetaglist",
     # Resolver and db
     "gethostbyname", "gethostbyaddr",
     "getservbyname", "getservbyport",
