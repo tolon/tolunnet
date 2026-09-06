@@ -112,8 +112,8 @@
 | `-672` | `mbuf_cat` | `LONG mbuf_cat(struct mbuf *m, struct mbuf *n)` | *Honest Stub* | `ENOSYS` / safe error sentinel |
 | `-678` | `mbuf_adj` | `LONG mbuf_adj(struct mbuf *mp, LONG req_len)` | *Honest Stub* | `ENOSYS` / safe error sentinel |
 | `-684` | `mbuf_pullup` | `struct mbuf * mbuf_pullup(struct mbuf *m, LONG len)` | *Honest Stub* | `ENOSYS` / safe error sentinel |
-| `-690` | `ProcessIsServer` | `BOOL ProcessIsServer(struct Process * pr)` | *Honest Stub* | `ENOSYS` / safe error sentinel |
-| `-696` | `ObtainServerSocket` | `LONG ObtainServerSocket()` | *Honest Stub* | `ENOSYS` / safe error sentinel |
+| `-690` | `ProcessIsServer` | `BOOL ProcessIsServer(struct Process * pr)` | **Implemented** | Real implementation via daemon IPC or per-task base |
+| `-696` | `ObtainServerSocket` | `LONG ObtainServerSocket()` | **Implemented** | Real implementation via daemon IPC or per-task base |
 | `-702` | `GetDefaultDomainName` | `BOOL GetDefaultDomainName(STRPTR buffer,LONG buffer_size)` | **Implemented** | Real implementation via daemon IPC or per-task base |
 | `-708` | `SetDefaultDomainName` | `VOID SetDefaultDomainName(STRPTR buffer)` | **Implemented** | Real implementation via daemon IPC or per-task base |
 | `-714` | `ObtainRoadshowData` | `struct List * ObtainRoadshowData(LONG access)` | *Honest Stub* | `ENOSYS` / safe error sentinel |

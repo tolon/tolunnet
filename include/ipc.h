@@ -95,7 +95,9 @@ typedef enum TnIpcCmd {
     TN_IPC_CMD_RECONFIG,        /* Reload configuration (TNET-064; TolunnetPrefs Save/Use) */
     TN_IPC_CMD_ENUMSOCKETS,     /* Enumerate active sockets (TNET-071; netstat) */
     TN_IPC_CMD_SENDMSG,         /* sendmsg(sock, msg, flags) */
-    TN_IPC_CMD_RECVMSG          /* recvmsg(sock, msg, flags) */
+    TN_IPC_CMD_RECVMSG,         /* recvmsg(sock, msg, flags) */
+    TN_IPC_CMD_RELEASESOCKET,   /* ReleaseSocket(sock, id, copy) */
+    TN_IPC_CMD_OBTAINSOCKET     /* ObtainSocket(id, domain, type, protocol, pref_fd) */
 } TnIpcCmd;
 
 /* Active socket description for TN_IPC_CMD_ENUMSOCKETS (TNET-071) */

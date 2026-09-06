@@ -38,7 +38,9 @@ IMPLEMENTED_FUNCS = {
     "getprotoent", "setprotoent", "endprotoent",
     "getservent", "setservent", "endservent",
     "gethostbyname_r", "gethostbyaddr_r",
-    "vsyslog"
+    "vsyslog",
+    # Socket parking & Server API (Round 4 §C6)
+    "processisserver", "obtainserversocket"
 }
 
 def parse_sfd(sfd_path):

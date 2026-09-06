@@ -168,7 +168,6 @@ int tn_sbtc_dispatch_tag(uint32_t raw_tag, uint32_t data,
     case TN_SBTC_IPF_API_VERSION:
     case TN_SBTC_HAVE_KERNEL_MEMORY_API:
     case TN_SBTC_IP_FILTER_HOOK:
-    case TN_SBTC_HAVE_SERVER_API:
     case TN_SBTC_GET_BYTES_RECEIVED:
     case TN_SBTC_GET_BYTES_SENT:
     case TN_SBTC_IDN_DEFAULT_CHARACTER_SET:
@@ -178,6 +177,11 @@ int tn_sbtc_dispatch_tag(uint32_t raw_tag, uint32_t data,
         break;
 
     /* Capability queries — answered truthfully from the have_bits mask */
+    case TN_SBTC_HAVE_SERVER_API:
+        if (!is_set) get_plain(res, is_ref,
+                               (state->have_bits & TN_SBTC_HAVE_SERVER_API_BIT) ? 1u : 0u);
+        break;
+
     case TN_SBTC_HAVE_DNS_API:
         if (!is_set) get_plain(res, is_ref,
                                (state->have_bits & TN_SBTC_HAVE_DNS_API_BIT) ? 1u : 0u);

@@ -397,24 +397,6 @@ struct mbuf * tn_unimpl_mbuf_pullup(struct mbuf *m, LONG len, TnSocketBase *base
     return NULL;
 }
 
-/* -690: ProcessIsServer */
-BOOL tn_unimpl_processisserver(struct Process * pr, TnSocketBase *base)
-{
-    static int logged = 0; (void)pr; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "ProcessIsServer"); }
-    tn_unimpl_set_errno(base, ENOSYS);
-    return FALSE;
-}
-
-/* -696: ObtainServerSocket */
-LONG tn_unimpl_obtainserversocket(TnSocketBase *base)
-{
-    static int logged = 0; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "ObtainServerSocket"); }
-    tn_unimpl_set_errno(base, ENOSYS);
-    return -1;
-}
-
 /* -714: ObtainRoadshowData */
 struct List * tn_unimpl_obtainroadshowdata(LONG access, TnSocketBase *base)
 {

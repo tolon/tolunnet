@@ -83,6 +83,7 @@ enum {
 #define TN_SBTC_HAVE_LOCAL_DB_API_BIT     0x02u
 #define TN_SBTC_HAVE_ADDR_CONV_API_BIT    0x04u
 #define TN_SBTC_HAVE_GETHOSTADDR_R_BIT    0x08u
+#define TN_SBTC_HAVE_SERVER_API_BIT       0x10u
 
 /* What the caller must do for this tag. */
 typedef enum {

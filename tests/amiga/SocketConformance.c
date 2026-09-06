@@ -13,6 +13,7 @@
 
 #include <proto/exec.h>
 #include <proto/dos.h>
+#include <dos/dostags.h>
 #include <exec/types.h>
 #include <exec/ports.h>
 #include <devices/timer.h>
@@ -98,6 +99,26 @@ static void vsnprintf_safe(char *buf, int size, const char *fmt, va_list ap)
         if (*p) p++;
     }
     buf[o] = '\0';
+}
+
+static void snprintf_safe(char *buf, int size, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf_safe(buf, size, fmt, ap);
+    va_end(ap);
+}
+
+static LONG parse_long(const char *s)
+{
+    LONG res = 0;
+    int neg = 0;
+    if (*s == '-') { neg = 1; s++; }
+    while (*s >= '0' && *s <= '9') {
+        res = res * 10 + (*s - '0');
+        s++;
+    }
+    return neg ? -res : res;
 }
 
 #define TAP_OK(name)        do { g_count++; tapf("ok %d - %s\n", g_count, name); } while (0)
@@ -275,6 +296,57 @@ static LONG call_socketbasetaglist(struct TagItem *tags)
     register LONG d0 __asm__("d0");
     __asm__ __volatile__ ("jsr -294(%%a6)" : "=r"(d0), "+r"(a0)
         : "r"(a6) : "d1", "a1", "memory");
+    return d0;
+}
+
+static LONG call_obtainsocket(LONG id, LONG domain, LONG type, LONG protocol)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = id;
+    register LONG d1 __asm__("d1") = domain;
+    register LONG d2 __asm__("d2") = type;
+    register LONG d3 __asm__("d3") = protocol;
+    __asm__ __volatile__ ("jsr -144(%%a6)" : "+r"(d0)
+        : "r"(a6), "r"(d0), "r"(d1), "r"(d2), "r"(d3) : "d1", "d2", "d3", "a0", "a1", "memory");
+    return d0;
+}
+
+static LONG call_releasesocket(LONG sock, LONG id)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = sock;
+    register LONG d1 __asm__("d1") = id;
+    __asm__ __volatile__ ("jsr -150(%%a6)" : "+r"(d0)
+        : "r"(a6), "r"(d0), "r"(d1) : "d1", "a0", "a1", "memory");
+    return d0;
+}
+
+static LONG call_releasecopyofsocket(LONG sock, LONG id)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = sock;
+    register LONG d1 __asm__("d1") = id;
+    __asm__ __volatile__ ("jsr -156(%%a6)" : "+r"(d0)
+        : "r"(a6), "r"(d0), "r"(d1) : "d1", "a0", "a1", "memory");
+    return d0;
+}
+
+static BOOL call_processisserver(struct Process *pr)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register struct Process *a0 __asm__("a0") = pr;
+    register LONG d0 __asm__("d0");
+    __asm__ __volatile__ ("jsr -690(%%a6)" : "=r"(d0), "+r"(a0)
+        : "r"(a6) : "d1", "a1", "memory");
+    return (BOOL)d0;
+}
+
+static LONG call_obtainserversocket(VOID)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0");
+    __asm__ __volatile__ ("jsr -696(%%a6)" : "=r"(d0)
+        : "r"(a6) : "d1", "a0", "a1", "memory");
     return d0;
 }
 
@@ -1999,6 +2071,120 @@ static void tc_every_vector_callable(void)
     }
 }
 
+static void tc_release_obtain(void)
+{
+    LONG s, s2, park_id;
+    struct Process *my_pr;
+    LONG old_exit_data;
+    struct DaemonMessage dm;
+    LONG server_s;
+    char cmd[64];
+    LONG rc;
+    BPTR fh;
+
+    /* 1. Intra-task ReleaseSocket + ObtainSocket with UNIQUE_ID */
+    s = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (s < 0) {
+        TAP_NOTOK("tc_release_obtain", "call_socket failed");
+        return;
+    }
+    park_id = call_releasesocket(s, UNIQUE_ID);
+    if (park_id <= 0) {
+        call_closesocket(s);
+        TAP_NOTOK("tc_release_obtain", "call_releasesocket failed to return positive id");
+        return;
+    }
+    /* Original socket should be unmapped from caller */
+    if (call_closesocket(s) == 0) {
+        TAP_NOTOK("tc_release_obtain", "released socket was still closeable");
+        return;
+    }
+    /* Obtain socket back into same task */
+    s2 = call_obtainsocket(park_id, AF_INET, SOCK_DGRAM, 0);
+    if (s2 < 0) {
+        TAP_NOTOK("tc_release_obtain", "call_obtainsocket failed for parked socket");
+        return;
+    }
+    call_closesocket(s2);
+
+    /* 2. Intra-task ReleaseCopyOfSocket */
+    s = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (s < 0) {
+        TAP_NOTOK("tc_release_obtain", "call_socket failed for copy");
+        return;
+    }
+    park_id = call_releasecopyofsocket(s, UNIQUE_ID);
+    if (park_id <= 0) {
+        call_closesocket(s);
+        TAP_NOTOK("tc_release_obtain", "releasecopy failed");
+        return;
+    }
+    s2 = call_obtainsocket(park_id, AF_INET, SOCK_DGRAM, 0);
+    if (s2 < 0) {
+        call_closesocket(s);
+        TAP_NOTOK("tc_release_obtain", "obtainsocket failed on copy");
+        return;
+    }
+    /* Both descriptors are valid and distinct */
+    call_closesocket(s);
+    call_closesocket(s2);
+
+    /* 3. Server API: ProcessIsServer & ObtainServerSocket */
+    my_pr = (struct Process *)FindTask(NULL);
+    if (call_processisserver(my_pr)) {
+        TAP_NOTOK("tc_release_obtain", "processisserver true unexpectedly");
+        return;
+    }
+    if (call_obtainserversocket() >= 0) {
+        TAP_NOTOK("tc_release_obtain", "obtainserversocket succeeded unexpectedly");
+        return;
+    }
+    old_exit_data = my_pr->pr_ExitData;
+    s = call_socket(AF_INET, SOCK_STREAM, 0);
+    park_id = call_releasesocket(s, UNIQUE_ID);
+    dm.dm_ID = park_id;
+    dm.dm_Family = AF_INET;
+    dm.dm_Type = SOCK_STREAM;
+    my_pr->pr_ExitData = (LONG)(uintptr_t)&dm;
+
+    if (!call_processisserver(my_pr)) {
+        my_pr->pr_ExitData = old_exit_data;
+        TAP_NOTOK("tc_release_obtain", "processisserver false with exitdata");
+        return;
+    }
+    server_s = call_obtainserversocket();
+    my_pr->pr_ExitData = old_exit_data;
+    if (server_s < 0) {
+        TAP_NOTOK("tc_release_obtain", "obtainserversocket failed");
+        return;
+    }
+    call_closesocket(server_s);
+
+    /* 4. Cross-task handoff via SystemTags */
+    s = call_socket(AF_INET, SOCK_DGRAM, 0);
+    park_id = call_releasesocket(s, UNIQUE_ID);
+    snprintf_safe(cmd, sizeof(cmd), "C:SocketConformance child_obtain %ld", park_id);
+    DeleteFile((CONST_STRPTR)"WORK:child_obtain.ok");
+    rc = SystemTags((CONST_STRPTR)cmd,
+                    SYS_Asynch, FALSE,
+                    SYS_Input, (BPTR)0,
+                    SYS_Output, (BPTR)0,
+                    TAG_END);
+    if (rc != 0) {
+        TAP_NOTOK("tc_release_obtain", "SystemTags child returned error");
+        return;
+    }
+    fh = Open((CONST_STRPTR)"WORK:child_obtain.ok", MODE_OLDFILE);
+    if (fh == 0) {
+        TAP_NOTOK("tc_release_obtain", "child failed to obtain socket");
+        return;
+    }
+    Close(fh);
+    DeleteFile((CONST_STRPTR)"WORK:child_obtain.ok");
+
+    TAP_OK("tc_release_obtain");
+}
+
 /* Bench plumbing (not a TAP case): ask the daemon to exit so the bench can
  * prove the TNET-059/060 restart cycle. Mirrors TolunnetPrefs' Stop logic. */
 static void request_daemon_stop(void)
@@ -2013,9 +2199,33 @@ int main(int argc, char *argv[])
 {
     struct Library *DOSBase = OpenLibrary((CONST_STRPTR)"dos.library", 0);
     int not_ok;
-    (void)argc; (void)argv;
 
     if (DOSBase == NULL) return 20;
+
+    /* Child mode for cross-process obtain test */
+    if (argc >= 3 && strcmp(argv[1], "child_obtain") == 0) {
+        LONG target_id = parse_long(argv[2]);
+        BPTR out_fh;
+        LONG s;
+        SocketBase = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
+        if (SocketBase == NULL) { CloseLibrary(DOSBase); return 10; }
+        s = call_obtainsocket(target_id, AF_INET, SOCK_DGRAM, 0);
+        if (s < 0) {
+            CloseLibrary(SocketBase);
+            CloseLibrary(DOSBase);
+            return 20;
+        }
+        call_closesocket(s);
+        CloseLibrary(SocketBase);
+        out_fh = Open((CONST_STRPTR)"WORK:child_obtain.ok", MODE_NEWFILE);
+        if (out_fh != 0) {
+            Write(out_fh, (CONST APTR)"OK\n", 3);
+            Close(out_fh);
+        }
+        CloseLibrary(DOSBase);
+        return 0;
+    }
+
     g_log_dos = DOSBase;
     g_log_level = TN_LOG_OFF; /* TAP only; no daemon log chatter on stdout */
 
@@ -2054,6 +2264,7 @@ int main(int argc, char *argv[])
     tc_recv_peek();
     tc_socket_events();
     tc_sbtc_full();
+    tc_release_obtain();
     tc_every_vector_callable();
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
@@ -2065,8 +2276,6 @@ int main(int argc, char *argv[])
     if (g_log_fh) Close(g_log_fh);
     CloseLibrary(DOSBase);
 
-    /* count not-ok rows from our own tally: we tracked only via TAP_NOTOK? —
-     * simpler: re-derive from the macros' side counter below */
     not_ok = g_not_ok_count;
     return (not_ok > 9) ? 9 : not_ok;
 }

@@ -628,22 +628,62 @@ LONG tn_lvo_getdtablesize(TnSocketBase *base)
 /* -144: ObtainSocket(...) */
 LONG tn_lvo_obtainsocket(LONG id, LONG domain, LONG type, LONG protocol, TnSocketBase *base)
 {
-    (void)id; (void)domain; (void)type; (void)protocol;
-    return tn_set_enosys(base);
+    LONG res;
+    if (base == NULL) return -1;
+    base->ipc_msg.args[0] = id;
+    base->ipc_msg.args[1] = domain;
+    base->ipc_msg.args[2] = type;
+    base->ipc_msg.args[3] = protocol;
+    base->ipc_msg.args[4] = -1; /* preferred client_fd */
+
+    if (base->fd_callback != NULL) {
+        int i;
+        typedef int (*fdcb_t)(int, int);
+        fdcb_t cb = (fdcb_t)base->fd_callback;
+        for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
+            if (base->fd_map[i] == -1 && cb(i, FDCB_CHECK) == 0) {
+                base->ipc_msg.args[4] = i;
+                break;
+            }
+        }
+    }
+
+    res = tn_ipc_call(base, TN_IPC_CMD_OBTAINSOCKET);
+    if (res >= 0 && base->fd_callback != NULL) {
+        typedef int (*fdcb_t)(int, int);
+        ((fdcb_t)base->fd_callback)((int)res, FDCB_ALLOC);
+    }
+    return res;
 }
 
 /* -150: ReleaseSocket(...) */
 LONG tn_lvo_releasesocket(LONG sock, LONG id, TnSocketBase *base)
 {
-    (void)sock; (void)id;
-    return tn_set_enosys(base);
+    if (base == NULL || sock < 0 || sock >= TN_MAX_FDS_PER_TASK || base->fd_map[sock] < 0) {
+        tn_set_errno_val(base, EBADF);
+        return -1;
+    }
+    if (base->fd_callback != NULL) {
+        typedef int (*fdcb_t)(int, int);
+        ((fdcb_t)base->fd_callback)((int)sock, FDCB_FREE);
+    }
+    base->ipc_msg.args[0] = sock;
+    base->ipc_msg.args[1] = id;
+    base->ipc_msg.args[2] = 0; /* copy = FALSE */
+    return tn_ipc_call(base, TN_IPC_CMD_RELEASESOCKET);
 }
 
 /* -156: ReleaseCopyOfSocket(...) */
 LONG tn_lvo_releasecopyofsocket(LONG sock, LONG id, TnSocketBase *base)
 {
-    (void)sock; (void)id;
-    return tn_set_enosys(base);
+    if (base == NULL || sock < 0 || sock >= TN_MAX_FDS_PER_TASK || base->fd_map[sock] < 0) {
+        tn_set_errno_val(base, EBADF);
+        return -1;
+    }
+    base->ipc_msg.args[0] = sock;
+    base->ipc_msg.args[1] = id;
+    base->ipc_msg.args[2] = 1; /* copy = TRUE */
+    return tn_ipc_call(base, TN_IPC_CMD_RELEASESOCKET);
 }
 
 /* -162: Errno() */
@@ -1097,7 +1137,8 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
         st.udp_checksum = (uint32_t)base->udp_checksum;
         st.ip_default_ttl = (uint32_t)base->ip_default_ttl;
         st.have_bits    = TN_SBTC_HAVE_DNS_API_BIT | TN_SBTC_HAVE_LOCAL_DB_API_BIT |
-                          TN_SBTC_HAVE_ADDR_CONV_API_BIT | TN_SBTC_HAVE_GETHOSTADDR_R_BIT;
+                          TN_SBTC_HAVE_ADDR_CONV_API_BIT | TN_SBTC_HAVE_GETHOSTADDR_R_BIT |
+                          TN_SBTC_HAVE_SERVER_API_BIT;
         st.release_str  = (uint32_t)(uintptr_t)"tolunnet 1.2.0-rc1 (bsdsocket 4.1)";
 
         if (!tn_sbtc_dispatch_tag((uint32_t)tag->ti_Tag, (uint32_t)tag->ti_Data, &st, &r)) {
@@ -1527,5 +1568,45 @@ VOID tn_lvo_vsyslog(LONG pri, CONST_STRPTR msg, APTR args, TnSocketBase *base)
     if (msg != NULL) {
         tn_logf(TN_LOG_BASIC, "[syslog:%ld] %s\n", pri, (const char *)msg);
     }
+}
+
+/* -690: ProcessIsServer(pr) */
+BOOL tn_lvo_processisserver(struct Process *pr, TnSocketBase *base)
+{
+    (void)base;
+    if (pr == NULL) {
+        struct Task *t = FindTask(NULL);
+        if (t != NULL && t->tc_Node.ln_Type == NT_PROCESS) {
+            pr = (struct Process *)t;
+        }
+    }
+    if (pr == NULL || pr->pr_Task.tc_Node.ln_Type != NT_PROCESS) {
+        return FALSE;
+    }
+    return (pr->pr_ExitData != 0) ? TRUE : FALSE;
+}
+
+/* -696: ObtainServerSocket() */
+LONG tn_lvo_obtainserversocket(TnSocketBase *base)
+{
+    struct Task *t;
+    struct Process *pr;
+    struct DaemonMessage *dm;
+
+    if (base == NULL) return -1;
+    t = FindTask(NULL);
+    pr = (t != NULL && t->tc_Node.ln_Type == NT_PROCESS) ? (struct Process *)t : NULL;
+    if (pr == NULL || !tn_lvo_processisserver(pr, base)) {
+        tn_set_errno_val(base, EINVAL);
+        return -1;
+    }
+
+    dm = (struct DaemonMessage *)(uintptr_t)pr->pr_ExitData;
+    if (dm == NULL) {
+        tn_set_errno_val(base, EINVAL);
+        return -1;
+    }
+
+    return tn_lvo_obtainsocket(dm->dm_ID, (LONG)dm->dm_Family, (LONG)dm->dm_Type, 0, base);
 }
 

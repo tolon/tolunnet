@@ -117,6 +117,16 @@ TN_TEST(capability_truthfulness)
     TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET);
     TN_ASSERT_EQ_U(r.value, 1u);
 
+    st.have_bits |= TN_SBTC_HAVE_SERVER_API_BIT;
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_HAVE_SERVER_API, 0, 0), 99, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET);
+    TN_ASSERT_EQ_U(r.value, 1u);
+
+    st.have_bits &= ~TN_SBTC_HAVE_SERVER_API_BIT;
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_HAVE_SERVER_API, 0, 0), 99, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET);
+    TN_ASSERT_EQ_U(r.value, 0u);
+
     /* not enabled -> 0, honestly */
     TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_HAVE_LOCAL_DATABASE_API, 0, 0), 99, &st, &r), 1);
     TN_ASSERT_EQ_U(r.value, 0u);

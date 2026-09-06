@@ -1066,7 +1066,7 @@ _tn_stub_mbuf_pullup:
 _tn_stub_processisserver:
     move.l  a6,-(sp)
     move.l  a0,-(sp)
-    jsr     _tn_unimpl_processisserver
+    jsr     _tn_lvo_processisserver
     addq.l  #8,sp
     rts
 
@@ -1074,7 +1074,7 @@ _tn_stub_processisserver:
     .globl _tn_stub_obtainserversocket
 _tn_stub_obtainserversocket:
     move.l  a6,-(sp)
-    jsr     _tn_unimpl_obtainserversocket
+    jsr     _tn_lvo_obtainserversocket
     addq.l  #4,sp
     rts
 

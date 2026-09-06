@@ -130,6 +130,8 @@ typedef struct TnSocketSlot {
     ULONG           accept_count;
     TnIpcMsg       *pending_connect_msg;
     TnIpcMsg       *pending_accept_msg;
+    LONG            park_id;
+    BOOL            is_parked;
 } TnSocketSlot;
 
 static TnSana2If     g_s2if;
@@ -138,6 +140,7 @@ static TnTimer       g_timer;
 static struct MsgPort *g_ipc_port = NULL;
 static struct Library *g_bsd_lib  = NULL;
 static TnSocketSlot  g_sockets[TN_MAX_GLOBAL_SOCKETS];
+static LONG          g_next_park_id = 1;
 static TnPrefs       g_prefs;                 /* Live config (TNET-063/064) */
 
 /* Plain string equality (no libc) */
@@ -670,6 +673,8 @@ static void tn_free_socket_slot(int slot_idx)
     g_sockets[slot_idx].rx_tail             = NULL;
     g_sockets[slot_idx].rx_count            = 0;
     g_sockets[slot_idx].ref_count           = 0;
+    g_sockets[slot_idx].park_id             = 0;
+    g_sockets[slot_idx].is_parked           = FALSE;
     g_sockets[slot_idx].in_use              = FALSE;
     g_sockets[slot_idx].owner_base          = NULL;
 }
@@ -728,7 +733,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 slot_idx = base->fd_map[i];
                 if (slot_idx >= 0 && slot_idx < TN_MAX_GLOBAL_SOCKETS && g_sockets[slot_idx].in_use) {
                     g_sockets[slot_idx].ref_count--;
-                    if (g_sockets[slot_idx].ref_count <= 0) {
+                    if (g_sockets[slot_idx].ref_count <= 0 && !g_sockets[slot_idx].is_parked) {
                         tn_free_socket_slot(slot_idx);
                     }
                     base->fd_map[i] = -1;
@@ -1714,7 +1719,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
 
             base->fd_map[client_fd] = -1;
             g_sockets[slot_idx].ref_count--;
-            if (g_sockets[slot_idx].ref_count <= 0) {
+            if (g_sockets[slot_idx].ref_count <= 0 && !g_sockets[slot_idx].is_parked) {
                 tn_free_socket_slot(slot_idx);
             }
 
@@ -3133,6 +3138,139 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
 
             imsg->result = -1;
             imsg->err_no = EOPNOTSUPP;
+            return TRUE;
+        }
+
+    case TN_IPC_CMD_RELEASESOCKET:
+        {
+            int client_fd = (int)imsg->args[0];
+            LONG req_id   = imsg->args[1];
+            BOOL copy     = (BOOL)imsg->args[2];
+            LONG assigned_id;
+
+            if (base == NULL || client_fd < 0 || client_fd >= TN_MAX_FDS_PER_TASK) {
+                imsg->result = -1;
+                imsg->err_no = EBADF;
+                return TRUE;
+            }
+            slot_idx = base->fd_map[client_fd];
+            if (slot_idx < 0 || slot_idx >= TN_MAX_GLOBAL_SOCKETS || !g_sockets[slot_idx].in_use) {
+                imsg->result = -1;
+                imsg->err_no = EBADF;
+                return TRUE;
+            }
+
+            if (req_id == UNIQUE_ID) {
+                do {
+                    assigned_id = g_next_park_id++;
+                    if (g_next_park_id <= 0) g_next_park_id = 1;
+                    BOOL dup = FALSE;
+                    for (i = 0; i < TN_MAX_GLOBAL_SOCKETS; i++) {
+                        if (g_sockets[i].in_use && g_sockets[i].is_parked && g_sockets[i].park_id == assigned_id) {
+                            dup = TRUE;
+                            break;
+                        }
+                    }
+                    if (!dup) break;
+                } while (1);
+            } else {
+                if (req_id < 0) {
+                    imsg->result = -1;
+                    imsg->err_no = EINVAL;
+                    return TRUE;
+                }
+                for (i = 0; i < TN_MAX_GLOBAL_SOCKETS; i++) {
+                    if (g_sockets[i].in_use && g_sockets[i].is_parked && g_sockets[i].park_id == req_id) {
+                        imsg->result = -1;
+                        imsg->err_no = EADDRINUSE;
+                        return TRUE;
+                    }
+                }
+                assigned_id = req_id;
+            }
+
+            g_sockets[slot_idx].is_parked = TRUE;
+            g_sockets[slot_idx].park_id   = assigned_id;
+
+            if (copy) {
+                g_sockets[slot_idx].ref_count++;
+            } else {
+                base->fd_map[client_fd] = -1;
+            }
+
+            imsg->result = assigned_id;
+            imsg->err_no = 0;
+            return TRUE;
+        }
+
+    case TN_IPC_CMD_OBTAINSOCKET:
+        {
+            LONG park_id  = imsg->args[0];
+            int domain    = (int)imsg->args[1];
+            int type      = (int)imsg->args[2];
+            int protocol  = (int)imsg->args[3];
+            int pref_fd   = (int)imsg->args[4];
+            int client_fd = -1;
+
+            if (base == NULL) {
+                imsg->result = -1;
+                imsg->err_no = EINVAL;
+                return TRUE;
+            }
+
+            slot_idx = -1;
+            for (i = 0; i < TN_MAX_GLOBAL_SOCKETS; i++) {
+                if (g_sockets[i].in_use && g_sockets[i].is_parked && g_sockets[i].park_id == park_id) {
+                    slot_idx = i;
+                    break;
+                }
+            }
+            if (slot_idx < 0) {
+                imsg->result = -1;
+                imsg->err_no = ENOENT;
+                return TRUE;
+            }
+
+            if (domain != 0 && g_sockets[slot_idx].domain != domain) {
+                imsg->result = -1;
+                imsg->err_no = EPROTOTYPE;
+                return TRUE;
+            }
+            if (type != 0 && g_sockets[slot_idx].type != type) {
+                imsg->result = -1;
+                imsg->err_no = EPROTOTYPE;
+                return TRUE;
+            }
+            if (protocol != 0 && g_sockets[slot_idx].protocol != 0 && g_sockets[slot_idx].protocol != protocol) {
+                imsg->result = -1;
+                imsg->err_no = EPROTONOSUPPORT;
+                return TRUE;
+            }
+
+            if (pref_fd >= 0 && pref_fd < TN_MAX_FDS_PER_TASK && base->fd_map[pref_fd] == -1) {
+                client_fd = pref_fd;
+            } else {
+                for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
+                    if (base->fd_map[i] == -1) {
+                        client_fd = i;
+                        break;
+                    }
+                }
+            }
+            if (client_fd < 0) {
+                imsg->result = -1;
+                imsg->err_no = EMFILE;
+                return TRUE;
+            }
+
+            base->fd_map[client_fd] = slot_idx;
+            g_sockets[slot_idx].is_parked = FALSE;
+            g_sockets[slot_idx].park_id   = 0;
+            g_sockets[slot_idx].owner_base = base;
+            g_sockets[slot_idx].owner_task = imsg->client_task;
+
+            imsg->result = client_fd;
+            imsg->err_no = 0;
             return TRUE;
         }
 
