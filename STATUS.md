@@ -17,7 +17,7 @@
 | **M5** | TCP Stream & HTTP Client | **EMULATOR-PROVEN** | [`docs/bench-logs/20260906-014843-c744255/`](file:///d:/Projeler/tolunnet/docs/bench-logs/20260906-014843-c744255/) — `TolunnetGet` HTTP/1.1 redirect, chunked transfer, range resume |
 | **M6** | Roadshow / Miami DX Suite | **EMULATOR-PROVEN** | [`docs/bench-logs/20260906-014843-c744255/`](file:///d:/Projeler/tolunnet/docs/bench-logs/20260906-014843-c744255/) — SocketBaseTagList, netdb tables, SIGIO, WaitSelect, lo0 |
 | **M7** | Release Packaging | **BUILT** | [`build/tolunnet-1.2.0-rc1.lha`](file:///d:/Projeler/tolunnet/build/tolunnet-1.2.0-rc1.lha) and [`build/tolunnet.adf`](file:///d:/Projeler/tolunnet/build/tolunnet.adf) generated via `make package` (`xdftool`) |
-| **M8** | Workbench Preferences GUI | **EMULATOR-PROVEN** | [`docs/bench-logs/20260905-224422-897281c/`](file:///d:/Projeler/tolunnet/docs/bench-logs/20260905-224422-897281c/) — non-blocking daemon control, ToolTypes, WBStartup, NTSC 640×200 layout |
+| **M8** | Workbench Preferences GUI | **EMULATOR-PROVEN** | [`docs/bench-logs/20260905-232628-897281c/`](file:///d:/Projeler/tolunnet/docs/bench-logs/20260905-232628-897281c/) — non-blocking daemon control, ToolTypes, WBStartup, NTSC 640×200 layout |
 
 ---
 

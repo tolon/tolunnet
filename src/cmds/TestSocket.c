@@ -19,7 +19,9 @@
 #include <exec/libraries.h>
 
 #include <sys/socket.h>
+#include <sys/filio.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/errno.h>
 
 #include "../common/log.h"
@@ -248,7 +250,7 @@ int main(int argc, char *argv[])
 
     /* 4. Test IoctlSocket(FIONBIO) */
     on = 1;
-    rc = call_ioctlsocket(sock, 0x8004667eUL /* FIONBIO */, &on);
+    rc = call_ioctlsocket(sock, FIONBIO, &on);
     if (rc == 0) {
         tn_log(TN_LOG_BASIC, "PASS: IoctlSocket(FIONBIO, 1) -> ok\n");
     } else {
@@ -258,7 +260,7 @@ int main(int argc, char *argv[])
 
     /* 5. Test IoctlSocket(FIONREAD) */
     bytes_avail = 999;
-    rc = call_ioctlsocket(sock, 0x4004667fUL /* FIONREAD */, &bytes_avail);
+    rc = call_ioctlsocket(sock, FIONREAD, &bytes_avail);
     if (rc == 0 && bytes_avail == 0) {
         tn_log(TN_LOG_BASIC, "PASS: IoctlSocket(FIONREAD) -> 0 bytes queued\n");
     } else {
@@ -268,10 +270,10 @@ int main(int argc, char *argv[])
 
     /* 6. Test setsockopt(SO_REUSEADDR) & getsockopt */
     optval = 1;
-    rc = call_setsockopt(sock, 0xffff /* SOL_SOCKET */, 0x0004 /* SO_REUSEADDR */, &optval, sizeof(int));
+    rc = call_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int));
     if (rc == 0) {
         optval = 0;
-        rc = call_getsockopt(sock, 0xffff, 0x0004, &optval, &optlen);
+        rc = call_getsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &optval, &optlen);
         if (rc == 0 && optval == 1) {
             tn_log(TN_LOG_BASIC, "PASS: setsockopt/getsockopt(SO_REUSEADDR, 1) verified\n");
         } else {
@@ -285,10 +287,10 @@ int main(int argc, char *argv[])
 
     /* 7. Test setsockopt(TCP_NODELAY) */
     optval = 1;
-    rc = call_setsockopt(sock, 6 /* IPPROTO_TCP */, 0x0001 /* TCP_NODELAY */, &optval, sizeof(int));
+    rc = call_setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &optval, sizeof(int));
     if (rc == 0) {
         optval = 0;
-        rc = call_getsockopt(sock, 6, 0x0001, &optval, &optlen);
+        rc = call_getsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &optval, &optlen);
         if (rc == 0 && optval == 1) {
             tn_log(TN_LOG_BASIC, "PASS: setsockopt/getsockopt(TCP_NODELAY, 1) verified\n");
         } else {

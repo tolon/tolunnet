@@ -393,8 +393,8 @@ static void tc_bind_reuse(void)
     sin.sin_family = AF_INET;
     sin.sin_port   = htons(54321);
 
-    call_setsockopt(s1, 0xffff /* SOL_SOCKET */, 0x0004 /* SO_REUSEADDR */, &one, sizeof(one));
-    call_setsockopt(s2, 0xffff /* SOL_SOCKET */, 0x0004 /* SO_REUSEADDR */, &one, sizeof(one));
+    call_setsockopt(s1, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    call_setsockopt(s2, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 
     if (call_bind(s1, (struct sockaddr *)&sin, sizeof(sin)) == 0 &&
         call_bind(s2, (struct sockaddr *)&sin, sizeof(sin)) == 0) {

@@ -16,6 +16,10 @@
 #define BYTE_ORDER BIG_ENDIAN
 #endif
 
+#ifndef LWIP_DONT_PROVIDE_BYTEORDER_FUNCTIONS
+#define LWIP_DONT_PROVIDE_BYTEORDER_FUNCTIONS 1
+#endif
+
 /* Basic integer types used by lwIP */
 typedef uint8_t    u8_t;
 typedef int8_t     s8_t;

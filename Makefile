@@ -11,7 +11,7 @@ STRIP       = $(CROSS)strip
 NDK_INC    ?= $(shell if [ -d "$$(dirname $$(which $(CC) 2>/dev/null))/../m68k-amigaos/ndk-include" ]; then echo "-I$$(dirname $$(which $(CC)))/../m68k-amigaos/ndk-include"; fi)
 
 CFLAGS      = -O2 -fomit-frame-pointer -m68000 -msoft-float -noixemul -Wall -Wextra \
-              -Ilwipopts -Iinclude -Ivendor/lwip/src/include -Isrc \
+              -Ilwipopts -Iinclude -Iinclude/netinclude -Ivendor/lwip/src/include -Isrc \
               $(NDK_INC) -std=c11
 LDFLAGS     = -noixemul -msoft-float
 
@@ -86,7 +86,7 @@ all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BI
 # exit code is the number of failed tests (TAP output on stdout).
 HOSTCC      ?= cc
 HOST_CFLAGS  = -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -g \
-               -Itests/host -Isrc/common -Isrc
+               -Iinclude/netinclude -Iinclude -Itests/host -Isrc/common -Isrc
 HOST_UNITS   = src/common/inet_parse.c src/common/config_text.c \
                src/common/sbtc_dispatch.c src/common/fdset_util.c \
                src/common/ipc_client.c src/common/http_url.c
@@ -111,6 +111,7 @@ $(BUILD)/host/%: tests/host/%.c $(HOST_UNITS) tests/host/tn_test.h
 python-checks:
 	python3 scripts/gen_lvo_table.py
 	python3 scripts/verify_icons.py
+	python3 scripts/check_md_links.py
 
 $(BUILD):
 	mkdir -p $(BUILD)

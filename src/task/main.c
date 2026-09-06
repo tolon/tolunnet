@@ -41,6 +41,16 @@
 #include "lwip/dns.h"
 #include "netif/ethernet.h"
 
+#undef TCP_MSS
+#undef htons
+#undef ntohs
+#undef htonl
+#undef ntohl
+#include <sys/socket.h>
+#include <sys/filio.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+
 #define TN_MAX_GLOBAL_SOCKETS 64
 
 /* TCP Socket State Machine */
@@ -407,8 +417,8 @@ static err_t tn_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
         g_sockets[new_slot_idx].in_use              = TRUE;
         g_sockets[new_slot_idx].owner_base          = base;
         g_sockets[new_slot_idx].owner_task          = imsg->client_task;
-        g_sockets[new_slot_idx].domain              = 2 /* AF_INET */;
-        g_sockets[new_slot_idx].type                = 1 /* SOCK_STREAM */;
+        g_sockets[new_slot_idx].domain              = AF_INET;
+        g_sockets[new_slot_idx].type                = SOCK_STREAM;
         g_sockets[new_slot_idx].protocol            = 0;
         g_sockets[new_slot_idx].tcp_state           = TN_TCP_STATE_ESTABLISHED;
         g_sockets[new_slot_idx].is_nonblocking      = FALSE;
@@ -436,7 +446,7 @@ static err_t tn_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
 
         if (addr != NULL && addrlen != NULL && *addrlen >= sizeof(struct sockaddr_in)) {
             addr->sin_len    = sizeof(struct sockaddr_in);
-            addr->sin_family = 2 /* AF_INET */;
+            addr->sin_family = AF_INET;
             addr->sin_port   = lwip_htons(newpcb->remote_port);
             addr->sin_addr.s_addr = ip_2_ip4(&newpcb->remote_ip)->addr;
             *addrlen = sizeof(struct sockaddr_in);
@@ -609,26 +619,26 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             int protocol = (int)imsg->args[2];
             int client_fd = -1;
 
-            if (domain != 2 /* AF_INET */) {
+            if (domain != AF_INET) {
                 imsg->result = -1;
                 imsg->err_no = EAFNOSUPPORT;
                 return TRUE;
             }
 
-            if (type == 1 /* SOCK_STREAM */) {
-                if (protocol != 0 && protocol != 6 /* IPPROTO_TCP */) {
+            if (type == SOCK_STREAM) {
+                if (protocol != 0 && protocol != IPPROTO_TCP) {
                     imsg->result = -1;
                     imsg->err_no = EPROTONOSUPPORT;
                     return TRUE;
                 }
-            } else if (type == 2 /* SOCK_DGRAM */) {
-                if (protocol != 0 && protocol != 17 /* IPPROTO_UDP */) {
+            } else if (type == SOCK_DGRAM) {
+                if (protocol != 0 && protocol != IPPROTO_UDP) {
                     imsg->result = -1;
                     imsg->err_no = EPROTONOSUPPORT;
                     return TRUE;
                 }
-            } else if (type == 3 /* SOCK_RAW */) {
-                if (protocol != 1 /* IPPROTO_ICMP */ && protocol != 255 /* IPPROTO_RAW */) {
+            } else if (type == SOCK_RAW) {
+                if (protocol != IPPROTO_ICMP && protocol != IPPROTO_RAW) {
                     imsg->result = -1;
                     imsg->err_no = EPROTONOSUPPORT;
                     return TRUE;
@@ -696,7 +706,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             g_sockets[slot_idx].pending_accept_msg  = NULL;
 
             /* UDP socket */
-            if (type == 2 /* SOCK_DGRAM */) {
+            if (type == SOCK_DGRAM) {
                 g_sockets[slot_idx].udp_pcb = udp_new();
                 if (g_sockets[slot_idx].udp_pcb == NULL) {
                     g_sockets[slot_idx].in_use = FALSE;
@@ -707,7 +717,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 udp_recv(g_sockets[slot_idx].udp_pcb, tn_udp_recv_cb, (void *)(intptr_t)slot_idx);
             }
             /* TCP stream socket */
-            else if (type == 1 /* SOCK_STREAM */) {
+            else if (type == SOCK_STREAM) {
                 g_sockets[slot_idx].tcp_pcb = tcp_new();
                 if (g_sockets[slot_idx].tcp_pcb == NULL) {
                     g_sockets[slot_idx].in_use = FALSE;
@@ -719,7 +729,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 tcp_err(g_sockets[slot_idx].tcp_pcb, tn_tcp_err_cb);
             }
             /* RAW socket (TNET-070) */
-            else if (type == 3 /* SOCK_RAW */) {
+            else if (type == SOCK_RAW) {
                 g_sockets[slot_idx].raw_pcb = raw_new((u8_t)protocol);
                 if (g_sockets[slot_idx].raw_pcb == NULL) {
                     g_sockets[slot_idx].in_use = FALSE;
@@ -728,7 +738,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                     return TRUE;
                 }
                 raw_recv(g_sockets[slot_idx].raw_pcb, tn_raw_recv_cb, (void *)(intptr_t)slot_idx);
-                if (protocol == 255 /* IPPROTO_RAW */) {
+                if (protocol == IPPROTO_RAW) {
                     raw_set_flags(g_sockets[slot_idx].raw_pcb, RAW_FLAGS_HDRINCL);
                 }
             }
@@ -764,7 +774,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 return TRUE;
             }
 
-            if (sin->sin_family != 2 /* AF_INET */) {
+            if (sin->sin_family != AF_INET) {
                 imsg->result = -1;
                 imsg->err_no = EAFNOSUPPORT;
                 return TRUE;
@@ -780,7 +790,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             ip_addr_set_ip4_u32(&bind_ip, sin->sin_addr.s_addr);
             port = lwip_ntohs(sin->sin_port);
 
-            if (g_sockets[slot_idx].type == 1 /* TCP */) {
+            if (g_sockets[slot_idx].type == SOCK_STREAM) {
                 if (g_sockets[slot_idx].tcp_pcb == NULL) {
                     imsg->result = -1;
                     imsg->err_no = EBADF;
@@ -790,7 +800,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                     ip_set_option(g_sockets[slot_idx].tcp_pcb, SOF_REUSEADDR);
                 }
                 berr = tcp_bind(g_sockets[slot_idx].tcp_pcb, &bind_ip, port);
-            } else if (g_sockets[slot_idx].type == 2 /* UDP */) {
+            } else if (g_sockets[slot_idx].type == SOCK_DGRAM) {
                 if (g_sockets[slot_idx].udp_pcb == NULL) {
                     imsg->result = -1;
                     imsg->err_no = EBADF;
@@ -800,7 +810,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                     ip_set_option(g_sockets[slot_idx].udp_pcb, SOF_REUSEADDR);
                 }
                 berr = udp_bind(g_sockets[slot_idx].udp_pcb, &bind_ip, port);
-            } else if (g_sockets[slot_idx].type == 3 /* RAW */) {
+            } else if (g_sockets[slot_idx].type == SOCK_RAW) {
                 if (g_sockets[slot_idx].raw_pcb == NULL) {
                     imsg->result = -1;
                     imsg->err_no = EBADF;
@@ -928,8 +938,8 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 g_sockets[new_slot].in_use              = TRUE;
                 g_sockets[new_slot].owner_base          = base;
                 g_sockets[new_slot].owner_task          = imsg->client_task;
-                g_sockets[new_slot].domain              = 2 /* AF_INET */;
-                g_sockets[new_slot].type                = 1 /* SOCK_STREAM */;
+                g_sockets[new_slot].domain              = AF_INET;
+                g_sockets[new_slot].type                = SOCK_STREAM;
                 g_sockets[new_slot].protocol            = 0;
                 g_sockets[new_slot].tcp_state           = TN_TCP_STATE_ESTABLISHED;
                 g_sockets[new_slot].is_nonblocking      = FALSE;
@@ -956,7 +966,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
 
                 if (addr != NULL && addrlen != NULL && *addrlen >= sizeof(struct sockaddr_in)) {
                     addr->sin_len    = sizeof(struct sockaddr_in);
-                    addr->sin_family = 2 /* AF_INET */;
+                    addr->sin_family = AF_INET;
                     addr->sin_port   = lwip_htons(ent->new_pcb->remote_port);
                     addr->sin_addr.s_addr = ip_2_ip4(&ent->new_pcb->remote_ip)->addr;
                     *addrlen = sizeof(struct sockaddr_in);
@@ -997,7 +1007,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 return TRUE;
             }
 
-            if (g_sockets[slot_idx].type == 1 /* SOCK_STREAM */ && g_sockets[slot_idx].tcp_pcb != NULL) {
+            if (g_sockets[slot_idx].type == SOCK_STREAM && g_sockets[slot_idx].tcp_pcb != NULL) {
                 ip_addr_t dst_ip;
                 u16_t dst_port = lwip_ntohs(sin->sin_port);
                 err_t cerr;
@@ -1023,7 +1033,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
 
                 /* Delayed reply: tn_tcp_connected_cb or tn_tcp_err_cb will call ReplyMsg */
                 return FALSE;
-            } else if (g_sockets[slot_idx].type == 2 /* SOCK_DGRAM */ && g_sockets[slot_idx].udp_pcb != NULL) {
+            } else if (g_sockets[slot_idx].type == SOCK_DGRAM && g_sockets[slot_idx].udp_pcb != NULL) {
                 ip_addr_t dst_ip;
                 u16_t dst_port = lwip_ntohs(sin->sin_port);
                 ip_addr_set_ip4_u32(&dst_ip, sin->sin_addr.s_addr);
@@ -1031,7 +1041,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 imsg->result = 0;
                 imsg->err_no = 0;
                 return TRUE;
-            } else if (g_sockets[slot_idx].type == 3 /* SOCK_RAW */ && g_sockets[slot_idx].raw_pcb != NULL) {
+            } else if (g_sockets[slot_idx].type == SOCK_RAW && g_sockets[slot_idx].raw_pcb != NULL) {
                 ip_addr_t dst_ip;
                 ip_addr_set_ip4_u32(&dst_ip, sin->sin_addr.s_addr);
                 raw_connect(g_sockets[slot_idx].raw_pcb, &dst_ip);
@@ -1063,7 +1073,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 return TRUE;
             }
 
-            if (g_sockets[slot_idx].type == 1 /* SOCK_STREAM */ && g_sockets[slot_idx].tcp_pcb != NULL) {
+            if (g_sockets[slot_idx].type == SOCK_STREAM && g_sockets[slot_idx].tcp_pcb != NULL) {
                 err_t werr;
                 u16_t send_len;
                 u16_t snd_buf;
@@ -1095,7 +1105,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 imsg->result = (LONG)send_len;
                 imsg->err_no = 0;
                 return TRUE;
-            } else if (g_sockets[slot_idx].type == 3 /* SOCK_RAW */ && g_sockets[slot_idx].raw_pcb != NULL) {
+            } else if (g_sockets[slot_idx].type == SOCK_RAW && g_sockets[slot_idx].raw_pcb != NULL) {
                 struct pbuf *p;
                 u16_t send_len = (len > 0xFFFF) ? 0xFFFF : (u16_t)len;
                 err_t serr;
@@ -1145,7 +1155,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 return TRUE;
             }
 
-            if (g_sockets[slot_idx].type == 1 /* SOCK_STREAM */) {
+            if (g_sockets[slot_idx].type == SOCK_STREAM) {
                 if (g_sockets[slot_idx].rx_head != NULL) {
                     TnRxPacket *pkt = g_sockets[slot_idx].rx_head;
                     u16_t avail = pkt->p->tot_len - pkt->offset;
@@ -1186,7 +1196,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                     imsg->err_no = EWOULDBLOCK;
                     return TRUE;
                 }
-            } else if (g_sockets[slot_idx].type == 3 /* SOCK_RAW */) {
+            } else if (g_sockets[slot_idx].type == SOCK_RAW) {
                 if (g_sockets[slot_idx].rx_head != NULL) {
                     TnRxPacket *pkt = g_sockets[slot_idx].rx_head;
                     u16_t avail = pkt->p->tot_len;
@@ -1239,7 +1249,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 return TRUE;
             }
 
-            if (g_sockets[slot_idx].type == 2 /* SOCK_DGRAM */ && g_sockets[slot_idx].udp_pcb != NULL) {
+            if (g_sockets[slot_idx].type == SOCK_DGRAM && g_sockets[slot_idx].udp_pcb != NULL) {
                 struct pbuf *p;
                 ip_addr_t dst_ip;
                 u16_t dst_port;
@@ -1268,7 +1278,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 imsg->result = (LONG)send_len;
                 imsg->err_no = 0;
                 return TRUE;
-            } else if (g_sockets[slot_idx].type == 3 /* SOCK_RAW */ && g_sockets[slot_idx].raw_pcb != NULL) {
+            } else if (g_sockets[slot_idx].type == SOCK_RAW && g_sockets[slot_idx].raw_pcb != NULL) {
                 struct pbuf *p;
                 ip_addr_t dst_ip;
                 u16_t send_len = (len > 0xFFFF) ? 0xFFFF : (u16_t)len;
@@ -1328,7 +1338,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 return TRUE;
             }
 
-            if (g_sockets[slot_idx].type == 2 /* SOCK_DGRAM */) {
+            if (g_sockets[slot_idx].type == SOCK_DGRAM) {
                 if (g_sockets[slot_idx].rx_head != NULL) {
                     TnRxPacket *pkt = g_sockets[slot_idx].rx_head;
                     u16_t copied;
@@ -1342,7 +1352,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
 
                     if (from != NULL) {
                         from->sin_len = sizeof(struct sockaddr_in); /* TNET-055 */
-                        from->sin_family = 2 /* AF_INET */;
+                        from->sin_family = AF_INET;
                         from->sin_port   = lwip_htons(pkt->src_port);
                         from->sin_addr.s_addr = ip_addr_get_ip4_u32(&pkt->src_ip);
                         if (fromlen != NULL) *fromlen = sizeof(struct sockaddr_in);
@@ -1362,7 +1372,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                     imsg->err_no = EWOULDBLOCK;
                     return TRUE;
                 }
-            } else if (g_sockets[slot_idx].type == 3 /* SOCK_RAW */) {
+            } else if (g_sockets[slot_idx].type == SOCK_RAW) {
                 if (g_sockets[slot_idx].rx_head != NULL) {
                     TnRxPacket *pkt = g_sockets[slot_idx].rx_head;
                     u16_t avail = pkt->p->tot_len;
@@ -1372,7 +1382,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
 
                     if (from != NULL) {
                         from->sin_len = sizeof(struct sockaddr_in);
-                        from->sin_family = 2 /* AF_INET */;
+                        from->sin_family = AF_INET;
                         from->sin_port   = 0;
                         from->sin_addr.s_addr = ip_addr_get_ip4_u32(&pkt->src_ip);
                         if (fromlen != NULL) *fromlen = sizeof(struct sockaddr_in);
@@ -1481,7 +1491,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 base->hostent_aliases[0] = NULL;
                 base->hostent_data.h_name      = (STRPTR)base->hostent_name;
                 base->hostent_data.h_aliases   = base->hostent_aliases;
-                base->hostent_data.h_addrtype  = 2 /* AF_INET */;
+                base->hostent_data.h_addrtype  = AF_INET;
                 base->hostent_data.h_length    = 4;
                 base->hostent_data.h_addr_list = (char **)base->hostent_addrs;
 
@@ -1503,7 +1513,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                     base->hostent_aliases[0] = NULL;
                     base->hostent_data.h_name      = (STRPTR)base->hostent_name;
                     base->hostent_data.h_aliases   = base->hostent_aliases;
-                    base->hostent_data.h_addrtype  = 2 /* AF_INET */;
+                    base->hostent_data.h_addrtype  = AF_INET;
                     base->hostent_data.h_length    = 4;
                     base->hostent_data.h_addr_list = (char **)base->hostent_addrs;
 
@@ -1567,11 +1577,11 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 return TRUE;
             }
 
-            if (req == 0x8004667eUL /* FIONBIO */) {
+            if (req == FIONBIO) {
                 g_sockets[slot_idx].is_nonblocking = (*(ULONG *)argp != 0);
                 imsg->result = 0;
                 imsg->err_no = 0;
-            } else if (req == 0x4004667fUL /* FIONREAD */) {
+            } else if (req == FIONREAD) {
                 ULONG total = 0;
                 TnRxPacket *pkt = g_sockets[slot_idx].rx_head;
                 while (pkt != NULL) {
@@ -1610,10 +1620,10 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 return TRUE;
             }
 
-            if (level == 0xffff /* SOL_SOCKET */) {
-                if (optname == 0x0004 /* SO_REUSEADDR */) {
+            if (level == SOL_SOCKET) {
+                if (optname == SO_REUSEADDR) {
                     g_sockets[slot_idx].opt_reuseaddr = (*(const int *)optval != 0);
-                } else if (optname == 0x0008 /* SO_KEEPALIVE */) {
+                } else if (optname == SO_KEEPALIVE) {
                     g_sockets[slot_idx].opt_keepalive = (*(const int *)optval != 0);
                     if (g_sockets[slot_idx].tcp_pcb != NULL) {
                         if (g_sockets[slot_idx].opt_keepalive) {
@@ -1625,8 +1635,8 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 }
                 imsg->result = 0;
                 imsg->err_no = 0;
-            } else if (level == 6 /* IPPROTO_TCP */) {
-                if (optname == 0x0001 /* TCP_NODELAY */) {
+            } else if (level == IPPROTO_TCP) {
+                if (optname == TCP_NODELAY) {
                     g_sockets[slot_idx].opt_nodelay = (*(const int *)optval != 0);
                     if (g_sockets[slot_idx].tcp_pcb != NULL) {
                         if (g_sockets[slot_idx].opt_nodelay) {
@@ -1638,8 +1648,8 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 }
                 imsg->result = 0;
                 imsg->err_no = 0;
-            } else if (level == 0 /* IPPROTO_IP */) {
-                if (optname == 2 /* IP_HDRINCL */) {
+            } else if (level == IPPROTO_IP) {
+                if (optname == IP_HDRINCL) {
                     if (g_sockets[slot_idx].raw_pcb != NULL) {
                         if (*(const int *)optval != 0) {
                             raw_set_flags(g_sockets[slot_idx].raw_pcb, RAW_FLAGS_HDRINCL);
@@ -1678,12 +1688,12 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 return TRUE;
             }
 
-            if (level == 0xffff /* SOL_SOCKET */) {
-                if (optname == 0x0004 /* SO_REUSEADDR */) {
+            if (level == SOL_SOCKET) {
+                if (optname == SO_REUSEADDR) {
                     *(int *)optval = g_sockets[slot_idx].opt_reuseaddr ? 1 : 0;
-                } else if (optname == 0x0008 /* SO_KEEPALIVE */) {
+                } else if (optname == SO_KEEPALIVE) {
                     *(int *)optval = g_sockets[slot_idx].opt_keepalive ? 1 : 0;
-                } else if (optname == 0x1007 /* SO_ERROR */) {
+                } else if (optname == SO_ERROR) {
                     *(int *)optval = (int)g_sockets[slot_idx].last_error;
                     g_sockets[slot_idx].last_error = 0;
                 } else {
@@ -1692,8 +1702,8 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 if (optlen != NULL) *optlen = sizeof(int);
                 imsg->result = 0;
                 imsg->err_no = 0;
-            } else if (level == 6 /* IPPROTO_TCP */) {
-                if (optname == 0x0001 /* TCP_NODELAY */) {
+            } else if (level == IPPROTO_TCP) {
+                if (optname == TCP_NODELAY) {
                     *(int *)optval = g_sockets[slot_idx].opt_nodelay ? 1 : 0;
                 } else {
                     *(int *)optval = 0;
@@ -1701,8 +1711,8 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 if (optlen != NULL) *optlen = sizeof(int);
                 imsg->result = 0;
                 imsg->err_no = 0;
-            } else if (level == 0 /* IPPROTO_IP */) {
-                if (optname == 2 /* IP_HDRINCL */) {
+            } else if (level == IPPROTO_IP) {
+                if (optname == IP_HDRINCL) {
                     if (g_sockets[slot_idx].raw_pcb != NULL) {
                         *(int *)optval = raw_is_flag_set(g_sockets[slot_idx].raw_pcb, RAW_FLAGS_HDRINCL) ? 1 : 0;
                     } else {
@@ -1749,15 +1759,15 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             }
 
             sin->sin_len    = sizeof(struct sockaddr_in);
-            sin->sin_family = 2 /* AF_INET */;
+            sin->sin_family = AF_INET;
 
-            if (g_sockets[slot_idx].type == 1 /* TCP */ && g_sockets[slot_idx].tcp_pcb != NULL) {
+            if (g_sockets[slot_idx].type == SOCK_STREAM && g_sockets[slot_idx].tcp_pcb != NULL) {
                 sin->sin_port        = lwip_htons(g_sockets[slot_idx].tcp_pcb->local_port);
                 sin->sin_addr.s_addr = ip_2_ip4(&g_sockets[slot_idx].tcp_pcb->local_ip)->addr;
-            } else if (g_sockets[slot_idx].type == 2 /* UDP */ && g_sockets[slot_idx].udp_pcb != NULL) {
+            } else if (g_sockets[slot_idx].type == SOCK_DGRAM && g_sockets[slot_idx].udp_pcb != NULL) {
                 sin->sin_port        = lwip_htons(g_sockets[slot_idx].udp_pcb->local_port);
                 sin->sin_addr.s_addr = ip_2_ip4(&g_sockets[slot_idx].udp_pcb->local_ip)->addr;
-            } else if (g_sockets[slot_idx].type == 3 /* RAW */ && g_sockets[slot_idx].raw_pcb != NULL) {
+            } else if (g_sockets[slot_idx].type == SOCK_RAW && g_sockets[slot_idx].raw_pcb != NULL) {
                 sin->sin_port        = lwip_htons((u16_t)g_sockets[slot_idx].protocol);
                 sin->sin_addr.s_addr = ip_2_ip4(&g_sockets[slot_idx].raw_pcb->local_ip)->addr;
             } else {
@@ -1797,9 +1807,9 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             }
 
             sin->sin_len    = sizeof(struct sockaddr_in);
-            sin->sin_family = 2 /* AF_INET */;
+            sin->sin_family = AF_INET;
 
-            if (g_sockets[slot_idx].type == 1 /* TCP */ && g_sockets[slot_idx].tcp_pcb != NULL) {
+            if (g_sockets[slot_idx].type == SOCK_STREAM && g_sockets[slot_idx].tcp_pcb != NULL) {
                 if (g_sockets[slot_idx].tcp_state != TN_TCP_STATE_ESTABLISHED &&
                     g_sockets[slot_idx].tcp_state != TN_TCP_STATE_CONNECTING) {
                     imsg->result = -1;
@@ -1808,7 +1818,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 }
                 sin->sin_port        = lwip_htons(g_sockets[slot_idx].tcp_pcb->remote_port);
                 sin->sin_addr.s_addr = ip_2_ip4(&g_sockets[slot_idx].tcp_pcb->remote_ip)->addr;
-            } else if (g_sockets[slot_idx].type == 2 /* UDP */ && g_sockets[slot_idx].udp_pcb != NULL) {
+            } else if (g_sockets[slot_idx].type == SOCK_DGRAM && g_sockets[slot_idx].udp_pcb != NULL) {
                 if (g_sockets[slot_idx].udp_pcb->remote_port == 0) {
                     imsg->result = -1;
                     imsg->err_no = ENOTCONN;
@@ -1816,7 +1826,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 }
                 sin->sin_port        = lwip_htons(g_sockets[slot_idx].udp_pcb->remote_port);
                 sin->sin_addr.s_addr = ip_2_ip4(&g_sockets[slot_idx].udp_pcb->remote_ip)->addr;
-            } else if (g_sockets[slot_idx].type == 3 /* RAW */ && g_sockets[slot_idx].raw_pcb != NULL) {
+            } else if (g_sockets[slot_idx].type == SOCK_RAW && g_sockets[slot_idx].raw_pcb != NULL) {
                 sin->sin_port        = 0;
                 sin->sin_addr.s_addr = ip_2_ip4(&g_sockets[slot_idx].raw_pcb->remote_ip)->addr;
             } else {
