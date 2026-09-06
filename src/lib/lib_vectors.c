@@ -152,6 +152,10 @@ struct Library *tn_lib_open(struct Library *lib, ULONG version)
     base->timer_io     = NULL;
     base->inet_ntoa_buf[0] = '\0';
     base->hostname[0]  = '\0';
+    base->domain_name[0] = '\0';
+    base->netent_idx = 0;
+    base->servent_idx = 0;
+    base->protoent_idx = 0;
 
     for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
         base->fd_map[i] = -1;
@@ -715,6 +719,19 @@ struct hostent *tn_lvo_gethostbyname(CONST_STRPTR name, TnSocketBase *base)
     return (struct hostent *)(intptr_t)res;
 }
 
+/* -216: gethostbyaddr(addr, len, type) */
+struct hostent *tn_lvo_gethostbyaddr(CONST_STRPTR addr, LONG len, LONG type, TnSocketBase *base)
+{
+    (void)addr;
+    (void)len;
+    (void)type;
+    if (base != NULL) {
+        tn_set_herrno_val(base, HOST_NOT_FOUND);
+        tn_set_errno_val(base, ENOENT);
+    }
+    return NULL;
+}
+
 /* Helper string comparison */
 static int tn_strcasecmp(const char *s1, const char *s2)
 {
@@ -998,3 +1015,293 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
     }
     return count;
 }
+
+/* ========================================================= §D.5 EXTENSIONS */
+
+/* -540: setnetent(stay_open) */
+VOID tn_lvo_setnetent(LONG stay_open, TnSocketBase *base)
+{
+    (void)stay_open;
+    if (base != NULL) base->netent_idx = 0;
+}
+
+/* -546: endnetent() */
+VOID tn_lvo_endnetent(TnSocketBase *base)
+{
+    if (base != NULL) base->netent_idx = 0;
+}
+
+/* -222: getnetbyname(name) */
+struct netent *tn_lvo_getnetbyname(CONST_STRPTR name, TnSocketBase *base)
+{
+    if (base == NULL || name == NULL) return NULL;
+    if (tn_strcasecmp((const char *)name, "loopback") == 0 ||
+        tn_strcasecmp((const char *)name, "localnet") == 0) {
+        int i = 0;
+        while (name[i] && i < 31) { base->netent_name[i] = name[i]; i++; }
+        base->netent_name[i] = '\0';
+        base->netent_aliases[0] = NULL;
+        base->netent_data.n_name = (STRPTR)base->netent_name;
+        base->netent_data.n_aliases = base->netent_aliases;
+        base->netent_data.n_addrtype = AF_INET;
+        base->netent_data.n_net = 0x7F000000UL;
+        return &base->netent_data;
+    }
+    return NULL;
+}
+
+/* -228: getnetbyaddr(net, type) */
+struct netent *tn_lvo_getnetbyaddr(in_addr_t net, LONG type, TnSocketBase *base)
+{
+    if (base == NULL || type != AF_INET) return NULL;
+    if ((net & 0xFF000000UL) == 0x7F000000UL || (net & 0xFF000000UL) == 0x0A000000UL) {
+        return tn_lvo_getnetbyname((CONST_STRPTR)"loopback", base);
+    }
+    return NULL;
+}
+
+/* -552: getnetent() */
+struct netent *tn_lvo_getnetent(TnSocketBase *base)
+{
+    if (base == NULL) return NULL;
+    if (base->netent_idx == 0) {
+        base->netent_idx++;
+        return tn_lvo_getnetbyname((CONST_STRPTR)"loopback", base);
+    }
+    return NULL;
+}
+
+/* -558: setprotoent(stay_open) */
+VOID tn_lvo_setprotoent(LONG stay_open, TnSocketBase *base)
+{
+    (void)stay_open;
+    if (base != NULL) base->protoent_idx = 0;
+}
+
+/* -564: endprotoent() */
+VOID tn_lvo_endprotoent(TnSocketBase *base)
+{
+    if (base != NULL) base->protoent_idx = 0;
+}
+
+/* -570: getprotoent() */
+struct protoent *tn_lvo_getprotoent(TnSocketBase *base)
+{
+    if (base == NULL) return NULL;
+    if (base->protoent_idx < 0 || g_protocols[base->protoent_idx].name == NULL) return NULL;
+    return tn_lvo_getprotobyname((CONST_STRPTR)g_protocols[base->protoent_idx++].name, base);
+}
+
+/* -576: setservent(stay_open) */
+VOID tn_lvo_setservent(LONG stay_open, TnSocketBase *base)
+{
+    (void)stay_open;
+    if (base != NULL) base->servent_idx = 0;
+}
+
+/* -582: endservent() */
+VOID tn_lvo_endservent(TnSocketBase *base)
+{
+    if (base != NULL) base->servent_idx = 0;
+}
+
+/* -588: getservent() */
+struct servent *tn_lvo_getservent(TnSocketBase *base)
+{
+    if (base == NULL) return NULL;
+    if (base->servent_idx < 0 || g_services[base->servent_idx].name == NULL) return NULL;
+    return tn_lvo_getservbyname((CONST_STRPTR)g_services[base->servent_idx++].name, NULL, base);
+}
+
+/* -594: inet_aton(cp, addr) */
+LONG tn_lvo_inet_aton(CONST_STRPTR cp, struct in_addr *addr, TnSocketBase *base)
+{
+    uint32_t out_ip = 0;
+    (void)base;
+    if (cp == NULL) return 0;
+    if (tn_inet_addr_parse_ex((const char *)cp, &out_ip)) {
+        if (addr != NULL) addr->s_addr = out_ip;
+        return 1;
+    }
+    return 0;
+}
+
+/* -600: inet_ntop(af, src, dst, size) */
+STRPTR tn_lvo_inet_ntop(LONG af, const void *src, STRPTR dst, LONG size, TnSocketBase *base)
+{
+    if (af != AF_INET) {
+        tn_set_errno_val(base, EAFNOSUPPORT);
+        return NULL;
+    }
+    if (src == NULL || dst == NULL || size < 16) {
+        tn_set_errno_val(base, ENOSPC);
+        return NULL;
+    }
+    uint32_t ip = ntohl(((const struct in_addr *)src)->s_addr);
+    ULONG args[4];
+    args[0] = (ip >> 24) & 0xFF;
+    args[1] = (ip >> 16) & 0xFF;
+    args[2] = (ip >> 8) & 0xFF;
+    args[3] = ip & 0xFF;
+    RawDoFmt((CONST_STRPTR)"%lu.%lu.%lu.%lu", (APTR)args, (VOID (*)())"\x16\xc0\x4e\x75", dst);
+    return dst;
+}
+
+/* -606: inet_pton(af, src, dst) */
+LONG tn_lvo_inet_pton(LONG af, CONST_STRPTR src, void *dst, TnSocketBase *base)
+{
+    if (af != AF_INET) {
+        tn_set_errno_val(base, EAFNOSUPPORT);
+        return -1;
+    }
+    if (src == NULL || dst == NULL) return 0;
+    uint32_t out_ip = 0;
+    if (tn_inet_addr_parse_ex((const char *)src, &out_ip)) {
+        ((struct in_addr *)dst)->s_addr = out_ip;
+        return 1;
+    }
+    return 0;
+}
+
+/* -612: In_LocalAddr(address) */
+LONG tn_lvo_in_localaddr(in_addr_t address, TnSocketBase *base)
+{
+    (void)base;
+    uint32_t ip = ntohl(address);
+    if ((ip >> 24) == 127 || (ip >> 24) == 10) return 1;
+    return 0;
+}
+
+/* -618: In_CanForward(address) */
+LONG tn_lvo_in_canforward(in_addr_t address, TnSocketBase *base)
+{
+    (void)base;
+    uint32_t ip = ntohl(address);
+    uint32_t b0 = (ip >> 24);
+    if (b0 == 127 || (b0 >= 224 && b0 <= 255)) return 0;
+    return 1;
+}
+
+/* -702: GetDefaultDomainName(buffer, buffer_size) */
+BOOL tn_lvo_getdefaultdomainname(STRPTR buffer, LONG buffer_size, TnSocketBase *base)
+{
+    const char *dom = "local";
+    if (buffer == NULL || buffer_size <= 0) return FALSE;
+    if (base != NULL && base->domain_name[0] != '\0') dom = base->domain_name;
+    int len = 0;
+    while (dom[len]) len++;
+    if (len >= buffer_size) return FALSE;
+    for (int i = 0; i <= len; i++) buffer[i] = dom[i];
+    return TRUE;
+}
+
+/* -708: SetDefaultDomainName(buffer) */
+VOID tn_lvo_setdefaultdomainname(CONST_STRPTR buffer, TnSocketBase *base)
+{
+    if (base != NULL && buffer != NULL) {
+        int i = 0;
+        while (buffer[i] && i < 63) { base->domain_name[i] = buffer[i]; i++; }
+        base->domain_name[i] = '\0';
+    }
+}
+
+/* -738: gethostbyname_r(name, hp, buf, buflen, he) */
+struct hostent *tn_lvo_gethostbyname_r(CONST_STRPTR name, struct hostent *hp, APTR buf, ULONG buflen, LONG *he, TnSocketBase *base)
+{
+    if (base == NULL || hp == NULL || buf == NULL) {
+        if (he) *he = NO_RECOVERY;
+        return NULL;
+    }
+    struct hostent *res = tn_lvo_gethostbyname((STRPTR)name, base);
+    if (res == NULL) {
+        if (he) *he = base->task_herrno;
+        return NULL;
+    }
+    if (buflen < 128) {
+        if (he) *he = NO_RECOVERY;
+        tn_set_errno_val(base, ERANGE);
+        return NULL;
+    }
+    char *p = (char *)buf;
+    hp->h_name = (STRPTR)p;
+    int i = 0;
+    while (res->h_name && res->h_name[i] && i < 63) { p[i] = res->h_name[i]; i++; }
+    p[i++] = '\0';
+    p = (char *)(((uintptr_t)p + 3) & ~3);
+
+    STRPTR *aliases = (STRPTR *)p;
+    aliases[0] = NULL;
+    hp->h_aliases = aliases;
+    p += sizeof(STRPTR) * 2;
+
+    hp->h_addrtype = res->h_addrtype;
+    hp->h_length = res->h_length;
+
+    uint32_t *ip_storage = (uint32_t *)p;
+    *ip_storage = *(uint32_t *)res->h_addr_list[0];
+    p += sizeof(uint32_t);
+
+    STRPTR *addrs = (STRPTR *)p;
+    addrs[0] = (STRPTR)ip_storage;
+    addrs[1] = NULL;
+    hp->h_addr_list = (char **)addrs;
+
+    if (he) *he = 0;
+    return hp;
+}
+
+/* -744: gethostbyaddr_r(addr, len, type, hp, buf, buflen, he) */
+struct hostent *tn_lvo_gethostbyaddr_r(CONST_STRPTR addr, LONG len, LONG type, struct hostent *hp, APTR buf, ULONG buflen, LONG *he, TnSocketBase *base)
+{
+    if (base == NULL || hp == NULL || buf == NULL) {
+        if (he) *he = NO_RECOVERY;
+        return NULL;
+    }
+    struct hostent *res = tn_lvo_gethostbyaddr((STRPTR)addr, len, type, base);
+    if (res == NULL) {
+        if (he) *he = base->task_herrno;
+        return NULL;
+    }
+    if (buflen < 128) {
+        if (he) *he = NO_RECOVERY;
+        tn_set_errno_val(base, ERANGE);
+        return NULL;
+    }
+    char *p = (char *)buf;
+    hp->h_name = (STRPTR)p;
+    int i = 0;
+    while (res->h_name && res->h_name[i] && i < 63) { p[i] = res->h_name[i]; i++; }
+    p[i++] = '\0';
+    p = (char *)(((uintptr_t)p + 3) & ~3);
+
+    STRPTR *aliases = (STRPTR *)p;
+    aliases[0] = NULL;
+    hp->h_aliases = aliases;
+    p += sizeof(STRPTR) * 2;
+
+    hp->h_addrtype = res->h_addrtype;
+    hp->h_length = res->h_length;
+
+    uint32_t *ip_storage = (uint32_t *)p;
+    *ip_storage = *(uint32_t *)res->h_addr_list[0];
+    p += sizeof(uint32_t);
+
+    STRPTR *addrs = (STRPTR *)p;
+    addrs[0] = (STRPTR)ip_storage;
+    addrs[1] = NULL;
+    hp->h_addr_list = (char **)addrs;
+
+    if (he) *he = 0;
+    return hp;
+}
+
+/* -258: vsyslog(pri, msg, args) */
+VOID tn_lvo_vsyslog(LONG pri, CONST_STRPTR msg, APTR args, TnSocketBase *base)
+{
+    (void)base;
+    (void)args;
+    if (msg != NULL) {
+        tn_logf(TN_LOG_BASIC, "[syslog:%ld] %s\n", pri, (const char *)msg);
+    }
+}
+

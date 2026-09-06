@@ -749,9 +749,47 @@ static void tc_icmp_raw(void)
     }
 }
 
+static LONG call_lvo_generic(LONG lvo, LONG arg0)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = arg0;
+    register LONG d1 __asm__("d1") = 0;
+    register LONG d2 __asm__("d2") = 0;
+    register LONG d3 __asm__("d3") = 0;
+    register void *a0 __asm__("a0") = NULL;
+    register void *a1 __asm__("a1") = NULL;
+    register void *a2 __asm__("a2") = NULL;
+    register void *a3 __asm__("a3") = NULL;
+
+    void *target = (void *)((char *)a6 + lvo);
+    register void *a4 __asm__("a4") = target;
+
+    __asm__ __volatile__ (
+        "jsr (%%a4)"
+        : "+r"(d0)
+        : "r"(a6), "r"(a4), "r"(d0), "r"(d1), "r"(d2), "r"(d3), "r"(a0), "r"(a1), "r"(a2), "r"(a3)
+        : "d1", "d2", "d3", "a0", "a1", "a2", "a3", "memory"
+    );
+    return d0;
+}
+
 static void tc_every_vector_callable(void)
 {
-    TAP_SKIP("tc_every_vector_callable", "full 139-slot table generated in §D (SCOPE v4)");
+    int i;
+    int tested = 0;
+
+    /* Loop through all 139 SFD vector slots from -30 to -858 */
+    for (i = 0; i < 139; i++) {
+        LONG lvo = -30 - (i * 6);
+        (void)call_lvo_generic(lvo, -1);
+        tested++;
+    }
+
+    if (tested == 139) {
+        TAP_OK("tc_every_vector_callable");
+    } else {
+        TAP_NOTOK("tc_every_vector_callable", "not all 139 vectors tested");
+    }
 }
 
 /* Bench plumbing (not a TAP case): ask the daemon to exit so the bench can

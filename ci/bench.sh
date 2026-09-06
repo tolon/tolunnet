@@ -50,7 +50,7 @@ fi
 
 if [ "${SKIP_BUILD:-0}" != "1" ]; then
     say "building (make all)"
-    wsl -e bash -c "cd /mnt/d/Projeler/tolunnet && make all CROSS=$CROSS" >/dev/null \
+    wsl -d Ubuntu-24.04 -e bash -c "cd /mnt/d/Projeler/tolunnet && make all CROSS=$CROSS" >/dev/null \
         || die "make all failed"
 fi
 [ -f build/tolunnet ] || die "build/tolunnet missing (run without SKIP_BUILD)"
@@ -77,7 +77,7 @@ for cfg in $CONFIGS; do
     HDF_WIN='E:\amiga\Amigatolon\bench\tolunnet\wb30-'"$cfg"'.hdf'
     HDF_UX="/mnt/e/amiga/Amigatolon/bench/tolunnet/wb30-$cfg.hdf"
 
-    xd() { wsl -e bash -c "\$HOME/.local/bin/xdftool '$HDF_UX' $*" ; }
+    xd() { wsl -d Ubuntu-24.04 -e bash -c "\$HOME/.local/bin/xdftool '$HDF_UX' $*" ; }
 
     xd delete C/tolunnet        >/dev/null 2>&1
     xd delete C/SocketConformance >/dev/null 2>&1

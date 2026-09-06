@@ -175,7 +175,7 @@ TN_TEST(sfd_has_133_contiguous_slots)
 TN_TEST(lib_table_rows_match_sfd)
 {
     int i;
-    parse_lib_table("src/lib/lib_init.c");
+    parse_lib_table("src/lib/lib_table.gen.c");
 
     TN_ASSERT_TRUE(nrows > 4);
     for (i = 0; i < nrows; i++) {
@@ -209,7 +209,7 @@ TN_TEST(lib_table_is_terminated)
 TN_TEST(full_sfd_coverage)
 {
     int i, covered = 0;
-    parse_lib_table("src/lib/lib_init.c");
+    parse_lib_table("src/lib/lib_table.gen.c");
 
     for (i = 0; i < sfd_nslots; i++) {
         if (!sfd_slots[i].reserved) {

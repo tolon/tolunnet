@@ -57,6 +57,7 @@ struct Library {
 struct hostent { char *h_name; char **h_aliases; int h_addrtype; int h_length; char **h_addr_list; };
 struct servent { char *s_name; char **s_aliases; int s_port; char *s_proto; };
 struct protoent { char *p_name; char **p_aliases; int p_proto; };
+struct netent { char *n_name; char **n_aliases; int n_addrtype; uint32_t n_net; };
 #endif
 
 #define TOLUNNET_PORT_NAME "tolunnet.port"
@@ -161,6 +162,15 @@ typedef struct TnSocketBase {
     struct protoent protoent_data;
     STRPTR          protoent_aliases[2];
     char            protoent_name[32];
+
+    /* Per-task storage for domain name and getnetent/getservent/getprotoent iterators (§D.5) */
+    char            domain_name[64];
+    struct netent   netent_data;
+    STRPTR          netent_aliases[2];
+    char            netent_name[32];
+    int             netent_idx;
+    int             servent_idx;
+    int             protoent_idx;
 } TnSocketBase;
 
 #endif /* TOLUNNET_IPC_H */

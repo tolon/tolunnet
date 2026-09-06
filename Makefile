@@ -63,7 +63,9 @@ COMMON_OBJS = $(BUILD)/src/common/log.o $(BUILD)/src/common/mem.o $(BUILD)/src/c
               $(BUILD)/src/common/ipc_client.o $(BUILD)/src/common/http_url.o \
               $(BUILD)/src/task/timers.o
 SANA2_OBJS  = $(BUILD)/src/sana2/sana2_netif.o $(BUILD)/src/sana2/sana2_stubs.o $(BUILD)/src/sana2/buffers.o
-LIB_OBJS    = $(BUILD)/src/lib/lib_init.o $(BUILD)/src/lib/lib_vectors.o $(BUILD)/src/lib/lib_stubs.o
+LIB_OBJS    = $(BUILD)/src/lib/lib_init.o $(BUILD)/src/lib/lib_vectors.o \
+              $(BUILD)/src/lib/lib_table.gen.o $(BUILD)/src/lib/lib_stubs.gen.o \
+              $(BUILD)/src/lib/lib_unimpl.o
 TASK_OBJS   = $(BUILD)/src/task/main.o
 
 # Targets
