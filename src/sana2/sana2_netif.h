@@ -75,6 +75,10 @@ LONG       tn_s2_recv(TnSana2If *nif, void *buf, ULONG buf_len,
 /* Helper to log SANA-II errors */
 void       tn_log_s2err(const char *step, LONG err, LONG wire);
 
+/* Multicast group membership support (S2_ADDMULTICASTADDRESS / S2_DELMULTICASTADDRESS) */
+BOOL       tn_s2_add_multicast(TnSana2If *nif, const UBYTE *mac);
+BOOL       tn_s2_del_multicast(TnSana2If *nif, const UBYTE *mac);
+
 /* lwIP netif bridge functions */
 err_t      tn_sana2_netif_init(struct netif *netif);
 err_t      tn_sana2_linkoutput(struct netif *netif, struct pbuf *p);

@@ -39,6 +39,7 @@
 #include "lwip/tcp.h"
 #include "lwip/raw.h"
 #include "lwip/dns.h"
+#include "lwip/igmp.h"
 #include "netif/ethernet.h"
 
 #undef TCP_MSS
@@ -90,9 +91,28 @@ typedef struct TnSocketSlot {
     int             protocol;
     TnTcpState      tcp_state;
     BOOL            is_nonblocking;
+    /* Level SOL_SOCKET options */
+    BOOL            opt_broadcast;
     BOOL            opt_reuseaddr;
     BOOL            opt_keepalive;
+    BOOL            opt_oobinline;
+    struct linger   opt_linger;
+    int             opt_sndbuf;
+    int             opt_rcvbuf;
+    struct timeval  opt_rcvtimeo;
+    struct timeval  opt_sndtimeo;
+    /* Level IPPROTO_TCP options */
     BOOL            opt_nodelay;
+    int             opt_keepidle;
+    int             opt_keepintvl;
+    int             opt_keepcnt;
+    /* Level IPPROTO_IP options */
+    u8_t            opt_tos;
+    u8_t            opt_ttl;
+    BOOL            opt_hdrincl;
+    u8_t            opt_multicast_ttl;
+    u8_t            opt_multicast_loop;
+
     LONG            last_error;
     ULONG           rx_count;
     int             ref_count;
@@ -374,6 +394,60 @@ static void tn_tcp_err_cb(void *arg, err_t err)
     }
 }
 
+static void tn_init_socket_slot(int slot_idx, TnSocketBase *base, struct Task *task, int domain, int type, int protocol)
+{
+    TnSocketSlot *s = &g_sockets[slot_idx];
+    s->in_use              = TRUE;
+    s->owner_base          = base;
+    s->owner_task          = task;
+    s->domain              = domain;
+    s->type                = type;
+    s->protocol            = protocol;
+    s->tcp_state           = TN_TCP_STATE_CLOSED;
+    s->is_nonblocking      = FALSE;
+
+    /* Level SOL_SOCKET options */
+    s->opt_broadcast       = FALSE;
+    s->opt_reuseaddr       = FALSE;
+    s->opt_keepalive       = FALSE;
+    s->opt_oobinline       = FALSE;
+    s->opt_linger.l_onoff  = 0;
+    s->opt_linger.l_linger = 0;
+    s->opt_sndbuf          = TCP_SND_BUF;
+    s->opt_rcvbuf          = TCP_WND;
+    s->opt_rcvtimeo.tv_secs  = 0;
+    s->opt_rcvtimeo.tv_micro = 0;
+    s->opt_sndtimeo.tv_secs  = 0;
+    s->opt_sndtimeo.tv_micro = 0;
+
+    /* Level IPPROTO_TCP options */
+    s->opt_nodelay         = FALSE;
+    s->opt_keepidle        = 7200;
+    s->opt_keepintvl       = 75;
+    s->opt_keepcnt         = 9;
+
+    /* Level IPPROTO_IP options */
+    s->opt_tos             = 0;
+    s->opt_ttl             = 64;
+    s->opt_hdrincl         = (protocol == IPPROTO_RAW);
+    s->opt_multicast_ttl   = 1;
+    s->opt_multicast_loop  = 1;
+
+    s->last_error          = 0;
+    s->rx_count            = 0;
+    s->ref_count           = 1;
+    s->udp_pcb             = NULL;
+    s->tcp_pcb             = NULL;
+    s->raw_pcb             = NULL;
+    s->rx_head             = NULL;
+    s->rx_tail             = NULL;
+    s->accept_head         = NULL;
+    s->accept_tail         = NULL;
+    s->accept_count        = 0;
+    s->pending_connect_msg = NULL;
+    s->pending_accept_msg  = NULL;
+}
+
 /* Callback from lwIP when a listening TCP socket receives an incoming connection */
 static err_t tn_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
 {
@@ -414,29 +488,9 @@ static err_t tn_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
             return ERR_ABRT;
         }
 
-        g_sockets[new_slot_idx].in_use              = TRUE;
-        g_sockets[new_slot_idx].owner_base          = base;
-        g_sockets[new_slot_idx].owner_task          = imsg->client_task;
-        g_sockets[new_slot_idx].domain              = AF_INET;
-        g_sockets[new_slot_idx].type                = SOCK_STREAM;
-        g_sockets[new_slot_idx].protocol            = 0;
-        g_sockets[new_slot_idx].tcp_state           = TN_TCP_STATE_ESTABLISHED;
-        g_sockets[new_slot_idx].is_nonblocking      = FALSE;
-        g_sockets[new_slot_idx].opt_reuseaddr       = FALSE;
-        g_sockets[new_slot_idx].opt_keepalive       = FALSE;
-        g_sockets[new_slot_idx].opt_nodelay         = FALSE;
-        g_sockets[new_slot_idx].last_error          = 0;
-        g_sockets[new_slot_idx].rx_count            = 0;
-        g_sockets[new_slot_idx].ref_count           = 1;
-        g_sockets[new_slot_idx].udp_pcb             = NULL;
-        g_sockets[new_slot_idx].tcp_pcb             = newpcb;
-        g_sockets[new_slot_idx].rx_head             = NULL;
-        g_sockets[new_slot_idx].rx_tail             = NULL;
-        g_sockets[new_slot_idx].accept_head         = NULL;
-        g_sockets[new_slot_idx].accept_tail         = NULL;
-        g_sockets[new_slot_idx].accept_count        = 0;
-        g_sockets[new_slot_idx].pending_connect_msg = NULL;
-        g_sockets[new_slot_idx].pending_accept_msg  = NULL;
+        tn_init_socket_slot(new_slot_idx, base, imsg->client_task, AF_INET, SOCK_STREAM, 0);
+        g_sockets[new_slot_idx].tcp_state = TN_TCP_STATE_ESTABLISHED;
+        g_sockets[new_slot_idx].tcp_pcb   = newpcb;
 
         base->fd_map[client_fd] = new_slot_idx;
 
@@ -680,30 +734,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 return TRUE;
             }
 
-            g_sockets[slot_idx].in_use              = TRUE;
-            g_sockets[slot_idx].owner_base          = base;
-            g_sockets[slot_idx].owner_task          = imsg->client_task;
-            g_sockets[slot_idx].domain              = domain;
-            g_sockets[slot_idx].type                = type;
-            g_sockets[slot_idx].protocol            = protocol;
-            g_sockets[slot_idx].tcp_state           = TN_TCP_STATE_CLOSED;
-            g_sockets[slot_idx].is_nonblocking      = FALSE;
-            g_sockets[slot_idx].opt_reuseaddr       = FALSE;
-            g_sockets[slot_idx].opt_keepalive       = FALSE;
-            g_sockets[slot_idx].opt_nodelay         = FALSE;
-            g_sockets[slot_idx].last_error          = 0;
-            g_sockets[slot_idx].rx_count            = 0;
-            g_sockets[slot_idx].ref_count           = 1;
-            g_sockets[slot_idx].udp_pcb             = NULL;
-            g_sockets[slot_idx].tcp_pcb             = NULL;
-            g_sockets[slot_idx].raw_pcb             = NULL;
-            g_sockets[slot_idx].rx_head             = NULL;
-            g_sockets[slot_idx].rx_tail             = NULL;
-            g_sockets[slot_idx].accept_head         = NULL;
-            g_sockets[slot_idx].accept_tail         = NULL;
-            g_sockets[slot_idx].accept_count        = 0;
-            g_sockets[slot_idx].pending_connect_msg = NULL;
-            g_sockets[slot_idx].pending_accept_msg  = NULL;
+            tn_init_socket_slot(slot_idx, base, imsg->client_task, domain, type, protocol);
 
             /* UDP socket */
             if (type == SOCK_DGRAM) {
@@ -935,29 +966,9 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                     return TRUE;
                 }
 
-                g_sockets[new_slot].in_use              = TRUE;
-                g_sockets[new_slot].owner_base          = base;
-                g_sockets[new_slot].owner_task          = imsg->client_task;
-                g_sockets[new_slot].domain              = AF_INET;
-                g_sockets[new_slot].type                = SOCK_STREAM;
-                g_sockets[new_slot].protocol            = 0;
-                g_sockets[new_slot].tcp_state           = TN_TCP_STATE_ESTABLISHED;
-                g_sockets[new_slot].is_nonblocking      = FALSE;
-                g_sockets[new_slot].opt_reuseaddr       = FALSE;
-                g_sockets[new_slot].opt_keepalive       = FALSE;
-                g_sockets[new_slot].opt_nodelay         = FALSE;
-                g_sockets[new_slot].last_error          = 0;
-                g_sockets[new_slot].rx_count            = 0;
-                g_sockets[new_slot].ref_count           = 1;
-                g_sockets[new_slot].tcp_pcb             = ent->new_pcb;
-                g_sockets[new_slot].udp_pcb             = NULL;
-                g_sockets[new_slot].rx_head             = NULL;
-                g_sockets[new_slot].rx_tail             = NULL;
-                g_sockets[new_slot].accept_head         = NULL;
-                g_sockets[new_slot].accept_tail         = NULL;
-                g_sockets[new_slot].accept_count        = 0;
-                g_sockets[new_slot].pending_connect_msg = NULL;
-                g_sockets[new_slot].pending_accept_msg  = NULL;
+                tn_init_socket_slot(new_slot, base, imsg->client_task, AF_INET, SOCK_STREAM, 0);
+                g_sockets[new_slot].tcp_state = TN_TCP_STATE_ESTABLISHED;
+                g_sockets[new_slot].tcp_pcb   = ent->new_pcb;
 
                 base->fd_map[new_fd] = new_slot;
                 tcp_arg(ent->new_pcb, (void *)(intptr_t)new_slot);
@@ -1605,6 +1616,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             int client_fd = (int)imsg->args[0];
             LONG level = imsg->args[1];
             LONG optname = imsg->args[2];
+            LONG optlen_arg = imsg->args[3];
             const void *optval = (const void *)imsg->ptrs[0];
 
             if (base == NULL || client_fd < 0 || client_fd >= TN_MAX_FDS_PER_TASK || optval == NULL) {
@@ -1621,9 +1633,19 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             }
 
             if (level == SOL_SOCKET) {
-                if (optname == SO_REUSEADDR) {
-                    g_sockets[slot_idx].opt_reuseaddr = (*(const int *)optval != 0);
-                } else if (optname == SO_KEEPALIVE) {
+                switch (optname) {
+                case SO_BROADCAST:
+                    g_sockets[slot_idx].opt_broadcast = (*(const int *)optval != 0);
+                    if (g_sockets[slot_idx].udp_pcb != NULL) {
+                        if (g_sockets[slot_idx].opt_broadcast) {
+                            ip_set_option(g_sockets[slot_idx].udp_pcb, SOF_BROADCAST);
+                        } else {
+                            ip_reset_option(g_sockets[slot_idx].udp_pcb, SOF_BROADCAST);
+                        }
+                    }
+                    break;
+
+                case SO_KEEPALIVE:
                     g_sockets[slot_idx].opt_keepalive = (*(const int *)optval != 0);
                     if (g_sockets[slot_idx].tcp_pcb != NULL) {
                         if (g_sockets[slot_idx].opt_keepalive) {
@@ -1632,11 +1654,104 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                             ip_reset_option(g_sockets[slot_idx].tcp_pcb, SOF_KEEPALIVE);
                         }
                     }
+                    break;
+
+                case SO_REUSEADDR:
+                    g_sockets[slot_idx].opt_reuseaddr = (*(const int *)optval != 0);
+                    if (g_sockets[slot_idx].tcp_pcb != NULL) {
+                        if (g_sockets[slot_idx].opt_reuseaddr) {
+                            ip_set_option(g_sockets[slot_idx].tcp_pcb, SOF_REUSEADDR);
+                        } else {
+                            ip_reset_option(g_sockets[slot_idx].tcp_pcb, SOF_REUSEADDR);
+                        }
+                    }
+                    if (g_sockets[slot_idx].udp_pcb != NULL) {
+                        if (g_sockets[slot_idx].opt_reuseaddr) {
+                            ip_set_option(g_sockets[slot_idx].udp_pcb, SOF_REUSEADDR);
+                        } else {
+                            ip_reset_option(g_sockets[slot_idx].udp_pcb, SOF_REUSEADDR);
+                        }
+                    }
+                    break;
+
+                case SO_LINGER:
+                    if (optlen_arg < (LONG)sizeof(struct linger)) {
+                        imsg->result = -1;
+                        imsg->err_no = EINVAL;
+                        return TRUE;
+                    }
+                    {
+                        const struct linger *l = (const struct linger *)optval;
+                        g_sockets[slot_idx].opt_linger.l_onoff  = l->l_onoff;
+                        g_sockets[slot_idx].opt_linger.l_linger = l->l_linger;
+                    }
+                    break;
+
+                case SO_SNDBUF:
+                    g_sockets[slot_idx].opt_sndbuf = *(const int *)optval;
+                    break;
+
+                case SO_RCVBUF:
+                    g_sockets[slot_idx].opt_rcvbuf = *(const int *)optval;
+                    break;
+
+                case SO_OOBINLINE:
+                    g_sockets[slot_idx].opt_oobinline = (*(const int *)optval != 0);
+                    break;
+
+                case SO_RCVTIMEO:
+                    if (optlen_arg >= (LONG)sizeof(struct timeval)) {
+                        g_sockets[slot_idx].opt_rcvtimeo = *(const struct timeval *)optval;
+                    } else if (optlen_arg >= (LONG)sizeof(int)) {
+                        int ms = *(const int *)optval;
+                        g_sockets[slot_idx].opt_rcvtimeo.tv_secs  = ms / 1000;
+                        g_sockets[slot_idx].opt_rcvtimeo.tv_micro = (ms % 1000) * 1000;
+                    } else {
+                        imsg->result = -1;
+                        imsg->err_no = EINVAL;
+                        return TRUE;
+                    }
+                    break;
+
+                case SO_SNDTIMEO:
+                    if (optlen_arg >= (LONG)sizeof(struct timeval)) {
+                        g_sockets[slot_idx].opt_sndtimeo = *(const struct timeval *)optval;
+                    } else if (optlen_arg >= (LONG)sizeof(int)) {
+                        int ms = *(const int *)optval;
+                        g_sockets[slot_idx].opt_sndtimeo.tv_secs  = ms / 1000;
+                        g_sockets[slot_idx].opt_sndtimeo.tv_micro = (ms % 1000) * 1000;
+                    } else {
+                        imsg->result = -1;
+                        imsg->err_no = EINVAL;
+                        return TRUE;
+                    }
+                    break;
+
+                case SO_ERROR:
+                case SO_TYPE:
+                    /* Read-only socket options */
+                    imsg->result = -1;
+                    imsg->err_no = ENOPROTOOPT;
+                    return TRUE;
+
+                default:
+                    imsg->result = -1;
+                    imsg->err_no = ENOPROTOOPT;
+                    return TRUE;
                 }
+
                 imsg->result = 0;
                 imsg->err_no = 0;
+                return TRUE;
             } else if (level == IPPROTO_TCP) {
-                if (optname == TCP_NODELAY) {
+                if (g_sockets[slot_idx].type != SOCK_STREAM) {
+                    imsg->result = -1;
+                    imsg->err_no = ENOPROTOOPT;
+                    return TRUE;
+                }
+
+                switch (optname) {
+                case TCP_NODELAY:
                     g_sockets[slot_idx].opt_nodelay = (*(const int *)optval != 0);
                     if (g_sockets[slot_idx].tcp_pcb != NULL) {
                         if (g_sockets[slot_idx].opt_nodelay) {
@@ -1645,26 +1760,189 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                             tcp_nagle_enable(g_sockets[slot_idx].tcp_pcb);
                         }
                     }
+                    break;
+
+                case TCP_MAXSEG:
+                    {
+                        int mss = *(const int *)optval;
+                        if (mss > 0 && g_sockets[slot_idx].tcp_pcb != NULL) {
+                            g_sockets[slot_idx].tcp_pcb->mss = (u16_t)mss;
+                        }
+                    }
+                    break;
+
+                case TCP_KEEPIDLE:
+                    {
+                        int val = *(const int *)optval;
+                        g_sockets[slot_idx].opt_keepidle = val;
+                        if (g_sockets[slot_idx].tcp_pcb != NULL) {
+                            g_sockets[slot_idx].tcp_pcb->keep_idle = (u32_t)val * 1000UL;
+                        }
+                    }
+                    break;
+
+                case TCP_KEEPINTVL:
+                    {
+                        int val = *(const int *)optval;
+                        g_sockets[slot_idx].opt_keepintvl = val;
+                        if (g_sockets[slot_idx].tcp_pcb != NULL) {
+                            g_sockets[slot_idx].tcp_pcb->keep_intvl = (u32_t)val * 1000UL;
+                        }
+                    }
+                    break;
+
+                case TCP_KEEPCNT:
+                    {
+                        int val = *(const int *)optval;
+                        g_sockets[slot_idx].opt_keepcnt = val;
+                        if (g_sockets[slot_idx].tcp_pcb != NULL) {
+                            g_sockets[slot_idx].tcp_pcb->keep_cnt = (u32_t)val;
+                        }
+                    }
+                    break;
+
+                default:
+                    imsg->result = -1;
+                    imsg->err_no = ENOPROTOOPT;
+                    return TRUE;
                 }
+
                 imsg->result = 0;
                 imsg->err_no = 0;
+                return TRUE;
             } else if (level == IPPROTO_IP) {
-                if (optname == IP_HDRINCL) {
+                switch (optname) {
+                case IP_TOS:
+                    {
+                        u8_t tos = (u8_t)*(const int *)optval;
+                        g_sockets[slot_idx].opt_tos = tos;
+                        if (g_sockets[slot_idx].tcp_pcb != NULL) {
+                            g_sockets[slot_idx].tcp_pcb->tos = tos;
+                        }
+                        if (g_sockets[slot_idx].udp_pcb != NULL) {
+                            g_sockets[slot_idx].udp_pcb->tos = tos;
+                        }
+                        if (g_sockets[slot_idx].raw_pcb != NULL) {
+                            g_sockets[slot_idx].raw_pcb->tos = tos;
+                        }
+                    }
+                    break;
+
+                case IP_TTL:
+                    {
+                        u8_t ttl = (u8_t)*(const int *)optval;
+                        g_sockets[slot_idx].opt_ttl = ttl;
+                        if (g_sockets[slot_idx].tcp_pcb != NULL) {
+                            g_sockets[slot_idx].tcp_pcb->ttl = ttl;
+                        }
+                        if (g_sockets[slot_idx].udp_pcb != NULL) {
+                            g_sockets[slot_idx].udp_pcb->ttl = ttl;
+                        }
+                        if (g_sockets[slot_idx].raw_pcb != NULL) {
+                            g_sockets[slot_idx].raw_pcb->ttl = ttl;
+                        }
+                    }
+                    break;
+
+                case IP_HDRINCL:
+                    if (g_sockets[slot_idx].type != SOCK_RAW) {
+                        imsg->result = -1;
+                        imsg->err_no = ENOPROTOOPT;
+                        return TRUE;
+                    }
+                    g_sockets[slot_idx].opt_hdrincl = (*(const int *)optval != 0);
                     if (g_sockets[slot_idx].raw_pcb != NULL) {
-                        if (*(const int *)optval != 0) {
+                        if (g_sockets[slot_idx].opt_hdrincl) {
                             raw_set_flags(g_sockets[slot_idx].raw_pcb, RAW_FLAGS_HDRINCL);
                         } else {
                             raw_clear_flags(g_sockets[slot_idx].raw_pcb, RAW_FLAGS_HDRINCL);
                         }
                     }
+                    break;
+
+                case IP_MULTICAST_TTL:
+                    {
+                        u8_t mttl = (u8_t)*(const int *)optval;
+                        g_sockets[slot_idx].opt_multicast_ttl = mttl;
+                        if (g_sockets[slot_idx].udp_pcb != NULL) {
+                            g_sockets[slot_idx].udp_pcb->mcast_ttl = mttl;
+                        }
+                        if (g_sockets[slot_idx].raw_pcb != NULL) {
+                            g_sockets[slot_idx].raw_pcb->mcast_ttl = mttl;
+                        }
+                    }
+                    break;
+
+                case IP_MULTICAST_LOOP:
+                    {
+                        u8_t mloop = (*(const int *)optval != 0) ? 1 : 0;
+                        g_sockets[slot_idx].opt_multicast_loop = mloop;
+                        if (g_sockets[slot_idx].udp_pcb != NULL) {
+                            if (mloop) {
+                                udp_set_flags(g_sockets[slot_idx].udp_pcb, UDP_FLAGS_MULTICAST_LOOP);
+                            } else {
+                                udp_clear_flags(g_sockets[slot_idx].udp_pcb, UDP_FLAGS_MULTICAST_LOOP);
+                            }
+                        }
+                    }
+                    break;
+
+                case IP_ADD_MEMBERSHIP:
+                    if (optlen_arg < (LONG)sizeof(struct ip_mreq)) {
+                        imsg->result = -1;
+                        imsg->err_no = EINVAL;
+                        return TRUE;
+                    }
+                    {
+                        const struct ip_mreq *mreq = (const struct ip_mreq *)optval;
+                        ip4_addr_t grp, ifa;
+                        err_t err;
+                        grp.addr = mreq->imr_multiaddr.s_addr;
+                        ifa.addr = mreq->imr_interface.s_addr;
+                        err = igmp_joingroup(&ifa, &grp);
+                        if (err != ERR_OK) {
+                            imsg->result = -1;
+                            imsg->err_no = (err == ERR_MEM) ? ENOBUFS : EINVAL;
+                            return TRUE;
+                        }
+                    }
+                    break;
+
+                case IP_DROP_MEMBERSHIP:
+                    if (optlen_arg < (LONG)sizeof(struct ip_mreq)) {
+                        imsg->result = -1;
+                        imsg->err_no = EINVAL;
+                        return TRUE;
+                    }
+                    {
+                        const struct ip_mreq *mreq = (const struct ip_mreq *)optval;
+                        ip4_addr_t grp, ifa;
+                        err_t err;
+                        grp.addr = mreq->imr_multiaddr.s_addr;
+                        ifa.addr = mreq->imr_interface.s_addr;
+                        err = igmp_leavegroup(&ifa, &grp);
+                        if (err != ERR_OK) {
+                            imsg->result = -1;
+                            imsg->err_no = (err == ERR_MEM) ? ENOBUFS : EINVAL;
+                            return TRUE;
+                        }
+                    }
+                    break;
+
+                default:
+                    imsg->result = -1;
+                    imsg->err_no = ENOPROTOOPT;
+                    return TRUE;
                 }
+
                 imsg->result = 0;
                 imsg->err_no = 0;
+                return TRUE;
             } else {
-                imsg->result = 0;
-                imsg->err_no = 0;
+                imsg->result = -1;
+                imsg->err_no = EINVAL;
+                return TRUE;
             }
-            return TRUE;
         }
 
     case TN_IPC_CMD_GETSOCKOPT:
@@ -1689,48 +1967,182 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             }
 
             if (level == SOL_SOCKET) {
-                if (optname == SO_REUSEADDR) {
-                    *(int *)optval = g_sockets[slot_idx].opt_reuseaddr ? 1 : 0;
-                } else if (optname == SO_KEEPALIVE) {
+                switch (optname) {
+                case SO_BROADCAST:
+                    *(int *)optval = g_sockets[slot_idx].opt_broadcast ? 1 : 0;
+                    if (optlen != NULL) *optlen = sizeof(int);
+                    break;
+
+                case SO_KEEPALIVE:
                     *(int *)optval = g_sockets[slot_idx].opt_keepalive ? 1 : 0;
-                } else if (optname == SO_ERROR) {
+                    if (optlen != NULL) *optlen = sizeof(int);
+                    break;
+
+                case SO_REUSEADDR:
+                    *(int *)optval = g_sockets[slot_idx].opt_reuseaddr ? 1 : 0;
+                    if (optlen != NULL) *optlen = sizeof(int);
+                    break;
+
+                case SO_LINGER:
+                    if (optlen != NULL && *optlen < sizeof(struct linger)) {
+                        imsg->result = -1;
+                        imsg->err_no = EINVAL;
+                        return TRUE;
+                    }
+                    *(struct linger *)optval = g_sockets[slot_idx].opt_linger;
+                    if (optlen != NULL) *optlen = sizeof(struct linger);
+                    break;
+
+                case SO_ERROR:
                     *(int *)optval = (int)g_sockets[slot_idx].last_error;
                     g_sockets[slot_idx].last_error = 0;
-                } else {
-                    *(int *)optval = 0;
-                }
-                if (optlen != NULL) *optlen = sizeof(int);
-                imsg->result = 0;
-                imsg->err_no = 0;
-            } else if (level == IPPROTO_TCP) {
-                if (optname == TCP_NODELAY) {
-                    *(int *)optval = g_sockets[slot_idx].opt_nodelay ? 1 : 0;
-                } else {
-                    *(int *)optval = 0;
-                }
-                if (optlen != NULL) *optlen = sizeof(int);
-                imsg->result = 0;
-                imsg->err_no = 0;
-            } else if (level == IPPROTO_IP) {
-                if (optname == IP_HDRINCL) {
-                    if (g_sockets[slot_idx].raw_pcb != NULL) {
-                        *(int *)optval = raw_is_flag_set(g_sockets[slot_idx].raw_pcb, RAW_FLAGS_HDRINCL) ? 1 : 0;
+                    if (optlen != NULL) *optlen = sizeof(int);
+                    break;
+
+                case SO_SNDBUF:
+                    *(int *)optval = g_sockets[slot_idx].opt_sndbuf ? g_sockets[slot_idx].opt_sndbuf : TCP_SND_BUF;
+                    if (optlen != NULL) *optlen = sizeof(int);
+                    break;
+
+                case SO_RCVBUF:
+                    *(int *)optval = g_sockets[slot_idx].opt_rcvbuf ? g_sockets[slot_idx].opt_rcvbuf : TCP_WND;
+                    if (optlen != NULL) *optlen = sizeof(int);
+                    break;
+
+                case SO_TYPE:
+                    *(int *)optval = g_sockets[slot_idx].type;
+                    if (optlen != NULL) *optlen = sizeof(int);
+                    break;
+
+                case SO_OOBINLINE:
+                    *(int *)optval = g_sockets[slot_idx].opt_oobinline ? 1 : 0;
+                    if (optlen != NULL) *optlen = sizeof(int);
+                    break;
+
+                case SO_RCVTIMEO:
+                    if (optlen != NULL && *optlen >= sizeof(struct timeval)) {
+                        *(struct timeval *)optval = g_sockets[slot_idx].opt_rcvtimeo;
+                        *optlen = sizeof(struct timeval);
                     } else {
-                        *(int *)optval = 0;
+                        *(int *)optval = g_sockets[slot_idx].opt_rcvtimeo.tv_secs * 1000 + g_sockets[slot_idx].opt_rcvtimeo.tv_micro / 1000;
+                        if (optlen != NULL) *optlen = sizeof(int);
                     }
-                } else {
-                    *(int *)optval = 0;
+                    break;
+
+                case SO_SNDTIMEO:
+                    if (optlen != NULL && *optlen >= sizeof(struct timeval)) {
+                        *(struct timeval *)optval = g_sockets[slot_idx].opt_sndtimeo;
+                        *optlen = sizeof(struct timeval);
+                    } else {
+                        *(int *)optval = g_sockets[slot_idx].opt_sndtimeo.tv_secs * 1000 + g_sockets[slot_idx].opt_sndtimeo.tv_micro / 1000;
+                        if (optlen != NULL) *optlen = sizeof(int);
+                    }
+                    break;
+
+                default:
+                    imsg->result = -1;
+                    imsg->err_no = ENOPROTOOPT;
+                    return TRUE;
                 }
-                if (optlen != NULL) *optlen = sizeof(int);
+
                 imsg->result = 0;
                 imsg->err_no = 0;
+                return TRUE;
+            } else if (level == IPPROTO_TCP) {
+                if (g_sockets[slot_idx].type != SOCK_STREAM) {
+                    imsg->result = -1;
+                    imsg->err_no = ENOPROTOOPT;
+                    return TRUE;
+                }
+
+                switch (optname) {
+                case TCP_NODELAY:
+                    *(int *)optval = g_sockets[slot_idx].opt_nodelay ? 1 : 0;
+                    if (optlen != NULL) *optlen = sizeof(int);
+                    break;
+
+                case TCP_MAXSEG:
+                    *(int *)optval = (g_sockets[slot_idx].tcp_pcb != NULL) ? (int)g_sockets[slot_idx].tcp_pcb->mss : TCP_MSS;
+                    if (optlen != NULL) *optlen = sizeof(int);
+                    break;
+
+                case TCP_KEEPIDLE:
+                    *(int *)optval = (g_sockets[slot_idx].tcp_pcb != NULL) ? (int)(g_sockets[slot_idx].tcp_pcb->keep_idle / 1000UL) : g_sockets[slot_idx].opt_keepidle;
+                    if (optlen != NULL) *optlen = sizeof(int);
+                    break;
+
+                case TCP_KEEPINTVL:
+                    *(int *)optval = (g_sockets[slot_idx].tcp_pcb != NULL) ? (int)(g_sockets[slot_idx].tcp_pcb->keep_intvl / 1000UL) : g_sockets[slot_idx].opt_keepintvl;
+                    if (optlen != NULL) *optlen = sizeof(int);
+                    break;
+
+                case TCP_KEEPCNT:
+                    *(int *)optval = (g_sockets[slot_idx].tcp_pcb != NULL) ? (int)g_sockets[slot_idx].tcp_pcb->keep_cnt : g_sockets[slot_idx].opt_keepcnt;
+                    if (optlen != NULL) *optlen = sizeof(int);
+                    break;
+
+                default:
+                    imsg->result = -1;
+                    imsg->err_no = ENOPROTOOPT;
+                    return TRUE;
+                }
+
+                imsg->result = 0;
+                imsg->err_no = 0;
+                return TRUE;
+            } else if (level == IPPROTO_IP) {
+                switch (optname) {
+                case IP_TOS:
+                    *(int *)optval = (int)g_sockets[slot_idx].opt_tos;
+                    if (optlen != NULL) *optlen = sizeof(int);
+                    break;
+
+                case IP_TTL:
+                    *(int *)optval = (int)g_sockets[slot_idx].opt_ttl;
+                    if (optlen != NULL) *optlen = sizeof(int);
+                    break;
+
+                case IP_HDRINCL:
+                    if (g_sockets[slot_idx].type != SOCK_RAW) {
+                        imsg->result = -1;
+                        imsg->err_no = ENOPROTOOPT;
+                        return TRUE;
+                    }
+                    *(int *)optval = (g_sockets[slot_idx].raw_pcb != NULL) ? (raw_is_flag_set(g_sockets[slot_idx].raw_pcb, RAW_FLAGS_HDRINCL) ? 1 : 0) : (g_sockets[slot_idx].opt_hdrincl ? 1 : 0);
+                    if (optlen != NULL) *optlen = sizeof(int);
+                    break;
+
+                case IP_MULTICAST_TTL:
+                    *(int *)optval = (int)g_sockets[slot_idx].opt_multicast_ttl;
+                    if (optlen != NULL) *optlen = sizeof(int);
+                    break;
+
+                case IP_MULTICAST_LOOP:
+                    *(int *)optval = (int)g_sockets[slot_idx].opt_multicast_loop;
+                    if (optlen != NULL) *optlen = sizeof(int);
+                    break;
+
+                case IP_ADD_MEMBERSHIP:
+                case IP_DROP_MEMBERSHIP:
+                    /* Write-only socket options */
+                    imsg->result = -1;
+                    imsg->err_no = ENOPROTOOPT;
+                    return TRUE;
+
+                default:
+                    imsg->result = -1;
+                    imsg->err_no = ENOPROTOOPT;
+                    return TRUE;
+                }
+
+                imsg->result = 0;
+                imsg->err_no = 0;
+                return TRUE;
             } else {
-                if (optlen != NULL) *optlen = sizeof(int);
-                *(int *)optval = 0;
-                imsg->result = 0;
-                imsg->err_no = 0;
+                imsg->result = -1;
+                imsg->err_no = EINVAL;
+                return TRUE;
             }
-            return TRUE;
         }
 
     case TN_IPC_CMD_GETSOCKNAME:

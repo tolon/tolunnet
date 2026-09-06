@@ -471,6 +471,59 @@ void tn_s2_offline_close(TnSana2If *nif)
     }
 }
 
+BOOL tn_s2_add_multicast(TnSana2If *nif, const UBYTE *mac)
+{
+    BYTE err;
+    UWORD i;
+    if (nif == NULL || nif->io == NULL || mac == NULL || !nif->online) return FALSE;
+    nif->io->ios2_Req.io_Command = S2_ADDMULTICASTADDRESS;
+    for (i = 0; i < nif->addr_bytes && i < SANA2_MAX_ADDR_BYTES; i++) {
+        nif->io->ios2_SrcAddr[i] = mac[i];
+    }
+    err = DoIO((struct IORequest *)nif->io);
+    return (err == 0);
+}
+
+BOOL tn_s2_del_multicast(TnSana2If *nif, const UBYTE *mac)
+{
+    BYTE err;
+    UWORD i;
+    if (nif == NULL || nif->io == NULL || mac == NULL || !nif->online) return FALSE;
+    nif->io->ios2_Req.io_Command = S2_DELMULTICASTADDRESS;
+    for (i = 0; i < nif->addr_bytes && i < SANA2_MAX_ADDR_BYTES; i++) {
+        nif->io->ios2_SrcAddr[i] = mac[i];
+    }
+    err = DoIO((struct IORequest *)nif->io);
+    return (err == 0);
+}
+
+#if LWIP_IGMP
+static err_t tn_sana2_igmp_mac_filter(struct netif *netif, const ip4_addr_t *group, enum netif_mac_filter_action action)
+{
+    UBYTE mac[6];
+    u32_t ip;
+    TnSana2If *s2if;
+    if (netif == NULL || group == NULL) return ERR_VAL;
+    s2if = (TnSana2If *)netif->state;
+    if (s2if == NULL) return ERR_VAL;
+
+    ip = lwip_ntohl(group->addr);
+    mac[0] = 0x01;
+    mac[1] = 0x00;
+    mac[2] = 0x5E;
+    mac[3] = (UBYTE)((ip >> 16) & 0x7F);
+    mac[4] = (UBYTE)((ip >> 8) & 0xFF);
+    mac[5] = (UBYTE)(ip & 0xFF);
+
+    if (action == NETIF_ADD_MAC_FILTER) {
+        tn_s2_add_multicast(s2if, mac);
+    } else if (action == NETIF_DEL_MAC_FILTER) {
+        tn_s2_del_multicast(s2if, mac);
+    }
+    return ERR_OK;
+}
+#endif
+
 /* --------------------------------------------------------------- lwIP bridge */
 
 err_t tn_sana2_netif_init(struct netif *netif)
@@ -493,6 +546,10 @@ err_t tn_sana2_netif_init(struct netif *netif)
 
     netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_ETHERNET |
                    NETIF_FLAG_IGMP | NETIF_FLAG_LINK_UP;
+
+#if LWIP_IGMP
+    netif_set_igmp_mac_filter(netif, tn_sana2_igmp_mac_filter);
+#endif
 
     return ERR_OK;
 }

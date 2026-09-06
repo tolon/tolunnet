@@ -18,6 +18,7 @@
 #include <devices/timer.h>
 #include <libraries/bsdsocket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <sys/errno.h>
 
@@ -97,7 +98,7 @@ static void vsnprintf_safe(char *buf, int size, const char *fmt, va_list ap)
 }
 
 #define TAP_OK(name)        do { g_count++; tapf("ok %d - %s\n", g_count, name); } while (0)
-#define TAP_NOTOK(name, why) do { g_count++; tapf("not ok %d - %s # %s\n", g_count, name, why); } while (0)
+#define TAP_NOTOK(name, why) do { g_count++; g_not_ok_count++; tapf("not ok %d - %s # %s\n", g_count, name, why); } while (0)
 #define TAP_TODO(name, why)  do { g_count++; tapf("not ok %d - %s # TODO %s\n", g_count, name, why); } while (0)
 #define TAP_SKIP(name, why)  do { g_count++; tapf("ok %d - %s # SKIP %s\n", g_count, name, why); } while (0)
 
@@ -405,6 +406,219 @@ static void tc_bind_reuse(void)
 
     call_closesocket(s1);
     call_closesocket(s2);
+}
+
+static void tc_sockopt_matrix(void)
+{
+    LONG s = call_socket(AF_INET, SOCK_STREAM, 0);
+    LONG udps;
+    LONG optval, got;
+    socklen_t len;
+    struct timeval tv, tv_got;
+    struct linger l, l_got;
+
+    if (s < 0) {
+        TAP_NOTOK("tc_sockopt_matrix", "stream socket creation failed");
+        return;
+    }
+
+    /* 1. SOL_SOCKET: SO_REUSEADDR */
+    optval = 1;
+    if (call_setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) != 0) goto fail;
+    len = sizeof(got); got = 0;
+    if (call_getsockopt(s, SOL_SOCKET, SO_REUSEADDR, &got, &len) != 0 || got == 0) goto fail;
+    optval = 0;
+    if (call_setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) != 0) goto fail;
+    len = sizeof(got); got = 1;
+    if (call_getsockopt(s, SOL_SOCKET, SO_REUSEADDR, &got, &len) != 0 || got != 0) goto fail;
+
+    /* 2. SOL_SOCKET: SO_KEEPALIVE */
+    optval = 1;
+    if (call_setsockopt(s, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval)) != 0) goto fail;
+    len = sizeof(got); got = 0;
+    if (call_getsockopt(s, SOL_SOCKET, SO_KEEPALIVE, &got, &len) != 0 || got == 0) goto fail;
+
+    /* 3. SOL_SOCKET: SO_BROADCAST */
+    optval = 1;
+    if (call_setsockopt(s, SOL_SOCKET, SO_BROADCAST, &optval, sizeof(optval)) != 0) goto fail;
+    len = sizeof(got); got = 0;
+    if (call_getsockopt(s, SOL_SOCKET, SO_BROADCAST, &got, &len) != 0 || got == 0) goto fail;
+
+    /* 4. SOL_SOCKET: SO_OOBINLINE */
+    optval = 1;
+    if (call_setsockopt(s, SOL_SOCKET, SO_OOBINLINE, &optval, sizeof(optval)) != 0) goto fail;
+    len = sizeof(got); got = 0;
+    if (call_getsockopt(s, SOL_SOCKET, SO_OOBINLINE, &got, &len) != 0 || got == 0) goto fail;
+
+    /* 5. SOL_SOCKET: SO_SNDBUF / SO_RCVBUF */
+    optval = 8192;
+    if (call_setsockopt(s, SOL_SOCKET, SO_SNDBUF, &optval, sizeof(optval)) != 0) goto fail;
+    len = sizeof(got); got = 0;
+    if (call_getsockopt(s, SOL_SOCKET, SO_SNDBUF, &got, &len) != 0 || got != 8192) goto fail;
+
+    optval = 16384;
+    if (call_setsockopt(s, SOL_SOCKET, SO_RCVBUF, &optval, sizeof(optval)) != 0) goto fail;
+    len = sizeof(got); got = 0;
+    if (call_getsockopt(s, SOL_SOCKET, SO_RCVBUF, &got, &len) != 0 || got != 16384) goto fail;
+
+    /* 6. SOL_SOCKET: SO_RCVTIMEO / SO_SNDTIMEO */
+    tv.tv_secs = 2; tv.tv_micro = 500000;
+    if (call_setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) != 0) goto fail;
+    len = sizeof(tv_got); tv_got.tv_secs = 0; tv_got.tv_micro = 0;
+    if (call_getsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv_got, &len) != 0 ||
+        tv_got.tv_secs != 2 || tv_got.tv_micro != 500000) goto fail;
+
+    tv.tv_secs = 1; tv.tv_micro = 0;
+    if (call_setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) != 0) goto fail;
+    len = sizeof(tv_got); tv_got.tv_secs = 0; tv_got.tv_micro = 0;
+    if (call_getsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv_got, &len) != 0 ||
+        tv_got.tv_secs != 1 || tv_got.tv_micro != 0) goto fail;
+
+    /* 7. SOL_SOCKET: SO_LINGER */
+    l.l_onoff = 1; l.l_linger = 10;
+    if (call_setsockopt(s, SOL_SOCKET, SO_LINGER, &l, sizeof(l)) != 0) goto fail;
+    len = sizeof(l_got); l_got.l_onoff = 0; l_got.l_linger = 0;
+    if (call_getsockopt(s, SOL_SOCKET, SO_LINGER, &l_got, &len) != 0 ||
+        l_got.l_onoff != 1 || l_got.l_linger != 10) goto fail;
+
+    /* 8. SOL_SOCKET: SO_TYPE & SO_ERROR */
+    len = sizeof(got); got = 0;
+    if (call_getsockopt(s, SOL_SOCKET, SO_TYPE, &got, &len) != 0 || got != SOCK_STREAM) goto fail;
+    if (call_setsockopt(s, SOL_SOCKET, SO_TYPE, &got, sizeof(got)) == 0) goto fail;
+
+    len = sizeof(got); got = -1;
+    if (call_getsockopt(s, SOL_SOCKET, SO_ERROR, &got, &len) != 0 || got != 0) goto fail;
+    if (call_setsockopt(s, SOL_SOCKET, SO_ERROR, &got, sizeof(got)) == 0) goto fail;
+
+    /* 9. IPPROTO_TCP: TCP_NODELAY, TCP_KEEPIDLE, TCP_KEEPINTVL, TCP_KEEPCNT */
+    optval = 1;
+    if (call_setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &optval, sizeof(optval)) != 0) goto fail;
+    len = sizeof(got); got = 0;
+    if (call_getsockopt(s, IPPROTO_TCP, TCP_NODELAY, &got, &len) != 0 || got == 0) goto fail;
+
+    optval = 120;
+    if (call_setsockopt(s, IPPROTO_TCP, TCP_KEEPIDLE, &optval, sizeof(optval)) != 0) goto fail;
+    len = sizeof(got); got = 0;
+    if (call_getsockopt(s, IPPROTO_TCP, TCP_KEEPIDLE, &got, &len) != 0 || got != 120) goto fail;
+
+    optval = 15;
+    if (call_setsockopt(s, IPPROTO_TCP, TCP_KEEPINTVL, &optval, sizeof(optval)) != 0) goto fail;
+    len = sizeof(got); got = 0;
+    if (call_getsockopt(s, IPPROTO_TCP, TCP_KEEPINTVL, &got, &len) != 0 || got != 15) goto fail;
+
+    optval = 4;
+    if (call_setsockopt(s, IPPROTO_TCP, TCP_KEEPCNT, &optval, sizeof(optval)) != 0) goto fail;
+    len = sizeof(got); got = 0;
+    if (call_getsockopt(s, IPPROTO_TCP, TCP_KEEPCNT, &got, &len) != 0 || got != 4) goto fail;
+
+    /* 10. IPPROTO_IP: IP_TTL, IP_TOS, IP_MULTICAST_TTL, IP_MULTICAST_LOOP */
+    optval = 32;
+    if (call_setsockopt(s, IPPROTO_IP, IP_TTL, &optval, sizeof(optval)) != 0) goto fail;
+    len = sizeof(got); got = 0;
+    if (call_getsockopt(s, IPPROTO_IP, IP_TTL, &got, &len) != 0 || got != 32) goto fail;
+
+    optval = 0x10;
+    if (call_setsockopt(s, IPPROTO_IP, IP_TOS, &optval, sizeof(optval)) != 0) goto fail;
+    len = sizeof(got); got = 0;
+    if (call_getsockopt(s, IPPROTO_IP, IP_TOS, &got, &len) != 0 || got != 0x10) goto fail;
+
+    optval = 2;
+    if (call_setsockopt(s, IPPROTO_IP, IP_MULTICAST_TTL, &optval, sizeof(optval)) != 0) goto fail;
+    len = sizeof(got); got = 0;
+    if (call_getsockopt(s, IPPROTO_IP, IP_MULTICAST_TTL, &got, &len) != 0 || got != 2) goto fail;
+
+    optval = 0;
+    if (call_setsockopt(s, IPPROTO_IP, IP_MULTICAST_LOOP, &optval, sizeof(optval)) != 0) goto fail;
+    len = sizeof(got); got = 1;
+    if (call_getsockopt(s, IPPROTO_IP, IP_MULTICAST_LOOP, &got, &len) != 0 || got != 0) goto fail;
+
+    /* 11. Negative tests: IPPROTO_TCP on UDP socket; unknown option; unknown level */
+    udps = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (udps >= 0) {
+        optval = 1;
+        if (call_setsockopt(udps, IPPROTO_TCP, TCP_NODELAY, &optval, sizeof(optval)) == 0) {
+            call_closesocket(udps);
+            goto fail;
+        }
+        call_closesocket(udps);
+    }
+
+    optval = 1;
+    if (call_setsockopt(s, SOL_SOCKET, 9999, &optval, sizeof(optval)) == 0) goto fail;
+    if (call_setsockopt(s, 9999, 1, &optval, sizeof(optval)) == 0) goto fail;
+
+    call_closesocket(s);
+    TAP_OK("tc_sockopt_matrix");
+    return;
+
+fail:
+    call_closesocket(s);
+    TAP_NOTOK("tc_sockopt_matrix", "sockopt matrix check failed");
+}
+
+static void tc_multicast_join(void)
+{
+    LONG s = call_socket(AF_INET, SOCK_DGRAM, 0);
+    LONG s_sender;
+    struct sockaddr_in sin;
+    struct sockaddr_in dst;
+    struct ip_mreq mreq;
+    LONG rc;
+    int i;
+    LONG one = 1;
+
+    if (s < 0) { TAP_NOTOK("tc_multicast_join", "receiver socket failed"); return; }
+
+    call_setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(5353);
+    sin.sin_addr.s_addr = htonl(0x00000000UL); /* INADDR_ANY */
+
+    rc = call_bind(s, (struct sockaddr *)&sin, sizeof(sin));
+    if (rc != 0) {
+        call_closesocket(s);
+        TAP_NOTOK("tc_multicast_join", "bind 5353 failed");
+        return;
+    }
+
+    /* Join 224.0.0.251 (mDNS multicast group) */
+    mreq.imr_multiaddr.s_addr = htonl(0xE00000FBUL);
+    mreq.imr_interface.s_addr = htonl(0x00000000UL);
+
+    rc = call_setsockopt(s, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
+    if (rc != 0) {
+        call_closesocket(s);
+        TAP_NOTOK("tc_multicast_join", "IP_ADD_MEMBERSHIP failed");
+        return;
+    }
+
+    /* Multicast packet transmit verification */
+    s_sender = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (s_sender >= 0) {
+        call_setsockopt(s_sender, IPPROTO_IP, IP_MULTICAST_LOOP, &one, sizeof(one));
+        for (i = 0; i < (int)sizeof(dst); i++) ((char *)&dst)[i] = 0;
+        dst.sin_len = sizeof(dst);
+        dst.sin_family = AF_INET;
+        dst.sin_port = htons(5353);
+        dst.sin_addr.s_addr = htonl(0xE00000FBUL);
+
+        call_sendto(s_sender, "mDNS_TEST", 9, 0, (struct sockaddr *)&dst, sizeof(dst));
+        call_closesocket(s_sender);
+    }
+
+    /* Drop membership */
+    rc = call_setsockopt(s, IPPROTO_IP, IP_DROP_MEMBERSHIP, &mreq, sizeof(mreq));
+    if (rc != 0) {
+        call_closesocket(s);
+        TAP_NOTOK("tc_multicast_join", "IP_DROP_MEMBERSHIP failed");
+        return;
+    }
+
+    call_closesocket(s);
+    TAP_OK("tc_multicast_join");
 }
 
 static void tc_listen_accept_loopback(void)
@@ -827,6 +1041,8 @@ int main(int argc, char *argv[])
     tc_socket_types();
     tc_bind_udp();
     tc_bind_reuse();
+    tc_sockopt_matrix();
+    tc_multicast_join();
     tc_listen_accept_loopback();
     tc_connect_refused();
     tc_nonblock_connect();
