@@ -1,5 +1,5 @@
 /*
- * test_sbtc.c — SocketBaseTagList dispatch semantics (Round 3 §B.1).
+ * test_sbtc.c — SocketBaseTagList dispatch semantics (Round 3 §B.1 / Round 4 §C.5).
  * Unit: src/common/sbtc_dispatch.c (drives the -294 LVO).
  *
  * The dispatcher is pure (no dereferences): pointer-carrying REF cases are
@@ -22,8 +22,15 @@ static TnSbtcState base_state(void)
     st.errno_val = 35;
     st.herrno_val = 1;
     st.dtablesize = 32;
-    st.have_bits = TN_SBTC_HAVE_DNS_API_BIT | TN_SBTC_HAVE_ADDR_CONV_API_BIT;
-    st.release_str = 0xDEADBe00; /* opaque pointer-sized value */
+    st.fd_callback = 0x12345678;
+    st.log_stat = 0x01;
+    st.log_tag_ptr = 0xAABBCC00;
+    st.log_facility = 8;
+    st.log_mask = 0x7F;
+    st.udp_checksum = 1;
+    st.ip_default_ttl = 64;
+    st.have_bits = TN_SBTC_HAVE_DNS_API_BIT | TN_SBTC_HAVE_ADDR_CONV_API_BIT | TN_SBTC_HAVE_GETHOSTADDR_R_BIT;
+    st.release_str = 0xDEADBE00; /* opaque pointer-sized value */
     return st;
 }
 
@@ -68,9 +75,13 @@ TN_TEST(return_counts_unknown_only)
     TnSbtcState st = base_state();
     TnSbtcResult r;
 
-    /* TNET-036: known tags are handled (contribute 0 to the count)... */
+    /* Known tags are handled (contribute 0 to the count)... */
     TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_ERRNO, 0, 0), 0, &st, &r), 1);
     TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_HAVE_DNS_API, 0, 0), 0, &st, &r), 1);
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_UDP_CHECKSUM, 0, 0), 0, &st, &r), 1);
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_IP_DEFAULT_TTL, 0, 0), 0, &st, &r), 1);
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_FDCALLBACK, 0, 0), 0, &st, &r), 1);
+
     /* ...unknown codes report unhandled (the LVO counts them) */
     TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(0x3FF0, 0, 0), 0, &st, &r), 0);
     TN_ASSERT_EQ(r.handled, 0);
@@ -101,9 +112,15 @@ TN_TEST(capability_truthfulness)
     TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_HAVE_DNS_API, 0, 0), 99, &st, &r), 1);
     TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET);
     TN_ASSERT_EQ_U(r.value, 1u);
+
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_HAVE_GETHOSTADDR_R_API, 0, 0), 99, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET);
+    TN_ASSERT_EQ_U(r.value, 1u);
+
     /* not enabled -> 0, honestly */
     TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_HAVE_LOCAL_DATABASE_API, 0, 0), 99, &st, &r), 1);
     TN_ASSERT_EQ_U(r.value, 0u);
+
     /* Tier-2 stacks: always 0 */
     TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_HAVE_ROUTING_API, 0, 0), 99, &st, &r), 1);
     TN_ASSERT_EQ_U(r.value, 0u);
@@ -111,28 +128,88 @@ TN_TEST(capability_truthfulness)
     TN_ASSERT_EQ_U(r.value, 0u);
 }
 
-TN_TEST(errno_set_surfaces_to_caller)
+TN_TEST(error_string_tags)
 {
-    /* SET errno must go through the library's width-aware helper, so the
-     * dispatcher reports an op instead of mutating plain state. */
     TnSbtcState st = base_state();
     TnSbtcResult r;
 
-    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_ERRNO, 1, 0), 60, &st, &r), 1);
-    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_SET_ERRNO);
-    TN_ASSERT_EQ_U(r.value, 60u);
-    /* and the state copy is NOT mutated by the pure dispatcher */
-    TN_ASSERT_EQ(st.errno_val, 35);
+    /* SBTC_ERRNOSTRPTR GETVAL */
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_ERRNOSTRPTR, 0, 0), 61, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET_ERRNO_STR);
+    TN_ASSERT_EQ(r.is_ref, 0);
+    TN_ASSERT_EQ_U(r.value, 61u);
+
+    /* SBTC_ERRNOSTRPTR GETREF */
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_ERRNOSTRPTR, 0, 1), 0x5000, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET_ERRNO_STR);
+    TN_ASSERT_EQ(r.is_ref, 1);
+    TN_ASSERT_EQ_U(r.value, 0x5000u);
+
+    /* SBTC_HERRNOSTRPTR */
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_HERRNOSTRPTR, 0, 0), 1, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET_HERRNO_STR);
+
+    /* SBTC_IOERRNOSTRPTR */
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_IOERRNOSTRPTR, 0, 0), 2, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET_IOERRNO_STR);
+
+    /* SBTC_S2ERRNOSTRPTR */
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_S2ERRNOSTRPTR, 0, 0), 3, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET_S2ERRNO_STR);
+
+    /* SBTC_S2WERRNOSTRPTR */
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_S2WERRNOSTRPTR, 0, 0), 4, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET_S2WERRNO_STR);
 }
 
-TN_TEST(release_string_get)
+TN_TEST(full_tag_operations)
 {
     TnSbtcState st = base_state();
     TnSbtcResult r;
 
-    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_RELEASESTRPTR, 0, 0), 0, &st, &r), 1);
+    /* FDCALLBACK GET & SET */
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_FDCALLBACK, 0, 0), 0, &st, &r), 1);
     TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET);
-    TN_ASSERT_EQ_U(r.value, st.release_str);
+    TN_ASSERT_EQ_U(r.value, 0x12345678u);
+
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_FDCALLBACK, 1, 0), 0x87654321, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_SET_FDCALLBACK);
+    TN_ASSERT_EQ_U(r.value, 0x87654321u);
+
+    /* UDP_CHECKSUM GET & SET */
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_UDP_CHECKSUM, 0, 0), 0, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET);
+    TN_ASSERT_EQ_U(r.value, 1u);
+
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_UDP_CHECKSUM, 1, 0), 0, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_SET_UDPCHECKSUM);
+    TN_ASSERT_EQ_U(r.value, 0u);
+
+    /* IP_DEFAULT_TTL GET & SET */
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_IP_DEFAULT_TTL, 0, 0), 0, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET);
+    TN_ASSERT_EQ_U(r.value, 64u);
+
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_IP_DEFAULT_TTL, 1, 0), 128, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_SET_IPDEFAULTTTL);
+    TN_ASSERT_EQ_U(r.value, 128u);
+
+    /* LOGSTAT, LOGTAGPTR, LOGFACILITY, LOGMASK */
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_LOGSTAT, 0, 0), 0, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET);
+    TN_ASSERT_EQ_U(r.value, 0x01u);
+
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_LOGTAGPTR, 0, 0), 0, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET);
+    TN_ASSERT_EQ_U(r.value, 0xAABBCC00u);
+
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_LOGFACILITY, 0, 0), 0, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET);
+    TN_ASSERT_EQ_U(r.value, 8u);
+
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_LOGMASK, 0, 0), 0, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET);
+    TN_ASSERT_EQ_U(r.value, 0x7Fu);
 }
 
 int main(void)
@@ -142,8 +219,8 @@ int main(void)
     TN_TEST_RUN(return_counts_unknown_only);
     TN_TEST_RUN(errno_ptr_widths);
     TN_TEST_RUN(capability_truthfulness);
-    TN_TEST_RUN(errno_set_surfaces_to_caller);
-    TN_TEST_RUN(release_string_get);
+    TN_TEST_RUN(error_string_tags);
+    TN_TEST_RUN(full_tag_operations);
     TN_TEST_PLAN();
     return tn_test_failures();
 }

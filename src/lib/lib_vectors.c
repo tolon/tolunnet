@@ -10,6 +10,7 @@
 #include "../common/log.h"
 #include "../common/inet_parse.h"
 #include "../common/sbtc_dispatch.h"
+#include "../common/errstr.h"
 
 #include <proto/exec.h>
 #include <proto/dos.h>
@@ -149,6 +150,14 @@ struct Library *tn_lib_open(struct Library *lib, ULONG version)
     base->sig_io       = 0;
     base->sig_urg      = 0;
     base->sig_int      = 0;
+    base->sig_event    = 0;
+    base->fd_callback  = NULL;
+    base->log_stat     = 0;
+    base->log_tag_ptr  = NULL;
+    base->log_facility = 0;
+    base->log_mask     = 0xFF;
+    base->udp_checksum = 1;
+    base->ip_default_ttl = 64;
     base->timer_port   = NULL;
     base->timer_io     = NULL;
     base->inet_ntoa_buf[0] = '\0';
@@ -228,11 +237,29 @@ ULONG tn_lib_reserved(VOID)
 /* -30: socket(domain, type, protocol) */
 LONG tn_lvo_socket(LONG domain, LONG type, LONG protocol, TnSocketBase *base)
 {
+    LONG res;
     if (base == NULL) return -1;
     base->ipc_msg.args[0] = domain;
     base->ipc_msg.args[1] = type;
     base->ipc_msg.args[2] = protocol;
-    return tn_ipc_call(base, TN_IPC_CMD_SOCKET);
+    base->ipc_msg.args[3] = -1;
+    if (base->fd_callback != NULL) {
+        int i;
+        typedef int (*fdcb_t)(int, int);
+        fdcb_t cb = (fdcb_t)base->fd_callback;
+        for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
+            if (base->fd_map[i] == -1 && cb(i, FDCB_CHECK) == 0) {
+                base->ipc_msg.args[3] = i;
+                break;
+            }
+        }
+    }
+    res = tn_ipc_call(base, TN_IPC_CMD_SOCKET);
+    if (res >= 0 && base->fd_callback != NULL) {
+        typedef int (*fdcb_t)(int, int);
+        ((fdcb_t)base->fd_callback)((int)res, FDCB_ALLOC);
+    }
+    return res;
 }
 
 /* -36: bind(sock, name, namelen) */
@@ -257,11 +284,29 @@ LONG tn_lvo_listen(LONG sock, LONG backlog, TnSocketBase *base)
 /* -48: accept(sock, addr, addrlen) */
 LONG tn_lvo_accept(LONG sock, struct sockaddr *addr, socklen_t *addrlen, TnSocketBase *base)
 {
+    LONG res;
     if (base == NULL || sock < 0) return -1;
     base->ipc_msg.args[0] = sock;
     base->ipc_msg.ptrs[0] = (APTR)addr;
     base->ipc_msg.ptrs[1] = (APTR)addrlen;
-    return tn_ipc_call(base, TN_IPC_CMD_ACCEPT);
+    base->ipc_msg.args[3] = -1;
+    if (base->fd_callback != NULL) {
+        int i;
+        typedef int (*fdcb_t)(int, int);
+        fdcb_t cb = (fdcb_t)base->fd_callback;
+        for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
+            if (base->fd_map[i] == -1 && cb(i, FDCB_CHECK) == 0) {
+                base->ipc_msg.args[3] = i;
+                break;
+            }
+        }
+    }
+    res = tn_ipc_call(base, TN_IPC_CMD_ACCEPT);
+    if (res >= 0 && base->fd_callback != NULL) {
+        typedef int (*fdcb_t)(int, int);
+        ((fdcb_t)base->fd_callback)((int)res, FDCB_ALLOC);
+    }
+    return res;
 }
 
 /* -54: connect(sock, name, namelen) */
@@ -393,6 +438,10 @@ LONG tn_lvo_ioctlsocket(LONG sock, ULONG req, APTR argp, TnSocketBase *base)
 LONG tn_lvo_closesocket(LONG sock, TnSocketBase *base)
 {
     if (base == NULL || sock < 0) return -1;
+    if (base->fd_callback != NULL && sock < TN_MAX_FDS_PER_TASK && base->fd_map[sock] >= 0) {
+        typedef int (*fdcb_t)(int, int);
+        ((fdcb_t)base->fd_callback)((int)sock, FDCB_FREE);
+    }
     base->ipc_msg.args[0] = sock;
     return tn_ipc_call(base, TN_IPC_CMD_CLOSESOCKET);
 }
@@ -896,6 +945,7 @@ struct protoent *tn_lvo_getprotobynumber(LONG proto, TnSocketBase *base)
 /* -264: Dup2Socket(old_sock, new_sock) (COMPAT-3) */
 LONG tn_lvo_dup2socket(LONG old_sock, LONG new_sock, TnSocketBase *base)
 {
+    LONG res;
     if (base == NULL) return -1;
     if (old_sock < 0 || old_sock >= TN_MAX_FDS_PER_TASK ||
         new_sock < 0 || new_sock >= TN_MAX_FDS_PER_TASK) {
@@ -908,9 +958,19 @@ LONG tn_lvo_dup2socket(LONG old_sock, LONG new_sock, TnSocketBase *base)
     }
     if (old_sock == new_sock) return new_sock;
 
+    if (base->fd_callback != NULL && base->fd_map[new_sock] >= 0) {
+        typedef int (*fdcb_t)(int, int);
+        ((fdcb_t)base->fd_callback)((int)new_sock, FDCB_FREE);
+    }
+
     base->ipc_msg.args[0] = old_sock;
     base->ipc_msg.args[1] = new_sock;
-    return tn_ipc_call(base, TN_IPC_CMD_DUP2);
+    res = tn_ipc_call(base, TN_IPC_CMD_DUP2);
+    if (res >= 0 && base->fd_callback != NULL) {
+        typedef int (*fdcb_t)(int, int);
+        ((fdcb_t)base->fd_callback)((int)new_sock, FDCB_ALLOC);
+    }
+    return res;
 }
 
 /* -270: sendmsg(sock, msg, flags) */
@@ -996,12 +1056,25 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
     _Static_assert(TN_SBTC_SIGIOMASK == SBTC_SIGIOMASK, "SBTC code drift");
     _Static_assert(TN_SBTC_SIGURGMASK == SBTC_SIGURGMASK, "SBTC code drift");
     _Static_assert(TN_SBTC_SIGEVENTMASK == SBTC_SIGEVENTMASK, "SBTC code drift");
+    _Static_assert(TN_SBTC_FDCALLBACK == SBTC_FDCALLBACK, "SBTC code drift");
+    _Static_assert(TN_SBTC_LOGSTAT == SBTC_LOGSTAT, "SBTC code drift");
+    _Static_assert(TN_SBTC_LOGTAGPTR == SBTC_LOGTAGPTR, "SBTC code drift");
+    _Static_assert(TN_SBTC_LOGFACILITY == SBTC_LOGFACILITY, "SBTC code drift");
+    _Static_assert(TN_SBTC_LOGMASK == SBTC_LOGMASK, "SBTC code drift");
+    _Static_assert(TN_SBTC_ERRNOSTRPTR == SBTC_ERRNOSTRPTR, "SBTC code drift");
+    _Static_assert(TN_SBTC_HERRNOSTRPTR == SBTC_HERRNOSTRPTR, "SBTC code drift");
+    _Static_assert(TN_SBTC_IOERRNOSTRPTR == SBTC_IOERRNOSTRPTR, "SBTC code drift");
+    _Static_assert(TN_SBTC_S2ERRNOSTRPTR == SBTC_S2ERRNOSTRPTR, "SBTC code drift");
+    _Static_assert(TN_SBTC_S2WERRNOSTRPTR == SBTC_S2WERRNOSTRPTR, "SBTC code drift");
     _Static_assert(TN_SBTC_ERRNOLONGPTR == SBTC_ERRNOLONGPTR, "SBTC code drift");
     _Static_assert(TN_SBTC_HERRNOLONGPTR == SBTC_HERRNOLONGPTR, "SBTC code drift");
     _Static_assert(TN_SBTC_DTABLESIZE == SBTC_DTABLESIZE, "SBTC code drift");
     _Static_assert(TN_SBTC_RELEASESTRPTR == SBTC_RELEASESTRPTR, "SBTC code drift");
+    _Static_assert(TN_SBTC_UDP_CHECKSUM == SBTC_UDP_CHECKSUM, "SBTC code drift");
+    _Static_assert(TN_SBTC_IP_DEFAULT_TTL == SBTC_IP_DEFAULT_TTL, "SBTC code drift");
     _Static_assert(TN_SBTC_HAVE_DNS_API == SBTC_HAVE_DNS_API, "SBTC code drift");
     _Static_assert(TN_SBTC_HAVE_STATUS_API == SBTC_HAVE_STATUS_API, "SBTC code drift");
+    _Static_assert(TN_SBTC_HAVE_GETHOSTADDR_R_API == SBTC_HAVE_GETHOSTADDR_R_API, "SBTC code drift");
 
     if (base == NULL || tags == NULL) return 0;
 
@@ -1009,16 +1082,23 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
         TnSbtcState st;
         TnSbtcResult r;
 
-        st.sig_int     = base->sig_int;
-        st.sig_io      = base->sig_io;
-        st.sig_urg     = base->sig_urg;
-        st.sig_event   = base->sig_event;
-        st.errno_val   = base->task_errno;
-        st.herrno_val  = base->task_herrno;
-        st.dtablesize  = TN_MAX_FDS_PER_TASK;
-        st.have_bits   = TN_SBTC_HAVE_DNS_API_BIT | TN_SBTC_HAVE_LOCAL_DB_API_BIT |
-                         TN_SBTC_HAVE_ADDR_CONV_API_BIT;
-        st.release_str = (uint32_t)(uintptr_t)"tolunnet 1.2.0-rc1 (bsdsocket 4.1)";
+        st.sig_int      = base->sig_int;
+        st.sig_io       = base->sig_io;
+        st.sig_urg      = base->sig_urg;
+        st.sig_event    = base->sig_event;
+        st.errno_val    = base->task_errno;
+        st.herrno_val   = base->task_herrno;
+        st.dtablesize   = TN_MAX_FDS_PER_TASK;
+        st.fd_callback  = (uint32_t)(uintptr_t)base->fd_callback;
+        st.log_stat     = (uint32_t)base->log_stat;
+        st.log_tag_ptr  = (uint32_t)(uintptr_t)base->log_tag_ptr;
+        st.log_facility = (uint32_t)base->log_facility;
+        st.log_mask     = (uint32_t)base->log_mask;
+        st.udp_checksum = (uint32_t)base->udp_checksum;
+        st.ip_default_ttl = (uint32_t)base->ip_default_ttl;
+        st.have_bits    = TN_SBTC_HAVE_DNS_API_BIT | TN_SBTC_HAVE_LOCAL_DB_API_BIT |
+                          TN_SBTC_HAVE_ADDR_CONV_API_BIT | TN_SBTC_HAVE_GETHOSTADDR_R_BIT;
+        st.release_str  = (uint32_t)(uintptr_t)"tolunnet 1.2.0-rc1 (bsdsocket 4.1)";
 
         if (!tn_sbtc_dispatch_tag((uint32_t)tag->ti_Tag, (uint32_t)tag->ti_Data, &st, &r)) {
             count++; /* count unknown tags only (TNET-036) */
@@ -1059,6 +1139,82 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
             break;
         case TN_SBTC_OP_SET_HERRNO_PTR:
             base->herrno_ptr = (LONG *)(uintptr_t)r.value;
+            break;
+        case TN_SBTC_OP_SET_FDCALLBACK:
+            base->fd_callback = (APTR)(uintptr_t)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value);
+            break;
+        case TN_SBTC_OP_SET_LOGSTAT:
+            base->log_stat = (LONG)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value);
+            break;
+        case TN_SBTC_OP_SET_LOGTAGPTR:
+            base->log_tag_ptr = (APTR)(uintptr_t)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value);
+            break;
+        case TN_SBTC_OP_SET_LOGFACILITY:
+            base->log_facility = (LONG)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value);
+            break;
+        case TN_SBTC_OP_SET_LOGMASK:
+            base->log_mask = (LONG)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value);
+            break;
+        case TN_SBTC_OP_SET_UDPCHECKSUM:
+            base->udp_checksum = (LONG)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value);
+            break;
+        case TN_SBTC_OP_SET_IPDEFAULTTTL:
+            base->ip_default_ttl = (LONG)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value);
+            break;
+        case TN_SBTC_OP_GET_ERRNO_STR:
+            {
+                int err = (int)((r.is_ref && tag->ti_Data != 0) ? *(ULONG *)(uintptr_t)tag->ti_Data : r.value);
+                const char *s = tn_strerror(err);
+                if (r.is_ref && tag->ti_Data != 0) {
+                    *(ULONG *)(uintptr_t)tag->ti_Data = (uint32_t)(uintptr_t)s;
+                } else {
+                    tag->ti_Data = (uint32_t)(uintptr_t)s;
+                }
+            }
+            break;
+        case TN_SBTC_OP_GET_HERRNO_STR:
+            {
+                int err = (int)((r.is_ref && tag->ti_Data != 0) ? *(ULONG *)(uintptr_t)tag->ti_Data : r.value);
+                const char *s = tn_hstrerror(err);
+                if (r.is_ref && tag->ti_Data != 0) {
+                    *(ULONG *)(uintptr_t)tag->ti_Data = (uint32_t)(uintptr_t)s;
+                } else {
+                    tag->ti_Data = (uint32_t)(uintptr_t)s;
+                }
+            }
+            break;
+        case TN_SBTC_OP_GET_IOERRNO_STR:
+            {
+                int err = (int)((r.is_ref && tag->ti_Data != 0) ? *(ULONG *)(uintptr_t)tag->ti_Data : r.value);
+                const char *s = tn_ioerror(err);
+                if (r.is_ref && tag->ti_Data != 0) {
+                    *(ULONG *)(uintptr_t)tag->ti_Data = (uint32_t)(uintptr_t)s;
+                } else {
+                    tag->ti_Data = (uint32_t)(uintptr_t)s;
+                }
+            }
+            break;
+        case TN_SBTC_OP_GET_S2ERRNO_STR:
+            {
+                int err = (int)((r.is_ref && tag->ti_Data != 0) ? *(ULONG *)(uintptr_t)tag->ti_Data : r.value);
+                const char *s = tn_s2error(err);
+                if (r.is_ref && tag->ti_Data != 0) {
+                    *(ULONG *)(uintptr_t)tag->ti_Data = (uint32_t)(uintptr_t)s;
+                } else {
+                    tag->ti_Data = (uint32_t)(uintptr_t)s;
+                }
+            }
+            break;
+        case TN_SBTC_OP_GET_S2WERRNO_STR:
+            {
+                int err = (int)((r.is_ref && tag->ti_Data != 0) ? *(ULONG *)(uintptr_t)tag->ti_Data : r.value);
+                const char *s = tn_s2werror(err);
+                if (r.is_ref && tag->ti_Data != 0) {
+                    *(ULONG *)(uintptr_t)tag->ti_Data = (uint32_t)(uintptr_t)s;
+                } else {
+                    tag->ti_Data = (uint32_t)(uintptr_t)s;
+                }
+            }
             break;
         default:
             break; /* handled no-ops (e.g. SET on GET-only tags) */

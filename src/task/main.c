@@ -517,8 +517,13 @@ static err_t tn_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
         slot->pending_accept_msg = NULL;
 
         if (base != NULL) {
-            for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
-                if (base->fd_map[i] == -1) { client_fd = i; break; }
+            int pref_fd = (int)imsg->args[3];
+            if (pref_fd >= 0 && pref_fd < TN_MAX_FDS_PER_TASK && base->fd_map[pref_fd] == -1) {
+                client_fd = pref_fd;
+            } else {
+                for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
+                    if (base->fd_map[i] == -1) { client_fd = i; break; }
+                }
             }
         }
         for (i = 0; i < TN_MAX_GLOBAL_SOCKETS; i++) {
@@ -772,10 +777,15 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
 
             /* Find free client fd */
             if (base != NULL) {
-                for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
-                    if (base->fd_map[i] == -1) {
-                        client_fd = i;
-                        break;
+                int pref_fd = (int)imsg->args[3];
+                if (pref_fd >= 0 && pref_fd < TN_MAX_FDS_PER_TASK && base->fd_map[pref_fd] == -1) {
+                    client_fd = pref_fd;
+                } else {
+                    for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
+                        if (base->fd_map[i] == -1) {
+                            client_fd = i;
+                            break;
+                        }
                     }
                 }
             }
@@ -1021,8 +1031,13 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 }
                 g_sockets[slot_idx].accept_count--;
 
-                for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
-                    if (base->fd_map[i] == -1) { new_fd = i; break; }
+                int pref_fd = (int)imsg->args[3];
+                if (pref_fd >= 0 && pref_fd < TN_MAX_FDS_PER_TASK && base->fd_map[pref_fd] == -1) {
+                    new_fd = pref_fd;
+                } else {
+                    for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
+                        if (base->fd_map[i] == -1) { new_fd = i; break; }
+                    }
                 }
                 for (i = 0; i < TN_MAX_GLOBAL_SOCKETS; i++) {
                     if (!g_sockets[i].in_use) { new_slot = i; break; }

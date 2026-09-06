@@ -61,7 +61,7 @@ COMMON_OBJS = $(BUILD)/src/common/log.o $(BUILD)/src/common/mem.o $(BUILD)/src/c
               $(BUILD)/src/common/inet_parse.o $(BUILD)/src/common/config_text.o \
               $(BUILD)/src/common/sbtc_dispatch.o $(BUILD)/src/common/fdset_util.o \
               $(BUILD)/src/common/ipc_client.o $(BUILD)/src/common/http_url.o \
-              $(BUILD)/src/task/timers.o
+              $(BUILD)/src/common/errstr.o $(BUILD)/src/task/timers.o
 SANA2_OBJS  = $(BUILD)/src/sana2/sana2_netif.o $(BUILD)/src/sana2/sana2_stubs.o $(BUILD)/src/sana2/buffers.o
 LIB_OBJS    = $(BUILD)/src/lib/lib_init.o $(BUILD)/src/lib/lib_vectors.o \
               $(BUILD)/src/lib/lib_table.gen.o $(BUILD)/src/lib/lib_stubs.gen.o \
@@ -89,7 +89,8 @@ HOST_CFLAGS  = -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -g \
                -Iinclude/netinclude -Iinclude -Itests/host -Isrc/common -Isrc
 HOST_UNITS   = src/common/inet_parse.c src/common/config_text.c \
                src/common/sbtc_dispatch.c src/common/fdset_util.c \
-               src/common/ipc_client.c src/common/http_url.c
+               src/common/ipc_client.c src/common/http_url.c \
+               src/common/errstr.c
 HOST_TESTS   = $(wildcard tests/host/test_*.c)
 HOST_BINS    = $(patsubst tests/host/%.c,$(BUILD)/host/%,$(HOST_TESTS))
 

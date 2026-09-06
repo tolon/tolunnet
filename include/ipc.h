@@ -146,6 +146,13 @@ typedef struct TnSocketBase {
     ULONG           sig_event;              /* SBTC_SIGEVENTMASK signal bit mask */
     ULONG           events[TN_MAX_FDS_PER_TASK]; /* Per-fd pending events mask (C4) */
     LONG            fd_map[TN_MAX_FDS_PER_TASK]; /* Client fd -> Network task slot */
+    APTR            fd_callback;            /* SBTC_FDCALLBACK hook function (C5) */
+    LONG            log_stat;               /* SBTC_LOGSTAT (C5) */
+    APTR            log_tag_ptr;            /* SBTC_LOGTAGPTR (C5) */
+    LONG            log_facility;           /* SBTC_LOGFACILITY (C5) */
+    LONG            log_mask;               /* SBTC_LOGMASK (C5) */
+    LONG            udp_checksum;           /* SBTC_UDP_CHECKSUM (C5) */
+    LONG            ip_default_ttl;         /* SBTC_IP_DEFAULT_TTL (C5) */
     char            inet_ntoa_buf[16];      /* Per-task static buffer for Inet_NtoA */
     char            hostname[32];           /* Per-task hostname */
 

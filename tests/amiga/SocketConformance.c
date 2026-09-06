@@ -273,8 +273,8 @@ static LONG call_socketbasetaglist(struct TagItem *tags)
     register struct Library *a6 __asm__("a6") = SocketBase;
     register struct TagItem *a0 __asm__("a0") = tags;
     register LONG d0 __asm__("d0");
-    __asm__ __volatile__ ("jsr -294(%%a6)" : "=r"(d0)
-        : "r"(a6), "r"(a0) : "d1", "a1", "memory");
+    __asm__ __volatile__ ("jsr -294(%%a6)" : "=r"(d0), "+r"(a0)
+        : "r"(a6) : "d1", "a1", "memory");
     return d0;
 }
 
@@ -1753,6 +1753,209 @@ static void tc_socket_events(void)
     TAP_OK("tc_socket_events");
 }
 
+static int str_starts_with(const char *s, const char *prefix)
+{
+    if (s == NULL || prefix == NULL) return 0;
+    while (*prefix) {
+        if (*s != *prefix) return 0;
+        s++;
+        prefix++;
+    }
+    return 1;
+}
+
+static int s_fdcb_alloc_count = 0;
+static int s_fdcb_free_count = 0;
+static int s_fdcb_last_alloc_fd = -1;
+static int s_fdcb_last_free_fd = -1;
+
+static int test_fd_callback(int fd, int action)
+{
+    if (action == FDCB_ALLOC) {
+        s_fdcb_alloc_count++;
+        s_fdcb_last_alloc_fd = fd;
+    } else if (action == FDCB_FREE) {
+        s_fdcb_free_count++;
+        s_fdcb_last_free_fd = fd;
+    }
+    return 0;
+}
+
+static void tc_sbtc_full(void)
+{
+    struct TagItem tags[4];
+    volatile ULONG val = 0;
+    const char *str;
+    LONG s;
+
+    /* 1. SBTC_DTABLESIZE GETVAL */
+    tags[0].ti_Tag  = SBTM_GETVAL(SBTC_DTABLESIZE);
+    tags[0].ti_Data = 0;
+    tags[1].ti_Tag  = TAG_DONE;
+    tags[1].ti_Data = 0;
+    if (call_socketbasetaglist(tags) != 0 || tags[0].ti_Data != TN_MAX_FDS_PER_TASK) {
+        tapf("# SBTC_DTABLESIZE GETVAL returned %ld (expected %ld)\n",
+             (LONG)tags[0].ti_Data, (LONG)TN_MAX_FDS_PER_TASK);
+        TAP_NOTOK("tc_sbtc_full", "SBTC_DTABLESIZE GETVAL failed");
+        return;
+    }
+
+    /* 2. SBTC_DTABLESIZE GETREF */
+    val = 0;
+    tags[0].ti_Tag  = SBTM_GETREF(SBTC_DTABLESIZE);
+    tags[0].ti_Data = (ULONG)(uintptr_t)&val;
+    tags[1].ti_Tag  = TAG_DONE;
+    tags[1].ti_Data = 0;
+    if (call_socketbasetaglist(tags) != 0 || val != TN_MAX_FDS_PER_TASK) {
+        tapf("# SBTC_DTABLESIZE GETREF returned %ld (expected %ld)\n",
+             (LONG)val, (LONG)TN_MAX_FDS_PER_TASK);
+        TAP_NOTOK("tc_sbtc_full", "SBTC_DTABLESIZE GETREF failed");
+        return;
+    }
+
+    /* 3. SBTC_UDP_CHECKSUM round-trip */
+    tags[0].ti_Tag  = SBTM_SETVAL(SBTC_UDP_CHECKSUM);
+    tags[0].ti_Data = 0;
+    tags[1].ti_Tag  = TAG_DONE;
+    call_socketbasetaglist(tags);
+
+    tags[0].ti_Tag  = SBTM_GETVAL(SBTC_UDP_CHECKSUM);
+    tags[0].ti_Data = 99;
+    call_socketbasetaglist(tags);
+    if (tags[0].ti_Data != 0) {
+        TAP_NOTOK("tc_sbtc_full", "SBTC_UDP_CHECKSUM GETVAL after SET 0 failed");
+        return;
+    }
+
+    tags[0].ti_Tag  = SBTM_SETVAL(SBTC_UDP_CHECKSUM);
+    tags[0].ti_Data = 1;
+    call_socketbasetaglist(tags);
+
+    /* 4. SBTC_IP_DEFAULT_TTL round-trip */
+    tags[0].ti_Tag  = SBTM_SETVAL(SBTC_IP_DEFAULT_TTL);
+    tags[0].ti_Data = 128;
+    tags[1].ti_Tag  = TAG_DONE;
+    call_socketbasetaglist(tags);
+
+    tags[0].ti_Tag  = SBTM_GETVAL(SBTC_IP_DEFAULT_TTL);
+    tags[0].ti_Data = 0;
+    call_socketbasetaglist(tags);
+    if (tags[0].ti_Data != 128) {
+        TAP_NOTOK("tc_sbtc_full", "SBTC_IP_DEFAULT_TTL GETVAL after SET 128 failed");
+        return;
+    }
+
+    tags[0].ti_Tag  = SBTM_SETVAL(SBTC_IP_DEFAULT_TTL);
+    tags[0].ti_Data = 64;
+    call_socketbasetaglist(tags);
+
+    /* 5. Error strings */
+    /* SBTC_ERRNOSTRPTR with ECONNREFUSED (61) */
+    tags[0].ti_Tag  = SBTM_GETVAL(SBTC_ERRNOSTRPTR);
+    tags[0].ti_Data = 61;
+    tags[1].ti_Tag  = TAG_DONE;
+    call_socketbasetaglist(tags);
+    str = (const char *)(uintptr_t)tags[0].ti_Data;
+    if (str == NULL || !str_starts_with(str, "Connection refused")) {
+        tapf("# SBTC_ERRNOSTRPTR: %s\n", str ? str : "NULL");
+        TAP_NOTOK("tc_sbtc_full", "SBTC_ERRNOSTRPTR mismatch");
+        return;
+    }
+
+    /* SBTC_HERRNOSTRPTR with HOST_NOT_FOUND (1) */
+    tags[0].ti_Tag  = SBTM_GETVAL(SBTC_HERRNOSTRPTR);
+    tags[0].ti_Data = 1;
+    tags[1].ti_Tag  = TAG_DONE;
+    call_socketbasetaglist(tags);
+    str = (const char *)(uintptr_t)tags[0].ti_Data;
+    if (str == NULL || !str_starts_with(str, "Unknown host")) {
+        tapf("# SBTC_HERRNOSTRPTR: %s\n", str ? str : "NULL");
+        TAP_NOTOK("tc_sbtc_full", "SBTC_HERRNOSTRPTR mismatch");
+        return;
+    }
+
+    /* SBTC_IOERRNOSTRPTR with IOERR_OPENFAIL (1) */
+    tags[0].ti_Tag  = SBTM_GETVAL(SBTC_IOERRNOSTRPTR);
+    tags[0].ti_Data = 1;
+    tags[1].ti_Tag  = TAG_DONE;
+    call_socketbasetaglist(tags);
+    str = (const char *)(uintptr_t)tags[0].ti_Data;
+    if (str == NULL || !str_starts_with(str, "Device or unit")) {
+        tapf("# SBTC_IOERRNOSTRPTR: %s\n", str ? str : "NULL");
+        TAP_NOTOK("tc_sbtc_full", "SBTC_IOERRNOSTRPTR mismatch");
+        return;
+    }
+
+    /* SBTC_S2ERRNOSTRPTR with S2ERR_BAD_ARGUMENT (3) */
+    tags[0].ti_Tag  = SBTM_GETVAL(SBTC_S2ERRNOSTRPTR);
+    tags[0].ti_Data = 3;
+    tags[1].ti_Tag  = TAG_DONE;
+    call_socketbasetaglist(tags);
+    str = (const char *)(uintptr_t)tags[0].ti_Data;
+    if (str == NULL || !str_starts_with(str, "Bad argument")) {
+        tapf("# SBTC_S2ERRNOSTRPTR: %s\n", str ? str : "NULL");
+        TAP_NOTOK("tc_sbtc_full", "SBTC_S2ERRNOSTRPTR mismatch");
+        return;
+    }
+
+    /* SBTC_S2WERRNOSTRPTR with S2WERR_UNIT_ONLINE (2) */
+    tags[0].ti_Tag  = SBTM_GETVAL(SBTC_S2WERRNOSTRPTR);
+    tags[0].ti_Data = 2;
+    tags[1].ti_Tag  = TAG_DONE;
+    call_socketbasetaglist(tags);
+    str = (const char *)(uintptr_t)tags[0].ti_Data;
+    if (str == NULL || !str_starts_with(str, "Unit is currently online")) {
+        tapf("# SBTC_S2WERRNOSTRPTR: %s\n", str ? str : "NULL");
+        TAP_NOTOK("tc_sbtc_full", "SBTC_S2WERRNOSTRPTR mismatch");
+        return;
+    }
+
+    /* 6. SBTC_FDCALLBACK hook invocation */
+    s_fdcb_alloc_count = 0;
+    s_fdcb_free_count = 0;
+    s_fdcb_last_alloc_fd = -1;
+    s_fdcb_last_free_fd = -1;
+
+    tags[0].ti_Tag  = SBTM_SETVAL(SBTC_FDCALLBACK);
+    tags[0].ti_Data = (ULONG)(uintptr_t)test_fd_callback;
+    tags[1].ti_Tag  = TAG_DONE;
+    call_socketbasetaglist(tags);
+
+    s = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (s < 0) {
+        tags[0].ti_Data = 0;
+        call_socketbasetaglist(tags);
+        TAP_NOTOK("tc_sbtc_full", "socket creation with FDCALLBACK failed");
+        return;
+    }
+
+    if (s_fdcb_alloc_count != 1 || s_fdcb_last_alloc_fd != s) {
+        tapf("# FDCALLBACK alloc count=%d last_fd=%d (expected fd=%ld)\n",
+             s_fdcb_alloc_count, s_fdcb_last_alloc_fd, s);
+        call_closesocket(s);
+        tags[0].ti_Data = 0;
+        call_socketbasetaglist(tags);
+        TAP_NOTOK("tc_sbtc_full", "FDCALLBACK FDCB_ALLOC was not invoked correctly");
+        return;
+    }
+
+    call_closesocket(s);
+    if (s_fdcb_free_count != 1 || s_fdcb_last_free_fd != s) {
+        tapf("# FDCALLBACK free count=%d last_fd=%d (expected fd=%ld)\n",
+             s_fdcb_free_count, s_fdcb_last_free_fd, s);
+        tags[0].ti_Data = 0;
+        call_socketbasetaglist(tags);
+        TAP_NOTOK("tc_sbtc_full", "FDCALLBACK FDCB_FREE was not invoked correctly");
+        return;
+    }
+
+    /* Clear callback */
+    tags[0].ti_Data = 0;
+    call_socketbasetaglist(tags);
+
+    TAP_OK("tc_sbtc_full");
+}
+
 static LONG call_lvo_generic(LONG lvo, LONG arg0)
 {
     register struct Library *a6 __asm__("a6") = SocketBase;
@@ -1850,6 +2053,7 @@ int main(int argc, char *argv[])
     tc_sendmsg_iov();
     tc_recv_peek();
     tc_socket_events();
+    tc_sbtc_full();
     tc_every_vector_callable();
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
