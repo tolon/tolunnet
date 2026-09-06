@@ -42,6 +42,11 @@ int tn_sbtc_dispatch_tag(uint32_t raw_tag, uint32_t data,
         else get_plain(res, is_ref, state->sig_urg);
         break;
 
+    case TN_SBTC_SIGEVENTMASK:
+        if (is_set) { res->op = TN_SBTC_OP_SET_SIGEVENT; res->is_ref = is_ref; res->value = data; }
+        else get_plain(res, is_ref, state->sig_event);
+        break;
+
     case TN_SBTC_ERRNO:
         if (is_set) { res->op = TN_SBTC_OP_SET_ERRNO; res->is_ref = is_ref; res->value = data; }
         else get_plain(res, is_ref, (uint32_t)state->errno_val);

@@ -58,6 +58,7 @@ typedef enum {
     TN_SBTC_OP_SET_SIGINT,      /* new sig_int  = value (caller dereferences if is_ref) */
     TN_SBTC_OP_SET_SIGIO,
     TN_SBTC_OP_SET_SIGURG,
+    TN_SBTC_OP_SET_SIGEVENT,
     TN_SBTC_OP_SET_ERRNO,       /* tn_set_errno_val(base, value) */
     TN_SBTC_OP_SET_HERRNO,      /* tn_set_herrno_val(base, value) */
     TN_SBTC_OP_SET_ERRNO_PTR,   /* errno_ptr = ti_Data, width = errno_ptr_width */
@@ -77,6 +78,7 @@ typedef struct TnSbtcState {
     uint32_t sig_int;        /* SBTC_BREAKMASK value */
     uint32_t sig_io;         /* SBTC_SIGIOMASK value */
     uint32_t sig_urg;        /* SBTC_SIGURGMASK value */
+    uint32_t sig_event;      /* SBTC_SIGEVENTMASK value */
     int32_t  errno_val;      /* SBTC_ERRNO value */
     int32_t  herrno_val;     /* SBTC_HERRNO value */
     uint32_t dtablesize;     /* SBTC_DTABLESIZE (GET) */

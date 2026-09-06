@@ -364,6 +364,16 @@ static VOID call_setsocketsignals(ULONG int_mask, ULONG io_mask, ULONG urg_mask)
         : : "r"(a6), "r"(d0), "r"(d1), "r"(d2) : "d0", "d1", "d2", "a0", "a1", "memory");
 }
 
+static LONG call_getsocketevents(ULONG *event_ptr)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register ULONG *a0 __asm__("a0") = event_ptr;
+    register LONG d0 __asm__("d0");
+    __asm__ __volatile__ ("jsr -300(%%a6)" : "=r"(d0), "+r"(a0)
+        : "r"(a6) : "d1", "d2", "a1", "memory");
+    return d0;
+}
+
 /* ------------------------------------------------------------- test cases */
 
 static void tc_lib_open_close(void)
@@ -1030,6 +1040,11 @@ static void tc_errno_ptr(void)
     } else {
         TAP_NOTOK("tc_errno_ptr", "long-width errno was not written");
     }
+
+    tags[0].ti_Tag  = SBTM_SETREF(SBTC_ERRNOLONGPTR);
+    tags[0].ti_Data = 0;
+    tags[1].ti_Tag  = TAG_DONE;
+    call_socketbasetaglist(tags);
 }
 
 static void tc_dup2(void)
@@ -1546,6 +1561,198 @@ static void tc_recv_peek(void)
     TAP_OK("tc_recv_peek");
 }
 
+static void tc_socket_events(void)
+{
+    BYTE sig_bit;
+    ULONG sig_mask;
+    struct TagItem tags[2];
+    LONG s_listen, s_cli, s_srv;
+    struct sockaddr_in srv_sin, cli_sin;
+    socklen_t slen;
+    ULONG events[64];
+    LONG count;
+    int i;
+
+    sig_bit = AllocSignal(-1);
+    if (sig_bit < 0) {
+        TAP_NOTOK("tc_socket_events", "AllocSignal failed");
+        return;
+    }
+    sig_mask = 1UL << sig_bit;
+
+    tags[0].ti_Tag  = SBTM_SETVAL(SBTC_SIGEVENTMASK);
+    tags[0].ti_Data = sig_mask;
+    tags[1].ti_Tag  = TAG_DONE;
+    tags[1].ti_Data = 0;
+    if (call_socketbasetaglist(tags) != 0) {
+        FreeSignal(sig_bit);
+        TAP_NOTOK("tc_socket_events", "SocketBaseTagList SBTC_SIGEVENTMASK failed");
+        return;
+    }
+
+    s_listen = call_socket(AF_INET, SOCK_STREAM, 0);
+    s_cli    = call_socket(AF_INET, SOCK_STREAM, 0);
+    if (s_listen < 0 || s_cli < 0) {
+        if (s_listen >= 0) call_closesocket(s_listen);
+        if (s_cli >= 0) call_closesocket(s_cli);
+        tags[0].ti_Data = 0;
+        call_socketbasetaglist(tags);
+        FreeSignal(sig_bit);
+        TAP_NOTOK("tc_socket_events", "socket creation failed");
+        return;
+    }
+
+    for (i = 0; i < (int)sizeof(srv_sin); i++) ((char *)&srv_sin)[i] = 0;
+    srv_sin.sin_len         = sizeof(srv_sin);
+    srv_sin.sin_family      = AF_INET;
+    srv_sin.sin_port        = htons(54334);
+    srv_sin.sin_addr.s_addr = htonl(0x7F000001UL);
+
+    if (call_bind(s_listen, (struct sockaddr *)&srv_sin, sizeof(srv_sin)) != 0 ||
+        call_listen(s_listen, 1) != 0) {
+        call_closesocket(s_listen);
+        call_closesocket(s_cli);
+        tags[0].ti_Data = 0;
+        call_socketbasetaglist(tags);
+        FreeSignal(sig_bit);
+        TAP_NOTOK("tc_socket_events", "bind/listen failed");
+        return;
+    }
+
+    /* Clear any pending signals */
+    SetSignal(0, sig_mask);
+
+    /* Connect client to listener */
+    if (call_connect(s_cli, (struct sockaddr *)&srv_sin, sizeof(srv_sin)) != 0) {
+        call_closesocket(s_listen);
+        call_closesocket(s_cli);
+        tags[0].ti_Data = 0;
+        call_socketbasetaglist(tags);
+        FreeSignal(sig_bit);
+        TAP_NOTOK("tc_socket_events", "connect failed");
+        return;
+    }
+
+    /* Check if signal was received on event */
+    if (!(SetSignal(0, 0) & sig_mask)) {
+        call_closesocket(s_listen);
+        call_closesocket(s_cli);
+        tags[0].ti_Data = 0;
+        call_socketbasetaglist(tags);
+        FreeSignal(sig_bit);
+        TAP_NOTOK("tc_socket_events", "sig_event signal not received on connect/accept");
+        return;
+    }
+
+    for (i = 0; i < 64; i++) events[i] = 0;
+    count = call_getsocketevents(events);
+    if (count != 0) {
+        call_closesocket(s_listen);
+        call_closesocket(s_cli);
+        tags[0].ti_Data = 0;
+        call_socketbasetaglist(tags);
+        FreeSignal(sig_bit);
+        TAP_NOTOK("tc_socket_events", "GetSocketEvents returned error");
+        return;
+    }
+
+    if (!(events[s_listen] & FD_ACCEPT)) {
+        tapf("# s_listen events = 0x%lx\n", events[s_listen]);
+        call_closesocket(s_listen);
+        call_closesocket(s_cli);
+        tags[0].ti_Data = 0;
+        call_socketbasetaglist(tags);
+        FreeSignal(sig_bit);
+        TAP_NOTOK("tc_socket_events", "s_listen did not record FD_ACCEPT");
+        return;
+    }
+
+    if (!(events[s_cli] & (FD_CONNECT | FD_WRITE))) {
+        tapf("# s_cli events = 0x%lx\n", events[s_cli]);
+        call_closesocket(s_listen);
+        call_closesocket(s_cli);
+        tags[0].ti_Data = 0;
+        call_socketbasetaglist(tags);
+        FreeSignal(sig_bit);
+        TAP_NOTOK("tc_socket_events", "s_cli did not record FD_CONNECT | FD_WRITE");
+        return;
+    }
+
+    /* Accept connection */
+    slen = sizeof(cli_sin);
+    s_srv = call_accept(s_listen, (struct sockaddr *)&cli_sin, &slen);
+    if (s_srv < 0) {
+        call_closesocket(s_listen);
+        call_closesocket(s_cli);
+        tags[0].ti_Data = 0;
+        call_socketbasetaglist(tags);
+        FreeSignal(sig_bit);
+        TAP_NOTOK("tc_socket_events", "accept failed");
+        return;
+    }
+
+    /* Clear signals and close client: server should receive FD_CLOSE */
+    SetSignal(0, sig_mask);
+    call_closesocket(s_cli);
+
+    /* Verify signal delivered on peer close */
+    if (!(SetSignal(0, 0) & sig_mask)) {
+        call_closesocket(s_srv);
+        call_closesocket(s_listen);
+        tags[0].ti_Data = 0;
+        call_socketbasetaglist(tags);
+        FreeSignal(sig_bit);
+        TAP_NOTOK("tc_socket_events", "sig_event signal not received on peer close");
+        return;
+    }
+
+    for (i = 0; i < 64; i++) events[i] = 0;
+    count = call_getsocketevents(events);
+    if (count != 0 || !(events[s_srv] & FD_CLOSE)) {
+        tapf("# s_srv events = 0x%lx (res = %ld)\n", events[s_srv], count);
+        call_closesocket(s_srv);
+        call_closesocket(s_listen);
+        tags[0].ti_Data = 0;
+        call_socketbasetaglist(tags);
+        FreeSignal(sig_bit);
+        TAP_NOTOK("tc_socket_events", "s_srv did not record FD_CLOSE");
+        return;
+    }
+
+    /* Second call to GetSocketEvents must find all events cleared to 0 */
+    for (i = 0; i < 64; i++) events[i] = 0;
+    count = call_getsocketevents(events);
+    if (count != 0) {
+        call_closesocket(s_srv);
+        call_closesocket(s_listen);
+        tags[0].ti_Data = 0;
+        call_socketbasetaglist(tags);
+        FreeSignal(sig_bit);
+        TAP_NOTOK("tc_socket_events", "second GetSocketEvents returned error");
+        return;
+    }
+    for (i = 0; i < 64; i++) {
+        if (events[i] != 0) {
+            tapf("# uncleared event on fd %d = 0x%lx\n", i, events[i]);
+            call_closesocket(s_srv);
+            call_closesocket(s_listen);
+            tags[0].ti_Data = 0;
+            call_socketbasetaglist(tags);
+            FreeSignal(sig_bit);
+            TAP_NOTOK("tc_socket_events", "GetSocketEvents did not clear events");
+            return;
+        }
+    }
+
+    call_closesocket(s_srv);
+    call_closesocket(s_listen);
+    tags[0].ti_Data = 0;
+    call_socketbasetaglist(tags);
+    FreeSignal(sig_bit);
+
+    TAP_OK("tc_socket_events");
+}
+
 static LONG call_lvo_generic(LONG lvo, LONG arg0)
 {
     register struct Library *a6 __asm__("a6") = SocketBase;
@@ -1642,6 +1849,7 @@ int main(int argc, char *argv[])
     tc_icmp_raw();
     tc_sendmsg_iov();
     tc_recv_peek();
+    tc_socket_events();
     tc_every_vector_callable();
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");

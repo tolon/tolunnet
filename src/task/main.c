@@ -51,6 +51,7 @@
 #include <sys/uio.h>
 #include <sys/filio.h>
 #include <sys/ioctl.h>
+#include <libraries/bsdsocket.h>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -192,6 +193,41 @@ static void tn_signal_socket(TnSocketSlot *slot)
     }
 }
 
+/* Deliver socket events to base->events and signal task if SBTC_SIGEVENTMASK set */
+static void tn_record_socket_event(TnSocketSlot *slot, ULONG event_mask)
+{
+    if (slot != NULL && slot->in_use && slot->owner_base != NULL) {
+        TnSocketBase *base = slot->owner_base;
+        int slot_idx = (int)(slot - g_sockets);
+        int fd;
+        BOOL posted = FALSE;
+
+        for (fd = 0; fd < TN_MAX_FDS_PER_TASK; fd++) {
+            if (base->fd_map[fd] == slot_idx) {
+                base->events[fd] |= event_mask;
+                posted = TRUE;
+            }
+        }
+        if (posted && base->sig_event != 0 && slot->owner_task != NULL) {
+            Signal(slot->owner_task, base->sig_event);
+        }
+    }
+}
+
+/* Callback from lwIP when data is acknowledged and send buffer space frees up */
+static err_t tn_tcp_sent_cb(void *arg, struct tcp_pcb *pcb, u16_t len)
+{
+    int slot_idx = (int)(intptr_t)arg;
+    (void)pcb; (void)len;
+    if (slot_idx >= 0 && slot_idx < TN_MAX_GLOBAL_SOCKETS) {
+        TnSocketSlot *slot = &g_sockets[slot_idx];
+        if (slot->in_use) {
+            tn_record_socket_event(slot, FD_WRITE);
+        }
+    }
+    return ERR_OK;
+}
+
 /* Callback from lwIP when a UDP datagram arrives on a listening PCB */
 static void tn_udp_recv_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p,
                            const ip_addr_t *addr, u16_t port)
@@ -239,6 +275,7 @@ static void tn_udp_recv_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p,
     }
     slot->rx_count++;
     tn_signal_socket(slot);
+    tn_record_socket_event(slot, FD_READ);
 }
 
 /* Callback from lwIP when a RAW packet arrives */
@@ -291,6 +328,7 @@ static u8_t tn_raw_recv_cb(void *arg, struct raw_pcb *pcb, struct pbuf *p,
     }
     slot->rx_count++;
     tn_signal_socket(slot);
+    tn_record_socket_event(slot, FD_READ);
 
     /* Return 0: do not eat packet so stack/ICMP echo replier can also process it */
     return 0;
@@ -319,6 +357,7 @@ static err_t tn_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_
     if (p == NULL) {
         slot->tcp_state = TN_TCP_STATE_PEER_CLOSED;
         tn_signal_socket(slot);
+        tn_record_socket_event(slot, FD_CLOSE | FD_READ);
         return ERR_OK;
     }
 
@@ -346,6 +385,7 @@ static err_t tn_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_
         slot->rx_tail       = pkt;
     }
     tn_signal_socket(slot);
+    tn_record_socket_event(slot, FD_READ);
 
     return ERR_OK;
 }
@@ -364,6 +404,7 @@ static err_t tn_tcp_connected_cb(void *arg, struct tcp_pcb *pcb, err_t err)
 
     slot->tcp_state = TN_TCP_STATE_ESTABLISHED;
     tn_signal_socket(slot);
+    tn_record_socket_event(slot, FD_CONNECT | FD_WRITE);
 
     if (slot->pending_connect_msg != NULL) {
         slot->pending_connect_msg->result = 0;
@@ -388,6 +429,7 @@ static void tn_tcp_err_cb(void *arg, err_t err)
     slot->tcp_state = TN_TCP_STATE_ERROR;
     slot->tcp_pcb   = NULL; /* lwIP frees PCB before calling err_cb */
     tn_signal_socket(slot);
+    tn_record_socket_event(slot, FD_ERROR);
 
     if (slot->pending_connect_msg != NULL) {
         slot->pending_connect_msg->result = -1;
@@ -499,6 +541,7 @@ static err_t tn_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
 
         tcp_arg(newpcb, (void *)(intptr_t)new_slot_idx);
         tcp_recv(newpcb, tn_tcp_recv_cb);
+        tcp_sent(newpcb, tn_tcp_sent_cb);
         tcp_err(newpcb, tn_tcp_err_cb);
 
         if (addr != NULL && addrlen != NULL && *addrlen >= sizeof(struct sockaddr_in)) {
@@ -511,6 +554,7 @@ static err_t tn_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
 
         imsg->result = client_fd;
         imsg->err_no = 0;
+        tn_record_socket_event(&g_sockets[new_slot_idx], FD_WRITE);
         ReplyMsg((struct Message *)imsg);
         return ERR_OK;
     }
@@ -538,6 +582,7 @@ static err_t tn_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
         slot->accept_tail = entry;
         slot->accept_count++;
         tn_signal_socket(slot);
+        tn_record_socket_event(slot, FD_ACCEPT);
     }
 
     return ERR_OK;
@@ -563,6 +608,8 @@ static void ip_to_str(char *buf, const ip4_addr_t *addr)
     }
     *p = '\0';
 }
+
+static void tn_drain_loopback(void);
 
 static void tn_free_socket_slot(int slot_idx)
 {
@@ -795,6 +842,9 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
             }
 
             base->fd_map[client_fd] = slot_idx;
+            if (type == SOCK_DGRAM || type == SOCK_RAW) {
+                tn_record_socket_event(&g_sockets[slot_idx], FD_WRITE);
+            }
 
             tn_logf(TN_LOG_BASIC, "tolunnet: socket(domain=%d, type=%d, proto=%d) -> fd %d (slot %d)\n",
                     domain, type, protocol, client_fd, slot_idx);
@@ -993,6 +1043,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 base->fd_map[new_fd] = new_slot;
                 tcp_arg(ent->new_pcb, (void *)(intptr_t)new_slot);
                 tcp_recv(ent->new_pcb, tn_tcp_recv_cb);
+                tcp_sent(ent->new_pcb, tn_tcp_sent_cb);
                 tcp_err(ent->new_pcb, tn_tcp_err_cb);
 
                 if (addr != NULL && addrlen != NULL && *addrlen >= sizeof(struct sockaddr_in)) {
@@ -1004,6 +1055,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 }
 
                 FreeVec(ent);
+                tn_record_socket_event(&g_sockets[new_slot], FD_WRITE);
                 imsg->result = new_fd;
                 imsg->err_no = 0;
                 return TRUE;
@@ -1049,9 +1101,11 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 g_sockets[slot_idx].pending_connect_msg = imsg;
 
                 tcp_recv(g_sockets[slot_idx].tcp_pcb, tn_tcp_recv_cb);
+                tcp_sent(g_sockets[slot_idx].tcp_pcb, tn_tcp_sent_cb);
                 cerr = tcp_connect(g_sockets[slot_idx].tcp_pcb, &dst_ip, dst_port, tn_tcp_connected_cb);
                 if (cerr == ERR_OK) {
                     tcp_output(g_sockets[slot_idx].tcp_pcb);
+                    tn_drain_loopback();
                 }
 
                 if (cerr != ERR_OK) {

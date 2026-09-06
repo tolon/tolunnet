@@ -18,6 +18,7 @@ static TnSbtcState base_state(void)
     st.sig_int = 0x1000;
     st.sig_io  = 0x2000;
     st.sig_urg = 0x4000;
+    st.sig_event = 0x8000;
     st.errno_val = 35;
     st.herrno_val = 1;
     st.dtablesize = 32;

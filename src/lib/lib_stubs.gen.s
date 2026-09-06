@@ -527,7 +527,7 @@ _tn_stub_socketbasetaglist:
 _tn_stub_getsocketevents:
     move.l  a6,-(sp)
     move.l  a0,-(sp)
-    jsr     _tn_unimpl_getsocketevents
+    jsr     _tn_lvo_getsocketevents
     addq.l  #8,sp
     rts
 

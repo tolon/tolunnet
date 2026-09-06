@@ -47,7 +47,7 @@
 | `-282` | `gethostname` | `LONG gethostname(STRPTR name,LONG namelen)` | **Implemented** | Real implementation via daemon IPC or per-task base |
 | `-288` | `gethostid` | `in_addr_t gethostid()` | **Implemented** | Real implementation via daemon IPC or per-task base |
 | `-294` | `SocketBaseTagList` | `LONG SocketBaseTagList(struct TagItem *tags)` | **Implemented** | Real implementation via daemon IPC or per-task base |
-| `-300` | `GetSocketEvents` | `LONG GetSocketEvents(ULONG *event_ptr)` | *Honest Stub* | `ENOSYS` / safe error sentinel |
+| `-300` | `GetSocketEvents` | `LONG GetSocketEvents(ULONG *event_ptr)` | **Implemented** | Real implementation via daemon IPC or per-task base |
 | `-306` | *(reserved)* | — | Reserved | Returns -1 |
 | `-312` | *(reserved)* | — | Reserved | Returns -1 |
 | `-318` | *(reserved)* | — | Reserved | Returns -1 |

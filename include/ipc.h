@@ -143,6 +143,8 @@ typedef struct TnSocketBase {
     ULONG           sig_io;                 /* SIGIO signal bit mask */
     ULONG           sig_urg;                /* SIGURG signal bit mask */
     ULONG           sig_int;                /* SIGINT signal bit mask */
+    ULONG           sig_event;              /* SBTC_SIGEVENTMASK signal bit mask */
+    ULONG           events[TN_MAX_FDS_PER_TASK]; /* Per-fd pending events mask (C4) */
     LONG            fd_map[TN_MAX_FDS_PER_TASK]; /* Client fd -> Network task slot */
     char            inet_ntoa_buf[16];      /* Per-task static buffer for Inet_NtoA */
     char            hostname[32];           /* Per-task hostname */

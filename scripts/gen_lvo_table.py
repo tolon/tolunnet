@@ -22,6 +22,7 @@ IMPLEMENTED_FUNCS = {
     "getdtablesize", "obtainsocket", "releasesocket", "releasecopyofsocket",
     "errno", "seterrnoptr",
     "dup2socket", "sendmsg", "recvmsg", "gethostname", "gethostid", "socketbasetaglist",
+    "getsocketevents",
     # Resolver and db
     "gethostbyname", "gethostbyaddr",
     "getservbyname", "getservbyport",

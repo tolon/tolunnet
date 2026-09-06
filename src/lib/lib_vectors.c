@@ -994,6 +994,8 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
     /* The portable dispatcher's code values must match the SDK header */
     _Static_assert(TN_SBTC_BREAKMASK == SBTC_BREAKMASK, "SBTC code drift");
     _Static_assert(TN_SBTC_SIGIOMASK == SBTC_SIGIOMASK, "SBTC code drift");
+    _Static_assert(TN_SBTC_SIGURGMASK == SBTC_SIGURGMASK, "SBTC code drift");
+    _Static_assert(TN_SBTC_SIGEVENTMASK == SBTC_SIGEVENTMASK, "SBTC code drift");
     _Static_assert(TN_SBTC_ERRNOLONGPTR == SBTC_ERRNOLONGPTR, "SBTC code drift");
     _Static_assert(TN_SBTC_HERRNOLONGPTR == SBTC_HERRNOLONGPTR, "SBTC code drift");
     _Static_assert(TN_SBTC_DTABLESIZE == SBTC_DTABLESIZE, "SBTC code drift");
@@ -1010,6 +1012,7 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
         st.sig_int     = base->sig_int;
         st.sig_io      = base->sig_io;
         st.sig_urg     = base->sig_urg;
+        st.sig_event   = base->sig_event;
         st.errno_val   = base->task_errno;
         st.herrno_val  = base->task_herrno;
         st.dtablesize  = TN_MAX_FDS_PER_TASK;
@@ -1041,6 +1044,9 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
         case TN_SBTC_OP_SET_SIGURG:
             base->sig_urg = (r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value;
             break;
+        case TN_SBTC_OP_SET_SIGEVENT:
+            base->sig_event = (r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value;
+            break;
         case TN_SBTC_OP_SET_ERRNO:
             tn_set_errno_val(base, (LONG)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value));
             break;
@@ -1059,6 +1065,23 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
         }
     }
     return count;
+}
+
+/* -300: GetSocketEvents(event_ptr) (C4) */
+LONG tn_lvo_getsocketevents(ULONG *event_ptr, TnSocketBase *base)
+{
+    int fd;
+    if (base == NULL || event_ptr == NULL) {
+        if (base != NULL) tn_set_errno_val(base, EINVAL);
+        return -1;
+    }
+    Forbid();
+    for (fd = 0; fd < TN_MAX_FDS_PER_TASK; fd++) {
+        event_ptr[fd] = base->events[fd];
+        base->events[fd] = 0;
+    }
+    Permit();
+    return 0;
 }
 
 /* ========================================================= §D.5 EXTENSIONS */
