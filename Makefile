@@ -10,7 +10,7 @@ STRIP       = $(CROSS)strip
 # Automatic or overridable NDK include directory (TNET-017)
 NDK_INC    ?= $(shell if [ -d "$$(dirname $$(which $(CC) 2>/dev/null))/../m68k-amigaos/ndk-include" ]; then echo "-I$$(dirname $$(which $(CC)))/../m68k-amigaos/ndk-include"; fi)
 
-CFLAGS      = -O2 -fomit-frame-pointer -m68000 -msoft-float -noixemul -Wall -Wextra \
+CFLAGS      = -O2 -fomit-frame-pointer -m68000 -msoft-float -noixemul -Wall -Wextra -Wshadow \
               -Ilwipopts -Iinclude -Iinclude/netinclude -Ivendor/lwip/src/include -Isrc \
               $(NDK_INC) -std=c11
 LDFLAGS     = -noixemul -msoft-float
@@ -61,12 +61,23 @@ COMMON_OBJS = $(BUILD)/src/common/log.o $(BUILD)/src/common/mem.o $(BUILD)/src/c
               $(BUILD)/src/common/inet_parse.o $(BUILD)/src/common/config_text.o \
               $(BUILD)/src/common/sbtc_dispatch.o $(BUILD)/src/common/fdset_util.o \
               $(BUILD)/src/common/ipc_client.o $(BUILD)/src/common/http_url.o \
-              $(BUILD)/src/common/errstr.o $(BUILD)/src/task/timers.o
+              $(BUILD)/src/common/errstr.o $(BUILD)/src/common/sockaddr_util.o \
+              $(BUILD)/src/task/timers.o
 SANA2_OBJS  = $(BUILD)/src/sana2/sana2_netif.o $(BUILD)/src/sana2/sana2_stubs.o $(BUILD)/src/sana2/buffers.o
 LIB_OBJS    = $(BUILD)/src/lib/lib_init.o $(BUILD)/src/lib/lib_vectors.o \
               $(BUILD)/src/lib/lib_table.gen.o $(BUILD)/src/lib/lib_stubs.gen.o \
               $(BUILD)/src/lib/lib_unimpl.o
-TASK_OBJS   = $(BUILD)/src/task/main.o
+TASK_OBJS   = $(BUILD)/src/task/daemon_main.o \
+              $(BUILD)/src/task/slot_table.o \
+              $(BUILD)/src/task/netif_mgr.o \
+              $(BUILD)/src/task/ipc_dispatch.o \
+              $(BUILD)/src/task/ipc_socket.o \
+              $(BUILD)/src/task/ipc_tcp.o \
+              $(BUILD)/src/task/ipc_dgram.o \
+              $(BUILD)/src/task/ipc_msg.o \
+              $(BUILD)/src/task/ipc_select.o \
+              $(BUILD)/src/task/ipc_netdb.o \
+              $(BUILD)/src/task/ipc_status.o
 
 # Targets
 TOLUNNET_BIN = $(BUILD)/tolunnet
@@ -90,7 +101,7 @@ HOST_CFLAGS  = -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -g \
 HOST_UNITS   = src/common/inet_parse.c src/common/config_text.c \
                src/common/sbtc_dispatch.c src/common/fdset_util.c \
                src/common/ipc_client.c src/common/http_url.c \
-               src/common/errstr.c
+               src/common/errstr.c src/common/sockaddr_util.c
 HOST_TESTS   = $(wildcard tests/host/test_*.c)
 HOST_BINS    = $(patsubst tests/host/%.c,$(BUILD)/host/%,$(HOST_TESTS))
 
