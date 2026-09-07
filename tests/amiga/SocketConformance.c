@@ -1063,7 +1063,9 @@ static void tc_nonblock_connect(void)
     FD_SET(s, &wfds);
     tv.tv_secs  = 10;
     tv.tv_micro = 0;
+    tapf("# tc_nonblock_connect: calling waitselect s=%ld\n", s);
     sel = call_waitselect(s + 1, NULL, &wfds, NULL, &tv, NULL);
+    tapf("# tc_nonblock_connect: waitselect returned %ld errno=%ld\n", sel, call_errno());
     if (sel <= 0 || !FD_ISSET(s, &wfds)) {
         TAP_NOTOK("tc_nonblock_connect", "WaitSelect timeout or not writable");
         call_closesocket(s);

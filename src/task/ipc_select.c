@@ -54,6 +54,8 @@ void tn_signal_socket(TnDaemon *d, TnSocketSlot *slot)
             }
         }
         if (match) {
+            tn_logf(TN_LOG_VERBOSE, "tolunnet: signal_socket slot=%d woke task 0x%p sig=0x%lx\n",
+                    s_idx, sel->task, sel->sig_select);
             Signal(sel->task, sel->sig_select);
         }
     }
@@ -193,6 +195,9 @@ int tn_ipc_cmd_select_arm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     d->selectors[sel_slot].write_mask  = in_w;
     d->selectors[sel_slot].except_mask = in_e;
 
+    tn_logf(TN_LOG_VERBOSE, "tolunnet: select_arm sel_slot=%d task=0x%p sig=0x%lx nfds=%ld w=0x%lx\n",
+            sel_slot, imsg->client_task, base->sig_select, nfds, in_w);
+
     imsg->result = 0;
     imsg->err_no = 0;
     return 0;
@@ -213,6 +218,7 @@ int tn_ipc_cmd_select_disarm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                 d->selectors[i].base   = NULL;
                 d->selectors[i].task   = NULL;
                 if (d->selector_count > 0) d->selector_count--;
+                tn_logf(TN_LOG_VERBOSE, "tolunnet: select_disarm slot=%d\n", i);
             }
         }
     }
@@ -312,5 +318,7 @@ int tn_ipc_cmd_waitselect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
     imsg->result = ready_cnt;
     imsg->err_no = 0;
+    tn_logf(TN_LOG_VERBOSE, "tolunnet: waitselect_query ready=%ld r=0x%lx w=0x%lx e=0x%lx\n",
+            ready_cnt, out_r, out_w, out_e);
     return 0; /* TN_IPC_REPLY_NOW */
 }

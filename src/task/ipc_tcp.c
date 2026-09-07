@@ -68,6 +68,7 @@ err_t tn_tcp_connected_cb(void *arg, struct tcp_pcb *pcb, err_t err)
     if (!slot->in_use || slot->tcp_pcb != pcb) return ERR_OK;
 
     slot->tcp_state = TN_TCP_STATE_ESTABLISHED;
+    tn_logf(TN_LOG_VERBOSE, "tolunnet: tcp_connected_cb slot=%d established\n", slot_idx);
     tn_signal_socket(&g_daemon, slot);
     tn_record_socket_event(&g_daemon, slot, FD_CONNECT | FD_WRITE);
 
@@ -95,6 +96,7 @@ void tn_tcp_err_cb(void *arg, err_t err)
     slot->tcp_state  = TN_TCP_STATE_ERROR;
     slot->tcp_pcb    = NULL; /* lwIP frees PCB before calling err_cb */
     slot->last_error = ECONNREFUSED;
+    tn_logf(TN_LOG_VERBOSE, "tolunnet: tcp_err_cb slot=%d err=%d\n", slot_idx, (int)err);
     tn_signal_socket(&g_daemon, slot);
     tn_record_socket_event(&g_daemon, slot, FD_ERROR);
 
