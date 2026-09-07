@@ -97,11 +97,12 @@ all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BI
 # exit code is the number of failed tests (TAP output on stdout).
 HOSTCC      ?= cc
 HOST_CFLAGS  = -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -g \
-               -Iinclude/netinclude -Iinclude -Itests/host -Isrc/common -Isrc
+               -Iinclude/netinclude -Iinclude -Itests/host -Isrc/common -Isrc/task -Isrc
 HOST_UNITS   = src/common/inet_parse.c src/common/config_text.c \
                src/common/sbtc_dispatch.c src/common/fdset_util.c \
                src/common/ipc_client.c src/common/http_url.c \
-               src/common/errstr.c src/common/sockaddr_util.c
+               src/common/errstr.c src/common/sockaddr_util.c \
+               tests/host/mock_lwip.c src/task/slot_table.c
 HOST_TESTS   = $(wildcard tests/host/test_*.c)
 HOST_BINS    = $(patsubst tests/host/%.c,$(BUILD)/host/%,$(HOST_TESTS))
 

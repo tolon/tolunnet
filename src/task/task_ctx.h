@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#if defined(__AMIGA__) || defined(__amigaos__) || defined(TN_AMIGA_BUILD)
 #include "../sana2/sana2_netif.h"
 #include "../lib/lib_init.h"
 #include "../common/log.h"
@@ -54,6 +55,32 @@
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#else
+/* Host test environment */
+#include "mock_lwip.h"
+#include "prefs.h"
+#include "fdset_util.h"
+#include "sockaddr_util.h"
+#include <sys/errno.h>
+
+struct timeval {
+    unsigned int tv_secs;
+    unsigned int tv_micro;
+};
+#ifndef DEVICES_TIMER_H
+#define DEVICES_TIMER_H 1
+#endif
+#include <sys/socket.h>
+#include <netinet/in.h>
+#undef TCP_MSS
+#undef htons
+#undef ntohs
+#undef htonl
+#undef ntohl
+#include <netinet/tcp.h>
+#undef TCP_MSS
+#define TCP_MSS 1460
+#endif
 
 #define TN_MAX_GLOBAL_SOCKETS 64
 #define TN_MAX_RX_QUEUE_PER_SOCKET 32
