@@ -36,7 +36,7 @@ void tn_udp_recv_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p,
         return;
     }
 
-    tn_signal_socket(slot);
+    tn_signal_socket(&g_daemon, slot);
     tn_record_socket_event(&g_daemon, slot, FD_READ);
 }
 
@@ -71,7 +71,7 @@ u8_t tn_raw_recv_cb(void *arg, struct raw_pcb *pcb, struct pbuf *p,
         return 0;
     }
 
-    tn_signal_socket(slot);
+    tn_signal_socket(&g_daemon, slot);
     tn_record_socket_event(&g_daemon, slot, FD_READ);
     return 0;
 }

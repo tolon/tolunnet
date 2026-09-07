@@ -20,6 +20,7 @@ typedef uint32_t ULONG;
 typedef int32_t  LONG;
 typedef uint16_t UWORD;
 typedef uint8_t  UBYTE;
+typedef int8_t   BYTE;
 typedef void    *APTR;
 typedef char    *STRPTR;
 typedef const char *CONST_STRPTR;
@@ -97,7 +98,9 @@ typedef enum TnIpcCmd {
     TN_IPC_CMD_SENDMSG,         /* sendmsg(sock, msg, flags) */
     TN_IPC_CMD_RECVMSG,         /* recvmsg(sock, msg, flags) */
     TN_IPC_CMD_RELEASESOCKET,   /* ReleaseSocket(sock, id, copy) */
-    TN_IPC_CMD_OBTAINSOCKET     /* ObtainSocket(id, domain, type, protocol, pref_fd) */
+    TN_IPC_CMD_OBTAINSOCKET,    /* ObtainSocket(id, domain, type, protocol, pref_fd) */
+    TN_IPC_CMD_SELECT_ARM,      /* WaitSelect: arm selector for event-driven wake (§D) */
+    TN_IPC_CMD_SELECT_DISARM    /* WaitSelect: disarm selector (§D) */
 } TnIpcCmd;
 
 /* Active socket description for TN_IPC_CMD_ENUMSOCKETS (TNET-071) */
@@ -175,6 +178,8 @@ typedef struct TnSocketBase {
     ULONG           sig_urg;                /* SIGURG signal bit mask */
     ULONG           sig_int;                /* SIGINT signal bit mask */
     ULONG           sig_event;              /* SBTC_SIGEVENTMASK signal bit mask */
+    ULONG           sig_select;             /* Private signal bit mask for WaitSelect (§D) */
+    BYTE            sig_select_bit;         /* Private signal bit index (-1 if none allocated) */
     ULONG           events[TN_MAX_FDS_PER_TASK]; /* Per-fd pending events mask (C4) */
     LONG            fd_map[TN_MAX_FDS_PER_TASK]; /* Client fd -> Network task slot */
     APTR            fd_callback;            /* SBTC_FDCALLBACK hook function (C5) */

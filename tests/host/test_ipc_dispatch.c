@@ -50,6 +50,8 @@ DEFINE_MOCK_HANDLER(tn_ipc_cmd_sendmsg, TN_IPC_CMD_SENDMSG)
 DEFINE_MOCK_HANDLER(tn_ipc_cmd_recvmsg, TN_IPC_CMD_RECVMSG)
 DEFINE_MOCK_HANDLER(tn_ipc_cmd_releasesocket, TN_IPC_CMD_RELEASESOCKET)
 DEFINE_MOCK_HANDLER(tn_ipc_cmd_obtainsocket, TN_IPC_CMD_OBTAINSOCKET)
+DEFINE_MOCK_HANDLER(tn_ipc_cmd_select_arm, TN_IPC_CMD_SELECT_ARM)
+DEFINE_MOCK_HANDLER(tn_ipc_cmd_select_disarm, TN_IPC_CMD_SELECT_DISARM)
 
 #include "../../src/task/ipc_dispatch.c"
 
@@ -60,6 +62,8 @@ TN_TEST(cmd_name_resolution)
     TN_ASSERT_STREQ(tn_ipc_cmd_name(TN_IPC_CMD_BIND), "BIND");
     TN_ASSERT_STREQ(tn_ipc_cmd_name(TN_IPC_CMD_GETSTATUS), "GETSTATUS");
     TN_ASSERT_STREQ(tn_ipc_cmd_name(TN_IPC_CMD_OBTAINSOCKET), "OBTAINSOCKET");
+    TN_ASSERT_STREQ(tn_ipc_cmd_name(TN_IPC_CMD_SELECT_ARM), "SELECT_ARM");
+    TN_ASSERT_STREQ(tn_ipc_cmd_name(TN_IPC_CMD_SELECT_DISARM), "SELECT_DISARM");
 
     /* Out of bounds */
     TN_ASSERT_STREQ(tn_ipc_cmd_name((TnIpcCmd)-1), "UNKNOWN");

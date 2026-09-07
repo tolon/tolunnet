@@ -181,6 +181,21 @@ typedef struct TnNetif {
     BOOL           link_up;
 } TnNetif;
 
+#ifndef TN_MAX_SELECTORS
+#define TN_MAX_SELECTORS 16
+#endif
+
+typedef struct TnSelector {
+    BOOL          in_use;
+    TnSocketBase *base;
+    struct Task  *task;
+    ULONG         sig_select;
+    LONG          nfds;
+    ULONG         read_mask;
+    ULONG         write_mask;
+    ULONG         except_mask;
+} TnSelector;
+
 /* Daemon Singleton State */
 typedef struct TnDaemon {
     TnNetif         ifs[TN_MAX_NETIF];
@@ -192,6 +207,8 @@ typedef struct TnDaemon {
     LONG            next_park_id;
     TnPrefs         prefs;
     BOOL            running;
+    TnSelector      selectors[TN_MAX_SELECTORS];
+    uint8_t         selector_count;
 } TnDaemon;
 
 static inline TnNetif *tn_netif_primary(TnDaemon *d)

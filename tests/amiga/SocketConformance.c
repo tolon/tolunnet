@@ -1248,12 +1248,12 @@ static void tc_waitselect_timeout(void)
     FreeVec(tm_io);
     DeleteMsgPort(tm_port);
 
-    /* 200 ms timeout should take between 150 ms and 400 ms */
-    if (res == 0 && diff_ms >= 150 && diff_ms <= 400) {
+    /* 200 ms timeout precision tightened to +-20ms (180ms to 240ms window per §D) */
+    if (res == 0 && diff_ms >= 180 && diff_ms <= 240) {
         TAP_OK("tc_waitselect_timeout");
     } else {
         tapf("# diff_ms = %ld, res = %ld\n", diff_ms, res);
-        TAP_NOTOK("tc_waitselect_timeout", "timeout precision outside 150-400ms window");
+        TAP_NOTOK("tc_waitselect_timeout", "timeout precision outside 180-240ms window");
     }
 }
 
@@ -1361,6 +1361,74 @@ static void tc_waitselect_badf(void)
     call_closesocket(s);
 
     TAP_OK("tc_waitselect_badf");
+}
+
+static void tc_waitselect_no_sigio(void)
+{
+    LONG s1, s2;
+    struct sockaddr_in sin;
+    char msg[] = "no_sigio_test";
+    struct timeval tv;
+    fd_set rfds;
+    LONG res;
+    int i;
+
+    /* Explicitly ensure SIGIO is disabled for this opener base */
+    call_setsocketsignals(0, 0, 0);
+
+    s1 = call_socket(AF_INET, SOCK_DGRAM, 0);
+    s2 = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (s1 < 0 || s2 < 0) {
+        if (s1 >= 0) call_closesocket(s1);
+        if (s2 >= 0) call_closesocket(s2);
+        TAP_NOTOK("tc_waitselect_no_sigio", "socket creation failed");
+        return;
+    }
+
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len         = sizeof(sin);
+    sin.sin_family      = AF_INET;
+    sin.sin_port        = htons(54326);
+    sin.sin_addr.s_addr = htonl(0x7F000001UL);
+
+    if (call_bind(s1, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+        call_closesocket(s1);
+        call_closesocket(s2);
+        TAP_NOTOK("tc_waitselect_no_sigio", "bind failed");
+        return;
+    }
+
+    /* 1. When no data is present, short 50ms timeout expires cleanly without polling */
+    FD_ZERO(&rfds);
+    FD_SET(s1, &rfds);
+    tv.tv_secs = 0;
+    tv.tv_micro = 50000; /* 50 ms */
+    res = call_waitselect(s1 + 1, &rfds, NULL, NULL, &tv, NULL);
+    if (res != 0) {
+        call_closesocket(s1);
+        call_closesocket(s2);
+        TAP_NOTOK("tc_waitselect_no_sigio", "expected timeout 0 on empty socket");
+        return;
+    }
+
+    /* 2. Send packet from s2 to s1 via loopback */
+    call_sendto(s2, msg, sizeof(msg), 0, (struct sockaddr *)&sin, sizeof(sin));
+
+    /* 3. WaitSelect with sig_io == 0 must detect readiness via event-driven selector */
+    FD_ZERO(&rfds);
+    FD_SET(s1, &rfds);
+    tv.tv_secs = 1;
+    tv.tv_micro = 0;
+    res = call_waitselect(s1 + 1, &rfds, NULL, NULL, &tv, NULL);
+
+    call_closesocket(s1);
+    call_closesocket(s2);
+
+    if (res == 1 && FD_ISSET(s1, &rfds)) {
+        TAP_OK("tc_waitselect_no_sigio");
+    } else {
+        TAP_NOTOK("tc_waitselect_no_sigio", "WaitSelect failed to report read readiness without sig_io");
+    }
 }
 
 static void tc_sigio(void)
@@ -2431,6 +2499,7 @@ int main(int argc, char *argv[])
     tc_waitselect_timeout();
     tc_waitselect_eintr();
     tc_waitselect_badf();
+    tc_waitselect_no_sigio();
     tc_sigio();
     tc_icmp_raw();
     tc_sendmsg_iov();

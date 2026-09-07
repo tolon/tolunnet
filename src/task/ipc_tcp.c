@@ -41,7 +41,7 @@ err_t tn_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
     /* Peer closed connection (FIN received) */
     if (p == NULL) {
         slot->tcp_state = TN_TCP_STATE_PEER_CLOSED;
-        tn_signal_socket(slot);
+        tn_signal_socket(&g_daemon, slot);
         tn_record_socket_event(&g_daemon, slot, FD_CLOSE | FD_READ);
         return ERR_OK;
     }
@@ -51,7 +51,7 @@ err_t tn_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
         return ERR_MEM;
     }
 
-    tn_signal_socket(slot);
+    tn_signal_socket(&g_daemon, slot);
     tn_record_socket_event(&g_daemon, slot, FD_READ);
     return ERR_OK;
 }
@@ -68,7 +68,7 @@ err_t tn_tcp_connected_cb(void *arg, struct tcp_pcb *pcb, err_t err)
     if (!slot->in_use || slot->tcp_pcb != pcb) return ERR_OK;
 
     slot->tcp_state = TN_TCP_STATE_ESTABLISHED;
-    tn_signal_socket(slot);
+    tn_signal_socket(&g_daemon, slot);
     tn_record_socket_event(&g_daemon, slot, FD_CONNECT | FD_WRITE);
 
     if (slot->pending_connect_msg != NULL) {
@@ -95,7 +95,7 @@ void tn_tcp_err_cb(void *arg, err_t err)
     slot->tcp_state  = TN_TCP_STATE_ERROR;
     slot->tcp_pcb    = NULL; /* lwIP frees PCB before calling err_cb */
     slot->last_error = ECONNREFUSED;
-    tn_signal_socket(slot);
+    tn_signal_socket(&g_daemon, slot);
     tn_record_socket_event(&g_daemon, slot, FD_ERROR);
 
     if (slot->pending_connect_msg != NULL) {
@@ -182,7 +182,7 @@ err_t tn_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
         return ERR_ABRT;
     }
 
-    tn_signal_socket(slot);
+    tn_signal_socket(&g_daemon, slot);
     tn_record_socket_event(&g_daemon, slot, FD_ACCEPT);
     return ERR_OK;
 }

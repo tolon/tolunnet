@@ -51,6 +51,7 @@ int tn_ipc_cmd_close(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                 tn_slot_unref(d, slot_idx);
             }
         }
+        tn_selector_disarm_all_for_base(d, base);
     }
 
     imsg->result = 0;

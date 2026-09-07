@@ -10,6 +10,8 @@ void tn_slot_table_init(TnDaemon *d)
 {
     if (d == NULL) return;
     memset(d->sockets, 0, sizeof(d->sockets));
+    memset(d->selectors, 0, sizeof(d->selectors));
+    d->selector_count = 0;
     d->next_park_id = 1;
 }
 
