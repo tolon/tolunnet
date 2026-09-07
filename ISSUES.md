@@ -96,5 +96,6 @@
 | **TNET-093** | Major | Events | `WaitSelect` complete with EINTR, except_fds, EBADF | **RESOLVED** | `EINTR` on signal interruption, `except_fds` OOB/error reporting, `EBADF` validation via `tn_fdset_first_set` | **L1 + L3** | `test_fdset`, `tc_waitselect_eintr`, `tc_waitselect_ebadf`, `tc_waitselect_except` (`docs/bench-logs/20260907-110502-20638e4/`) | `20638e4` |
 | **TNET-094** | Major | Network | Non-blocking connect & live HTTP bench target | **RESOLVED** | `EINPROGRESS` on non-blocking connect; CRLF line cleanup in config parser; live HTTP GET test | **L3** | `tc_nonblocking_connect`, `tc_live_http` (`docs/bench-logs/20260907-120042-6fb3c6e/`) | `6fb3c6e` |
 | **TNET-095** | Major | Architecture | Modular daemon refactor, multi-netif seam, queue host tests | **RESOLVED** | Split 3906-line monolith into 11 modular pairs; multi-netif seam; 14 host unit test suites under ASan/UBSan | **L1 + L3** | `make test-host` & `docs/bench-logs/20260907-132620-7772dbd/` | `7772dbd` |
+| **TNET-096** | Major | Events | Event-driven WaitSelect without 20ms poll fallback | **RESOLVED** | Daemon `TnSelector` registry, client-allocated `sig_select`, `SELECT_ARM`/`DISARM` IPC, 20ms `Delay(1)` removed; 29/29 dual-profile green | **L1 + L3** | `tc_waitselect_no_sigio`, `tc_waitselect_timeout` & `docs/bench-logs/20260907-200333-ad2d713/` | `ad2d713` |
 
 
