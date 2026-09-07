@@ -18,8 +18,11 @@ TN_TEST(test_startup_script_comment_and_uncomment)
         "; User-Startup header\n"
         "Assign Miami: SYS:Miami\n"
         "Run <>NIL: Miami:Miami\n"
+        "MiamiInit\n"
         "AmiTCP:bin/startnet\n"
+        "AmiTCP:bin/stopnet\n"
         "AddNetInterface DEVS:NetInterfaces/WiFiPi\n"
+        "ConfigureNetInterface DEVS:NetInterfaces/WiFiPi\n"
         "C:NetShutdown\n"
         "Echo \"Network initialized\"\n";
 
@@ -28,10 +31,13 @@ TN_TEST(test_startup_script_comment_and_uncomment)
     int len = tn_parse_startup_script(orig, disabled_buf, sizeof(disabled_buf), &dis_count);
 
     TN_ASSERT_TRUE(len > 0);
-    TN_ASSERT_EQ(dis_count, 5);
+    TN_ASSERT_EQ(dis_count, 8);
     TN_ASSERT_TRUE(strstr(disabled_buf, "; tolunnet-disabled: Run <>NIL: Miami:Miami") != NULL);
+    TN_ASSERT_TRUE(strstr(disabled_buf, "; tolunnet-disabled: MiamiInit") != NULL);
     TN_ASSERT_TRUE(strstr(disabled_buf, "; tolunnet-disabled: AmiTCP:bin/startnet") != NULL);
+    TN_ASSERT_TRUE(strstr(disabled_buf, "; tolunnet-disabled: AmiTCP:bin/stopnet") != NULL);
     TN_ASSERT_TRUE(strstr(disabled_buf, "; tolunnet-disabled: AddNetInterface DEVS:NetInterfaces/WiFiPi") != NULL);
+    TN_ASSERT_TRUE(strstr(disabled_buf, "; tolunnet-disabled: ConfigureNetInterface DEVS:NetInterfaces/WiFiPi") != NULL);
     TN_ASSERT_TRUE(strstr(disabled_buf, "; tolunnet-disabled: C:NetShutdown") != NULL);
     TN_ASSERT_TRUE(strstr(disabled_buf, "\nEcho \"Network initialized\"\n") != NULL);
 
@@ -41,10 +47,12 @@ TN_TEST(test_startup_script_comment_and_uncomment)
     int rlen = tn_uncomment_startup_script(disabled_buf, restored_buf, sizeof(restored_buf), &res_count);
 
     TN_ASSERT_TRUE(rlen > 0);
-    TN_ASSERT_EQ(res_count, 5);
+    TN_ASSERT_EQ(res_count, 8);
     TN_ASSERT_TRUE(strstr(restored_buf, "; tolunnet-disabled:") == NULL);
     TN_ASSERT_TRUE(strstr(restored_buf, "Run <>NIL: Miami:Miami") != NULL);
+    TN_ASSERT_TRUE(strstr(restored_buf, "MiamiInit") != NULL);
     TN_ASSERT_TRUE(strstr(restored_buf, "AmiTCP:bin/startnet") != NULL);
+    TN_ASSERT_TRUE(strstr(restored_buf, "ConfigureNetInterface DEVS:NetInterfaces/WiFiPi") != NULL);
 }
 
 TN_TEST(test_wireless_block_formatting)

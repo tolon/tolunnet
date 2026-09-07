@@ -108,6 +108,17 @@ BOOL tn_write_tolunnet_config(const WizardState *ws)
     write_text("ENVARC:tolunnet.config", buf);
     write_text("ENV:tolunnet.prefs", buf);
     write_text("ENVARC:tolunnet.prefs", buf);
+
+    /* OS registration: ENV:HostName, ENVARC:HostName, and Domain (no newline) */
+    const char *hname = ws->host_str[0] ? ws->host_str : "amiga";
+    write_text("ENV:HostName", hname);
+    write_text("ENVARC:HostName", hname);
+
+    if (ws->domain_str[0]) {
+        write_text("ENV:Domain", ws->domain_str);
+        write_text("ENVARC:Domain", ws->domain_str);
+    }
+
     return write_text("DEVS:tolunnet.config", buf);
 }
 

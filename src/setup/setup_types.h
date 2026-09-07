@@ -96,6 +96,7 @@ typedef struct WizardState {
     char dns1_str[16];
     char dns2_str[16];
     char host_str[32];
+    char domain_str[64];
     BOOL write_roadshow;     /* Checkbox: write DEVS:NetInterfaces (default TRUE) */
 
     /* Page 5: Test & Finish */
@@ -105,6 +106,7 @@ typedef struct WizardState {
     int  test_dns_ok;
     int  test_http_ok;
     char test_details[4][48];
+    BOOL needs_reboot;       /* TRUE if legacy stack did not exit cleanly within 10s */
 
     /* Navigation & Scripting control */
     BOOL rexx_done;

@@ -72,3 +72,30 @@ proof matrix, still pending.
 | `TestSocket` | **BUILT** | M6 self-test suite (runs against the live daemon) |
 | AmiSSL 5.x / IBrowse 2.5 / AWeb / smbfs | **NOT TESTED** | no gauntlet run yet — do not read earlier "READY" claims as proof |
 | Server-style apps (ircd, ftpd, AmiTCP `listen()` users) | **CANNOT RUN** | `bind`/`listen`/`accept` return `ENOSYS` (TNET-077) |
+
+---
+
+## 3. What the OS knows about the stack
+
+When `tolunnet` is running and configured by `TolunnetSetup` (or `TolunnetPrefs`), the AmigaOS system environment reflects the stack through standard system interfaces:
+
+1. **`bsdsocket.library` in Exec `LibList`**:
+   - Registered dynamically in RAM via `AddLibrary()` with standard 139-vector LVO table.
+   - Applications open it via standard `OpenLibrary("bsdsocket.library", 4)`.
+
+2. **`HostName` & `Domain` Environment Variables**:
+   - `ENV:HostName` and `ENVARC:HostName`: plain hostname string without newline. Many Amiga applications (e.g. AmiTCP utilities, mail clients, IRC clients) read this before or instead of calling `gethostname()`.
+   - `ENV:Domain` and `ENVARC:Domain`: search domain string if configured.
+
+3. **`S:User-Startup` Boot Block**:
+   - Clean, isolated block delimited by `; BEGIN tolunnet` and `; END tolunnet`:
+     ```amiga
+     ; BEGIN tolunnet
+     Run <NIL: >NIL: C:tolunnet
+     ; END tolunnet
+     ```
+   - Legacy stack lines (Miami, AmiTCP, Genesis, Roadshow) are safely backed up to `S:User-Startup.tolunnet-bak` and disabled with `; tolunnet-disabled: <line>`.
+
+4. **Optional `DEVS:Internet/*` and `DEVS:NetInterfaces/*` Mirror**:
+   - If enabled in setup, `DEVS:NetInterfaces/Ethernet` (or `WiFiPi`) is written in Roadshow-compatible KEY=VALUE syntax for interoperability with third-party tools expecting Roadshow configuration files.
+

@@ -53,11 +53,14 @@ static int is_stack_keyword_line(const char *line)
 
     if (case_str_contains(line, "miamidx") ||
         case_str_contains(line, "miami") ||
+        case_str_contains(line, "miamiinit") ||
         case_str_contains(line, "amitcp") ||
         case_str_contains(line, "addnetinterface") ||
+        case_str_contains(line, "configurenetinterface") ||
         case_str_contains(line, "netshutdown") ||
         case_str_contains(line, "genesis") ||
-        case_str_contains(line, "startnet")) {
+        case_str_contains(line, "startnet") ||
+        case_str_contains(line, "stopnet")) {
         return 1;
     }
     return 0;
@@ -258,6 +261,106 @@ static void try_import_roadshow(WizardState *ws)
                     } else if (ws->dns2_str[0] == '\0') {
                         strncpy(ws->dns2_str, ip, sizeof(ws->dns2_str) - 1);
                     }
+                } else if (strcasecmp(word, "domain") == 0) {
+                    strncpy(ws->domain_str, ip, sizeof(ws->domain_str) - 1);
+                }
+            }
+        }
+        Close(fh);
+    }
+}
+
+static void try_import_amitcp(WizardState *ws)
+{
+    if (!ws) return;
+
+    /* 1. HostName from ENV:HostName or ENVARC:HostName */
+    BPTR fh = Open((CONST_STRPTR)"ENV:HostName", MODE_OLDFILE);
+    if (!fh) fh = Open((CONST_STRPTR)"ENVARC:HostName", MODE_OLDFILE);
+    if (fh) {
+        char line[64];
+        if (FGets(fh, (STRPTR)line, sizeof(line))) {
+            char *nl = strpbrk(line, "\r\n");
+            if (nl) *nl = '\0';
+            char *p = line;
+            while (*p == ' ' || *p == '\t') p++;
+            if (*p != '\0') {
+                strncpy(ws->host_str, p, sizeof(ws->host_str) - 1);
+                ws->imported_settings = TRUE;
+            }
+        }
+        Close(fh);
+    }
+
+    /* 2. Check AmiTCP:db/interfaces */
+    fh = Open((CONST_STRPTR)"AmiTCP:db/interfaces", MODE_OLDFILE);
+    if (fh) {
+        char line[256];
+        while (FGets(fh, (STRPTR)line, sizeof(line))) {
+            const char *p = line;
+            while (*p == ' ' || *p == '\t') p++;
+            if (*p == '#' || *p == ';' || *p == '\0' || *p == '\r' || *p == '\n') continue;
+
+            char dev[64] = "";
+            int unit = 0;
+            char *dev_pos = strstr(line, "dev=");
+            if (!dev_pos) dev_pos = strstr(line, "DEV=");
+            if (dev_pos) {
+                sscanf(dev_pos + 4, "%63s", dev);
+                char *comma = strchr(dev, ',');
+                if (comma) *comma = '\0';
+            }
+            char *unit_pos = strstr(line, "unit=");
+            if (!unit_pos) unit_pos = strstr(line, "UNIT=");
+            if (unit_pos) {
+                sscanf(unit_pos + 5, "%d", &unit);
+            }
+            if (dev[0] != '\0') {
+                ws->imported_settings = TRUE;
+            }
+        }
+        Close(fh);
+    }
+
+    /* 3. Check AmiTCP:db/hosts for static IP matching host_str */
+    fh = Open((CONST_STRPTR)"AmiTCP:db/hosts", MODE_OLDFILE);
+    if (fh) {
+        char line[256];
+        while (FGets(fh, (STRPTR)line, sizeof(line))) {
+            const char *p = line;
+            while (*p == ' ' || *p == '\t') p++;
+            if (*p == '#' || *p == ';' || *p == '\0' || *p == '\r' || *p == '\n') continue;
+
+            char ip[32], hname[64];
+            if (sscanf(line, "%31s %63s", ip, hname) >= 2) {
+                if (ws->host_str[0] != '\0' && strcasecmp(hname, ws->host_str) == 0) {
+                    if (strcmp(ip, "127.0.0.1") != 0) {
+                        strncpy(ws->ip_str, ip, sizeof(ws->ip_str) - 1);
+                        ws->ip_mode = 1; /* static */
+                        ws->imported_settings = TRUE;
+                    }
+                }
+            }
+        }
+        Close(fh);
+    }
+
+    /* 4. Check AmiTCP:db/name_resolution or AmiTCP:db/resolv.conf */
+    fh = Open((CONST_STRPTR)"AmiTCP:db/name_resolution", MODE_OLDFILE);
+    if (!fh) fh = Open((CONST_STRPTR)"AmiTCP:db/resolv.conf", MODE_OLDFILE);
+    if (fh) {
+        char line[128];
+        while (FGets(fh, (STRPTR)line, sizeof(line))) {
+            char word[32], ip[32];
+            if (sscanf(line, "%31s %31s", word, ip) == 2) {
+                if (strcasecmp(word, "nameserver") == 0) {
+                    if (ws->dns1_str[0] == '\0') {
+                        strncpy(ws->dns1_str, ip, sizeof(ws->dns1_str) - 1);
+                    } else if (ws->dns2_str[0] == '\0') {
+                        strncpy(ws->dns2_str, ip, sizeof(ws->dns2_str) - 1);
+                    }
+                } else if (strcasecmp(word, "domain") == 0) {
+                    strncpy(ws->domain_str, ip, sizeof(ws->domain_str) - 1);
                 }
             }
         }
@@ -291,16 +394,18 @@ void tn_stack_detect_all(WizardState *ws)
         st->is_running = TRUE;
     }
 
-    /* 2. Check Miami / MiamiDx */
+    /* 2. Check Miami / MiamiDx (do not import binary prefs; detect & disable only) */
     BOOL miami_found = FALSE;
-    if (file_exists("Miami:") || file_exists("ENVARC:MiamiDx") || file_exists("ENVARC:Miami")) {
+    if (file_exists("Miami:") || file_exists("ENVARC:MiamiDx") || file_exists("ENVARC:Miami") ||
+        file_exists("SYS:WBStartup/Miami.info") ||
+        scan_script_file("S:User-Startup") || scan_script_file("S:Startup-Sequence")) {
         miami_found = TRUE;
     }
     if (miami_found && ws->stack_count < MAX_DETECTED_STACKS) {
         DetectedStack *st = &ws->stacks[ws->stack_count++];
         strncpy(st->name, "Miami / MiamiDx", sizeof(st->name) - 1);
-        strncpy(st->details, "Installed on disk (ENVARC:Miami)", sizeof(st->details) - 1);
-        st->has_startup = scan_script_file("S:User-Startup");
+        strncpy(st->details, "Installed (Miami:, ENVARC:Miami*, WBStartup)", sizeof(st->details) - 1);
+        st->has_startup = scan_script_file("S:User-Startup") || scan_script_file("S:Startup-Sequence");
     }
 
     /* 3. Check Roadshow */
@@ -315,23 +420,20 @@ void tn_stack_detect_all(WizardState *ws)
         st->has_startup = scan_script_file("S:User-Startup") || scan_script_file("S:Network-Startup");
     }
 
-    /* 4. Check AmiTCP */
-    if (file_exists("AmiTCP:") && ws->stack_count < MAX_DETECTED_STACKS) {
+    /* 4. Check AmiTCP / Genesis */
+    BOOL amitcp_found = FALSE;
+    if (file_exists("AmiTCP:") || file_exists("AmiTCP:db/") ||
+        file_exists("SYS:WBStartup/Genesis.info")) {
+        amitcp_found = TRUE;
+    }
+    if (amitcp_found && ws->stack_count < MAX_DETECTED_STACKS) {
         DetectedStack *st = &ws->stacks[ws->stack_count++];
-        strncpy(st->name, "AmiTCP", sizeof(st->name) - 1);
-        strncpy(st->details, "Installed on disk (AmiTCP:)", sizeof(st->details) - 1);
-        st->has_startup = scan_script_file("S:User-Startup");
+        strncpy(st->name, "AmiTCP / Genesis", sizeof(st->name) - 1);
+        strncpy(st->details, "Installed on disk (AmiTCP:, AmiTCP:db/)", sizeof(st->details) - 1);
+        st->has_startup = scan_script_file("S:User-Startup") || scan_script_file("S:Startup-Sequence");
     }
 
-    /* 5. Check Genesis */
-    if (file_exists("Genesis:") && ws->stack_count < MAX_DETECTED_STACKS) {
-        DetectedStack *st = &ws->stacks[ws->stack_count++];
-        strncpy(st->name, "Genesis", sizeof(st->name) - 1);
-        strncpy(st->details, "Installed on disk (Genesis:)", sizeof(st->details) - 1);
-        st->has_startup = scan_script_file("S:User-Startup");
-    }
-
-    /* 6. Check LIBS:bsdsocket.library */
+    /* 5. Check LIBS:bsdsocket.library */
     if (file_exists("LIBS:bsdsocket.library") && ws->stack_count < MAX_DETECTED_STACKS) {
         DetectedStack *st = &ws->stacks[ws->stack_count++];
         strncpy(st->name, "Disk bsdsocket.library", sizeof(st->name) - 1);
@@ -339,8 +441,9 @@ void tn_stack_detect_all(WizardState *ws)
         st->has_disk_lib = TRUE;
     }
 
-    /* Import existing settings if available */
+    /* Import settings ONLY from Roadshow and AmiTCP; NEVER from Miami */
     try_import_roadshow(ws);
+    try_import_amitcp(ws);
 
     if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
         pr->pr_WindowPtr = old_win;
@@ -461,18 +564,48 @@ BOOL tn_stack_undo_replacement(void)
 
 void tn_stack_request_quit(WizardState *ws)
 {
-    (void)ws;
-    /* Ask Miami to quit via ARexx port MIAMI if present */
+    if (!ws) return;
+
+    /* 1. Ask Miami / MiamiDx to quit via ARexx port */
     Forbid();
     struct MsgPort *miami_port = FindPort((CONST_STRPTR)"MIAMI");
+    struct MsgPort *miamidx_port = FindPort((CONST_STRPTR)"MIAMIDX");
     Permit();
+
     if (miami_port) {
-        /* Note: port is alive, user will be prompted or ARexx QUIT sent */
+        Execute((CONST_STRPTR)"rx \"address MIAMI 'QUIT'\" >NIL: <NIL:", 0, 0);
+    }
+    if (miamidx_port) {
+        Execute((CONST_STRPTR)"rx \"address MIAMIDX 'QUIT'\" >NIL: <NIL:", 0, 0);
     }
 
-    /* If NetShutdown command exists on disk, execute it */
+    /* 2. Roadshow shutdown */
     if (file_exists("C:NetShutdown")) {
         Execute((CONST_STRPTR)"C:NetShutdown >NIL: <NIL:", 0, 0);
+    } else if (file_exists("NetShutdown")) {
+        Execute((CONST_STRPTR)"NetShutdown >NIL: <NIL:", 0, 0);
+    }
+
+    /* 3. AmiTCP shutdown */
+    if (file_exists("AmiTCP:bin/stopnet")) {
+        Execute((CONST_STRPTR)"AmiTCP:bin/stopnet >NIL: <NIL:", 0, 0);
+    }
+
+    /* 4. Wait loop up to 10s for legacy stack ports to terminate */
+    BOOL any_running = FALSE;
+    for (int i = 0; i < 20; i++) {
+        Delay(25); /* 500ms */
+        Forbid();
+        any_running = (FindPort((CONST_STRPTR)"MIAMI") != NULL ||
+                       FindPort((CONST_STRPTR)"MIAMIDX") != NULL ||
+                       FindPort((CONST_STRPTR)"AmiTCP") != NULL ||
+                       FindPort((CONST_STRPTR)"AmiTCP_DAEMON") != NULL);
+        Permit();
+        if (!any_running) break;
+    }
+
+    if (any_running) {
+        ws->needs_reboot = TRUE;
     }
 }
 

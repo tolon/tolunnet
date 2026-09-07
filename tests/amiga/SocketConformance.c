@@ -2534,6 +2534,15 @@ static void tc_wizard_wired(void)
         return;
     }
 
+    /* Step W2: Append fake legacy stack lines to S:User-Startup to verify migration */
+    BPTR us_fh = Open((CONST_STRPTR)"S:User-Startup", MODE_READWRITE);
+    if (us_fh) {
+        Seek(us_fh, 0, OFFSET_END);
+        const char *fake_lines = "\nRun MiamiDx\nAmiTCP:bin/startnet\n";
+        Write(us_fh, (CONST_APTR)fake_lines, strlen(fake_lines));
+        Close(us_fh);
+    }
+
     /* Launch TolunnetSetup asynchronously */
     LONG rc = SystemTags((CONST_STRPTR)"C:TolunnetSetup",
                          SYS_Asynch, TRUE,
@@ -2610,14 +2619,49 @@ static void tc_wizard_wired(void)
         if (!wizard_port) break;
     }
 
-    /* Verify DEVS:tolunnet.config exists */
+    /* 1. Verify DEVS:tolunnet.config exists */
     BPTR lock = Lock((CONST_STRPTR)"DEVS:tolunnet.config", ACCESS_READ);
-    if (lock) {
-        UnLock(lock);
-        TAP_OK("tc_wizard_wired");
-    } else {
+    if (!lock) {
         TAP_NOTOK("tc_wizard_wired", "DEVS:tolunnet.config not generated");
+        return;
     }
+    UnLock(lock);
+
+    /* 2. Verify S:User-Startup.tolunnet-bak exists */
+    BPTR bak_lock = Lock((CONST_STRPTR)"S:User-Startup.tolunnet-bak", ACCESS_READ);
+    if (!bak_lock) {
+        TAP_NOTOK("tc_wizard_wired", "S:User-Startup.tolunnet-bak not created");
+        return;
+    }
+    UnLock(bak_lock);
+
+    /* 3. Verify fake legacy stack lines are commented out in S:User-Startup */
+    BPTR us_check = Open((CONST_STRPTR)"S:User-Startup", MODE_OLDFILE);
+    if (!us_check) {
+        TAP_NOTOK("tc_wizard_wired", "Cannot open S:User-Startup for verification");
+        return;
+    }
+    char us_buf[4096];
+    LONG us_read = Read(us_check, us_buf, sizeof(us_buf) - 1);
+    Close(us_check);
+    if (us_read < 0) us_read = 0;
+    us_buf[us_read] = '\0';
+
+    if (strstr(us_buf, "; tolunnet-disabled: Run MiamiDx") == NULL ||
+        strstr(us_buf, "; tolunnet-disabled: AmiTCP:bin/startnet") == NULL) {
+        TAP_NOTOK("tc_wizard_wired", "Legacy lines not properly commented out in S:User-Startup");
+        return;
+    }
+
+    /* 4. Verify ENV:HostName exists */
+    BPTR hn_lock = Lock((CONST_STRPTR)"ENV:HostName", ACCESS_READ);
+    if (!hn_lock) {
+        TAP_NOTOK("tc_wizard_wired", "ENV:HostName not created");
+        return;
+    }
+    UnLock(hn_lock);
+
+    TAP_OK("tc_wizard_wired");
 }
 
 /* Bench plumbing (not a TAP case): ask the daemon to exit so the bench can
