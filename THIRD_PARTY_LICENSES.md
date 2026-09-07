@@ -46,3 +46,23 @@ The SANA-II network device interface headers are standard AmigaOS interface defi
 
 Permission is granted to use and distribute standard AmigaOS header definitions for development of compatible AmigaOS drivers and network stacks.
 
+## Roadshow TCP/IP Stack 'C' Header Files (SDK 1.8) — `include/netinclude/`
+
+The BSD socket, networking, and system include headers under `include/netinclude/` are vendored from the Roadshow TCP/IP SDK version 1.8 ("Freely Distributable", Copyright (C) 2001-2016 by Olaf Barthel).
+
+Notice reproduced verbatim from the header files:
+
+```
+/*
+ * :ts=8
+ *
+ * 'Roadshow' -- Amiga TCP/IP stack
+ * Copyright (C) 2001-2016 by Olaf Barthel.
+ * All Rights Reserved.
+ *
+ * Amiga specific TCP/IP 'C' header files;
+ * Freely Distributable
+ */
+```
+
+
