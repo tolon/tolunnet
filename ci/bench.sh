@@ -79,12 +79,17 @@ fi
 say "starting host HTTP server on port 8000"
 python -m http.server 8000 --bind 0.0.0.0 >/dev/null 2>&1 &
 HTTP_PID=$!
-cleanup_http() {
+SUCCESS=0
+cleanup() {
     if [ -n "${HTTP_PID:-}" ]; then
         kill "$HTTP_PID" 2>/dev/null || true
     fi
+    if [ "${SUCCESS:-0}" != "1" ] && [ -n "${LOG_ROOT:-}" ] && [ -d "$LOG_ROOT" ]; then
+        say "run failed; removing incomplete log directory: $LOG_ROOT"
+        rm -rf "$LOG_ROOT"
+    fi
 }
-trap cleanup_http EXIT INT TERM
+trap cleanup EXIT INT TERM
 
 fail=0
 for cfg in $CONFIGS; do
@@ -171,4 +176,5 @@ done
 echo "$MUFORCE_NOTE" > "$LOG_ROOT/muforce.txt"
 say "logs: $LOG_ROOT"
 say "RESULT: $([ $fail -eq 0 ] && echo ALL-GREEN || echo HAS-FAILURES)"
+[ $fail -eq 0 ] && SUCCESS=1
 exit $fail
