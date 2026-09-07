@@ -10,7 +10,7 @@ If EXISTS WORK:
   Delete >NIL: WORK:bench-done QUIET
 
   ; ---- cycle 1 ----------------------------------------------------------
-  Run >NIL: C:tolunnet
+  Run >WORK:daemon.log C:tolunnet
   Wait 15
   C:SocketConformance >WORK:conformance.log
   ; SocketConformance signals the daemon to stop on exit (TNET-059 guard:
@@ -18,7 +18,7 @@ If EXISTS WORK:
   Wait 4
 
   ; ---- cycle 2: restart without reboot (TNET-059/060 proof) -------------
-  Run >NIL: C:tolunnet
+  Run >WORK:daemon2.log C:tolunnet
   Wait 15
   C:SocketConformance >WORK:conformance2.log
   Wait 4

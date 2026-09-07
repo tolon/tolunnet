@@ -65,6 +65,17 @@ if [ -z "${MUFORCE_ADF:-}" ]; then
     MUFORCE_NOTE="SKIP (MuForce/Enforcer not present on this bench; MUFORCE_ADF unset)"
 fi
 
+# Start background host HTTP server for live TCP test (Round 4 §C8)
+say "starting host HTTP server on port 8000"
+python -m http.server 8000 --bind 0.0.0.0 >/dev/null 2>&1 &
+HTTP_PID=$!
+cleanup_http() {
+    if [ -n "${HTTP_PID:-}" ]; then
+        kill "$HTTP_PID" 2>/dev/null || true
+    fi
+}
+trap cleanup_http EXIT INT TERM
+
 fail=0
 for cfg in $CONFIGS; do
     say "===== config: $cfg ====="
@@ -82,10 +93,12 @@ for cfg in $CONFIGS; do
     xd delete C/tolunnet        >/dev/null 2>&1
     xd delete C/SocketConformance >/dev/null 2>&1
     xd delete S/User-Startup    >/dev/null 2>&1
+    xd delete Devs/tolunnet.config >/dev/null 2>&1
     xd write build/tolunnet C/tolunnet          || die "xdftool write tolunnet failed"
     xd write build/SocketConformance C/SocketConformance || die "xdftool write conformance failed"
     xd write ci/User-Startup-Conformance S/User-Startup  || die "xdftool write User-Startup failed"
-    say "staged: tolunnet + SocketConformance + User-Startup -> $HDF_WIN"
+    xd write ci/tolunnet.config Devs/tolunnet.config     || die "xdftool write tolunnet.config failed"
+    say "staged: tolunnet + SocketConformance + User-Startup + tolunnet.config -> $HDF_WIN"
 
     # ---- run headless ---------------------------------------------------
     rm -f "$WORK_DIR/conformance.log" "$WORK_DIR/conformance2.log" "$WORK_DIR/bench-done"
@@ -117,6 +130,8 @@ for cfg in $CONFIGS; do
     mkdir -p "$OUT"
     cp "$WORK_DIR/conformance.log"  "$OUT/" 2>/dev/null || echo "(missing)" > "$OUT/conformance.log"
     cp "$WORK_DIR/conformance2.log" "$OUT/" 2>/dev/null || echo "(missing)" > "$OUT/conformance2.log"
+    cp "$WORK_DIR/daemon.log"       "$OUT/" 2>/dev/null || true
+    cp "$WORK_DIR/daemon2.log"      "$OUT/" 2>/dev/null || true
     echo "$cfg: $(date)" > "$OUT/README.txt"
     {
         echo "config: ci/tolunnet-$cfg.uae (HDF copy staged from the pristine WB3.0 image)"
@@ -126,10 +141,10 @@ for cfg in $CONFIGS; do
 
     # ---- summary --------------------------------------------------------
     for log in "$OUT/conformance.log" "$OUT/conformance2.log"; do
-        ok=$(grep -c '^ok' "$log" 2>/dev/null || echo 0)
-        nok=$(grep -c '^not ok' "$log" 2>/dev/null || echo 0)
-        skip=$(grep -c '# SKIP' "$log" 2>/dev/null || echo 0)
-        todo=$(grep -c '# TODO' "$log" 2>/dev/null || echo 0)
+        ok=$(grep -c '^ok' "$log" 2>/dev/null | tr -d '\r' || echo 0)
+        nok=$(grep -c '^not ok' "$log" 2>/dev/null | tr -d '\r' || echo 0)
+        skip=$(grep -c '# SKIP' "$log" 2>/dev/null | tr -d '\r' || echo 0)
+        todo=$(grep -c '# TODO' "$log" 2>/dev/null | tr -d '\r' || echo 0)
         say "$(basename "$log"): ok=$ok not_ok=$nok skip=$skip todo=$todo"
         real_nok=$((nok - todo))
         [ "$real_nok" -gt 0 ] 2>/dev/null && fail=1

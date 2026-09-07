@@ -429,8 +429,9 @@ static void tn_tcp_err_cb(void *arg, err_t err)
     if (slot_idx < 0 || slot_idx >= TN_MAX_GLOBAL_SOCKETS) return;
 
     slot = &g_sockets[slot_idx];
-    slot->tcp_state = TN_TCP_STATE_ERROR;
-    slot->tcp_pcb   = NULL; /* lwIP frees PCB before calling err_cb */
+    slot->tcp_state  = TN_TCP_STATE_ERROR;
+    slot->tcp_pcb    = NULL; /* lwIP frees PCB before calling err_cb */
+    slot->last_error = ECONNREFUSED;
     tn_signal_socket(slot);
     tn_record_socket_event(slot, FD_ERROR);
 
@@ -440,6 +441,49 @@ static void tn_tcp_err_cb(void *arg, err_t err)
         ReplyMsg((struct Message *)slot->pending_connect_msg);
         slot->pending_connect_msg = NULL;
     }
+}
+
+/* DNS callback from lwIP when asynchronous host lookup completes (Round 4 §C8) */
+static void tn_dns_found_cb(const char *name, const ip_addr_t *ipaddr, void *callback_arg)
+{
+    TnIpcMsg *imsg = (TnIpcMsg *)callback_arg;
+    TnSocketBase *base;
+
+    if (imsg == NULL) return;
+
+    base = (TnSocketBase *)imsg->socket_base;
+    if (base == NULL) {
+        ReplyMsg((struct Message *)imsg);
+        return;
+    }
+
+    if (ipaddr != NULL) {
+        int j = 0;
+        base->hostent_addr = ip_addr_get_ip4_u32(ipaddr);
+        if (name != NULL) {
+            while (name[j] && j < 63) {
+                base->hostent_name[j] = name[j];
+                j++;
+            }
+        }
+        base->hostent_name[j] = '\0';
+        base->hostent_addrs[0] = (STRPTR)&base->hostent_addr;
+        base->hostent_addrs[1] = NULL;
+        base->hostent_aliases[0] = NULL;
+        base->hostent_data.h_name      = (STRPTR)base->hostent_name;
+        base->hostent_data.h_aliases   = (char **)base->hostent_aliases;
+        base->hostent_data.h_addrtype  = AF_INET;
+        base->hostent_data.h_length    = 4;
+        base->hostent_data.h_addr_list = (APTR)base->hostent_addrs;
+
+        imsg->result = (LONG)(intptr_t)&base->hostent_data;
+        imsg->err_no = 0;
+    } else {
+        imsg->result = 0; /* NULL */
+        imsg->err_no = ENOENT;
+    }
+
+    ReplyMsg((struct Message *)imsg);
 }
 
 static void tn_init_socket_slot(int slot_idx, TnSocketBase *base, struct Task *task, int domain, int type, int protocol)
@@ -1115,10 +1159,25 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 u16_t dst_port = lwip_ntohs(sin->sin_port);
                 err_t cerr;
 
+                if (g_sockets[slot_idx].tcp_state == TN_TCP_STATE_CONNECTING) {
+                    imsg->result = -1;
+                    imsg->err_no = EALREADY;
+                    return TRUE;
+                }
+                if (g_sockets[slot_idx].tcp_state == TN_TCP_STATE_ESTABLISHED) {
+                    imsg->result = -1;
+                    imsg->err_no = EISCONN;
+                    return TRUE;
+                }
+
                 ip_addr_set_ip4_u32(&dst_ip, sin->sin_addr.s_addr);
 
-                g_sockets[slot_idx].tcp_state           = TN_TCP_STATE_CONNECTING;
-                g_sockets[slot_idx].pending_connect_msg = imsg;
+                g_sockets[slot_idx].tcp_state = TN_TCP_STATE_CONNECTING;
+                if (!g_sockets[slot_idx].is_nonblocking) {
+                    g_sockets[slot_idx].pending_connect_msg = imsg;
+                } else {
+                    g_sockets[slot_idx].pending_connect_msg = NULL;
+                }
 
                 tcp_recv(g_sockets[slot_idx].tcp_pcb, tn_tcp_recv_cb);
                 tcp_sent(g_sockets[slot_idx].tcp_pcb, tn_tcp_sent_cb);
@@ -1133,6 +1192,12 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                     g_sockets[slot_idx].tcp_state           = TN_TCP_STATE_CLOSED;
                     imsg->result = -1;
                     imsg->err_no = ECONNREFUSED;
+                    return TRUE;
+                }
+
+                if (g_sockets[slot_idx].is_nonblocking) {
+                    imsg->result = -1;
+                    imsg->err_no = EINPROGRESS;
                     return TRUE;
                 }
 
@@ -1663,16 +1728,16 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                 base->hostent_addrs[1] = NULL;
                 base->hostent_aliases[0] = NULL;
                 base->hostent_data.h_name      = (STRPTR)base->hostent_name;
-                base->hostent_data.h_aliases   = base->hostent_aliases;
+                base->hostent_data.h_aliases   = (char **)base->hostent_aliases;
                 base->hostent_data.h_addrtype  = AF_INET;
                 base->hostent_data.h_length    = 4;
-                base->hostent_data.h_addr_list = (char **)base->hostent_addrs;
+                base->hostent_data.h_addr_list = (APTR)base->hostent_addrs;
 
                 imsg->result = (LONG)(intptr_t)&base->hostent_data;
                 imsg->err_no = 0;
             } else {
                 ip_addr_t dns_res;
-                err_t derr = dns_gethostbyname(hostname, &dns_res, NULL, NULL);
+                err_t derr = dns_gethostbyname(hostname, &dns_res, tn_dns_found_cb, imsg);
                 if (derr == ERR_OK) {
                     int j = 0;
                     base->hostent_addr = ip_addr_get_ip4_u32(&dns_res);
@@ -1685,16 +1750,21 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                     base->hostent_addrs[1] = NULL;
                     base->hostent_aliases[0] = NULL;
                     base->hostent_data.h_name      = (STRPTR)base->hostent_name;
-                    base->hostent_data.h_aliases   = base->hostent_aliases;
+                    base->hostent_data.h_aliases   = (char **)base->hostent_aliases;
                     base->hostent_data.h_addrtype  = AF_INET;
                     base->hostent_data.h_length    = 4;
-                    base->hostent_data.h_addr_list = (char **)base->hostent_addrs;
+                    base->hostent_data.h_addr_list = (APTR)base->hostent_addrs;
 
                     imsg->result = (LONG)(intptr_t)&base->hostent_data;
                     imsg->err_no = 0;
+                    return TRUE;
+                } else if (derr == ERR_INPROGRESS) {
+                    /* Handled asynchronously: tn_dns_found_cb will call ReplyMsg */
+                    return FALSE;
                 } else {
                     imsg->result = 0; /* NULL */
                     imsg->err_no = ENOENT;
+                    return TRUE;
                 }
             }
             return TRUE;
@@ -2617,6 +2687,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                     if (in_r & mask) {
                         if (g_sockets[slot_idx].rx_head != NULL ||
                             g_sockets[slot_idx].tcp_state == TN_TCP_STATE_PEER_CLOSED ||
+                            g_sockets[slot_idx].tcp_state == TN_TCP_STATE_ERROR ||
                             (g_sockets[slot_idx].tcp_state == TN_TCP_STATE_LISTENING && g_sockets[slot_idx].accept_head != NULL)) {
                             out_r |= mask;
                             ready_cnt++;
@@ -2625,6 +2696,7 @@ static BOOL tn_handle_ipc(TnIpcMsg *imsg)
                     /* Write readiness */
                     if (in_w & mask) {
                         if (g_sockets[slot_idx].tcp_state == TN_TCP_STATE_ESTABLISHED ||
+                            g_sockets[slot_idx].tcp_state == TN_TCP_STATE_ERROR ||
                             g_sockets[slot_idx].type == 2 /* UDP */ ||
                             g_sockets[slot_idx].type == 3 /* RAW */) {
                             out_w |= mask;

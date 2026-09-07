@@ -73,41 +73,49 @@ static LONG tn_str_to_long(const char *s, LONG *out)
 
 void tn_config_parse_line(TnPrefs *prefs, const char *key, const char *val)
 {
-    if (tn_str_equal_nocase(key, "DEVICE")) {
-        tn_str_copy_clean(prefs->device, val, sizeof(prefs->device));
-    } else if (tn_str_equal_nocase(key, "UNIT")) {
+    char clean_key[32];
+    char clean_val[64];
+
+    if (prefs == NULL || key == NULL || val == NULL) return;
+
+    tn_str_copy_clean(clean_key, key, sizeof(clean_key));
+    tn_str_copy_clean(clean_val, val, sizeof(clean_val));
+
+    if (tn_str_equal_nocase(clean_key, "DEVICE")) {
+        tn_str_copy_clean(prefs->device, clean_val, sizeof(prefs->device));
+    } else if (tn_str_equal_nocase(clean_key, "UNIT")) {
         LONG u = 0;
-        if (tn_str_to_long(val, &u)) prefs->unit = (ULONG)u;
-    } else if (tn_str_equal_nocase(key, "DHCP") || tn_str_equal_nocase(key, "USE_DHCP")) {
-        if (tn_str_equal_nocase(val, "YES") || tn_str_equal_nocase(val, "1") || tn_str_equal_nocase(val, "TRUE")) {
+        if (tn_str_to_long(clean_val, &u)) prefs->unit = (ULONG)u;
+    } else if (tn_str_equal_nocase(clean_key, "DHCP") || tn_str_equal_nocase(clean_key, "USE_DHCP")) {
+        if (tn_str_equal_nocase(clean_val, "YES") || tn_str_equal_nocase(clean_val, "1") || tn_str_equal_nocase(clean_val, "TRUE")) {
             prefs->use_dhcp = TRUE;
         } else {
             prefs->use_dhcp = FALSE;
         }
-    } else if (tn_str_equal_nocase(key, "IP") || tn_str_equal_nocase(key, "IP_ADDR")) {
-        tn_str_copy_clean(prefs->ip_addr, val, sizeof(prefs->ip_addr));
-    } else if (tn_str_equal_nocase(key, "NETMASK") || tn_str_equal_nocase(key, "MASK")) {
-        tn_str_copy_clean(prefs->netmask, val, sizeof(prefs->netmask));
-    } else if (tn_str_equal_nocase(key, "GATEWAY") || tn_str_equal_nocase(key, "GW")) {
-        tn_str_copy_clean(prefs->gateway, val, sizeof(prefs->gateway));
-    } else if (tn_str_equal_nocase(key, "DNS2")) {
+    } else if (tn_str_equal_nocase(clean_key, "IP") || tn_str_equal_nocase(clean_key, "IP_ADDR")) {
+        tn_str_copy_clean(prefs->ip_addr, clean_val, sizeof(prefs->ip_addr));
+    } else if (tn_str_equal_nocase(clean_key, "NETMASK") || tn_str_equal_nocase(clean_key, "MASK")) {
+        tn_str_copy_clean(prefs->netmask, clean_val, sizeof(prefs->netmask));
+    } else if (tn_str_equal_nocase(clean_key, "GATEWAY") || tn_str_equal_nocase(clean_key, "GW")) {
+        tn_str_copy_clean(prefs->gateway, clean_val, sizeof(prefs->gateway));
+    } else if (tn_str_equal_nocase(clean_key, "DNS2")) {
         /* TNET-063: secondary nameserver is its own key, never aliases DNS1 */
-        tn_str_copy_clean(prefs->dns2, val, sizeof(prefs->dns2));
-    } else if (tn_str_equal_nocase(key, "DNS") || tn_str_equal_nocase(key, "DNS1") ||
-               tn_str_equal_nocase(key, "NAMESERVER")) {
-        tn_str_copy_clean(prefs->dns_server, val, sizeof(prefs->dns_server));
-    } else if (tn_str_equal_nocase(key, "HOSTNAME")) {
-        tn_str_copy_clean(prefs->hostname, val, sizeof(prefs->hostname));
-    } else if (tn_str_equal_nocase(key, "MTU")) {
+        tn_str_copy_clean(prefs->dns2, clean_val, sizeof(prefs->dns2));
+    } else if (tn_str_equal_nocase(clean_key, "DNS") || tn_str_equal_nocase(clean_key, "DNS1") ||
+               tn_str_equal_nocase(clean_key, "NAMESERVER")) {
+        tn_str_copy_clean(prefs->dns_server, clean_val, sizeof(prefs->dns_server));
+    } else if (tn_str_equal_nocase(clean_key, "HOSTNAME")) {
+        tn_str_copy_clean(prefs->hostname, clean_val, sizeof(prefs->hostname));
+    } else if (tn_str_equal_nocase(clean_key, "MTU")) {
         LONG m = 0;
-        if (tn_str_to_long(val, &m)) prefs->mtu = (ULONG)m;
-    } else if (tn_str_equal_nocase(key, "DEBUG")) {
+        if (tn_str_to_long(clean_val, &m)) prefs->mtu = (ULONG)m;
+    } else if (tn_str_equal_nocase(clean_key, "DEBUG")) {
         LONG d = 0;
-        if (tn_str_to_long(val, &d) && d >= 0 && d <= 2) prefs->debug = (ULONG)d;
-    } else if (tn_str_equal_nocase(key, "PRIORITY")) {
+        if (tn_str_to_long(clean_val, &d) && d >= 0 && d <= 2) prefs->debug = (ULONG)d;
+    } else if (tn_str_equal_nocase(clean_key, "PRIORITY")) {
         LONG p = 5;
-        if (tn_str_to_long(val, &p) && p >= -128 && p <= 127) prefs->priority = p;
-    } else if (tn_str_equal_nocase(key, "VERSION")) {
+        if (tn_str_to_long(clean_val, &p) && p >= -128 && p <= 127) prefs->priority = p;
+    } else if (tn_str_equal_nocase(clean_key, "VERSION")) {
         /* Config format version recognised */
     }
 }

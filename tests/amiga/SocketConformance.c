@@ -93,6 +93,14 @@ static void vsnprintf_safe(char *buf, int size, const char *fmt, va_list ap)
             if (v == 0) tmp[i++] = '0';
             while (v > 0 && i < 11) { tmp[i++] = hex[v & 0xF]; v >>= 4; }
             while (i > 0 && o + 1 < size) buf[o++] = tmp[--i];
+        } else if (*p == 'p') {
+            ULONG v = (ULONG)(intptr_t)va_arg(ap, void *);
+            char tmp[12]; int i = 0;
+            const char *hex = "0123456789abcdef";
+            if (v == 0) tmp[i++] = '0';
+            while (v > 0 && i < 11) { tmp[i++] = hex[v & 0xF]; v >>= 4; }
+            if (o + 2 < size) { buf[o++] = '0'; buf[o++] = 'x'; }
+            while (i > 0 && o + 1 < size) buf[o++] = tmp[--i];
         } else if (*p == '%') {
             buf[o++] = '%';
         }
@@ -273,9 +281,9 @@ static struct hostent *call_gethostbyname(CONST_STRPTR n)
 {
     register struct Library *a6 __asm__("a6") = SocketBase;
     register CONST_STRPTR a0 __asm__("a0") = n;
-    register struct hostent *res __asm__("a0");
+    register struct hostent *res __asm__("d0");
     __asm__ __volatile__ ("jsr -210(%%a6)" : "=r"(res)
-        : "r"(a6), "r"(a0) : "d0", "d1", "a1", "memory");
+        : "r"(a6), "r"(a0) : "d1", "a0", "a1", "memory");
     return res;
 }
 
@@ -1014,7 +1022,63 @@ static void tc_connect_refused(void)
 
 static void tc_nonblock_connect(void)
 {
-    TAP_SKIP("tc_nonblock_connect", "needs a live TCP target on the bench (gauntlet config; §C11 EINPROGRESS path)");
+    LONG s = call_socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in sin;
+    LONG one = 1;
+    LONG rc;
+    fd_set wfds;
+    struct timeval tv;
+    int err = -1;
+    socklen_t optlen = sizeof(err);
+    LONG sel;
+    int i;
+
+    if (s < 0) {
+        TAP_NOTOK("tc_nonblock_connect", "socket() failed");
+        return;
+    }
+
+    if (call_ioctl(s, FIONBIO, (char *)&one) < 0) {
+        TAP_NOTOK("tc_nonblock_connect", "FIONBIO failed");
+        call_closesocket(s);
+        return;
+    }
+
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len         = sizeof(sin);
+    sin.sin_family      = AF_INET;
+    sin.sin_port        = htons(8000);
+    sin.sin_addr.s_addr = htonl(0x0A000202UL); /* 10.0.2.2 (host slirp) */
+
+    rc = call_connect(s, (struct sockaddr *)&sin, sizeof(sin));
+    tapf("# tc_nonblock_connect: rc=%ld errno=%ld EINPROGRESS=%d\n", rc, call_errno(), (int)EINPROGRESS);
+    if (rc != 0 && call_errno() != EINPROGRESS && call_errno() != EALREADY) {
+        TAP_NOTOK("tc_nonblock_connect", "connect did not return EINPROGRESS");
+        call_closesocket(s);
+        return;
+    }
+
+    /* Wait for write readiness via WaitSelect */
+    FD_ZERO(&wfds);
+    FD_SET(s, &wfds);
+    tv.tv_secs  = 10;
+    tv.tv_micro = 0;
+    sel = call_waitselect(s + 1, NULL, &wfds, NULL, &tv, NULL);
+    if (sel <= 0 || !FD_ISSET(s, &wfds)) {
+        TAP_NOTOK("tc_nonblock_connect", "WaitSelect timeout or not writable");
+        call_closesocket(s);
+        return;
+    }
+
+    /* Check SO_ERROR */
+    if (call_getsockopt(s, SOL_SOCKET, SO_ERROR, (char *)&err, &optlen) < 0 || err != 0) {
+        TAP_NOTOK("tc_nonblock_connect", "getsockopt SO_ERROR indicated error");
+        call_closesocket(s);
+        return;
+    }
+
+    TAP_OK("tc_nonblock_connect");
+    call_closesocket(s);
 }
 
 static void tc_shutdown_wr(void)
@@ -1062,7 +1126,8 @@ static void tc_dns_a(void)
         he->h_length == 4 && he->h_addrtype == AF_INET) {
         TAP_OK("tc_dns_a");
     } else {
-        TAP_TODO("tc_dns_a", "resolve aminet.net (offline bench, no DNS forwarder)");
+        tapf("# tc_dns_a: he=%p errno=%ld\n", he, call_errno());
+        TAP_NOTOK("tc_dns_a", "resolve aminet.net failed");
     }
 }
 
