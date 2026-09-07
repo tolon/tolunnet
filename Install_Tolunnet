@@ -144,6 +144,20 @@
   (dest "SYS:Prefs/TolunnetPrefs.info")
 )
 
+(copyfiles
+  (prompt "Copying TolunnetSetup to SYS:Prefs/")
+  (help "Copies the TolunnetSetup first-run wizard to SYS:Prefs/.")
+  (source "TolunnetSetup")
+  (dest "SYS:Prefs/TolunnetSetup")
+)
+
+(copyfiles
+  (prompt "Copying TolunnetSetup.info to SYS:Prefs/")
+  (help "Copies the icon for TolunnetSetup to SYS:Prefs/.")
+  (source "TolunnetSetup.info")
+  (dest "SYS:Prefs/TolunnetSetup.info")
+)
+
 (if (= #ip-mode 0)
   (set #startup-line (cat "Stack 32768\nRun <NIL: >NIL: C:tolunnet " #device-name " " #unit-num))
   (set #startup-line (cat "Stack 32768\nRun <NIL: >NIL: C:tolunnet " #device-name " " #unit-num " " #static-ip " " #static-nm " " #static-gw))
@@ -158,8 +172,10 @@
 (message
   "tolunnet installation is complete!\n\n"
   "You can configure settings at any time using SYS:Prefs/TolunnetPrefs\n"
-  "and view documentation by opening README.guide with MultiView.\n\n"
-  "Reboot your Amiga to start using the network stack."
+  "or re-run the Network Wizard from SYS:Prefs/TolunnetSetup.\n\n"
+  "Launching the Network Setup Wizard now..."
 )
+
+(execute "Run <>NIL: SYS:Prefs/TolunnetSetup")
 
 (exit)

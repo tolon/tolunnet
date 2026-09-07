@@ -14,6 +14,7 @@ TCP/IP stack and bsdsocket.library v4.1 runtime for Commodore Amiga computers.
   @{" 1. Overview & Architecture        " link Overview}
   @{" 2. System Requirements            " link Requirements}
   @{" 3. Installation Guide             " link Installation}
+  @{"    3.1 First-Run Network Wizard   " link Wizard}
   @{" 4. Configuration File             " link Config}
   @{" 5. Included Command Tools         " link Commands}
   @{" 6. API Compatibility              " link Compatibility}
@@ -67,6 +68,42 @@ Installer will guide you through choosing your network card and configuring DHCP
 
 3. For static IP configuration instead of DHCP, specify IP, netmask, and gateway:
    @{i}Run <NIL: >NIL: C:tolunnet ethernet.device 0 192.168.1.50 255.255.255.0 192.168.1.1@{ui}
+
+@endnode
+
+@node Wizard "First-Run Network Wizard"
+@{b}3.1 First-Run Network Wizard (TolunnetSetup)@{ub}
+
+@{b}TolunnetSetup@{ub} is a native GadTools setup wizard located in @{i}SYS:Prefs/TolunnetSetup@{ui}
+(and callable via the "Setup..." button in TolunnetPrefs). Designed specifically to fit standard
+640x200 NTSC Workbench screens using the ROM system font.
+
+@{b}The 5 Wizard Screens:@{ub}
+
+1. @{b}Replace Other Stacks:@{ub}
+   Scans Exec's library list, S:User-Startup, and WBStartup for existing stacks (Miami, MiamiDx,
+   Roadshow, AmiTCP, Genesis). Automatically comments out conflicting startup lines using
+   a reversible @{i}; tolunnet-disabled:@{ui} prefix and backs up @{i}S:User-Startup.tolunnet-bak@{ui}.
+   Existing settings (interfaces, static IP, gateway, DNS) are imported automatically.
+   @{i}Safety Note: No files are ever deleted. Use the "Undo" button in TolunnetPrefs to reverse all changes.@{ui}
+
+2. @{b}Hardware Selection:@{ub}
+   Probes all network devices in @{i}DEVS:Networks/@{ui} (as well as wifipi.device and prism2.device).
+   Displays friendly device names, hardware MAC addresses, MTU, and detects wireless capabilities.
+
+3. @{b}WiFi Setup (Wireless Adapters Only):@{ub}
+   Performs live 802.11 access point scanning via SANA-II @{i}S2_GETNETWORKS@{ui}. Lists available SSIDs
+   sorted by signal strength with channel and encryption type (WPA2/WPA/WEP/Open). Allows entering
+   passphrase with a "Show" toggle. Writes standard @{i}ENVARC:Sys/Wireless.prefs@{ui} and manages
+   WirelessManager.
+
+4. @{b}IP Address Configuration:@{ub}
+   Choose between automatic DHCP or Static IP configuration (IP, netmask, gateway, DNS).
+   Optionally creates Roadshow-compatible @{i}DEVS:NetInterfaces/@{ui} files for interoperability.
+
+5. @{b}Diagnostic Test & Boot Setup:@{ub}
+   Runs live self-tests (daemon startup, gateway ping, DNS resolution, HTTP check).
+   Adds a marked, clean boot block to @{i}S:User-Startup@{ui} so tolunnet starts automatically on boot.
 
 @endnode
 

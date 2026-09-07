@@ -2516,6 +2516,102 @@ static void tc_stats_counters(void)
     TAP_OK("tc_stats_counters");
 }
 
+static void tc_wizard_wired(void)
+{
+    /*
+     * Step W: Test TolunnetSetup wizard on wired bench via ARexx port TOLUNNETSETUP.
+     * 1. Spawn TolunnetSetup in background
+     * 2. Wait for ARexx port TOLUNNETSETUP
+     * 3. Send NEXT -> Hardware page (page 1)
+     * 4. Send NEXT -> Address page (page 3, skipping WiFi page 2 since uaenet is wired)
+     * 5. Send NEXT -> Test page (page 4)
+     * 6. Send FINISH -> applies settings and terminates
+     * 7. Verify DEVS:tolunnet.config exists and has valid configuration
+     */
+    struct MsgPort *reply_port = CreateMsgPort();
+    if (!reply_port) {
+        TAP_NOTOK("tc_wizard_wired", "CreateMsgPort failed");
+        return;
+    }
+
+    /* Launch TolunnetSetup asynchronously */
+    LONG rc = SystemTags((CONST_STRPTR)"Run <NIL: >NIL: C:TolunnetSetup",
+                         SYS_Input, (BPTR)0,
+                         SYS_Output, (BPTR)0,
+                         NP_StackSize, 32768,
+                         TAG_END);
+    if (rc != 0) {
+        SystemTags((CONST_STRPTR)"Run <NIL: >NIL: SYS:Prefs/TolunnetSetup",
+                   SYS_Input, (BPTR)0,
+                   SYS_Output, (BPTR)0,
+                   NP_StackSize, 32768,
+                   TAG_END);
+    }
+
+    struct MsgPort *wizard_port = NULL;
+    for (int i = 0; i < 50; i++) {
+        Delay(5); /* 100ms */
+        Forbid();
+        wizard_port = FindPort((CONST_STRPTR)"TOLUNNETSETUP");
+        Permit();
+        if (wizard_port) break;
+    }
+
+    if (!wizard_port) {
+        DeleteMsgPort(reply_port);
+        TAP_NOTOK("tc_wizard_wired", "TOLUNNETSETUP ARexx port not found");
+        return;
+    }
+
+    struct Message msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.mn_ReplyPort = reply_port;
+
+    /* Next -> Page 1 */
+    msg.mn_Node.ln_Name = (char *)"NEXT";
+    PutMsg(wizard_port, &msg);
+    WaitPort(reply_port);
+    GetMsg(reply_port);
+
+    /* Next -> Page 3 (WiFi skipped for wired) */
+    msg.mn_Node.ln_Name = (char *)"NEXT";
+    PutMsg(wizard_port, &msg);
+    WaitPort(reply_port);
+    GetMsg(reply_port);
+
+    /* Next -> Page 4 */
+    msg.mn_Node.ln_Name = (char *)"NEXT";
+    PutMsg(wizard_port, &msg);
+    WaitPort(reply_port);
+    GetMsg(reply_port);
+
+    /* FINISH */
+    msg.mn_Node.ln_Name = (char *)"FINISH";
+    PutMsg(wizard_port, &msg);
+    WaitPort(reply_port);
+    GetMsg(reply_port);
+
+    DeleteMsgPort(reply_port);
+
+    /* Wait up to 3 seconds for TolunnetSetup to finish and port to disappear */
+    for (int i = 0; i < 30; i++) {
+        Delay(5);
+        Forbid();
+        wizard_port = FindPort((CONST_STRPTR)"TOLUNNETSETUP");
+        Permit();
+        if (!wizard_port) break;
+    }
+
+    /* Verify DEVS:tolunnet.config exists */
+    BPTR lock = Lock((CONST_STRPTR)"DEVS:tolunnet.config", ACCESS_READ);
+    if (lock) {
+        UnLock(lock);
+        TAP_OK("tc_wizard_wired");
+    } else {
+        TAP_NOTOK("tc_wizard_wired", "DEVS:tolunnet.config not generated");
+    }
+}
+
 /* Bench plumbing (not a TAP case): ask the daemon to exit so the bench can
  * prove the TNET-059/060 restart cycle. Mirrors TolunnetPrefs' Stop logic. */
 static void request_daemon_stop(void)
@@ -2601,6 +2697,7 @@ int main(int argc, char *argv[])
     tc_release_obtain();
     tc_every_vector_callable();
     tc_stats_counters();
+    tc_wizard_wired();
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
 

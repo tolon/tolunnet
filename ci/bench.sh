@@ -107,13 +107,15 @@ for cfg in $CONFIGS; do
 
     xd delete C/tolunnet        >/dev/null 2>&1
     xd delete C/SocketConformance >/dev/null 2>&1
+    xd delete C/TolunnetSetup   >/dev/null 2>&1
     xd delete S/User-Startup    >/dev/null 2>&1
     xd delete Devs/tolunnet.config >/dev/null 2>&1
     xd write build/tolunnet C/tolunnet          || die "xdftool write tolunnet failed"
     xd write build/SocketConformance C/SocketConformance || die "xdftool write conformance failed"
+    xd write build/TolunnetSetup C/TolunnetSetup || die "xdftool write TolunnetSetup failed"
     xd write ci/User-Startup-Conformance S/User-Startup  || die "xdftool write User-Startup failed"
     xd write ci/tolunnet.config Devs/tolunnet.config     || die "xdftool write tolunnet.config failed"
-    say "staged: tolunnet + SocketConformance + User-Startup + tolunnet.config -> $HDF_WIN"
+    say "staged: tolunnet + SocketConformance + TolunnetSetup + User-Startup + tolunnet.config -> $HDF_WIN"
 
     # ---- run headless ---------------------------------------------------
     rm -f "$WORK_DIR/conformance.log" "$WORK_DIR/conformance2.log" "$WORK_DIR/bench-done"

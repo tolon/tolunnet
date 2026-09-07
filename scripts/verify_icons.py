@@ -26,6 +26,7 @@ if __name__ == "__main__":
     verify_info_file("Install_Tolunnet.info", 4, "Installer") # WBPROJECT = 4
     verify_info_file("README.guide.info", 4, "SYS:Utilities/MultiView") # WBPROJECT = 4
     verify_info_file("TolunnetPrefs.info", 3) # WBTOOL = 3
+    verify_info_file("TolunnetSetup.info", 3) # WBTOOL = 3
     verify_info_file("ci/tolunnet.info", 3) # WBTOOL = 3
     verify_info_file("Disk.info", 1) # WBDISK = 1
     verify_info_file("assets/tolunnet_drawer.info", 2) # WBDRAWER = 2

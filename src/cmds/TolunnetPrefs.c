@@ -19,6 +19,7 @@
 #include "../common/prefs.h"
 #include "../common/log.h"
 #include "../common/ipc_client.h"
+#include "../setup/stack_detect.h"
 #include "../../include/ipc.h"
 
 #include <proto/exec.h>
@@ -63,6 +64,8 @@ struct DosLibrary    *DOSBase       = NULL;
 #define GID_PING        14
 #define GID_CANCEL      15
 #define GID_MTU         16
+#define GID_SETUP       17
+#define GID_UNDO        18
 
 static const STRPTR g_mode_labels[] = {
     (STRPTR)"DHCP (Automatic)",
@@ -269,12 +272,12 @@ static void compute_layout(PrefsLayout *lo, struct Screen *scr)
     lo->btn_h = lo->gh + 2;
     lo->btn_y = (UWORD)(6 + 5 * lo->pitch + 4);
     lo->win_w = lo->col2_x + lo->col2_w + TN_BORDER_PAD;
-    if (lo->win_w < 440) {
-        lo->win_w = 440;
+    if (lo->win_w < 520) {
+        lo->win_w = 520;
     }
 
-    /* Six equal buttons across the bottom (TNET-079/081) */
-    lo->btn_w = (UWORD)((lo->win_w - 2 * TN_BORDER_PAD - 5 * 8) / 6);
+    /* Eight equal buttons across the bottom (TNET-079/081, Step W) */
+    lo->btn_w = (UWORD)((lo->win_w - 2 * TN_BORDER_PAD - 7 * 6) / 8);
 
     /* Window OUTER height: rows + button bar + Intuition chrome estimate
      * (title bar + bottom border) so OpenWindow never overflows NTSC. */
@@ -589,13 +592,13 @@ int main(int argc, char *argv[])
     gad = CreateGadget(BUTTON_KIND, gad_host, &ng, TAG_END);
     if (!gad) goto cleanup;
 
-    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 8);
+    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 6);
     ng.ng_GadgetText = (STRPTR)"Use";
     ng.ng_GadgetID   = GID_USE;
     gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
     if (!gad) goto cleanup;
 
-    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 8);
+    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 6);
     ng.ng_GadgetText = (STRPTR)"Start";
     ng.ng_GadgetID   = GID_START;
     gad_start = CreateGadget(BUTTON_KIND, gad, &ng,
@@ -603,7 +606,7 @@ int main(int argc, char *argv[])
                              TAG_END);
     if (!gad_start) goto cleanup;
 
-    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 8);
+    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 6);
     ng.ng_GadgetText = (STRPTR)"Stop";
     ng.ng_GadgetID   = GID_STOP;
     gad_stop = CreateGadget(BUTTON_KIND, gad_start, &ng,
@@ -611,13 +614,25 @@ int main(int argc, char *argv[])
                             TAG_END);
     if (!gad_stop) goto cleanup;
 
-    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 8);
-    ng.ng_GadgetText = (STRPTR)"Ping";
-    ng.ng_GadgetID   = GID_PING;
+    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 6);
+    ng.ng_GadgetText = (STRPTR)"Setup...";
+    ng.ng_GadgetID   = GID_SETUP;
     gad = CreateGadget(BUTTON_KIND, gad_stop, &ng, TAG_END);
     if (!gad) goto cleanup;
 
-    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 8);
+    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 6);
+    ng.ng_GadgetText = (STRPTR)"Undo";
+    ng.ng_GadgetID   = GID_UNDO;
+    gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
+    if (!gad) goto cleanup;
+
+    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 6);
+    ng.ng_GadgetText = (STRPTR)"Ping";
+    ng.ng_GadgetID   = GID_PING;
+    gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
+    if (!gad) goto cleanup;
+
+    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 6);
     ng.ng_GadgetText = (STRPTR)"Cancel";
     ng.ng_GadgetID   = GID_CANCEL;
     gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
@@ -744,6 +759,16 @@ int main(int argc, char *argv[])
                     case GID_STOP:
                         daemon_stop(win);
                         update_daemon_buttons(win, gad_start, gad_stop);
+                        break;
+
+                    case GID_SETUP:
+                        SystemTags((CONST_STRPTR)"Run <>NIL: C:TolunnetSetup",
+                                   SYS_Asynch, TRUE,
+                                   TAG_END);
+                        break;
+
+                    case GID_UNDO:
+                        tn_stack_undo_replacement();
                         break;
 
                     case GID_CANCEL:

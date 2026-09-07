@@ -86,11 +86,12 @@ TEST_BIN     = $(BUILD)/TestSocket
 PING_BIN     = $(BUILD)/TolunnetPing
 GET_BIN      = $(BUILD)/TolunnetGet
 PREFS_BIN    = $(BUILD)/TolunnetPrefs
+SETUP_BIN    = $(BUILD)/TolunnetSetup
 CONF_BIN     = $(BUILD)/SocketConformance
 INSTALL_BIN  = $(BUILD)/Install_Tolunnet
 
 .PHONY: all clean test-host package
-all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(CONF_BIN)
+all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN)
 
 # --- Host unit tests (Round 3 §B.1) -----------------------------------------
 # Every tests/host/test_*.c runs under native gcc with sanitizers + Werror;
@@ -102,6 +103,8 @@ HOST_UNITS   = src/common/inet_parse.c src/common/config_text.c \
                src/common/sbtc_dispatch.c src/common/fdset_util.c \
                src/common/ipc_client.c src/common/http_url.c \
                src/common/errstr.c src/common/sockaddr_util.c \
+               src/setup/stack_detect.c src/setup/wifi_mgr.c \
+               src/setup/net_test.c src/setup/hw_detect.c \
                tests/host/mock_lwip.c src/task/slot_table.c
 HOST_TESTS   = $(wildcard tests/host/test_*.c)
 HOST_BINS    = $(patsubst tests/host/%.c,$(BUILD)/host/%,$(HOST_TESTS))
@@ -159,7 +162,19 @@ $(GET_BIN): $(BUILD)/src/cmds/TolunnetGet.o $(BUILD)/src/common/log.o $(BUILD)/s
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetPrefs Native Workbench GadTools GUI Panel
-$(PREFS_BIN): $(BUILD)/src/cmds/TolunnetPrefs.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/log.o $(BUILD)/src/common/config_text.o $(BUILD)/src/common/inet_parse.o $(BUILD)/src/common/sbtc_dispatch.o $(BUILD)/src/common/fdset_util.o $(BUILD)/src/common/ipc_client.o
+$(PREFS_BIN): $(BUILD)/src/cmds/TolunnetPrefs.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/log.o $(BUILD)/src/common/config_text.o $(BUILD)/src/common/inet_parse.o $(BUILD)/src/common/sbtc_dispatch.o $(BUILD)/src/common/fdset_util.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/setup/stack_detect.o
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+# Target: TolunnetSetup First-Run Network Wizard
+SETUP_OBJS = $(BUILD)/src/cmds/TolunnetSetup.o \
+             $(BUILD)/src/setup/stack_detect.o \
+             $(BUILD)/src/setup/hw_detect.o \
+             $(BUILD)/src/setup/wifi_mgr.o \
+             $(BUILD)/src/setup/net_test.o \
+             $(BUILD)/src/setup/setup_rexx.o \
+             $(BUILD)/src/common/inet_parse.o \
+             $(BUILD)/src/common/log.o
+$(SETUP_BIN): $(SETUP_OBJS)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: SocketConformance Amiga-side TAP binary (Round 3 §B.2)
@@ -187,12 +202,16 @@ package: all
 	cp $(GET_BIN) $(PACKAGE_DIR)/C/
 	cp $(GET_BIN) $(PACKAGE_DIR)/C/wget
 	cp $(GET_BIN) $(PACKAGE_DIR)/C/curl
+	cp $(SETUP_BIN) $(PACKAGE_DIR)/C/
 	if [ -f Installer ]; then cp Installer $(PACKAGE_DIR)/C/Installer; fi
 	$(STRIP) $(PACKAGE_DIR)/C/* || true
 	if [ -f Installer ]; then cp Installer $(PACKAGE_DIR)/Installer; fi
 	cp $(PREFS_BIN) $(PACKAGE_DIR)/
+	cp $(SETUP_BIN) $(PACKAGE_DIR)/
 	$(STRIP) $(PACKAGE_DIR)/TolunnetPrefs || true
+	$(STRIP) $(PACKAGE_DIR)/TolunnetSetup || true
 	cp TolunnetPrefs.info $(PACKAGE_DIR)/TolunnetPrefs.info
+	cp TolunnetSetup.info $(PACKAGE_DIR)/TolunnetSetup.info
 	cp ci/tolunnet.info $(PACKAGE_DIR)/C/tolunnet.info || true
 	cp Install_Tolunnet $(PACKAGE_DIR)/Install_Tolunnet
 	cp Install_Tolunnet.info $(PACKAGE_DIR)/Install_Tolunnet.info
