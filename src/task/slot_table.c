@@ -239,6 +239,9 @@ int tn_rx_queue_push(TnSocketSlot *slot, struct pbuf *p, const ip_addr_t *src_ip
     }
     slot->rx_tail = pkt;
     slot->rx_count++;
+    if (slot->rx_count > g_daemon.rx_high_water) {
+        g_daemon.rx_high_water = slot->rx_count;
+    }
     return 0;
 }
 

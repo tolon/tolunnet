@@ -4,6 +4,7 @@
 
 #include "sana2_netif.h"
 #include "../common/log.h"
+#include "../task/task_ctx.h"
 
 #include <stdint.h>
 #include <proto/exec.h>
@@ -574,6 +575,7 @@ err_t tn_sana2_linkoutput(struct netif *netif, struct pbuf *p)
 #if ETH_PAD_SIZE
         pbuf_add_header(p, ETH_PAD_SIZE);
 #endif
+        g_daemon.s2_tx_drops++;
         return ERR_BUF;
     }
 
@@ -582,6 +584,7 @@ err_t tn_sana2_linkoutput(struct netif *netif, struct pbuf *p)
 #if ETH_PAD_SIZE
         pbuf_add_header(p, ETH_PAD_SIZE);
 #endif
+        g_daemon.s2_tx_drops++;
         return ERR_BUF;
     }
 
@@ -599,8 +602,11 @@ err_t tn_sana2_linkoutput(struct netif *netif, struct pbuf *p)
 #endif
 
     if (sent < 0) {
+        g_daemon.s2_tx_drops++;
         return ERR_IF;
     }
+    g_daemon.s2_tx_frames++;
+    g_daemon.s2_tx_bytes += (p->tot_len - 14);
     return ERR_OK;
 }
 
@@ -654,6 +660,7 @@ void tn_sana2_poll_input(TnSana2If *nif, struct netif *netif)
 #if ETH_PAD_SIZE
                     if (pbuf_remove_header(p, ETH_PAD_SIZE) != 0) {
                         pbuf_free(p);
+                        g_daemon.s2_rx_drops++;
                         continue;
                     }
 #endif
@@ -669,10 +676,17 @@ void tn_sana2_poll_input(TnSana2If *nif, struct netif *netif)
                     pbuf_add_header(p, ETH_PAD_SIZE);
 #endif
 
+                    g_daemon.s2_rx_frames++;
+                    g_daemon.s2_rx_bytes += flen;
                     if (netif->input(p, netif) != ERR_OK) {
                         pbuf_free(p);
+                        g_daemon.s2_rx_drops++;
                     }
+                } else {
+                    g_daemon.s2_rx_drops++;
                 }
+            } else {
+                g_daemon.s2_rx_drops++;
             }
         }
 

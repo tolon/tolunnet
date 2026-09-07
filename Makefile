@@ -163,7 +163,7 @@ $(PREFS_BIN): $(BUILD)/src/cmds/TolunnetPrefs.o $(BUILD)/src/common/prefs.o $(BU
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: SocketConformance Amiga-side TAP binary (Round 3 §B.2)
-$(CONF_BIN): $(BUILD)/tests/amiga/SocketConformance.o $(BUILD)/src/common/log.o
+$(CONF_BIN): $(BUILD)/tests/amiga/SocketConformance.o $(BUILD)/src/common/log.o $(BUILD)/src/common/ipc_client.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Release Packaging Target (M7)

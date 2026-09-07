@@ -14,7 +14,7 @@
 #include <exec/ports.h>
 #include <exec/memory.h>
 
-int tn_ipc_oneshot(TnIpcCmd cmd, const LONG *args, int arg_count, TnIpcMsg *out_msg)
+int tn_ipc_oneshot_ex(TnIpcCmd cmd, const LONG *args, int arg_count, const APTR *ptrs, int ptr_count, TnIpcMsg *out_msg)
 {
     struct MsgPort *daemon_port;
     struct MsgPort *reply_port;
@@ -52,6 +52,13 @@ int tn_ipc_oneshot(TnIpcCmd cmd, const LONG *args, int arg_count, TnIpcMsg *out_
         }
     }
 
+    if (ptrs != NULL && ptr_count > 0) {
+        if (ptr_count > 4) ptr_count = 4;
+        for (i = 0; i < ptr_count; i++) {
+            msg->ptrs[i] = ptrs[i];
+        }
+    }
+
     PutMsg(daemon_port, (struct Message *)msg);
     WaitPort(reply_port);
     GetMsg(reply_port);
@@ -66,6 +73,11 @@ int tn_ipc_oneshot(TnIpcCmd cmd, const LONG *args, int arg_count, TnIpcMsg *out_
     return rc;
 }
 
+int tn_ipc_oneshot(TnIpcCmd cmd, const LONG *args, int arg_count, TnIpcMsg *out_msg)
+{
+    return tn_ipc_oneshot_ex(cmd, args, arg_count, NULL, 0, out_msg);
+}
+
 #else
 
 /* Host test mock support */
@@ -76,12 +88,19 @@ void tn_ipc_set_mock_handler(int (*handler)(TnIpcCmd, const LONG *, int, TnIpcMs
     s_mock_ipc_handler = handler;
 }
 
-int tn_ipc_oneshot(TnIpcCmd cmd, const LONG *args, int arg_count, TnIpcMsg *out_msg)
+int tn_ipc_oneshot_ex(TnIpcCmd cmd, const LONG *args, int arg_count, const APTR *ptrs, int ptr_count, TnIpcMsg *out_msg)
 {
+    (void)ptrs;
+    (void)ptr_count;
     if (s_mock_ipc_handler != NULL) {
         return s_mock_ipc_handler(cmd, args, arg_count, out_msg);
     }
     return -1;
+}
+
+int tn_ipc_oneshot(TnIpcCmd cmd, const LONG *args, int arg_count, TnIpcMsg *out_msg)
+{
+    return tn_ipc_oneshot_ex(cmd, args, arg_count, NULL, 0, out_msg);
 }
 
 #endif

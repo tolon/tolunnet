@@ -4,6 +4,9 @@
  * ROUND4b §C (Host-Testable Core).
  */
 #include "mock_lwip.h"
+#include "task_ctx.h"
+
+TnDaemon g_daemon;
 
 static MockCall s_calls[MOCK_MAX_CALLS];
 static int      s_call_count = 0;

@@ -22,6 +22,7 @@ void tn_signal_socket(TnDaemon *d, TnSocketSlot *slot)
         ULONG sig_io = slot->owner_base->sig_io;
         if (sig_io != 0) {
             Signal(slot->owner_task, sig_io);
+            if (d != NULL) d->sigio_sent++;
         }
     }
 
@@ -57,6 +58,7 @@ void tn_signal_socket(TnDaemon *d, TnSocketSlot *slot)
             tn_logf(TN_LOG_VERBOSE, "tolunnet: signal_socket slot=%d woke task 0x%p sig=0x%lx\n",
                     s_idx, sel->task, sel->sig_select);
             Signal(sel->task, sel->sig_select);
+            d->selector_wakeups++;
         }
     }
 }

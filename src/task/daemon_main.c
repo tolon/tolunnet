@@ -150,6 +150,7 @@ static int tn_task_real_main(int argc, char *argv[])
         CloseLibrary(DOSBase);
         return 20;
     }
+    g_daemon.start_sec = g_daemon.timer.boot_time.tv_secs;
 
     /* Initialize hardware PRNG entropy BEFORE lwip_init (TNET-047) */
     tn_rand_init(&g_daemon.timer, NULL);
@@ -319,6 +320,7 @@ static int tn_task_real_main(int argc, char *argv[])
         if (sigs & timer_sig) {
             tn_timer_ack(&g_daemon.timer);
             tick_count++;
+            g_daemon.mainloop_ticks++;
 
             /* Drive lwIP timeouts */
             sys_check_timeouts();
@@ -400,6 +402,9 @@ enum {
     OPT_STOP,
     OPT_STATUS,
     OPT_RECONFIG,
+    OPT_STATS,
+    OPT_RAW,
+    OPT_WATCH,
     OPT_DEVICE,
     OPT_UNIT,
     OPT_IP,
@@ -412,6 +417,7 @@ int main(int argc, char *argv[])
 {
     struct Library *dos_base = OpenLibrary((CONST_STRPTR)"dos.library", 0);
     if (dos_base == NULL) return 20;
+    g_log_dos = dos_base;
 
     if (argc > 0) {
         LONG opts[OPT_COUNT];
@@ -419,7 +425,7 @@ int main(int argc, char *argv[])
         int i;
         for (i = 0; i < OPT_COUNT; i++) opts[i] = 0;
 
-        rdargs = ReadArgs((CONST_STRPTR)"START/S,STOP/S,STATUS/S,RECONFIG/S,DEVICE,UNIT/N,IP,NETMASK,GATEWAY", opts, NULL);
+        rdargs = ReadArgs((CONST_STRPTR)"START/S,STOP/S,STATUS/S,RECONFIG/S,STATS/S,RAW/S,WATCH/N,DEVICE,UNIT/N,IP,NETMASK,GATEWAY", opts, NULL);
         if (rdargs == NULL) {
             PrintFault(IoErr(), (CONST_STRPTR)"tolunnet");
             CloseLibrary(dos_base);
@@ -489,6 +495,133 @@ int main(int argc, char *argv[])
 
                 RawDoFmt((CONST_STRPTR)"  Sockets    : %ld active\n", (APTR)&socks, (VOID (*)())"\x16\xc0\x4e\x75", buf);
                 PutStr((CONST_STRPTR)buf);
+            }
+            CloseLibrary(dos_base);
+            return 0;
+        }
+
+        if (opts[OPT_STATS]) {
+            BOOL raw = opts[OPT_RAW] ? TRUE : FALSE;
+            LONG watch_sec = 0;
+            if (opts[OPT_WATCH]) {
+                watch_sec = *(LONG *)opts[OPT_WATCH];
+                if (watch_sec <= 0) watch_sec = 1;
+            }
+            FreeArgs(rdargs);
+
+            for (;;) {
+                TnStats stats;
+                LONG sargs[1];
+                APTR sptrs[1];
+                TnIpcMsg msg;
+                int res;
+
+                sargs[0] = (LONG)sizeof(TnStats);
+                sptrs[0] = (APTR)&stats;
+                res = tn_ipc_oneshot_ex(TN_IPC_CMD_GETSTATS, sargs, 1, sptrs, 1, &msg);
+                if (res != 0 || msg.result != 0) {
+                    PutStr((CONST_STRPTR)"tolunnet: daemon is not running\n");
+                    CloseLibrary(dos_base);
+                    return 5;
+                }
+
+                if (raw) {
+                    tn_logf(TN_LOG_BASIC, "uptime=%lu\n", stats.daemon.uptime_secs);
+                    tn_logf(TN_LOG_BASIC, "ticks=%lu\n", stats.daemon.mainloop_ticks);
+                    tn_logf(TN_LOG_BASIC, "mem.used=%lu\n", stats.mem_used);
+                    tn_logf(TN_LOG_BASIC, "mem.max=%lu\n", stats.mem_max);
+                    tn_logf(TN_LOG_BASIC, "mem.avail=%lu\n", stats.mem_avail);
+                    tn_logf(TN_LOG_BASIC, "mem.err=%lu\n", stats.mem_err);
+                    for (i = 0; i < (int)stats.num_memp; i++) {
+                        tn_logf(TN_LOG_BASIC, "memp.%s.used=%lu\n", stats.memp[i].name, stats.memp[i].used);
+                        tn_logf(TN_LOG_BASIC, "memp.%s.max=%lu\n", stats.memp[i].name, stats.memp[i].max);
+                        tn_logf(TN_LOG_BASIC, "memp.%s.avail=%lu\n", stats.memp[i].name, stats.memp[i].avail);
+                        tn_logf(TN_LOG_BASIC, "memp.%s.err=%lu\n", stats.memp[i].name, stats.memp[i].err);
+                    }
+                    tn_logf(TN_LOG_BASIC, "link.xmit=%lu\n", stats.link.xmit);
+                    tn_logf(TN_LOG_BASIC, "link.recv=%lu\n", stats.link.recv);
+                    tn_logf(TN_LOG_BASIC, "link.drop=%lu\n", stats.link.drop);
+                    tn_logf(TN_LOG_BASIC, "link.err=%lu\n", stats.link.err);
+                    tn_logf(TN_LOG_BASIC, "etharp.xmit=%lu\n", stats.etharp.xmit);
+                    tn_logf(TN_LOG_BASIC, "etharp.recv=%lu\n", stats.etharp.recv);
+                    tn_logf(TN_LOG_BASIC, "etharp.drop=%lu\n", stats.etharp.drop);
+                    tn_logf(TN_LOG_BASIC, "etharp.err=%lu\n", stats.etharp.err);
+                    tn_logf(TN_LOG_BASIC, "ip.xmit=%lu\n", stats.ip.xmit);
+                    tn_logf(TN_LOG_BASIC, "ip.recv=%lu\n", stats.ip.recv);
+                    tn_logf(TN_LOG_BASIC, "ip.drop=%lu\n", stats.ip.drop);
+                    tn_logf(TN_LOG_BASIC, "ip.chkerr=%lu\n", stats.ip.chkerr);
+                    tn_logf(TN_LOG_BASIC, "icmp.xmit=%lu\n", stats.icmp.xmit);
+                    tn_logf(TN_LOG_BASIC, "icmp.recv=%lu\n", stats.icmp.recv);
+                    tn_logf(TN_LOG_BASIC, "icmp.drop=%lu\n", stats.icmp.drop);
+                    tn_logf(TN_LOG_BASIC, "icmp.chkerr=%lu\n", stats.icmp.chkerr);
+                    tn_logf(TN_LOG_BASIC, "udp.xmit=%lu\n", stats.udp.xmit);
+                    tn_logf(TN_LOG_BASIC, "udp.recv=%lu\n", stats.udp.recv);
+                    tn_logf(TN_LOG_BASIC, "udp.drop=%lu\n", stats.udp.drop);
+                    tn_logf(TN_LOG_BASIC, "udp.chkerr=%lu\n", stats.udp.chkerr);
+                    tn_logf(TN_LOG_BASIC, "tcp.xmit=%lu\n", stats.tcp.xmit);
+                    tn_logf(TN_LOG_BASIC, "tcp.recv=%lu\n", stats.tcp.recv);
+                    tn_logf(TN_LOG_BASIC, "tcp.drop=%lu\n", stats.tcp.drop);
+                    tn_logf(TN_LOG_BASIC, "tcp.chkerr=%lu\n", stats.tcp.chkerr);
+                    tn_logf(TN_LOG_BASIC, "s2.rx_frames=%lu\n", stats.daemon.s2_rx_frames);
+                    tn_logf(TN_LOG_BASIC, "s2.rx_bytes=%lu\n", stats.daemon.s2_rx_bytes);
+                    tn_logf(TN_LOG_BASIC, "s2.rx_drops=%lu\n", stats.daemon.s2_rx_drops);
+                    tn_logf(TN_LOG_BASIC, "s2.tx_frames=%lu\n", stats.daemon.s2_tx_frames);
+                    tn_logf(TN_LOG_BASIC, "s2.tx_bytes=%lu\n", stats.daemon.s2_tx_bytes);
+                    tn_logf(TN_LOG_BASIC, "s2.tx_drops=%lu\n", stats.daemon.s2_tx_drops);
+                    tn_logf(TN_LOG_BASIC, "s2.rx_high_water=%lu\n", stats.daemon.rx_high_water);
+                    tn_logf(TN_LOG_BASIC, "daemon.deferred=%lu\n", stats.daemon.deferred_replies);
+                    tn_logf(TN_LOG_BASIC, "daemon.sigio=%lu\n", stats.daemon.sigio_sent);
+                    tn_logf(TN_LOG_BASIC, "daemon.selectors=%lu\n", stats.daemon.selector_wakeups);
+                    tn_logf(TN_LOG_BASIC, "dhcp.lease_remaining=%lu\n", stats.daemon.lease_remaining);
+                    tn_logf(TN_LOG_BASIC, "dhcp.t1=%lu\n", stats.daemon.lease_t1);
+                    tn_logf(TN_LOG_BASIC, "dhcp.t2=%lu\n", stats.daemon.lease_t2);
+                } else {
+                    PutStr((CONST_STRPTR)"tolunnet telemetry & statistics:\n");
+                    tn_logf(TN_LOG_BASIC, "  Uptime     : %lu s (ticks: %lu)\n",
+                            stats.daemon.uptime_secs, stats.daemon.mainloop_ticks);
+                    if (stats.daemon.lease_remaining > 0) {
+                        tn_logf(TN_LOG_BASIC, "  DHCP Lease : %lu s remaining (t1=%lu s, t2=%lu s)\n",
+                                stats.daemon.lease_remaining, stats.daemon.lease_t1, stats.daemon.lease_t2);
+                    }
+                    tn_logf(TN_LOG_BASIC, "  Memory     : heap used %lu / max %lu / avail %lu (err: %lu)\n",
+                            stats.mem_used, stats.mem_max, stats.mem_avail, stats.mem_err);
+                    PutStr((CONST_STRPTR)"  Pools      :\n");
+                    for (i = 0; i < (int)stats.num_memp; i++) {
+                        tn_logf(TN_LOG_BASIC, "    %-14s: used %lu / max %lu / avail %lu (err: %lu)\n",
+                                stats.memp[i].name, stats.memp[i].used, stats.memp[i].max,
+                                stats.memp[i].avail, stats.memp[i].err);
+                    }
+                    PutStr((CONST_STRPTR)"  SANA-II    :\n");
+                    tn_logf(TN_LOG_BASIC, "    RX: %lu frames, %lu bytes, %lu drops (high-water: %lu)\n",
+                            stats.daemon.s2_rx_frames, stats.daemon.s2_rx_bytes,
+                            stats.daemon.s2_rx_drops, stats.daemon.rx_high_water);
+                    tn_logf(TN_LOG_BASIC, "    TX: %lu frames, %lu bytes, %lu drops\n",
+                            stats.daemon.s2_tx_frames, stats.daemon.s2_tx_bytes, stats.daemon.s2_tx_drops);
+                    PutStr((CONST_STRPTR)"  Protocols  :\n");
+                    tn_logf(TN_LOG_BASIC, "    LINK  : xmit %lu, recv %lu, drop %lu, err %lu\n",
+                            stats.link.xmit, stats.link.recv, stats.link.drop, stats.link.err);
+                    tn_logf(TN_LOG_BASIC, "    ETHARP: xmit %lu, recv %lu, drop %lu, err %lu\n",
+                            stats.etharp.xmit, stats.etharp.recv, stats.etharp.drop, stats.etharp.err);
+                    tn_logf(TN_LOG_BASIC, "    IP    : xmit %lu, recv %lu, drop %lu, chkerr %lu\n",
+                            stats.ip.xmit, stats.ip.recv, stats.ip.drop, stats.ip.chkerr);
+                    tn_logf(TN_LOG_BASIC, "    ICMP  : xmit %lu, recv %lu, drop %lu, chkerr %lu\n",
+                            stats.icmp.xmit, stats.icmp.recv, stats.icmp.drop, stats.icmp.chkerr);
+                    tn_logf(TN_LOG_BASIC, "    UDP   : xmit %lu, recv %lu, drop %lu, chkerr %lu\n",
+                            stats.udp.xmit, stats.udp.recv, stats.udp.drop, stats.udp.chkerr);
+                    tn_logf(TN_LOG_BASIC, "    TCP   : xmit %lu, recv %lu, drop %lu, chkerr %lu\n",
+                            stats.tcp.xmit, stats.tcp.recv, stats.tcp.drop, stats.tcp.chkerr);
+                    PutStr((CONST_STRPTR)"  Daemon     :\n");
+                    tn_logf(TN_LOG_BASIC, "    Deferred replies: %lu, SIGIO sent: %lu, Selector wakeups: %lu\n",
+                            stats.daemon.deferred_replies, stats.daemon.sigio_sent, stats.daemon.selector_wakeups);
+                }
+
+                if (watch_sec <= 0) break;
+
+                Delay(watch_sec * 50);
+                if (CheckSignal(SIGBREAKF_CTRL_C)) {
+                    PutStr((CONST_STRPTR)"\n");
+                    break;
+                }
             }
             CloseLibrary(dos_base);
             return 0;

@@ -93,13 +93,17 @@
 #define IP_REASS_MAXAGE      3       /* Drop incomplete fragment chains after 3 seconds */
 #define IP_REASS_MAX_PBUFS   8       /* Maximum number of pbufs queued for reassembly */
 
-/* --- Statistics: only in debug builds --- */
-#if defined(TOLUNNET_DEBUG) && (TOLUNNET_DEBUG + 0)
-  #define LWIP_STATS          1
-  #define LWIP_STATS_DISPLAY  1
-#else
-  #define LWIP_STATS          0
-#endif
+/* --- Statistics (§F): enabled in release and debug builds --- */
+#define LWIP_STATS          1
+#define LWIP_STATS_DISPLAY  0
+#define MEMP_STATS          1
+#define MEM_STATS           1
+#define TCP_STATS           1
+#define UDP_STATS           1
+#define IP_STATS            1
+#define ICMP_STATS          1
+#define ETHARP_STATS        1
+#define LINK_STATS          1
 
 /* --- Byte order: 68k is big-endian = network order. --- */
 #define BYTE_ORDER           BIG_ENDIAN

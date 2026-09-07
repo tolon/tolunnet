@@ -19,5 +19,6 @@
  * Returns 0 on success, or negative errno / -1 on failure.
  */
 int tn_ipc_oneshot(TnIpcCmd cmd, const LONG *args, int arg_count, TnIpcMsg *out_msg);
+int tn_ipc_oneshot_ex(TnIpcCmd cmd, const LONG *args, int arg_count, const APTR *ptrs, int ptr_count, TnIpcMsg *out_msg);
 
 #endif /* TOLUNNET_IPC_CLIENT_H */

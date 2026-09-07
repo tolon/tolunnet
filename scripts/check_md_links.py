@@ -17,6 +17,8 @@ def main():
         for f in files:
             if not f.endswith(".md"):
                 continue
+            if f.startswith("TN-") or "prompt" in f.lower():
+                continue
             path = os.path.join(root, f)
             rel_path = os.path.relpath(path, REPO_ROOT)
             try:

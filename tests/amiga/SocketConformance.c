@@ -28,6 +28,7 @@
 
 #include "../../src/common/log.h"
 #include "../../include/ipc.h"
+#include "../../src/common/ipc_client.h"
 
 static struct Library *SocketBase = NULL;
 static BPTR            g_log_fh   = (BPTR)0;
@@ -2426,6 +2427,95 @@ static void tc_release_obtain(void)
     TAP_OK("tc_release_obtain");
 }
 
+static void tc_stats_counters(void)
+{
+    TnStats before, during, after;
+    LONG sargs[1];
+    APTR sptrs[1];
+    TnIpcMsg msg;
+    LONG s;
+    struct sockaddr_in sin;
+    int i;
+    int udp_pool_idx = -1;
+    uint32_t before_udp_used = 0;
+
+    sargs[0] = (LONG)sizeof(TnStats);
+    sptrs[0] = (APTR)&before;
+
+    /* 1. Baseline stats query */
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_GETSTATS, sargs, 1, sptrs, 1, &msg) != 0 || msg.result != 0) {
+        TAP_NOTOK("tc_stats_counters", "initial GETSTATS failed");
+        return;
+    }
+
+    /* Locate UDP_PCB pool */
+    for (i = 0; i < (int)before.num_memp; i++) {
+        if (strcmp(before.memp[i].name, "UDP_PCB") == 0) {
+            udp_pool_idx = i;
+            before_udp_used = before.memp[i].used;
+            break;
+        }
+    }
+
+    /* 2. Open UDP socket */
+    s = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (s < 0) {
+        TAP_NOTOK("tc_stats_counters", "call_socket(DGRAM) failed");
+        return;
+    }
+
+    /* 3. Query stats while socket open -> UDP_PCB pool used should be +1 */
+    sptrs[0] = (APTR)&during;
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_GETSTATS, sargs, 1, sptrs, 1, &msg) == 0 && msg.result == 0) {
+        if (udp_pool_idx >= 0) {
+            if (during.memp[udp_pool_idx].used != before_udp_used + 1) {
+                call_closesocket(s);
+                TAP_NOTOK("tc_stats_counters", "UDP_PCB pool used did not increment by 1");
+                return;
+            }
+        }
+    }
+
+    /* 4. Send 3 UDP datagrams to loopback 127.0.0.1:9999 */
+    memset(&sin, 0, sizeof(sin));
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(9999);
+    sin.sin_addr.s_addr = htonl(0x7F000001); /* 127.0.0.1 */
+
+    for (i = 0; i < 3; i++) {
+        LONG n = call_sendto(s, "x", 1, 0, (struct sockaddr *)&sin, sizeof(sin));
+        if (n != 1) {
+            call_closesocket(s);
+            TAP_NOTOK("tc_stats_counters", "call_sendto failed");
+            return;
+        }
+    }
+
+    /* 5. Close socket -> pool should return to baseline */
+    call_closesocket(s);
+
+    /* 6. Query stats after close */
+    sptrs[0] = (APTR)&after;
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_GETSTATS, sargs, 1, sptrs, 1, &msg) != 0 || msg.result != 0) {
+        TAP_NOTOK("tc_stats_counters", "post-test GETSTATS failed");
+        return;
+    }
+
+    /* Verify udp.xmit increased by 3 */
+    if (after.udp.xmit != before.udp.xmit + 3) {
+        TAP_NOTOK("tc_stats_counters", "udp.xmit did not increment by exactly 3");
+        return;
+    }
+
+    /* Verify pool occupancy returned to baseline */
+    if (udp_pool_idx >= 0 && after.memp[udp_pool_idx].used != before_udp_used) {
+        TAP_NOTOK("tc_stats_counters", "UDP_PCB pool did not return to baseline");
+        return;
+    }
+
+    TAP_OK("tc_stats_counters");
+}
+
 /* Bench plumbing (not a TAP case): ask the daemon to exit so the bench can
  * prove the TNET-059/060 restart cycle. Mirrors TolunnetPrefs' Stop logic. */
 static void request_daemon_stop(void)
@@ -2510,6 +2600,7 @@ int main(int argc, char *argv[])
     tc_sbtc_full();
     tc_release_obtain();
     tc_every_vector_callable();
+    tc_stats_counters();
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
 

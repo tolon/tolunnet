@@ -11,5 +11,6 @@
 int tn_ipc_cmd_getstatus(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot);
 int tn_ipc_cmd_reconfig(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot);
 int tn_ipc_cmd_enumsockets(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot);
+int tn_ipc_cmd_getstats(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot);
 
 #endif /* TOLUNNET_IPC_STATUS_H */

@@ -127,7 +127,9 @@ int main(int argc, char *argv[])
         emsg.args[0] = 32;
         emsg.ptrs[0] = (APTR)sock_list;
 
-        if (tn_ipc_oneshot(TN_IPC_CMD_ENUMSOCKETS, emsg.args, 1, &emsg) == 0 && emsg.result >= 0) {
+        APTR ptrs[1];
+        ptrs[0] = (APTR)sock_list;
+        if (tn_ipc_oneshot_ex(TN_IPC_CMD_ENUMSOCKETS, emsg.args, 1, ptrs, 1, &emsg) == 0 && emsg.result >= 0) {
             count = (int)emsg.result;
         }
 

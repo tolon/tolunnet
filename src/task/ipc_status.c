@@ -7,6 +7,13 @@
 #include "netif_mgr.h"
 #include <string.h>
 
+#if !defined(TN_HOST_BUILD)
+#include <lwip/stats.h>
+#include <lwip/memp.h>
+#include <lwip/dhcp.h>
+#include <lwip/prot/dhcp.h>
+#endif
+
 static BOOL tn_streq(const char *a, const char *b)
 {
     if (a == NULL || b == NULL) return FALSE;
@@ -162,6 +169,199 @@ int tn_ipc_cmd_enumsockets(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     }
 
     imsg->result = count;
+    imsg->err_no = 0;
+    return 0; /* TN_IPC_REPLY_NOW */
+}
+
+int tn_ipc_cmd_getstats(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
+{
+    TnStats *out;
+    LONG buf_size;
+    (void)slot;
+
+    if (imsg == NULL || imsg->ptrs[0] == NULL) {
+        imsg->result = -1;
+        imsg->err_no = EINVAL;
+        return 0; /* TN_IPC_REPLY_NOW */
+    }
+
+    buf_size = imsg->args[0];
+    if (buf_size < (LONG)sizeof(TnStats)) {
+        imsg->result = -1;
+        imsg->err_no = EINVAL;
+        return 0; /* TN_IPC_REPLY_NOW */
+    }
+
+    out = (TnStats *)imsg->ptrs[0];
+    memset(out, 0, sizeof(TnStats));
+    out->struct_size = sizeof(TnStats);
+    out->version = 1;
+
+#if !defined(TN_HOST_BUILD)
+#if LINK_STATS
+    out->link.xmit     = lwip_stats.link.xmit;
+    out->link.recv     = lwip_stats.link.recv;
+    out->link.fw       = lwip_stats.link.fw;
+    out->link.drop     = lwip_stats.link.drop;
+    out->link.chkerr   = lwip_stats.link.chkerr;
+    out->link.lenerr   = lwip_stats.link.lenerr;
+    out->link.memerr   = lwip_stats.link.memerr;
+    out->link.rterr    = lwip_stats.link.rterr;
+    out->link.proterr  = lwip_stats.link.proterr;
+    out->link.opterr   = lwip_stats.link.opterr;
+    out->link.err      = lwip_stats.link.err;
+    out->link.cachehit = lwip_stats.link.cachehit;
+#endif
+
+#if ETHARP_STATS
+    out->etharp.xmit     = lwip_stats.etharp.xmit;
+    out->etharp.recv     = lwip_stats.etharp.recv;
+    out->etharp.fw       = lwip_stats.etharp.fw;
+    out->etharp.drop     = lwip_stats.etharp.drop;
+    out->etharp.chkerr   = lwip_stats.etharp.chkerr;
+    out->etharp.lenerr   = lwip_stats.etharp.lenerr;
+    out->etharp.memerr   = lwip_stats.etharp.memerr;
+    out->etharp.rterr    = lwip_stats.etharp.rterr;
+    out->etharp.proterr  = lwip_stats.etharp.proterr;
+    out->etharp.opterr   = lwip_stats.etharp.opterr;
+    out->etharp.err      = lwip_stats.etharp.err;
+    out->etharp.cachehit = lwip_stats.etharp.cachehit;
+#endif
+
+#if IP_STATS
+    out->ip.xmit     = lwip_stats.ip.xmit;
+    out->ip.recv     = lwip_stats.ip.recv;
+    out->ip.fw       = lwip_stats.ip.fw;
+    out->ip.drop     = lwip_stats.ip.drop;
+    out->ip.chkerr   = lwip_stats.ip.chkerr;
+    out->ip.lenerr   = lwip_stats.ip.lenerr;
+    out->ip.memerr   = lwip_stats.ip.memerr;
+    out->ip.rterr    = lwip_stats.ip.rterr;
+    out->ip.proterr  = lwip_stats.ip.proterr;
+    out->ip.opterr   = lwip_stats.ip.opterr;
+    out->ip.err      = lwip_stats.ip.err;
+    out->ip.cachehit = lwip_stats.ip.cachehit;
+#endif
+
+#if ICMP_STATS
+    out->icmp.xmit     = lwip_stats.icmp.xmit;
+    out->icmp.recv     = lwip_stats.icmp.recv;
+    out->icmp.fw       = lwip_stats.icmp.fw;
+    out->icmp.drop     = lwip_stats.icmp.drop;
+    out->icmp.chkerr   = lwip_stats.icmp.chkerr;
+    out->icmp.lenerr   = lwip_stats.icmp.lenerr;
+    out->icmp.memerr   = lwip_stats.icmp.memerr;
+    out->icmp.rterr    = lwip_stats.icmp.rterr;
+    out->icmp.proterr  = lwip_stats.icmp.proterr;
+    out->icmp.opterr   = lwip_stats.icmp.opterr;
+    out->icmp.err      = lwip_stats.icmp.err;
+    out->icmp.cachehit = lwip_stats.icmp.cachehit;
+#endif
+
+#if UDP_STATS
+    out->udp.xmit     = lwip_stats.udp.xmit;
+    out->udp.recv     = lwip_stats.udp.recv;
+    out->udp.fw       = lwip_stats.udp.fw;
+    out->udp.drop     = lwip_stats.udp.drop;
+    out->udp.chkerr   = lwip_stats.udp.chkerr;
+    out->udp.lenerr   = lwip_stats.udp.lenerr;
+    out->udp.memerr   = lwip_stats.udp.memerr;
+    out->udp.rterr    = lwip_stats.udp.rterr;
+    out->udp.proterr  = lwip_stats.udp.proterr;
+    out->udp.opterr   = lwip_stats.udp.opterr;
+    out->udp.err      = lwip_stats.udp.err;
+    out->udp.cachehit = lwip_stats.udp.cachehit;
+#endif
+
+#if TCP_STATS
+    out->tcp.xmit     = lwip_stats.tcp.xmit;
+    out->tcp.recv     = lwip_stats.tcp.recv;
+    out->tcp.fw       = lwip_stats.tcp.fw;
+    out->tcp.drop     = lwip_stats.tcp.drop;
+    out->tcp.chkerr   = lwip_stats.tcp.chkerr;
+    out->tcp.lenerr   = lwip_stats.tcp.lenerr;
+    out->tcp.memerr   = lwip_stats.tcp.memerr;
+    out->tcp.rterr    = lwip_stats.tcp.rterr;
+    out->tcp.proterr  = lwip_stats.tcp.proterr;
+    out->tcp.opterr   = lwip_stats.tcp.opterr;
+    out->tcp.err      = lwip_stats.tcp.err;
+    out->tcp.cachehit = lwip_stats.tcp.cachehit;
+#endif
+
+#if MEM_STATS
+    out->mem_used  = (uint32_t)lwip_stats.mem.used;
+    out->mem_max   = (uint32_t)lwip_stats.mem.max;
+    out->mem_avail = (uint32_t)lwip_stats.mem.avail;
+    out->mem_err   = (uint32_t)lwip_stats.mem.err;
+#endif
+
+#if MEMP_STATS
+    {
+        static const char * const s_memp_names[MEMP_MAX] = {
+#define LWIP_MEMPOOL(name,num,size,desc) desc,
+#include "lwip/priv/memp_std.h"
+        };
+        int p;
+        int count = 0;
+        for (p = 0; p < MEMP_MAX && count < TN_STATS_MAX_MEMP; p++) {
+            if (memp_pools[p] != NULL && memp_pools[p]->stats != NULL) {
+                const char *desc = s_memp_names[p];
+                if (desc != NULL) {
+                    strncpy(out->memp[count].name, desc, sizeof(out->memp[count].name) - 1);
+                }
+                out->memp[count].used  = (uint32_t)memp_pools[p]->stats->used;
+                out->memp[count].max   = (uint32_t)memp_pools[p]->stats->max;
+                out->memp[count].avail = (uint32_t)memp_pools[p]->stats->avail;
+                out->memp[count].err   = (uint32_t)memp_pools[p]->stats->err;
+                count++;
+            }
+        }
+        out->num_memp = (uint16_t)count;
+    }
+#endif
+
+#if LWIP_DHCP
+    {
+        TnNetif *prim = tn_netif_primary(d);
+        struct dhcp *dhcp = netif_dhcp_data(&prim->lwip_if);
+        if (dhcp != NULL && (dhcp->state == DHCP_STATE_BOUND ||
+                             dhcp->state == DHCP_STATE_RENEWING ||
+                             dhcp->state == DHCP_STATE_REBINDING)) {
+            if (dhcp->t0_timeout > dhcp->lease_used) {
+                out->daemon.lease_remaining = (uint32_t)(dhcp->t0_timeout - dhcp->lease_used) * DHCP_COARSE_TIMER_SECS;
+            }
+            if (dhcp->t1_timeout > dhcp->lease_used) {
+                out->daemon.lease_t1 = (uint32_t)(dhcp->t1_timeout - dhcp->lease_used) * DHCP_COARSE_TIMER_SECS;
+            }
+            if (dhcp->t2_timeout > dhcp->lease_used) {
+                out->daemon.lease_t2 = (uint32_t)(dhcp->t2_timeout - dhcp->lease_used) * DHCP_COARSE_TIMER_SECS;
+            }
+        }
+    }
+#endif
+#endif /* !TN_HOST_BUILD */
+
+    /* Daemon operational metrics */
+    {
+        int i;
+        for (i = 0; i < 32; i++) {
+            out->daemon.ipc_calls[i] = d->ipc_calls[i];
+        }
+        out->daemon.deferred_replies = d->deferred_replies;
+        out->daemon.sigio_sent       = d->sigio_sent;
+        out->daemon.selector_wakeups = d->selector_wakeups;
+        out->daemon.mainloop_ticks   = d->mainloop_ticks;
+        out->daemon.s2_rx_frames     = d->s2_rx_frames;
+        out->daemon.s2_rx_bytes      = d->s2_rx_bytes;
+        out->daemon.s2_rx_drops      = d->s2_rx_drops;
+        out->daemon.s2_tx_frames     = d->s2_tx_frames;
+        out->daemon.s2_tx_bytes      = d->s2_tx_bytes;
+        out->daemon.s2_tx_drops      = d->s2_tx_drops;
+        out->daemon.rx_high_water    = d->rx_high_water;
+        out->daemon.uptime_secs      = d->mainloop_ticks / 10;
+    }
+
+    imsg->result = 0;
     imsg->err_no = 0;
     return 0; /* TN_IPC_REPLY_NOW */
 }

@@ -55,7 +55,8 @@ static const char * const g_ipc_cmd_names[] = {
     [TN_IPC_CMD_RELEASESOCKET] = "RELEASESOCKET",
     [TN_IPC_CMD_OBTAINSOCKET]  = "OBTAINSOCKET",
     [TN_IPC_CMD_SELECT_ARM]    = "SELECT_ARM",
-    [TN_IPC_CMD_SELECT_DISARM] = "SELECT_DISARM"
+    [TN_IPC_CMD_SELECT_DISARM] = "SELECT_DISARM",
+    [TN_IPC_CMD_GETSTATS]      = "GETSTATS"
 };
 
 const char *tn_ipc_cmd_name(TnIpcCmd cmd)
@@ -97,7 +98,8 @@ static const TnIpcHandler g_ipc_table[] = {
     [TN_IPC_CMD_RELEASESOCKET] = { TN_IPC_CMD_RELEASESOCKET, tn_ipc_cmd_releasesocket, TRUE,  TRUE,  0 },
     [TN_IPC_CMD_OBTAINSOCKET]  = { TN_IPC_CMD_OBTAINSOCKET,  tn_ipc_cmd_obtainsocket,  TRUE,  FALSE, 0 },
     [TN_IPC_CMD_SELECT_ARM]    = { TN_IPC_CMD_SELECT_ARM,    tn_ipc_cmd_select_arm,    TRUE,  FALSE, 0 },
-    [TN_IPC_CMD_SELECT_DISARM] = { TN_IPC_CMD_SELECT_DISARM, tn_ipc_cmd_select_disarm, TRUE,  FALSE, 0 }
+    [TN_IPC_CMD_SELECT_DISARM] = { TN_IPC_CMD_SELECT_DISARM, tn_ipc_cmd_select_disarm, TRUE,  FALSE, 0 },
+    [TN_IPC_CMD_GETSTATS]      = { TN_IPC_CMD_GETSTATS,      tn_ipc_cmd_getstats,      FALSE, FALSE, 0 }
 };
 
 BOOL tn_handle_ipc(TnDaemon *d, TnIpcMsg *imsg)
@@ -115,6 +117,10 @@ BOOL tn_handle_ipc(TnDaemon *d, TnIpcMsg *imsg)
         imsg->result = -1;
         imsg->err_no = ENOSYS;
         return TRUE;
+    }
+
+    if ((size_t)imsg->cmd < 32) {
+        d->ipc_calls[imsg->cmd]++;
     }
 
     h = &g_ipc_table[imsg->cmd];
@@ -143,5 +149,8 @@ BOOL tn_handle_ipc(TnDaemon *d, TnIpcMsg *imsg)
     }
 
     action = h->handler(d, imsg, slot);
+    if (action != TN_IPC_REPLY_NOW) {
+        d->deferred_replies++;
+    }
     return (action == TN_IPC_REPLY_NOW);
 }

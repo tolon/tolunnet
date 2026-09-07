@@ -100,8 +100,80 @@ typedef enum TnIpcCmd {
     TN_IPC_CMD_RELEASESOCKET,   /* ReleaseSocket(sock, id, copy) */
     TN_IPC_CMD_OBTAINSOCKET,    /* ObtainSocket(id, domain, type, protocol, pref_fd) */
     TN_IPC_CMD_SELECT_ARM,      /* WaitSelect: arm selector for event-driven wake (§D) */
-    TN_IPC_CMD_SELECT_DISARM    /* WaitSelect: disarm selector (§D) */
+    TN_IPC_CMD_SELECT_DISARM,   /* WaitSelect: disarm selector (§D) */
+    TN_IPC_CMD_GETSTATS         /* Query stack telemetry and statistics (§F) */
 } TnIpcCmd;
+
+/* Sub-structure for protocol statistics (fixed width for client/daemon portability) */
+typedef struct TnProtoStats {
+    uint32_t xmit;
+    uint32_t recv;
+    uint32_t fw;
+    uint32_t drop;
+    uint32_t chkerr;
+    uint32_t lenerr;
+    uint32_t memerr;
+    uint32_t rterr;
+    uint32_t proterr;
+    uint32_t opterr;
+    uint32_t err;
+    uint32_t cachehit;
+} TnProtoStats;
+
+/* Memory pool statistics */
+typedef struct TnMempStats {
+    char     name[16];
+    uint32_t used;
+    uint32_t max;
+    uint32_t avail;
+    uint32_t err;
+} TnMempStats;
+
+#define TN_STATS_MAX_MEMP 20
+
+/* Daemon operational telemetry */
+typedef struct TnDaemonStats {
+    uint32_t ipc_calls[32];       /* IPC calls per command code (TnIpcCmd 0..31) */
+    uint32_t deferred_replies;    /* Non-blocking/async deferred IPC replies */
+    uint32_t sigio_sent;          /* Total SIGIO signals delivered */
+    uint32_t selector_wakeups;    /* Event-driven selector wakeups (§D) */
+    uint32_t mainloop_ticks;      /* Total main loop iterations / 100ms ticks */
+    uint32_t s2_rx_frames;        /* SANA-II frames received */
+    uint32_t s2_rx_bytes;         /* SANA-II bytes received */
+    uint32_t s2_rx_drops;         /* SANA-II dropped frames (buffer full/OOM) */
+    uint32_t s2_tx_frames;        /* SANA-II frames transmitted */
+    uint32_t s2_tx_bytes;         /* SANA-II bytes transmitted */
+    uint32_t s2_tx_drops;         /* SANA-II transmit errors/drops */
+    uint32_t rx_high_water;       /* Peak RX queue depth across all slots */
+    uint32_t uptime_secs;         /* Uptime in seconds */
+    uint32_t lease_remaining;     /* DHCP lease remaining seconds (0 if static/infinite) */
+    uint32_t lease_t1;            /* DHCP renewal time (t1) remaining seconds */
+    uint32_t lease_t2;            /* DHCP rebind time (t2) remaining seconds */
+} TnDaemonStats;
+
+/* Complete telemetry structure for TN_IPC_CMD_GETSTATS (§F) */
+typedef struct TnStats {
+    uint16_t struct_size;         /* sizeof(TnStats) */
+    uint16_t version;             /* 1 */
+
+    TnProtoStats link;
+    TnProtoStats etharp;
+    TnProtoStats ip;
+    TnProtoStats icmp;
+    TnProtoStats udp;
+    TnProtoStats tcp;
+
+    uint32_t mem_used;
+    uint32_t mem_max;
+    uint32_t mem_avail;
+    uint32_t mem_err;
+
+    uint16_t num_memp;            /* Number of valid entries in memp[] */
+    uint16_t pad;
+    TnMempStats memp[TN_STATS_MAX_MEMP];
+
+    TnDaemonStats daemon;
+} TnStats;
 
 /* Active socket description for TN_IPC_CMD_ENUMSOCKETS (TNET-071) */
 typedef struct TnSocketInfo {

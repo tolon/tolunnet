@@ -209,6 +209,21 @@ typedef struct TnDaemon {
     BOOL            running;
     TnSelector      selectors[TN_MAX_SELECTORS];
     uint8_t         selector_count;
+
+    /* Operational Telemetry (§F) */
+    uint32_t        ipc_calls[32];
+    uint32_t        deferred_replies;
+    uint32_t        sigio_sent;
+    uint32_t        selector_wakeups;
+    uint32_t        mainloop_ticks;
+    uint32_t        s2_rx_frames;
+    uint32_t        s2_rx_bytes;
+    uint32_t        s2_rx_drops;
+    uint32_t        s2_tx_frames;
+    uint32_t        s2_tx_bytes;
+    uint32_t        s2_tx_drops;
+    uint32_t        rx_high_water;
+    ULONG           start_sec;
 } TnDaemon;
 
 static inline TnNetif *tn_netif_primary(TnDaemon *d)
