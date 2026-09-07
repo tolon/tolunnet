@@ -112,6 +112,35 @@ typedef struct TnSocketInfo {
     ULONG send_q;       /* available send buffer */
 } TnSocketInfo;
 
+/* Versioned extended socket description for TN_IPC_CMD_ENUMSOCKETS (v2, IPv6-ready) */
+typedef struct TnSocketInfoV2 {
+    uint16_t struct_size; /* sizeof(TnSocketInfoV2) */
+    uint8_t  family;      /* AF_INET=2, AF_INET6=10 */
+    uint8_t  proto;       /* 1=TCP, 2=UDP, 3=RAW */
+    uint8_t  state;       /* TnTcpState */
+    uint8_t  pad;
+    uint16_t local_port;  /* host order */
+    uint16_t remote_port; /* host order */
+    uint8_t  local_addr[16];
+    uint8_t  remote_addr[16];
+    uint32_t recv_q;      /* queued bytes / packets */
+    uint32_t send_q;      /* available send buffer */
+} TnSocketInfoV2;
+
+/* Versioned status structure for TN_IPC_CMD_GETSTATUS (v2, IPv6-ready) */
+typedef struct TnStatusInfoV2 {
+    uint16_t struct_size; /* sizeof(TnStatusInfoV2) */
+    uint8_t  family;      /* AF_INET=2, AF_INET6=10 */
+    uint8_t  pad;
+    uint8_t  ip_addr[16];
+    uint8_t  netmask[16];
+    uint8_t  gw[16];
+    uint8_t  dns1[16];
+    uint8_t  dns2[16];
+    uint32_t active_sockets;
+    uint32_t flags;
+} TnStatusInfoV2;
+
 /* IPC Message passed via Exec PutMsg/GetMsg/ReplyMsg */
 typedef struct TnIpcMsg {
     struct Message msg;         /* Standard Exec Message node */
