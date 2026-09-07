@@ -162,10 +162,29 @@ typedef struct TnSocketSlot {
     BOOL            is_parked;
 } TnSocketSlot;
 
+#ifndef TN_MAX_NETIF
+#define TN_MAX_NETIF 4
+#endif
+
+typedef struct TnNetif {
+    struct netif   lwip_if;
+    TnSana2If      s2if;
+    BOOL           in_use;
+    char           name[16];
+    uint16_t       unit;
+    uint8_t        family;
+    uint8_t        addr_count;
+    ip_addr_t      addrs[4];
+    ip_addr_t      netmask;
+    ip_addr_t      gw;
+    BOOL           is_dhcp;
+    BOOL           link_up;
+} TnNetif;
+
 /* Daemon Singleton State */
 typedef struct TnDaemon {
-    TnSana2If       s2if;
-    struct netif    netif;
+    TnNetif         ifs[TN_MAX_NETIF];
+    uint8_t         if_count;
     TnTimer         timer;
     struct MsgPort *ipc_port;
     struct Library *bsd_lib;
@@ -174,6 +193,11 @@ typedef struct TnDaemon {
     TnPrefs         prefs;
     BOOL            running;
 } TnDaemon;
+
+static inline TnNetif *tn_netif_primary(TnDaemon *d)
+{
+    return &d->ifs[0];
+}
 
 extern TnDaemon g_daemon;
 

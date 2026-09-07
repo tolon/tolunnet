@@ -63,16 +63,18 @@ void tn_apply_live_config(TnDaemon *d)
         tn_logf(TN_LOG_BASIC, "tolunnet: secondary DNS %s\n", d->prefs.dns2);
     }
 
+    TnNetif *prim = tn_netif_primary(d);
+
     /* HOSTNAME: DHCP option 12 + gethostname() for future library openers */
     if (d->prefs.hostname[0] != '\0') {
-        netif_set_hostname(&d->netif, d->prefs.hostname);
+        netif_set_hostname(&prim->lwip_if, d->prefs.hostname);
     }
 
     /* MTU: clamp the netif below the driver-reported maximum */
-    if (d->prefs.mtu >= 576 && d->prefs.mtu <= 1500 && d->netif.mtu != 0 &&
-        d->prefs.mtu < d->netif.mtu) {
-        d->netif.mtu = (u16_t)d->prefs.mtu;
+    if (d->prefs.mtu >= 576 && d->prefs.mtu <= 1500 && prim->lwip_if.mtu != 0 &&
+        d->prefs.mtu < prim->lwip_if.mtu) {
+        prim->lwip_if.mtu = (u16_t)d->prefs.mtu;
         tn_logf(TN_LOG_BASIC, "tolunnet: MTU clamped to %lu (driver max %lu)\n",
-                d->prefs.mtu, (ULONG)d->s2if.mtu);
+                d->prefs.mtu, (ULONG)prim->s2if.mtu);
     }
 }

@@ -18,29 +18,30 @@ int tn_ipc_cmd_getstatus(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
     int active_socks = 0;
     int s;
+    TnNetif *prim = tn_netif_primary(d);
     (void)slot;
 
     /* Legacy return format in args[0..3] (TNET-043) */
-    imsg->args[0] = (LONG)ip_addr_get_ip4_u32(&d->netif.ip_addr);
-    imsg->args[1] = (LONG)ip_addr_get_ip4_u32(&d->netif.netmask);
-    imsg->args[2] = (LONG)ip_addr_get_ip4_u32(&d->netif.gw);
+    imsg->args[0] = (LONG)ip_addr_get_ip4_u32(&prim->lwip_if.ip_addr);
+    imsg->args[1] = (LONG)ip_addr_get_ip4_u32(&prim->lwip_if.netmask);
+    imsg->args[2] = (LONG)ip_addr_get_ip4_u32(&prim->lwip_if.gw);
 
     for (s = 0; s < TN_MAX_GLOBAL_SOCKETS; s++) {
         if (d->sockets[s].in_use) active_socks++;
     }
     imsg->args[3] = active_socks;
 
-    /* Extended IPv6-ready return struct if caller supplied buffer (ROUND4b ?L) */
+    /* Extended IPv6-ready return struct if caller supplied buffer (ROUND4b §L) */
     if (imsg->ptrs[0] != NULL && imsg->args[4] >= (LONG)sizeof(TnStatusInfoV2)) {
         TnStatusInfoV2 *v2 = (TnStatusInfoV2 *)imsg->ptrs[0];
         memset(v2, 0, sizeof(TnStatusInfoV2));
         v2->struct_size = sizeof(TnStatusInfoV2);
         v2->family = AF_INET;
-        memcpy(v2->ip_addr, &d->netif.ip_addr, 4);
-        memcpy(v2->netmask, &d->netif.netmask, 4);
-        memcpy(v2->gw, &d->netif.gw, 4);
+        memcpy(v2->ip_addr, &prim->lwip_if.ip_addr, 4);
+        memcpy(v2->netmask, &prim->lwip_if.netmask, 4);
+        memcpy(v2->gw, &prim->lwip_if.gw, 4);
         v2->active_sockets = active_socks;
-        v2->flags = (netif_is_link_up(&d->netif) ? 1 : 0) | (d->prefs.use_dhcp ? 2 : 0);
+        v2->flags = (netif_is_link_up(&prim->lwip_if) ? 1 : 0) | (d->prefs.use_dhcp ? 2 : 0);
     }
 
     imsg->result = 0;

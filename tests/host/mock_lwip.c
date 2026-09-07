@@ -65,18 +65,41 @@ struct pbuf *mock_pbuf_alloc(uint16_t length)
 
 void pbuf_free(struct pbuf *p)
 {
-    if (p == NULL) return;
-    mock_lwip_record(MOCK_CALL_PBUF_FREE, p, NULL, p->tot_len, 0);
-    free(p);
+    while (p != NULL) {
+        struct pbuf *next = p->next;
+        mock_lwip_record(MOCK_CALL_PBUF_FREE, p, NULL, p->tot_len, 0);
+        free(p);
+        p = next;
+    }
 }
 
 u16_t pbuf_copy_partial(const struct pbuf *buf, void *dataptr, u16_t len, u16_t offset)
 {
-    if (buf == NULL || dataptr == NULL || offset >= buf->tot_len) return 0;
-    u16_t avail = buf->tot_len - offset;
-    u16_t to_copy = (len > avail) ? avail : len;
-    memcpy(dataptr, (const uint8_t *)buf->payload + offset, to_copy);
-    return to_copy;
+    const struct pbuf *p;
+    u16_t left = len;
+    u16_t buf_copy_len;
+    u16_t copied_total = 0;
+
+    if (buf == NULL || dataptr == NULL) return 0;
+
+    /* Skip pbufs until offset is within p->len */
+    for (p = buf; p != NULL && offset >= p->len; p = p->next) {
+        offset -= p->len;
+    }
+
+    while (p != NULL && left != 0) {
+        buf_copy_len = p->len - offset;
+        if (buf_copy_len > left) {
+            buf_copy_len = left;
+        }
+        memcpy((uint8_t *)dataptr + copied_total, (const uint8_t *)p->payload + offset, buf_copy_len);
+        copied_total += buf_copy_len;
+        left -= buf_copy_len;
+        offset = 0;
+        p = p->next;
+    }
+
+    return copied_total;
 }
 
 err_t pbuf_take_at(struct pbuf *buf, const void *dataptr, u16_t len, u16_t offset)

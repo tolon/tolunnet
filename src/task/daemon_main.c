@@ -61,6 +61,7 @@ static int tn_task_real_main(int argc, char *argv[])
     BPTR            log_fh = (BPTR)0;
     ULONG           tick_count = 0;
     int             i;
+    TnNetif        *prim = tn_netif_primary(&g_daemon);
 
     DOSBase = OpenLibrary((CONST_STRPTR)"dos.library", 0);
     if (DOSBase == NULL) return 20;
@@ -69,6 +70,8 @@ static int tn_task_real_main(int argc, char *argv[])
     g_log_level = TN_LOG_VERBOSE;
 
     tn_slot_table_init(&g_daemon);
+    g_daemon.if_count = 1;
+    prim->in_use = TRUE;
 
     /* Load persistent configuration first (defaults when absent) so every
      * key — including HOSTNAME/DNS2/MTU/DEBUG (TNET-063) — is honoured.
@@ -156,7 +159,7 @@ static int tn_task_real_main(int argc, char *argv[])
     tn_log(TN_LOG_BASIC, "tolunnet: lwIP 2.2.0 initialized (NO_SYS=1)\n");
 
     /* 3. Open SANA-II network device */
-    s2res = tn_s2_open(&g_daemon.s2if, device, unit);
+    s2res = tn_s2_open(&prim->s2if, device, unit);
     if (s2res != TN_S2_OK) {
         tn_logf(TN_LOG_BASIC, "tolunnet: SANA-II open failed (%s, %lu)\n", device, unit);
         tn_timer_fini(&g_daemon.timer);
@@ -165,10 +168,10 @@ static int tn_task_real_main(int argc, char *argv[])
     }
 
     /* 4. Bring SANA-II interface online */
-    s2res = tn_s2_online(&g_daemon.s2if, NULL);
+    s2res = tn_s2_online(&prim->s2if, NULL);
     if (s2res != TN_S2_OK) {
         tn_log(TN_LOG_BASIC, "tolunnet: SANA-II online failed\n");
-        tn_s2_offline_close(&g_daemon.s2if);
+        tn_s2_offline_close(&prim->s2if);
         tn_timer_fini(&g_daemon.timer);
         CloseLibrary(DOSBase);
         return 20;
@@ -176,32 +179,32 @@ static int tn_task_real_main(int argc, char *argv[])
 
     tn_logf(TN_LOG_BASIC, "tolunnet: %s:%lu online (MAC %02x:%02x:%02x:%02x:%02x:%02x, MTU %lu)\n",
             device, unit,
-            (int)g_daemon.s2if.mac[0], (int)g_daemon.s2if.mac[1], (int)g_daemon.s2if.mac[2],
-            (int)g_daemon.s2if.mac[3], (int)g_daemon.s2if.mac[4], (int)g_daemon.s2if.mac[5],
-            g_daemon.s2if.mtu);
+            (int)prim->s2if.mac[0], (int)prim->s2if.mac[1], (int)prim->s2if.mac[2],
+            (int)prim->s2if.mac[3], (int)prim->s2if.mac[4], (int)prim->s2if.mac[5],
+            prim->s2if.mtu);
 
     /* Initialize hardware PRNG entropy (TNET-013) */
-    tn_rand_init(&g_daemon.timer, g_daemon.s2if.mac);
+    tn_rand_init(&g_daemon.timer, prim->s2if.mac);
 
     /* 5. Register SANA-II netif with lwIP */
-    if (netif_add(&g_daemon.netif, &ipaddr, &netmask, &gw, &g_daemon.s2if,
+    if (netif_add(&prim->lwip_if, &ipaddr, &netmask, &gw, &prim->s2if,
                   tn_sana2_netif_init, ethernet_input) == NULL) {
         tn_log(TN_LOG_BASIC, "tolunnet: netif_add failed\n");
-        tn_s2_offline_close(&g_daemon.s2if);
+        tn_s2_offline_close(&prim->s2if);
         tn_timer_fini(&g_daemon.timer);
         CloseLibrary(DOSBase);
         return 20;
     }
 
-    netif_set_default(&g_daemon.netif);
-    netif_set_up(&g_daemon.netif);
+    netif_set_default(&prim->lwip_if);
+    netif_set_up(&prim->lwip_if);
 
     /* 6. Arm async SANA-II receive pump */
-    if (tn_s2_arm_reads(&g_daemon.s2if) != TN_S2_OK) {
+    if (tn_s2_arm_reads(&prim->s2if) != TN_S2_OK) {
         tn_log(TN_LOG_BASIC, "tolunnet: tn_s2_arm_reads failed\n");
-        netif_set_down(&g_daemon.netif);
-        netif_remove(&g_daemon.netif);
-        tn_s2_offline_close(&g_daemon.s2if);
+        netif_set_down(&prim->lwip_if);
+        netif_remove(&prim->lwip_if);
+        tn_s2_offline_close(&prim->s2if);
         tn_timer_fini(&g_daemon.timer);
         CloseLibrary(DOSBase);
         return 20;
@@ -212,12 +215,12 @@ static int tn_task_real_main(int argc, char *argv[])
 
     if (use_dhcp) {
         tn_log(TN_LOG_BASIC, "tolunnet: starting DHCP client...\n");
-        dhcp_start(&g_daemon.netif);
+        dhcp_start(&prim->lwip_if);
     } else {
         char str_ip[16], str_nm[16], str_gw[16];
-        ip_to_str(str_ip, netif_ip4_addr(&g_daemon.netif));
-        ip_to_str(str_nm, netif_ip4_netmask(&g_daemon.netif));
-        ip_to_str(str_gw, netif_ip4_gw(&g_daemon.netif));
+        ip_to_str(str_ip, netif_ip4_addr(&prim->lwip_if));
+        ip_to_str(str_nm, netif_ip4_netmask(&prim->lwip_if));
+        ip_to_str(str_gw, netif_ip4_gw(&prim->lwip_if));
 
         tn_log(TN_LOG_BASIC, "----------------------------------------\n");
         tn_logf(TN_LOG_BASIC, "tolunnet: Static IP configured!\n");
@@ -226,17 +229,17 @@ static int tn_task_real_main(int argc, char *argv[])
         tn_logf(TN_LOG_BASIC, "  Gateway    : %s\n", str_gw);
         tn_log(TN_LOG_BASIC, "----------------------------------------\n");
 
-        etharp_gratuitous(&g_daemon.netif);
-        etharp_request(&g_daemon.netif, &gw);
+        etharp_gratuitous(&prim->lwip_if);
+        etharp_request(&prim->lwip_if, &gw);
     }
 
     /* 7. Create and Register Public IPC Message Port */
     g_daemon.ipc_port = CreateMsgPort();
     if (g_daemon.ipc_port == NULL) {
         tn_log(TN_LOG_BASIC, "tolunnet: failed to create IPC port\n");
-        netif_set_down(&g_daemon.netif);
-        netif_remove(&g_daemon.netif);
-        tn_s2_offline_close(&g_daemon.s2if);
+        netif_set_down(&prim->lwip_if);
+        netif_remove(&prim->lwip_if);
+        tn_s2_offline_close(&prim->s2if);
         tn_timer_fini(&g_daemon.timer);
         CloseLibrary(DOSBase);
         return 20;
@@ -252,9 +255,9 @@ static int tn_task_real_main(int argc, char *argv[])
         tn_log(TN_LOG_BASIC, "tolunnet: failed to create bsdsocket.library\n");
         RemPort(g_daemon.ipc_port);
         DeleteMsgPort(g_daemon.ipc_port);
-        netif_set_down(&g_daemon.netif);
-        netif_remove(&g_daemon.netif);
-        tn_s2_offline_close(&g_daemon.s2if);
+        netif_set_down(&prim->lwip_if);
+        netif_remove(&prim->lwip_if);
+        tn_s2_offline_close(&prim->s2if);
         tn_timer_fini(&g_daemon.timer);
         CloseLibrary(DOSBase);
         return 20;
@@ -264,7 +267,7 @@ static int tn_task_real_main(int argc, char *argv[])
     /* 9. Arm 100 ms timer tick */
     tn_timer_arm(&g_daemon.timer, 100000);
 
-    s2_sig     = 1UL << g_daemon.s2if.rx_port->mp_SigBit;
+    s2_sig     = 1UL << prim->s2if.rx_port->mp_SigBit;
     timer_sig  = g_daemon.timer.sig_mask;
     ipc_sig    = 1UL << g_daemon.ipc_port->mp_SigBit;
     ctrl_c_sig = SIGBREAKF_CTRL_C;
@@ -308,7 +311,7 @@ static int tn_task_real_main(int argc, char *argv[])
 
         /* SANA-II Packet Arrival Signal */
         if (sigs & s2_sig) {
-            tn_sana2_poll_input(&g_daemon.s2if, &g_daemon.netif);
+            tn_sana2_poll_input(&prim->s2if, &prim->lwip_if);
             tn_drain_loopback();
         }
 
@@ -322,11 +325,11 @@ static int tn_task_real_main(int argc, char *argv[])
             tn_drain_loopback();
 
             /* Check DHCP lease progress */
-            if (use_dhcp && !dhcp_logged && dhcp_supplied_address(&g_daemon.netif)) {
+            if (use_dhcp && !dhcp_logged && dhcp_supplied_address(&prim->lwip_if)) {
                 char str_ip[16], str_nm[16], str_gw[16];
-                ip_to_str(str_ip, netif_ip4_addr(&g_daemon.netif));
-                ip_to_str(str_nm, netif_ip4_netmask(&g_daemon.netif));
-                ip_to_str(str_gw, netif_ip4_gw(&g_daemon.netif));
+                ip_to_str(str_ip, netif_ip4_addr(&prim->lwip_if));
+                ip_to_str(str_nm, netif_ip4_netmask(&prim->lwip_if));
+                ip_to_str(str_gw, netif_ip4_gw(&prim->lwip_if));
 
                 tn_log(TN_LOG_BASIC, "----------------------------------------\n");
                 tn_logf(TN_LOG_BASIC, "tolunnet: DHCP lease obtained!\n");
@@ -367,17 +370,17 @@ static int tn_task_real_main(int argc, char *argv[])
 
     if (use_dhcp) {
         tn_log(TN_LOG_BASIC, "tolunnet: stopping DHCP client...\n");
-        dhcp_stop(&g_daemon.netif);
+        dhcp_stop(&prim->lwip_if);
     }
     tn_log(TN_LOG_BASIC, "tolunnet: bringing netif down...\n");
-    netif_set_down(&g_daemon.netif);
-    netif_remove(&g_daemon.netif);
+    netif_set_down(&prim->lwip_if);
+    netif_remove(&prim->lwip_if);
 
     tn_log(TN_LOG_BASIC, "tolunnet: closing timer.device...\n");
     tn_timer_fini(&g_daemon.timer);
 
     tn_log(TN_LOG_BASIC, "tolunnet: closing SANA-II device...\n");
-    tn_s2_offline_close(&g_daemon.s2if);
+    tn_s2_offline_close(&prim->s2if);
 
     if (log_fh != (BPTR)0) {
         Close(log_fh);

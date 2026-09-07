@@ -56,7 +56,17 @@ fi
 [ -f build/tolunnet ] || die "build/tolunnet missing (run without SKIP_BUILD)"
 [ -f build/SocketConformance ] || die "build/SocketConformance missing"
 
-STAMP="$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
+GIT_DESC="$(git describe --always --dirty 2>/dev/null || echo nogit)"
+IS_DIRTY=0
+if [[ "$GIT_DESC" == *-dirty* ]]; then
+    IS_DIRTY=1
+    say "****************************************************************"
+    say "  WARNING: WORKING TREE IS DIRTY ($GIT_DESC)"
+    say "  Logs from this run CANNOT be cited as clean commit proof."
+    say "****************************************************************"
+fi
+
+STAMP="$(date +%Y%m%d-%H%M%S)-$GIT_DESC"
 LOG_ROOT="docs/bench-logs/$STAMP"
 mkdir -p "$LOG_ROOT"
 
@@ -136,7 +146,14 @@ for cfg in $CONFIGS; do
     {
         echo "config: ci/tolunnet-$cfg.uae (HDF copy staged from the pristine WB3.0 image)"
         echo "commit: $(git rev-parse HEAD 2>/dev/null)"
+        echo "describe: $GIT_DESC"
+        echo "dirty: $([ $IS_DIRTY -eq 1 ] && echo YES || echo NO)"
         echo "MuForce pass: $MUFORCE_NOTE"
+        if [ $IS_DIRTY -eq 1 ]; then
+            echo "--- git status --short ---"
+            git status --short 2>/dev/null || true
+            echo "--------------------------"
+        fi
     } >> "$OUT/README.txt"
 
     # ---- summary --------------------------------------------------------
