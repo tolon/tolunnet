@@ -384,15 +384,16 @@ static int tn_task_real_main(int argc, char *argv[])
     tn_log(TN_LOG_BASIC, "tolunnet: closing SANA-II device...\n");
     tn_s2_offline_close(&prim->s2if);
 
-    if (log_fh != (BPTR)0) {
-        Close(log_fh);
-    }
-
     /* Restore original task priority */
     tn_log(TN_LOG_BASIC, "tolunnet: restoring task priority...\n");
     SetTaskPri(self_task, old_pri);
 
     tn_log(TN_LOG_BASIC, "tolunnet: shutdown complete.\n");
+
+    if (log_fh != (BPTR)0) {
+        g_log_file = (BPTR)0;
+        Close(log_fh);
+    }
     CloseLibrary(DOSBase);
     return 0;
 }

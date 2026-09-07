@@ -38,6 +38,7 @@ extern struct DosLibrary    *DOSBase;
 struct IntuitionBase *IntuitionBase = NULL;
 struct GfxBase       *GfxBase       = NULL;
 struct Library       *GadToolsBase  = NULL;
+unsigned long        __stack        = 32768;
 
 /* Gadget IDs */
 #define GID_CYCLE_PAGE      100
@@ -490,132 +491,161 @@ int main(int argc, char **argv)
     strncpy(g_ws.dns1_str, "1.1.1.1", sizeof(g_ws.dns1_str) - 1);
     strncpy(g_ws.host_str, "amiga", sizeof(g_ws.host_str) - 1);
 
+    struct Process *pr = (struct Process *)FindTask(NULL);
+    APTR old_win_ptr = NULL;
+    if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
+        old_win_ptr = pr->pr_WindowPtr;
+        pr->pr_WindowPtr = (APTR)-1;
+    }
+
+    /* Initialize ARexx host port early so external scripts and bench can connect immediately */
+    struct MsgPort *rexx_port = tn_setup_rexx_init();
+
     IntuitionBase = (struct IntuitionBase *)OpenLibrary((CONST_STRPTR)"intuition.library", 36);
     GfxBase       = (struct GfxBase *)OpenLibrary((CONST_STRPTR)"graphics.library", 36);
     GadToolsBase  = OpenLibrary((CONST_STRPTR)"gadtools.library", 36);
-
-    if (!IntuitionBase || !GfxBase || !GadToolsBase) {
-        if (GadToolsBase)  CloseLibrary(GadToolsBase);
-        if (GfxBase)       CloseLibrary((struct Library *)GfxBase);
-        if (IntuitionBase) CloseLibrary((struct Library *)IntuitionBase);
-        return 20;
-    }
 
     /* Run initial scans */
     tn_stack_detect_all(&g_ws);
     tn_hw_scan_all(&g_ws);
 
-    struct Screen *scr = LockPubScreen(NULL);
-    if (!scr) {
-        CloseLibrary(GadToolsBase);
-        CloseLibrary((struct Library *)GfxBase);
-        CloseLibrary((struct Library *)IntuitionBase);
-        return 20;
+    struct Screen *scr = NULL;
+    BOOL owns_screen = FALSE;
+
+    if (IntuitionBase && GfxBase && GadToolsBase) {
+        scr = LockPubScreen(NULL);
+        if (!scr) {
+            /* Open fallback screen if Workbench is not loaded yet (e.g. early User-Startup) */
+            scr = OpenScreenTags(NULL,
+                                 SA_Depth, 2,
+                                 SA_DisplayID, DEFAULT_MONITOR_ID | HIRES_KEY,
+                                 SA_Title, (ULONG)"tolunnet First-Run Network Setup Wizard",
+                                 SA_Type, CUSTOMSCREEN,
+                                 TAG_END);
+            if (scr) owns_screen = TRUE;
+        }
     }
 
-    g_vi = GetVisualInfo(scr, TAG_END);
+    if (scr) {
+        g_vi = GetVisualInfo(scr, TAG_END);
+        if (g_vi) {
+            /* Create persistent navigation gadgets */
+            struct NewGadget ng;
+            memset(&ng, 0, sizeof(ng));
+            ng.ng_VisualInfo = g_vi;
+            ng.ng_TextAttr   = &g_gui_font;
 
-    /* Create persistent navigation gadgets */
-    struct NewGadget ng;
-    memset(&ng, 0, sizeof(ng));
-    ng.ng_VisualInfo = g_vi;
-    ng.ng_TextAttr   = &g_gui_font;
+            struct Gadget *prev = CreateContext(&g_nav_glist);
 
-    struct Gadget *prev = CreateContext(&g_nav_glist);
+            /* Top Page Cycle */
+            ng.ng_LeftEdge   = 120;
+            ng.ng_TopEdge    = 14;
+            ng.ng_Width      = 380;
+            ng.ng_Height     = 16;
+            ng.ng_GadgetText = (STRPTR)"Wizard Step:";
+            ng.ng_GadgetID   = GID_CYCLE_PAGE;
+            ng.ng_Flags      = PLACETEXT_LEFT;
+            prev = CreateGadget(CYCLE_KIND, prev, &ng,
+                                GTCY_Labels, (ULONG)g_page_names,
+                                GTCY_Active, g_ws.current_page,
+                                TAG_END);
+            g_gad_cycle = prev;
 
-    /* Top Page Cycle */
-    ng.ng_LeftEdge   = 120;
-    ng.ng_TopEdge    = 14;
-    ng.ng_Width      = 380;
-    ng.ng_Height     = 16;
-    ng.ng_GadgetText = (STRPTR)"Wizard Step:";
-    ng.ng_GadgetID   = GID_CYCLE_PAGE;
-    ng.ng_Flags      = PLACETEXT_LEFT;
-    prev = CreateGadget(CYCLE_KIND, prev, &ng,
-                        GTCY_Labels, (ULONG)g_page_names,
-                        GTCY_Active, g_ws.current_page,
-                        TAG_END);
-    g_gad_cycle = prev;
+            /* Bottom Buttons */
+            ng.ng_LeftEdge   = 140;
+            ng.ng_TopEdge    = 154;
+            ng.ng_Width      = 100;
+            ng.ng_Height     = 18;
+            ng.ng_GadgetText = (STRPTR)"< _Back";
+            ng.ng_GadgetID   = GID_BTN_BACK;
+            ng.ng_Flags      = PLACETEXT_IN;
+            prev = CreateGadget(BUTTON_KIND, prev, &ng,
+                                GT_Underscore, '_',
+                                GA_Disabled, TRUE,
+                                TAG_END);
+            g_gad_back = prev;
 
-    /* Bottom Buttons */
-    ng.ng_LeftEdge   = 140;
-    ng.ng_TopEdge    = 154;
-    ng.ng_Width      = 100;
-    ng.ng_Height     = 18;
-    ng.ng_GadgetText = (STRPTR)"< _Back";
-    ng.ng_GadgetID   = GID_BTN_BACK;
-    ng.ng_Flags      = PLACETEXT_IN;
-    prev = CreateGadget(BUTTON_KIND, prev, &ng,
-                        GT_Underscore, '_',
-                        GA_Disabled, TRUE,
-                        TAG_END);
-    g_gad_back = prev;
+            ng.ng_LeftEdge   = 260;
+            ng.ng_TopEdge    = 154;
+            ng.ng_Width      = 100;
+            ng.ng_Height     = 18;
+            ng.ng_GadgetText = (STRPTR)"_Next >";
+            ng.ng_GadgetID   = GID_BTN_NEXT;
+            ng.ng_Flags      = PLACETEXT_IN;
+            prev = CreateGadget(BUTTON_KIND, prev, &ng,
+                                GT_Underscore, '_',
+                                TAG_END);
+            g_gad_next = prev;
 
-    ng.ng_LeftEdge   = 260;
-    ng.ng_TopEdge    = 154;
-    ng.ng_Width      = 100;
-    ng.ng_Height     = 18;
-    ng.ng_GadgetText = (STRPTR)"_Next >";
-    ng.ng_GadgetID   = GID_BTN_NEXT;
-    ng.ng_Flags      = PLACETEXT_IN;
-    prev = CreateGadget(BUTTON_KIND, prev, &ng,
-                        GT_Underscore, '_',
-                        TAG_END);
-    g_gad_next = prev;
+            ng.ng_LeftEdge   = 380;
+            ng.ng_TopEdge    = 154;
+            ng.ng_Width      = 100;
+            ng.ng_Height     = 18;
+            ng.ng_GadgetText = (STRPTR)"_Cancel";
+            ng.ng_GadgetID   = GID_BTN_CANCEL;
+            ng.ng_Flags      = PLACETEXT_IN;
+            prev = CreateGadget(BUTTON_KIND, prev, &ng,
+                                GT_Underscore, '_',
+                                TAG_END);
 
-    ng.ng_LeftEdge   = 380;
-    ng.ng_TopEdge    = 154;
-    ng.ng_Width      = 100;
-    ng.ng_Height     = 18;
-    ng.ng_GadgetText = (STRPTR)"_Cancel";
-    ng.ng_GadgetID   = GID_BTN_CANCEL;
-    ng.ng_Flags      = PLACETEXT_IN;
-    prev = CreateGadget(BUTTON_KIND, prev, &ng,
-                        GT_Underscore, '_',
-                        TAG_END);
+            /* Open Window: 620 x 180 (NTSC 640x200 safe) */
+            g_win = OpenWindowTags(NULL,
+                                   WA_Left,         10,
+                                   WA_Top,          12,
+                                   WA_Width,        620,
+                                   WA_Height,       180,
+                                   WA_IDCMP,        IDCMP_CLOSEWINDOW | IDCMP_REFRESHWINDOW |
+                                                    IDCMP_GADGETUP | IDCMP_RAWKEY,
+                                   WA_Flags,        WFLG_DRAGBAR | WFLG_DEPTHGADGET |
+                                                    WFLG_CLOSEGADGET | WFLG_SMART_REFRESH |
+                                                    WFLG_ACTIVATE,
+                                   WA_Title,        (ULONG)"tolunnet First-Run Network Setup Wizard",
+                                   WA_Gadgets,      (ULONG)g_nav_glist,
+                                   WA_PubScreen,    (ULONG)scr,
+                                   TAG_END);
 
-    /* Open Window: 620 x 180 (NTSC 640x200 safe) */
-    g_win = OpenWindowTags(NULL,
-                           WA_Left,         10,
-                           WA_Top,          12,
-                           WA_Width,        620,
-                           WA_Height,       180,
-                           WA_IDCMP,        IDCMP_CLOSEWINDOW | IDCMP_REFRESHWINDOW |
-                                            IDCMP_GADGETUP | IDCMP_RAWKEY,
-                           WA_Flags,        WFLG_DRAGBAR | WFLG_DEPTHGADGET |
-                                            WFLG_CLOSEGADGET | WFLG_SMART_REFRESH |
-                                            WFLG_ACTIVATE,
-                           WA_Title,        (ULONG)"tolunnet First-Run Network Setup Wizard",
-                           WA_Gadgets,      (ULONG)g_nav_glist,
-                           WA_PubScreen,    (ULONG)scr,
-                           TAG_END);
+            if (!owns_screen) {
+                UnlockPubScreen(NULL, scr);
+            }
 
-    UnlockPubScreen(NULL, scr);
+            if (g_win) {
+                GT_RefreshWindow(g_win, NULL);
+                rebuild_page_gadgets();
+            }
+        }
+    }
 
     if (!g_win) {
-        FreeGadgets(g_nav_glist);
-        FreeVisualInfo(g_vi);
-        CloseLibrary(GadToolsBase);
-        CloseLibrary((struct Library *)GfxBase);
-        CloseLibrary((struct Library *)IntuitionBase);
-        return 20;
-    }
+        /* Headless / script-driven mode via ARexx port */
+        ULONG rexx_sig = rexx_port ? (1UL << rexx_port->mp_SigBit) : 0;
+        BOOL running = TRUE;
 
-    GT_RefreshWindow(g_win, NULL);
+        while (running) {
+            ULONG sigs = Wait(rexx_sig | SIGBREAKF_CTRL_C);
 
-    /* Initialize ARexx host port */
-    struct MsgPort *rexx_port = tn_setup_rexx_init();
+            if (sigs & SIGBREAKF_CTRL_C) {
+                break;
+            }
 
-    /* Build initial page */
-    rebuild_page_gadgets();
+            if (rexx_port && (sigs & rexx_sig)) {
+                tn_setup_rexx_process(rexx_port, &g_ws, NULL);
+                if (g_ws.rexx_done) {
+                    apply_wizard_finish();
+                    break;
+                }
+                if (g_ws.rexx_cancel) {
+                    break;
+                }
+            }
+        }
+    } else {
+        ULONG win_sig = 1UL << g_win->UserPort->mp_SigBit;
+        ULONG rexx_sig = rexx_port ? (1UL << rexx_port->mp_SigBit) : 0;
 
-    ULONG win_sig = 1UL << g_win->UserPort->mp_SigBit;
-    ULONG rexx_sig = rexx_port ? (1UL << rexx_port->mp_SigBit) : 0;
+        BOOL running = TRUE;
 
-    BOOL running = TRUE;
-
-    while (running) {
-        ULONG sigs = Wait(win_sig | rexx_sig | SIGBREAKF_CTRL_C);
+        while (running) {
+            ULONG sigs = Wait(win_sig | rexx_sig | SIGBREAKF_CTRL_C);
 
         if (sigs & SIGBREAKF_CTRL_C) {
             running = FALSE;
@@ -738,18 +768,19 @@ int main(int argc, char **argv)
                         break;
                     }
                     break;
-                }
-                }
-            }
-        }
-    }
+                } /* case IDCMP_GADGETUP */
+                } /* switch (im_class) */
+            } /* while (imsg) */
+        } /* if (sigs & win_sig) */
+    } /* while (running) */
+    } /* else */
 
     if (rexx_port) {
         tn_setup_rexx_cleanup(rexx_port);
     }
 
     if (g_page_glist) {
-        RemoveGList(g_win, g_page_glist, -1);
+        if (g_win) RemoveGList(g_win, g_page_glist, -1);
         FreeGadgets(g_page_glist);
     }
 
@@ -765,9 +796,17 @@ int main(int argc, char **argv)
         FreeVisualInfo(g_vi);
     }
 
-    CloseLibrary(GadToolsBase);
-    CloseLibrary((struct Library *)GfxBase);
-    CloseLibrary((struct Library *)IntuitionBase);
+    if (owns_screen && scr) {
+        CloseScreen(scr);
+    }
+
+    if (GadToolsBase)  CloseLibrary(GadToolsBase);
+    if (GfxBase)       CloseLibrary((struct Library *)GfxBase);
+    if (IntuitionBase) CloseLibrary((struct Library *)IntuitionBase);
+
+    if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
+        pr->pr_WindowPtr = old_win_ptr;
+    }
 
     return 0;
 }

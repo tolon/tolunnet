@@ -270,6 +270,13 @@ void tn_stack_detect_all(WizardState *ws)
     if (!ws) return;
     ws->stack_count = 0;
 
+    struct Process *pr = (struct Process *)FindTask(NULL);
+    APTR old_win = NULL;
+    if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
+        old_win = pr->pr_WindowPtr;
+        pr->pr_WindowPtr = (APTR)-1;
+    }
+
     /* 1. Check Exec LibList for bsdsocket.library */
     Forbid();
     struct Library *lib = (struct Library *)FindName(&SysBase->LibList, (CONST_STRPTR)"bsdsocket.library");
@@ -334,6 +341,10 @@ void tn_stack_detect_all(WizardState *ws)
 
     /* Import existing settings if available */
     try_import_roadshow(ws);
+
+    if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
+        pr->pr_WindowPtr = old_win;
+    }
 }
 
 static BOOL rewrite_file_with_parser(const char *filepath, int (*parser)(const char *, char *, int, int *))

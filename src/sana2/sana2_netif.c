@@ -462,11 +462,16 @@ void tn_s2_offline_close(TnSana2If *nif)
         tn_delete_extio((struct IORequest *)nif->io);
         nif->io = NULL;
     }
+
     if (nif->rx_port != NULL) {
+        struct Message *m;
+        while ((m = GetMsg(nif->rx_port)) != NULL) {}
         DeleteMsgPort(nif->rx_port);
         nif->rx_port = NULL;
     }
     if (nif->tx_port != NULL) {
+        struct Message *m;
+        while ((m = GetMsg(nif->tx_port)) != NULL) {}
         DeleteMsgPort(nif->tx_port);
         nif->tx_port = NULL;
     }

@@ -85,8 +85,7 @@ cleanup() {
         kill "$HTTP_PID" 2>/dev/null || true
     fi
     if [ "${SUCCESS:-0}" != "1" ] && [ -n "${LOG_ROOT:-}" ] && [ -d "$LOG_ROOT" ]; then
-        say "run failed; removing incomplete log directory: $LOG_ROOT"
-        rm -rf "$LOG_ROOT"
+        say "run had failures; keeping log directory for analysis: $LOG_ROOT"
     fi
 }
 trap cleanup EXIT INT TERM
@@ -170,6 +169,9 @@ for cfg in $CONFIGS; do
         skip=$(grep -c '# SKIP' "$log" 2>/dev/null | tr -d '\r' || echo 0)
         todo=$(grep -c '# TODO' "$log" 2>/dev/null | tr -d '\r' || echo 0)
         say "$(basename "$log"): ok=$ok not_ok=$nok skip=$skip todo=$todo"
+        if [ "$nok" -gt 0 ]; then
+            grep '^not ok' "$log" 2>/dev/null || true
+        fi
         real_nok=$((nok - todo))
         [ "$real_nok" -gt 0 ] 2>/dev/null && fail=1
     done

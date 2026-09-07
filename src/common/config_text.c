@@ -87,7 +87,8 @@ void tn_config_parse_line(TnPrefs *prefs, const char *key, const char *val)
         LONG u = 0;
         if (tn_str_to_long(clean_val, &u)) prefs->unit = (ULONG)u;
     } else if (tn_str_equal_nocase(clean_key, "DHCP") || tn_str_equal_nocase(clean_key, "USE_DHCP")) {
-        if (tn_str_equal_nocase(clean_val, "YES") || tn_str_equal_nocase(clean_val, "1") || tn_str_equal_nocase(clean_val, "TRUE")) {
+        if (tn_str_equal_nocase(clean_val, "YES") || tn_str_equal_nocase(clean_val, "1") ||
+            tn_str_equal_nocase(clean_val, "TRUE") || tn_str_equal_nocase(clean_val, "DHCP")) {
             prefs->use_dhcp = TRUE;
         } else {
             prefs->use_dhcp = FALSE;

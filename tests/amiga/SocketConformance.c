@@ -2535,21 +2535,29 @@ static void tc_wizard_wired(void)
     }
 
     /* Launch TolunnetSetup asynchronously */
-    LONG rc = SystemTags((CONST_STRPTR)"Run <NIL: >NIL: C:TolunnetSetup",
+    LONG rc = SystemTags((CONST_STRPTR)"C:TolunnetSetup",
+                         SYS_Asynch, TRUE,
                          SYS_Input, (BPTR)0,
                          SYS_Output, (BPTR)0,
                          NP_StackSize, 32768,
                          TAG_END);
     if (rc != 0) {
-        SystemTags((CONST_STRPTR)"Run <NIL: >NIL: SYS:Prefs/TolunnetSetup",
+        rc = SystemTags((CONST_STRPTR)"SYS:Prefs/TolunnetSetup",
+                        SYS_Asynch, TRUE,
+                        SYS_Input, (BPTR)0,
+                        SYS_Output, (BPTR)0,
+                        NP_StackSize, 32768,
+                        TAG_END);
+    }
+    if (rc != 0) {
+        SystemTags((CONST_STRPTR)"Run <NIL: >NIL: C:TolunnetSetup",
                    SYS_Input, (BPTR)0,
                    SYS_Output, (BPTR)0,
-                   NP_StackSize, 32768,
                    TAG_END);
     }
 
     struct MsgPort *wizard_port = NULL;
-    for (int i = 0; i < 50; i++) {
+    for (int i = 0; i < 100; i++) {
         Delay(5); /* 100ms */
         Forbid();
         wizard_port = FindPort((CONST_STRPTR)"TOLUNNETSETUP");
@@ -2656,7 +2664,11 @@ int main(int argc, char *argv[])
     g_log_dos = DOSBase;
     g_log_level = TN_LOG_OFF; /* TAP only; no daemon log chatter on stdout */
 
-    g_log_fh = Open((CONST_STRPTR)"WORK:conformance.log", MODE_NEWFILE);
+    if (IsInteractive(Output())) {
+        g_log_fh = Open((CONST_STRPTR)"WORK:conformance.log", MODE_NEWFILE);
+    } else {
+        g_log_fh = (BPTR)0;
+    }
 
     SocketBase = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
     if (SocketBase == NULL) {

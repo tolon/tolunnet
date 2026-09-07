@@ -591,6 +591,10 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
         }
 
         if (has_timeout) {
+            struct Message *m;
+            while ((m = GetMsg(base->timer_port)) != NULL) {}
+            SetSignal(0, tm_sig);
+
             tm->tr_node.io_Command = TR_ADDREQUEST;
             tm->tr_time.tv_secs    = timeout->tv_secs;
             tm->tr_time.tv_micro   = timeout->tv_micro;
@@ -606,6 +610,9 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
                 AbortIO((struct IORequest *)tm);
             }
             WaitIO((struct IORequest *)tm);
+            struct Message *m;
+            while ((m = GetMsg(base->timer_port)) != NULL) {}
+            SetSignal(0, tm_sig);
         }
 
         /* Disarm selector immediately upon waking */
