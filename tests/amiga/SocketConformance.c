@@ -2876,9 +2876,46 @@ static void tc_reconfig_rc(void)
         return;
     }
 
-    /* 5. Restore the original store and reload it */
+    /* 5. Restore the original store and reload it. The wizard-written file
+     * (DHCP mode) carries an EMPTY DNS1= line; a daemon booting from it
+     * falls back to the DHCP-supplied slirp forwarder (10.0.2.3), which
+     * depends on the health of the HOST resolver. The bench resolver is
+     * 9.9.9.9 direct, so make sure the restored store carries an explicit
+     * non-empty DNS key for the cycle-2 daemon (TNET-109 bench incident). */
     if (saved_len > 0) {
-        if (!tc_recfg_write_file("DEVS:tolunnet.config", saved)) {
+        char fixed[1100];
+        int has_dns = 0;
+        char *line = saved;
+        char *out = fixed;
+
+        fixed[0] = 0;
+        while (*line && (out - fixed) < (LONG)sizeof(fixed) - 64) {
+            char *nl = line;
+            char *eq = NULL;
+            LONG n;
+            int val_len = 0;
+            while (*nl && *nl != '\n') nl++;
+            n = (LONG)(nl - line);
+            if (n > 4 && strncmp(line, "DNS1=", 5) == 0) eq = line + 5;
+            else if (n > 4 && strncmp(line, "DNS=", 4) == 0) eq = line + 4;
+            else if (n > 11 && strncmp(line, "NAMESERVER=", 11) == 0) eq = line + 11;
+            if (eq != NULL) {
+                while (eq + val_len < nl && eq[val_len] != ' ' &&
+                       eq[val_len] != '\r' && eq[val_len] != '\t') {
+                    val_len++;
+                }
+                if (val_len > 0) has_dns = 1;
+            }
+            while (n-- > 0) *out++ = *line++;
+            if (*nl == '\n') *out++ = *nl++;
+        }
+        if (!has_dns) {
+            const char *dns_line = "DNS=9.9.9.9\n";
+            while (*dns_line) *out++ = *dns_line++;
+        }
+        *out = 0;
+
+        if (!tc_recfg_write_file("DEVS:tolunnet.config", fixed)) {
             TAP_NOTOK("tc_reconfig_rc", "cannot restore original config");
             return;
         }
