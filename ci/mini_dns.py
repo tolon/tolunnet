@@ -15,7 +15,6 @@ The bench verifies reachability with a host-side query before WinUAE starts.
 import argparse
 import socket
 import struct
-import threading
 
 A, PTR = 1, 12
 ZONE_A = {b"test.tolunnet.lan": b"\x0a\x00\x02\x02"}          # -> 10.0.2.2
@@ -71,14 +70,19 @@ def serve(sock):
     while True:
         try:
             q, addr = sock.recvfrom(512)
+        except ConnectionResetError:
+            continue  # Windows UDP: previous sendto hit a dead port
         except OSError:
             return
         if len(q) < 12:
             continue
         qid = struct.unpack(">H", q[:2])[0]
-        reply = build_reply(q, qid, 0)
-        if reply is not None:
-            sock.sendto(reply, addr)
+        try:
+            reply = build_reply(q, qid, 0)
+            if reply is not None:
+                sock.sendto(reply, addr)
+        except OSError:
+            continue
 
 
 def main():
@@ -92,10 +96,7 @@ def main():
     sock.bind((args.bind, args.port))
     print("mini_dns: listening on %s:%d" % (args.bind, args.port), flush=True)
 
-    # serve forever; a second thread is enough for the single-client bench
-    t = threading.Thread(target=serve, args=(sock,), daemon=True)
-    t.start()
-    t.join()
+    serve(sock)
 
 
 if __name__ == "__main__":
