@@ -2725,7 +2725,19 @@ static void tc_wifi_scan_parse(void)
 /* TNET-108: RECONFIG hot-reload. Rewrites DEVS:tolunnet.config around live
  * IPC RECONFIGs and asserts the applied/needs_restart/failed masks, the
  * STATS=NO zero-report gate, and that interface keys stay restart-only.
- * The bench's original file is saved and restored. */
+ * The bench's original file is saved and restored. Phase 0 first normalizes
+ * the daemon's loaded prefs to the bench baseline: in restart cycle 2 the
+ * daemon boots from the wizard-written config (DEBUG=1), which would make
+ * the LOGLEVEL bit of the phase-A diff cycle-dependent. */
+static const char *tc_recfg_phase_0 =
+    "DEVICE=ethernet.device\n"
+    "UNIT=0\n"
+    "DHCP=YES\n"
+    "DNS=10.0.2.3\n"
+    "DNS2=8.8.8.8\n"
+    "LOG=WORK:tolunnet-task.log\n"
+    "DEBUG=0\n";
+
 static const char *tc_recfg_phase_a =
     "DEVICE=ethernet.device\n"
     "UNIT=0\n"
@@ -2761,6 +2773,10 @@ static void tc_reconfig_rc(void)
     LONG sargs[5];
     APTR sptrs[1];
 
+    sargs[0] = 0; sargs[1] = 0; sargs[2] = 0; sargs[3] = 0;
+    sargs[4] = (LONG)sizeof(TnReconfigResponse);
+    sptrs[0] = (APTR)&resp;
+
     /* 0. Save the current DEVS:tolunnet.config and drop any newer ENV:
      * session copy so the file we write is the authoritative store. */
     fh = Open((CONST_STRPTR)"DEVS:tolunnet.config", MODE_OLDFILE);
@@ -2770,6 +2786,17 @@ static void tc_reconfig_rc(void)
         if (saved_len > 0) saved[saved_len] = '\0';
     }
     DeleteFile((CONST_STRPTR)"ENV:tolunnet.prefs");
+
+    /* 0a. Normalize the daemon's loaded prefs to the bench baseline so the
+     * phase-A diff below is identical in both restart cycles. */
+    if (!tc_recfg_write_file("DEVS:tolunnet.config", tc_recfg_phase_0)) {
+        TAP_NOTOK("tc_reconfig_rc", "cannot write phase-0 config");
+        return;
+    }
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_RECONFIG, sargs, 5, sptrs, 1, &msg) != 0) {
+        TAP_NOTOK("tc_reconfig_rc", "phase-0 RECONFIG failed");
+        return;
+    }
 
     /* 1. Baseline: stats counters are live (daemon has been running) */
     {
@@ -2790,9 +2817,6 @@ static void tc_reconfig_rc(void)
         TAP_NOTOK("tc_reconfig_rc", "cannot write phase-A config");
         return;
     }
-    sargs[0] = 0; sargs[1] = 0; sargs[2] = 0; sargs[3] = 0;
-    sargs[4] = (LONG)sizeof(TnReconfigResponse);
-    sptrs[0] = (APTR)&resp;
     if (tn_ipc_oneshot_ex(TN_IPC_CMD_RECONFIG, sargs, 5, sptrs, 1, &msg) != 0 || msg.result != 0) {
         TAP_NOTOK("tc_reconfig_rc", "phase-A RECONFIG failed");
         return;
