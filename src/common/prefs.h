@@ -50,6 +50,7 @@ typedef struct TnPrefs {
     BOOL  stats;              /* NO = counters frozen/reported as zero */
     char  syslog_host[48];    /* RFC3164 UDP-514 forward target (§D3); empty = off */
     ULONG s2events;           /* S2EVENTS= mask (TNET-109); 0 = ONLINE|OFFLINE|ERROR */
+    ULONG dns_port;           /* DNS_PORT= resolver port (TNET-111); 0 = 53 */
 } TnPrefs;
 
 /* TNET-064: Amiga Prefs convention.

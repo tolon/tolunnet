@@ -60,6 +60,9 @@ static inline LONG tn_set_enosys(TnSocketBase *base)
 }
 
 /* Helper to execute a synchronous IPC call from client task to tolunnet task */
+static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd);
+static BOOL tn_ensure_timer(TnSocketBase *base);
+
 static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
 {
     TnIpcMsg *msg;
@@ -83,8 +86,51 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
     msg->client_task         = base->owner_task;
     msg->socket_base         = (APTR)base;
 
+    /* TNET-111: drain any late reply from a previous timed-out call so the
+     * stale message cannot satisfy this call's wait with an old result. */
+    if (base->ipc_timeouts > 0) {
+        struct Message *stale;
+        while ((stale = GetMsg(base->reply_port)) != NULL) {}
+    }
+
     PutMsg(base->tolunnet_port, (struct Message *)msg);
-    WaitPort(base->reply_port);
+
+    if (base->ipc_timeout_ms > 0 && tn_ensure_timer(base)) {
+        /* Reply watchdog (TNET-111): a wedged daemon fails the call fast
+         * instead of hanging the client process. The timer channel is the
+         * same one WaitSelect uses; the two wait paths never overlap in a
+         * single-threaded client. */
+        struct timerequest *tm = (struct timerequest *)base->timer_io;
+        ULONG tm_sig    = 1UL << base->timer_port->mp_SigBit;
+        ULONG reply_sig = 1UL << base->reply_port->mp_SigBit;
+        struct Message *m;
+        ULONG fired;
+
+        while ((m = GetMsg(base->timer_port)) != NULL) {}
+        SetSignal(0, tm_sig);
+
+        tm->tr_node.io_Command = TR_ADDREQUEST;
+        tm->tr_time.tv_secs    = base->ipc_timeout_ms / 1000;
+        tm->tr_time.tv_micro   = (base->ipc_timeout_ms % 1000) * 1000;
+        SendIO((struct IORequest *)tm);
+
+        fired = Wait(reply_sig | tm_sig);
+
+        if (!CheckIO((struct IORequest *)tm)) {
+            AbortIO((struct IORequest *)tm);
+        }
+        WaitIO((struct IORequest *)tm);
+        while ((m = GetMsg(base->timer_port)) != NULL) {}
+        SetSignal(0, tm_sig);
+
+        if (!(fired & reply_sig)) {
+            base->ipc_timeouts++;
+            tn_set_errno_val(base, ETIMEDOUT);
+            return -1;
+        }
+    } else {
+        WaitPort(base->reply_port);
+    }
     GetMsg(base->reply_port);
 
     if (msg->result < 0 && msg->err_no != 0) {

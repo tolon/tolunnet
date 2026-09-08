@@ -52,6 +52,12 @@ void tn_apply_live_config(TnDaemon *d)
     ip4_addr_t dns;
     if (d == NULL) return;
 
+    /* TNET-111: resolver destination port (bench mini_dns); applies to
+     * config-set and DHCP-supplied servers alike. */
+    if (d->prefs.dns_port != 0) {
+        dns_set_dest_port((u16_t)d->prefs.dns_port);
+    }
+
     /* DNS1: configured server, only touched when explicitly set (TNET-078) */
     if (d->prefs.dns_server[0] != '\0' && ip4addr_aton(d->prefs.dns_server, &dns)) {
         dns_setserver(0, (const ip_addr_t *)&dns);

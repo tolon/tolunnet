@@ -1,0 +1,10 @@
+# tolunnet — step B: hermetic bench (TNET-111). One commit. Closes TNET-109 on `core` green. STOP RULES unchanged.
+
+Decision: tests must never depend on anything beyond slirp. Split the conformance suite into `core` (hermetic, must be 100 %) and `external` (needs Internet; printed as `ok # SKIP external` unless `BENCH_EXTERNAL=1`).
+
+1. `tc_dns_a` → external. Add hermetic `tc_dns_local`: `ci/mini_dns.py --port ${BENCH_DNS_PORT:-5353}` on the host answers `test.tolunnet.lan → 10.0.2.2` (A) and PTR; guest bench config `DNS=10.0.2.2 DNS_PORT=5353` — new key `DNS_PORT=` (lwIP `DNS_SERVER_PORT` is compile-time: make the resolver port a runtime field on `dns_setserver` wrapper, i.e. our own UDP-53 query builder already used for PTR; default 53). `bench.sh` starts mini_dns before WinUAE, verifies with a host-side query, kills by PID at the end.
+2. `tc_nonblock_connect`: `bench.sh` kills any orphan on the port (`netstat -ano | findstr :PORT` → taskkill), picks `BENCH_HTTP_PORT` randomly 18000–18999 per run, passes it to the guest as `TEST_HTTP_PORT=` in the bench config, waits until `LISTENING` before launching WinUAE, kills by PID after. Test retries 3× with 500 ms backoff before `not ok`.
+3. `tc_multicast_join`: slirp does not forward multicast. Rewrite hermetic: join 224.0.0.251, `IP_MULTICAST_LOOP=1`, send one datagram to the group, receive it back via `recvfrom` (lwIP loop path). No host involvement.
+4. Cycle-2 freeze mid `tc_connect_refused` (c7c3c6d, 68000): every conformance test gets a 5 s watchdog (`timer.device`) → `not ok … # TIMEOUT` instead of hanging the run. Verify `tn_rand_init` seed includes `GetSysTime` µs (restart must not repeat ISN/ephemeral ports). If the freeze recurs, capture with WinUAE `il 8` + `daemon.log` → separate TNET row; do not chase host DNS/firewall.
+5. Bench README.txt gains `core: N ok / M not ok`, `external: …` lines; ISSUES TNET-109 closes on core green both configs; TNET-111 row for this step.
+Report: commit hash, bench dir, core/external counts both configs, verbatim `not ok` lines.

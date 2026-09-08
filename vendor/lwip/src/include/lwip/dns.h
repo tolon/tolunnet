@@ -105,6 +105,8 @@ typedef void (*dns_found_callback)(const char *name, const ip_addr_t *ipaddr, vo
 void             dns_init(void);
 void             dns_tmr(void);
 void             dns_setserver(u8_t numdns, const ip_addr_t *dnsserver);
+/* tolunnet (TNET-111): runtime query destination port (0 = 53). */
+void             dns_set_dest_port(u16_t port);
 const ip_addr_t* dns_getserver(u8_t numdns);
 err_t            dns_gethostbyname(const char *hostname, ip_addr_t *addr,
                                    dns_found_callback found, void *callback_arg);

@@ -299,6 +299,13 @@ typedef struct TnSocketBase {
     LONG            log_mask;               /* SBTC_LOGMASK (C5) */
     LONG            udp_checksum;           /* SBTC_UDP_CHECKSUM (C5) */
     LONG            ip_default_ttl;         /* SBTC_IP_DEFAULT_TTL (C5) */
+    /* TNET-111: IPC reply watchdog. 0 = block forever (default, exact
+     * historical behaviour); >0 = a daemon that has not replied within that
+     * many milliseconds fails the call with ETIMEDOUT instead of hanging the
+     * client process. ipc_timeouts counts the expired replies (drained on
+     * the next call). Used by the conformance suite's per-test watchdog. */
+    uint32_t        ipc_timeout_ms;
+    uint32_t        ipc_timeouts;
     char            inet_ntoa_buf[16];      /* Per-task static buffer for Inet_NtoA */
     char            hostname[32];           /* Per-task hostname */
 

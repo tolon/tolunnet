@@ -449,6 +449,42 @@ TN_TEST(s2events_key_parsing)
     TN_ASSERT_EQ_U(live, 0);
 }
 
+/* TNET-111: DNS_PORT= key (bench mini_dns) rides on the DNS diff bit. */
+TN_TEST(dns_port_key)
+{
+    TnPrefs a, b;
+    char text[TN_CONFIG_TEXT_MAX];
+    uint32_t restart = 1, live = 1;
+
+    memset(&a, 0, sizeof(a));
+
+    tn_config_parse_line(&a, "DNS_PORT", "5353");
+    TN_ASSERT_EQ(a.dns_port, 5353u);
+
+    /* out of range -> ignored, previous value kept */
+    tn_config_parse_line(&a, "DNS_PORT", "0");
+    TN_ASSERT_EQ(a.dns_port, 5353u);
+    tn_config_parse_line(&a, "DNS_PORT", "70000");
+    TN_ASSERT_EQ(a.dns_port, 5353u);
+    tn_config_parse_line(&a, "DNS_PORT", "junk");
+    TN_ASSERT_EQ(a.dns_port, 5353u);
+
+    /* formatted only when set */
+    TN_ASSERT_TRUE(tn_config_format(&a, text, sizeof(text)) > 0);
+    TN_ASSERT_TRUE(strstr(text, "DNS_PORT=5353") != NULL);
+    a.dns_port = 0;
+    TN_ASSERT_TRUE(tn_config_format(&a, text, sizeof(text)) > 0);
+    TN_ASSERT_TRUE(strstr(text, "DNS_PORT=") == NULL);
+
+    /* a port change classifies onto the live DNS bit */
+    tn_prefs_default(&a);
+    tn_prefs_default(&b);
+    b.dns_port = 5353;
+    tn_recfg_diff(&a, &b, &restart, &live);
+    TN_ASSERT_EQ_U(restart, 0);
+    TN_ASSERT_EQ_U(live, TN_RECFG_DNS);
+}
+
 int main(void)
 {
     TN_TEST_RUN(round_trip_all_keys);
@@ -465,6 +501,7 @@ int main(void)
     TN_TEST_RUN(recfg_diff_classification);
     TN_TEST_RUN(recfg_key_name_table);
     TN_TEST_RUN(s2events_key_parsing);
+    TN_TEST_RUN(dns_port_key);
     TN_TEST_PLAN();
     return tn_test_failures();
 }

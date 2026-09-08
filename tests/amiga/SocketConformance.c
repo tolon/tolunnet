@@ -134,8 +134,96 @@ static LONG parse_long(const char *s)
     return neg ? -res : res;
 }
 
-#define TAP_OK(name)        do { g_count++; tapf("ok %d - %s\n", g_count, name); } while (0)
+/* TNET-111: bench config (DEVS:tolunnet.config) reader. bench.sh generates
+ * the file with TEST_HTTP_PORT= and optionally TEST_EXTERNAL=YES; DNS= and
+ * DNS_PORT= point at the host mini_dns. The daemon ignores unknown keys. */
+static char g_cfg_buf[1024];
+static BOOL g_cfg_loaded = FALSE;
+
+static void tc_cfg_load(void)
+{
+    BPTR fh;
+    LONG n;
+    if (g_cfg_loaded) return;
+    g_cfg_loaded = TRUE;
+    g_cfg_buf[0] = 0;
+    fh = Open((CONST_STRPTR)"DEVS:tolunnet.config", MODE_OLDFILE);
+    if (fh == (BPTR)0) return;
+    n = Read(fh, (APTR)g_cfg_buf, sizeof(g_cfg_buf) - 1);
+    Close(fh);
+    if (n > 0) g_cfg_buf[n] = 0;
+}
+
+/* Find the value pointer of "KEY=" in the config (NULL when absent). */
+static const char *tc_cfg_value(const char *key)
+{
+    const char *p = g_cfg_buf;
+    int klen = 0;
+    while (key[klen]) klen++;
+    tc_cfg_load();
+    while (*p) {
+        const char *line = p;
+        const char *eol = p;
+        while (*eol && *eol != 10 /* '\n' */) eol++;
+        if ((eol - line) > klen && strncmp(line, key, (size_t)klen) == 0 &&
+            line[klen] == '=') {
+            return line + klen + 1;
+        }
+        p = (*eol) ? eol + 1 : eol;
+    }
+    return NULL;
+}
+
+/* Numeric KEY= value; def when absent/invalid. */
+static LONG tc_cfg_long(const char *key, LONG def)
+{
+    const char *vp = tc_cfg_value(key);
+    LONG v = 0;
+    int digits = 0;
+    if (vp == NULL) return def;
+    while (*vp >= '0' && *vp <= '9') {
+        v = v * 10 + (*vp - '0');
+        vp++;
+        digits++;
+    }
+    return (digits > 0) ? v : def;
+}
+
+/* Dotted-quad KEY= value in NETWORK byte order; def when absent/invalid. */
+static ULONG tc_cfg_ip(const char *key, ULONG def)
+{
+    const char *vp = tc_cfg_value(key);
+    ULONG parts[4];
+    int n = 0;
+    if (vp == NULL) return def;
+    while (n < 4) {
+        LONG v = 0;
+        int digits = 0;
+        while (*vp >= '0' && *vp <= '9') {
+            v = v * 10 + (*vp - '0');
+            vp++;
+            digits++;
+        }
+        if (digits == 0 || v > 255) return def;
+        parts[n++] = (ULONG)v;
+        if (n < 4) {
+            if (*vp != '.') return def;
+            vp++;
+        }
+    }
+    return htonl((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]);
+}
+
+#define TAP_OK(name)        do { g_count++; tapf("ok %d - %s' + BS + 'n", g_count, name); } while (0)
 #define TAP_NOTOK(name, why) do { g_count++; g_not_ok_count++; tapf("not ok %d - %s # %s\n", g_count, name, why); } while (0)
+
+/* TNET-111: run one case under the 5 s IPC reply watchdog; an expired
+ * reply fails the blocked call with ETIMEDOUT and is flagged here. */
+#define TN_RUN(tc) do { uint32_t tn_wd0 = ((TnSocketBase *)SocketBase)->ipc_timeouts; \
+    tc(); \
+    if (((TnSocketBase *)SocketBase)->ipc_timeouts > tn_wd0) { \
+        tapf("# TIMEOUT: ipc watchdog fired during %s\n", #tc); \
+    } } while (0)
 #define TAP_TODO(name, why)  do { g_count++; tapf("not ok %d - %s # TODO %s\n", g_count, name, why); } while (0)
 #define TAP_SKIP(name, why)  do { g_count++; tapf("ok %d - %s # SKIP %s\n", g_count, name, why); } while (0)
 
@@ -753,12 +841,30 @@ static void tc_multicast_join(void)
         call_closesocket(s_sender);
     }
 
-    char rx_buf[32];
-    rc = call_recv(s, rx_buf, sizeof(rx_buf), 0);
-    if (rc != 9 || memcmp(rx_buf, "mDNS_TEST", 9) != 0) {
-        call_closesocket(s);
-        TAP_NOTOK("tc_multicast_join", "multicast loopback receive mismatch");
-        return;
+    /* TNET-111: hermetic — slirp does not forward multicast; the loop copy
+     * is produced inside lwIP before the wire, so delivery must work with no
+     * host involvement. Bounded 2 s wait instead of a blocking recv. */
+    {
+        char rx_buf[32];
+        fd_set rfds;
+        struct timeval tv;
+        LONG sel;
+        FD_ZERO(&rfds);
+        FD_SET(s, &rfds);
+        tv.tv_secs = 2;
+        tv.tv_micro = 0;
+        sel = call_waitselect(s + 1, &rfds, NULL, NULL, &tv, NULL);
+        if (sel <= 0) {
+            call_closesocket(s);
+            TAP_NOTOK("tc_multicast_join", "multicast loopback not ready in 2s");
+            return;
+        }
+        rc = call_recv(s, rx_buf, sizeof(rx_buf), 0);
+        if (rc != 9 || memcmp(rx_buf, "mDNS_TEST", 9) != 0) {
+            call_closesocket(s);
+            TAP_NOTOK("tc_multicast_join", "multicast loopback receive mismatch");
+            return;
+        }
     }
 
     /* Drop membership */
@@ -1060,15 +1166,29 @@ static void tc_nonblock_connect(void)
     for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
     sin.sin_len         = sizeof(sin);
     sin.sin_family      = AF_INET;
-    sin.sin_port        = htons(8000);
+    sin.sin_port        = htons((unsigned short)tc_cfg_long("TEST_HTTP_PORT", 8000));
     sin.sin_addr.s_addr = htonl(0x0A000202UL); /* 10.0.2.2 (host slirp) */
 
-    rc = call_connect(s, (struct sockaddr *)&sin, sizeof(sin));
-    tapf("# tc_nonblock_connect: rc=%ld errno=%ld EINPROGRESS=%d\n", rc, call_errno(), (int)EINPROGRESS);
-    if (rc != 0 && call_errno() != EINPROGRESS && call_errno() != EALREADY) {
-        TAP_NOTOK("tc_nonblock_connect", "connect did not return EINPROGRESS");
-        call_closesocket(s);
-        return;
+    /* TNET-111: 3 attempts with 500 ms backoff — the bench HTTP server sits
+     * on a per-run random port; a momentary refuse must not fail the row. */
+    {
+        int attempt;
+        BOOL progressing = FALSE;
+        for (attempt = 0; attempt < 3 && !progressing; attempt++) {
+            rc = call_connect(s, (struct sockaddr *)&sin, sizeof(sin));
+            tapf("# tc_nonblock_connect: rc=%ld errno=%ld EINPROGRESS=%d\n",
+                 rc, call_errno(), (int)EINPROGRESS);
+            if (rc == 0 || call_errno() == EINPROGRESS || call_errno() == EALREADY) {
+                progressing = TRUE;
+            } else {
+                Delay(25); /* 500 ms */
+            }
+        }
+        if (!progressing) {
+            TAP_NOTOK("tc_nonblock_connect", "connect did not return EINPROGRESS");
+            call_closesocket(s);
+            return;
+        }
     }
 
     /* Wait for write readiness via WaitSelect */
@@ -1136,14 +1256,155 @@ static void tc_getpeername(void)
 
 static void tc_dns_a(void)
 {
-    struct hostent *he = call_gethostbyname((CONST_STRPTR)"aminet.net");
-    if (he != NULL && he->h_addr_list != NULL && he->h_addr_list[0] != NULL &&
-        he->h_length == 4 && he->h_addrtype == AF_INET) {
-        TAP_OK("tc_dns_a");
-    } else {
-        tapf("# tc_dns_a: he=%p errno=%ld\n", he, call_errno());
-        TAP_NOTOK("tc_dns_a", "resolve aminet.net failed");
+    /* TNET-111: external row — needs the real Internet. Printed as SKIP
+     * unless the bench runs with BENCH_EXTERNAL=1 (TEST_EXTERNAL=YES). */
+    if (tc_cfg_value("TEST_EXTERNAL") == NULL) {
+        TAP_SKIP("tc_dns_a", "external");
+        return;
     }
+    {
+        struct hostent *he = call_gethostbyname((CONST_STRPTR)"aminet.net");
+        if (he != NULL && he->h_addr_list != NULL && he->h_addr_list[0] != NULL &&
+            he->h_length == 4 && he->h_addrtype == AF_INET) {
+            TAP_OK("tc_dns_a");
+        } else {
+            tapf("# tc_dns_a: he=%p errno=%ld\n", he, call_errno());
+            TAP_NOTOK("tc_dns_a", "resolve aminet.net failed");
+        }
+    }
+}
+
+/* TNET-111: hermetic resolver round-trip against the bench mini_dns.
+ * A: gethostbyname(test.tolunnet.lan) must return 10.0.2.2 via the daemon
+ * resolver (DNS_PORT= honoured). PTR: a hand-built reverse query sent via a
+ * raw UDP socket to the configured resolver must decode back to the name. */
+static void tc_dns_local(void)
+{
+    struct hostent *he;
+    LONG s;
+    struct sockaddr_in sin;
+    UBYTE q[64];
+    LONG qlen;
+    int i;
+    ULONG dns_ip = tc_cfg_ip("DNS", 0x0A000202UL /* 10.0.2.2, net order via helper */);
+    LONG dns_port = tc_cfg_long("DNS_PORT", 53);
+
+    /* 1. A record through the daemon resolver */
+    he = call_gethostbyname((CONST_STRPTR)"test.tolunnet.lan");
+    if (he == NULL || he->h_addr_list == NULL || he->h_addr_list[0] == NULL ||
+        he->h_length != 4) {
+        tapf("# tc_dns_local: A failed errno=%ld\n", call_errno());
+        TAP_NOTOK("tc_dns_local", "A test.tolunnet.lan not resolved");
+        return;
+    }
+    if (*(ULONG *)he->h_addr_list[0] != htonl(0x0A000202UL)) {
+        TAP_NOTOK("tc_dns_local", "A answer is not 10.0.2.2");
+        return;
+    }
+
+    /* 2. PTR record via a raw UDP query (gethostbyaddr is still a stub) */
+    s = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (s < 0) {
+        TAP_NOTOK("tc_dns_local", "raw UDP socket failed");
+        return;
+    }
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons((unsigned short)dns_port);
+    sin.sin_addr.s_addr = dns_ip;
+
+    /* header: id 0x7100, flags RD, one question */
+    q[0] = 0x71; q[1] = 0x00;
+    q[2] = 0x01; q[3] = 0x00;
+    q[4] = 0; q[5] = 1;
+    q[6] = 0; q[7] = 0;
+    q[8] = 0; q[9] = 0;
+    q[10] = 0; q[11] = 0;
+    qlen = 12;
+    {
+        const char *labels[] = {"2", "2", "0", "10", "in-addr", "arpa"};
+        for (i = 0; i < 6; i++) {
+            int n = 0;
+            while (labels[i][n]) n++;
+            q[qlen++] = (UBYTE)n;
+            for (n = 0; labels[i][n]; n++) q[qlen++] = (UBYTE)labels[i][n];
+        }
+        q[qlen++] = 0;
+        q[qlen++] = 0; q[qlen++] = 12; /* PTR */
+        q[qlen++] = 0; q[qlen++] = 1;  /* IN  */
+    }
+
+    if (call_sendto(s, q, qlen, 0, (struct sockaddr *)&sin, sizeof(sin)) != qlen) {
+        call_closesocket(s);
+        TAP_NOTOK("tc_dns_local", "PTR query send failed");
+        return;
+    }
+
+    {
+        fd_set rfds;
+        struct timeval tv;
+        LONG sel;
+        UBYTE r[512];
+        LONG rl;
+        FD_ZERO(&rfds);
+        FD_SET(s, &rfds);
+        tv.tv_secs = 3;
+        tv.tv_micro = 0;
+        sel = call_waitselect(s + 1, &rfds, NULL, NULL, &tv, NULL);
+        if (sel <= 0) {
+            call_closesocket(s);
+            TAP_NOTOK("tc_dns_local", "PTR reply timeout");
+            return;
+        }
+        rl = call_recv(s, r, sizeof(r), 0);
+        call_closesocket(s);
+        if (rl < 12 + qlen - 12) {
+            TAP_NOTOK("tc_dns_local", "PTR reply too short");
+            return;
+        }
+        /* rcode in flags byte 3; skip question; first RR rdata holds the name */
+        if ((r[3] & 0x0F) != 0) {
+            TAP_NOTOK("tc_dns_local", "PTR reply rcode != 0");
+            return;
+        }
+        {
+            /* walk past header + question (name + 4) */
+            LONG off = 12;
+            while (off < rl && r[off] != 0) off += r[off] + 1;
+            off += 1 + 4;              /* root label + qtype/qclass */
+            /* answer name may be a compression pointer (2 bytes) */
+            if (off < rl && (r[off] & 0xC0) == 0xC0) off += 2;
+            else { while (off < rl && r[off] != 0) off += r[off] + 1; off += 1; }
+            off += 8;                  /* type, class, TTL */
+            if (off + 2 > rl) {
+                TAP_NOTOK("tc_dns_local", "PTR answer truncated");
+                return;
+            }
+            off += 2;                  /* rdlength */
+            /* rdata: name labels */
+            {
+                char name[64];
+                int no = 0;
+                while (off < rl && r[off] != 0) {
+                    int n = r[off++];
+                    while (n-- > 0 && off < rl && no < (int)sizeof(name) - 2) {
+                        name[no++] = (char)r[off++];
+                    }
+                    name[no++] = '.';
+                }
+                while (no > 0 && name[no - 1] == '.') no--;
+                name[no] = 0;
+                if (strcmp(name, "test.tolunnet.lan") != 0) {
+                    tapf("# tc_dns_local: PTR name '%s'\n", name);
+                    TAP_NOTOK("tc_dns_local", "PTR answer name mismatch");
+                    return;
+                }
+            }
+        }
+    }
+
+    TAP_OK("tc_dns_local");
 }
 
 static void tc_dns_fail(void)
@@ -2733,8 +2994,8 @@ static const char *tc_recfg_phase_0 =
     "DEVICE=ethernet.device\n"
     "UNIT=0\n"
     "DHCP=YES\n"
-    "DNS=9.9.9.9\n"
-    "DNS2=8.8.8.8\n"
+    "DNS=10.0.2.2\n"
+    "DNS_PORT=5353\n"
     "LOG=WORK:tolunnet-task.log\n"
     "DEBUG=0\n";
 
@@ -2742,8 +3003,8 @@ static const char *tc_recfg_phase_a =
     "DEVICE=ethernet.device\n"
     "UNIT=0\n"
     "DHCP=YES\n"
-    "DNS=9.9.9.9\n"
-    "DNS2=8.8.8.8\n"
+    "DNS=10.0.2.2\n"
+    "DNS_PORT=5353\n"
     "LOG=WORK:tolunnet-task.log\n"
     "LOGLEVEL=1\n"
     "PRIORITY=7\n"
@@ -2859,9 +3120,9 @@ static void tc_reconfig_rc(void)
                              "DEVICE=nonexist.device\n"
                              "UNIT=0\n"
                              "DHCP=YES\n"
-                             "DNS=9.9.9.9\n"
-                             "DNS2=8.8.8.8\n"
-                             "LOG=WORK:tolunnet-task.log\n"
+                             "DNS=10.0.2.2\n"
+    "DNS_PORT=5353\n"
+                                                      "LOG=WORK:tolunnet-task.log\n"
                              "PRIORITY=7\n"
                              "SELECTORS=32\n")) {
         TAP_NOTOK("tc_reconfig_rc", "cannot write phase-B config");
@@ -2909,9 +3170,35 @@ static void tc_reconfig_rc(void)
             while (n-- > 0) *out++ = *line++;
             if (*nl == '\n') *out++ = *nl++;
         }
-        if (!has_dns) {
-            const char *dns_line = "DNS=9.9.9.9\n";
-            while (*dns_line) *out++ = *dns_line++;
+        /* TNET-111: the wizard rewrite drops the bench service keys;
+         * re-add them from the config cache (g_cfg_buf holds the
+         * staged file read at the first tc_cfg_* call this cycle). */
+        {
+            if (!has_dns) {
+                const char *dl = "DNS=10.0.2.2\n";
+                while (*dl) *out++ = *dl++;
+            }
+            if (tc_cfg_value("DNS_PORT") != NULL &&
+                strstr(fixed, "DNS_PORT=") == NULL) {
+                const char *dp = "DNS_PORT=5353\n";
+                while (*dp) *out++ = *dp++;
+            }
+            if (tc_cfg_value("TEST_HTTP_PORT") != NULL &&
+                strstr(fixed, "TEST_HTTP_PORT=") == NULL) {
+                const char *tp = "TEST_HTTP_PORT=";
+                char pnum[8];
+                LONG pv;
+                int pn = 0;
+                while (*tp) *out++ = *tp++;
+                pv = tc_cfg_long("TEST_HTTP_PORT", 8000);
+                if (pv <= 0) pv = 8000;
+                do {
+                    pnum[pn++] = (char)('0' + (pv % 10));
+                    pv /= 10;
+                } while (pv > 0 && pn < 7);
+                while (pn-- > 0) *out++ = pnum[pn];
+                *out++ = 10; /* newline */
+            }
         }
         *out = 0;
 
@@ -3110,41 +3397,46 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    /* TNET-111: per-test watchdog — a daemon that stops replying fails the
+     * blocked IPC call with ETIMEDOUT after 5 s instead of hanging the run. */
+    ((TnSocketBase *)SocketBase)->ipc_timeout_ms = 5000;
+
     tapf("# tolunnet SocketConformance (Round 3 §B.2)\n");
-    tc_lib_open_close();
-    tc_socket_types();
-    tc_bind_udp();
-    tc_bind_reuse();
-    tc_sockopt_matrix();
-    tc_multicast_join();
-    tc_ioctl_ifconf();
-    tc_ioctl_fionread();
-    tc_listen_accept_loopback();
-    tc_connect_refused();
-    tc_nonblock_connect();
-    tc_shutdown_wr();
-    tc_getpeername();
-    tc_dns_a();
-    tc_dns_fail();
-    tc_errno_ptr();
-    tc_dup2();
-    tc_waitselect_timeout();
-    tc_waitselect_eintr();
-    tc_waitselect_badf();
-    tc_waitselect_no_sigio();
-    tc_sigio();
-    tc_icmp_raw();
-    tc_sendmsg_iov();
-    tc_recv_peek();
-    tc_socket_events();
-    tc_sbtc_full();
-    tc_release_obtain();
-    tc_every_vector_callable();
-    tc_stats_counters();
-    tc_wizard_wired();
-    tc_wifi_scan_parse();
-    tc_reconfig_rc();
-    tc_link_events();
+    TN_RUN(tc_lib_open_close);
+    TN_RUN(tc_socket_types);
+    TN_RUN(tc_bind_udp);
+    TN_RUN(tc_bind_reuse);
+    TN_RUN(tc_sockopt_matrix);
+    TN_RUN(tc_multicast_join);
+    TN_RUN(tc_ioctl_ifconf);
+    TN_RUN(tc_ioctl_fionread);
+    TN_RUN(tc_listen_accept_loopback);
+    TN_RUN(tc_connect_refused);
+    TN_RUN(tc_nonblock_connect);
+    TN_RUN(tc_shutdown_wr);
+    TN_RUN(tc_getpeername);
+    TN_RUN(tc_dns_a);
+    TN_RUN(tc_dns_local);
+    TN_RUN(tc_dns_fail);
+    TN_RUN(tc_errno_ptr);
+    TN_RUN(tc_dup2);
+    TN_RUN(tc_waitselect_timeout);
+    TN_RUN(tc_waitselect_eintr);
+    TN_RUN(tc_waitselect_badf);
+    TN_RUN(tc_waitselect_no_sigio);
+    TN_RUN(tc_sigio);
+    TN_RUN(tc_icmp_raw);
+    TN_RUN(tc_sendmsg_iov);
+    TN_RUN(tc_recv_peek);
+    TN_RUN(tc_socket_events);
+    TN_RUN(tc_sbtc_full);
+    TN_RUN(tc_release_obtain);
+    TN_RUN(tc_every_vector_callable);
+    TN_RUN(tc_stats_counters);
+    TN_RUN(tc_wizard_wired);
+    TN_RUN(tc_wifi_scan_parse);
+    TN_RUN(tc_reconfig_rc);
+    TN_RUN(tc_link_events);
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
 

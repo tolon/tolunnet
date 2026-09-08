@@ -35,6 +35,7 @@ void tn_prefs_default(TnPrefs *prefs)
     prefs->stats = TRUE;
     prefs->syslog_host[0] = '\0';
     prefs->s2events = 0;        /* 0 = ONLINE|OFFLINE|ERROR (TNET-109) */
+    prefs->dns_port = 0;        /* 0 = default 53 (TNET-111) */
 }
 
 
@@ -147,6 +148,12 @@ void tn_config_parse_line(TnPrefs *prefs, const char *key, const char *val)
         tn_str_copy_clean(prefs->netmask, clean_val, sizeof(prefs->netmask));
     } else if (tn_str_equal_nocase(clean_key, "GATEWAY") || tn_str_equal_nocase(clean_key, "GW")) {
         tn_str_copy_clean(prefs->gateway, clean_val, sizeof(prefs->gateway));
+    } else if (tn_str_equal_nocase(clean_key, "DNS_PORT")) {
+        /* TNET-111: resolver destination port (bench mini_dns on :5353) */
+        LONG dp = 0;
+        if (tn_str_to_long(clean_val, &dp) && dp >= 1 && dp <= 65535) {
+            prefs->dns_port = (ULONG)dp;
+        }
     } else if (tn_str_equal_nocase(clean_key, "DNS2")) {
         /* TNET-063: secondary nameserver is its own key, never aliases DNS1 */
         tn_str_copy_clean(prefs->dns2, clean_val, sizeof(prefs->dns2));
@@ -317,6 +324,9 @@ int tn_config_format(const TnPrefs *prefs, char *buf, int buf_size)
     tn_cfg_put_kv_str(&o, "GATEWAY=", prefs->gateway);
     tn_cfg_put_kv_str(&o, "DNS=", prefs->dns_server);
     tn_cfg_put_kv_str(&o, "DNS2=", prefs->dns2);
+    if (prefs->dns_port != 0) {
+        tn_cfg_put_kv_int(&o, "DNS_PORT=", prefs->dns_port);
+    }
     tn_cfg_put_kv_str(&o, "HOSTNAME=", prefs->hostname);
     tn_cfg_put_kv_int(&o, "MTU=", prefs->mtu);
     tn_cfg_put_kv_int(&o, "DEBUG=", prefs->debug);
@@ -387,7 +397,8 @@ void tn_recfg_diff(const TnPrefs *oldp, const TnPrefs *newp,
     if (!tn_streq_cfg(oldp->netmask, newp->netmask))        restart |= TN_RECFG_NETMASK;
     if (!tn_streq_cfg(oldp->gateway, newp->gateway))        restart |= TN_RECFG_GATEWAY;
 
-    if (!tn_streq_cfg(oldp->dns_server, newp->dns_server))  livem |= TN_RECFG_DNS;
+    if (!tn_streq_cfg(oldp->dns_server, newp->dns_server) ||
+        oldp->dns_port != newp->dns_port)                     livem |= TN_RECFG_DNS;
     if (!tn_streq_cfg(oldp->dns2, newp->dns2))              livem |= TN_RECFG_DNS2;
     if (!tn_streq_cfg(oldp->hostname, newp->hostname))      livem |= TN_RECFG_HOSTNAME;
     if (oldp->mtu != newp->mtu)                             livem |= TN_RECFG_MTU;

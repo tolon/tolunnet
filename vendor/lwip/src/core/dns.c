@@ -112,6 +112,15 @@ static u16_t dns_txid;
 #define DNS_PORT_ALLOWED(port) ((port) >= 1024)
 #endif
 
+/* tolunnet (TNET-111): runtime resolver destination port. DNS_SERVER_PORT is
+ * compile-time; the DNS_PORT= config key needs to retarget queries at a
+ * non-53 port (bench mini_dns on :5353). 0 = compiled default. */
+static u16_t dns_dest_port_override;
+void dns_set_dest_port(u16_t port)
+{
+  dns_dest_port_override = port;
+}
+
 /** DNS resource record max. TTL (one week as default) */
 #ifndef DNS_MAX_TTL
 #define DNS_MAX_TTL               604800
@@ -863,7 +872,7 @@ dns_send(u8_t idx)
     } else
 #endif /* LWIP_DNS_SUPPORT_MDNS_QUERIES */
     {
-      dst_port = DNS_SERVER_PORT;
+      dst_port = dns_dest_port_override ? dns_dest_port_override : DNS_SERVER_PORT;
       dst = &dns_servers[entry->server_idx];
     }
     err = udp_sendto(dns_pcbs[pcb_idx], p, dst, dst_port);
