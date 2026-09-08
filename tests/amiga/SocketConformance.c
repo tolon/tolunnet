@@ -1274,142 +1274,246 @@ static void tc_dns_a(void)
     }
 }
 
-/* TNET-111: hermetic resolver round-trip against the bench mini_dns.
- * A: gethostbyname(test.tolunnet.lan) must return 10.0.2.2 via the daemon
- * resolver (DNS_PORT= honoured). PTR: a hand-built reverse query sent via a
- * raw UDP socket to the configured resolver must decode back to the name. */
+/* TNET-111: hermetic DNS round-trip entirely on lwIP loopback — no slirp,
+ * no host, no deferred gethostbyname IPC (the deferred-reply path froze the
+ * 68000 bench when the upstream resolver was unreachable). The test plays
+ * resolver and client with two UDP sockets: S (bound to a fixed loopback
+ * port so the responder needs no recvfrom) sends a hand-built query to
+ * 127.0.0.1:<DNS_PORT>, R receives it via lo0, answers to S's fixed port,
+ * and S parses the reply. A: test.tolunnet.lan -> 10.0.2.2;
+ * PTR: 2.2.0.10.in-addr.arpa -> test.tolunnet.lan. */
+#define TC_DNS_CLI_PORT 15400
+
+static BOOL tc_dns_exchange(LONG s_sock, LONG r_sock, UBYTE *pkt, LONG qlen,
+                            LONG *rlen)
+{
+    struct sockaddr_in dst;
+    fd_set rfds;
+    struct timeval tv;
+    int i;
+    LONG n;
+    LONG rlen_local = 0;
+
+    for (i = 0; i < (int)sizeof(dst); i++) ((char *)&dst)[i] = 0;
+    dst.sin_len = sizeof(dst);
+    dst.sin_family = AF_INET;
+    dst.sin_port = htons((unsigned short)tc_cfg_long("DNS_PORT", 15353));
+    dst.sin_addr.s_addr = htonl(0x7F000001UL);
+
+    if (call_sendto(s_sock, pkt, qlen, 0, (struct sockaddr *)&dst, sizeof(dst)) != qlen) {
+        return FALSE;
+    }
+
+    /* responder side: wait for the query on R, answer to the fixed client port */
+    FD_ZERO(&rfds);
+    FD_SET(r_sock, &rfds);
+    tv.tv_secs = 3;
+    tv.tv_micro = 0;
+    if (call_waitselect(r_sock + 1, &rfds, NULL, NULL, &tv, NULL) <= 0) {
+        return FALSE;
+    }
+    n = call_recv(r_sock, pkt, 512, 0);
+    if (n <= 12 + 5) {
+        return FALSE;
+    }
+    {
+        UBYTE *q = pkt;
+        LONG off = 12;
+        UWORD qtype;
+        const UBYTE *rdata = NULL;
+        int rdlen = 0;
+        UBYTE *out;
+
+        while (off < n && q[off] != 0) off += q[off] + 1;
+        off += 1 + 4;
+        if (off > n) return FALSE;
+        qtype = (UWORD)((q[off - 4] << 8) | q[off - 3]);
+
+        if (qtype == 1) {
+            static const UBYTE a4[4] = { 10, 0, 2, 2 };
+            rdata = a4;
+            rdlen = 4;
+        } else if (qtype == 12) {
+            static const UBYTE ptr[] = {
+                4, 't','e','s','t', 8, 't','o','l','u','n','n','e','t',
+                3, 'l','a','n', 0
+            };
+            rdata = ptr;
+            rdlen = 20;
+        } else {
+            q[3] = 0x83; /* NXDOMAIN */
+            q[7] = 0;
+        }
+
+        if (rdlen == 0) {
+            /* NXDOMAIN: no answer record, header only */
+            q[2] = 0x81; q[3] = 0x83;
+            q[6] = 0; q[7] = 0;
+            dst.sin_port = htons((unsigned short)TC_DNS_CLI_PORT);
+            if (call_sendto(r_sock, q, off, 0, (struct sockaddr *)&dst, sizeof(dst)) < 0) {
+                return FALSE;
+            }
+        } else {
+        out = q + off;
+        *out++ = 0xC0; *out++ = 12;                 /* name -> question */
+        *out++ = (UBYTE)(qtype >> 8); *out++ = (UBYTE)qtype;
+        *out++ = 0; *out++ = 1;                     /* class IN */
+        *out++ = 0; *out++ = 0; *out++ = 0; *out++ = 60;
+        *out++ = 0; *out++ = (UBYTE)rdlen;
+        for (i = 0; i < rdlen; i++) *out++ = rdata[i];
+        q[2] = 0x81; q[3] |= 0x80;                  /* QR | rcode */
+        if (q[7] != 0) { /* NXDOMAIN keeps ANCOUNT 0 */ }
+        else { q[6] = 0; q[7] = 1; }
+
+        dst.sin_port = htons((unsigned short)TC_DNS_CLI_PORT);
+        if (call_sendto(r_sock, q, (LONG)(out - q), 0,
+                        (struct sockaddr *)&dst, sizeof(dst)) < 0) {
+            return FALSE;
+        }
+        }
+    }
+
+    /* client side: collect the answer on S */
+    FD_ZERO(&rfds);
+    FD_SET(s_sock, &rfds);
+    tv.tv_secs = 3;
+    tv.tv_micro = 0;
+    if (call_waitselect(s_sock + 1, &rfds, NULL, NULL, &tv, NULL) <= 0) {
+        return FALSE;
+    }
+    rlen_local = call_recv(s_sock, pkt, 512, 0);
+    if (rlen_local <= 12) {
+        return FALSE;
+    }
+    *rlen = rlen_local;
+    return TRUE;
+}
+
 static void tc_dns_local(void)
 {
-    struct hostent *he;
-    LONG s;
-    struct sockaddr_in sin;
-    UBYTE q[64];
-    LONG qlen;
+    LONG s_sock, r_sock;
+    struct sockaddr_in addr;
+    UBYTE pkt[512];
+    LONG n = 0;
     int i;
-    ULONG dns_ip = tc_cfg_ip("DNS", 0x0A000202UL /* 10.0.2.2, net order via helper */);
-    LONG dns_port = tc_cfg_long("DNS_PORT", 53);
 
-    /* 1. A record through the daemon resolver */
-    he = call_gethostbyname((CONST_STRPTR)"test.tolunnet.lan");
-    if (he == NULL || he->h_addr_list == NULL || he->h_addr_list[0] == NULL ||
-        he->h_length != 4) {
-        tapf("# tc_dns_local: A failed errno=%ld\n", call_errno());
-        TAP_NOTOK("tc_dns_local", "A test.tolunnet.lan not resolved");
-        return;
-    }
-    if (*(ULONG *)he->h_addr_list[0] != htonl(0x0A000202UL)) {
-        TAP_NOTOK("tc_dns_local", "A answer is not 10.0.2.2");
+    s_sock = call_socket(AF_INET, SOCK_DGRAM, 0);
+    r_sock = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (s_sock < 0 || r_sock < 0) {
+        TAP_NOTOK("tc_dns_local", "UDP sockets failed");
+        if (s_sock >= 0) call_closesocket(s_sock);
+        if (r_sock >= 0) call_closesocket(r_sock);
         return;
     }
 
-    /* 2. PTR record via a raw UDP query (gethostbyaddr is still a stub) */
-    s = call_socket(AF_INET, SOCK_DGRAM, 0);
-    if (s < 0) {
-        TAP_NOTOK("tc_dns_local", "raw UDP socket failed");
+    /* client on the fixed loopback port, responder on DNS_PORT */
+    for (i = 0; i < (int)sizeof(addr); i++) ((char *)&addr)[i] = 0;
+    addr.sin_len = sizeof(addr);
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(0x7F000001UL);
+    addr.sin_port = htons((unsigned short)TC_DNS_CLI_PORT);
+    if (call_bind(s_sock, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        TAP_NOTOK("tc_dns_local", "client bind failed");
+        call_closesocket(s_sock);
+        call_closesocket(r_sock);
         return;
     }
-    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
-    sin.sin_len = sizeof(sin);
-    sin.sin_family = AF_INET;
-    sin.sin_port = htons((unsigned short)dns_port);
-    sin.sin_addr.s_addr = dns_ip;
+    addr.sin_port = htons((unsigned short)tc_cfg_long("DNS_PORT", 15353));
+    if (call_bind(r_sock, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        TAP_NOTOK("tc_dns_local", "responder bind failed");
+        call_closesocket(s_sock);
+        call_closesocket(r_sock);
+        return;
+    }
 
-    /* header: id 0x7100, flags RD, one question */
-    q[0] = 0x71; q[1] = 0x00;
-    q[2] = 0x01; q[3] = 0x00;
-    q[4] = 0; q[5] = 1;
-    q[6] = 0; q[7] = 0;
-    q[8] = 0; q[9] = 0;
-    q[10] = 0; q[11] = 0;
-    qlen = 12;
+    /* ---- A query: test.tolunnet.lan ---- */
     {
-        const char *labels[] = {"2", "2", "0", "10", "in-addr", "arpa"};
+        const char *labels[] = { "test", "tolunnet", "lan" };
+        int qlen = 12;
+        for (i = 0; i < 12; i++) pkt[i] = 0;
+        pkt[0] = 0x71; pkt[1] = 0x11;
+        pkt[2] = 0x01; pkt[3] = 0x00;
+        pkt[5] = 1;
+        for (i = 0; i < 3; i++) {
+            int len = 0;
+            const char *lp2 = labels[i];
+            while (lp2[len]) len++;
+            pkt[qlen++] = (UBYTE)len;
+            while (*lp2) pkt[qlen++] = (UBYTE)*lp2++;
+        }
+        pkt[qlen++] = 0;
+        pkt[qlen++] = 0; pkt[qlen++] = 1; /* A */
+        pkt[qlen++] = 0; pkt[qlen++] = 1; /* IN */
+
+        if (!tc_dns_exchange(s_sock, r_sock, pkt, qlen, &n)) {
+            TAP_NOTOK("tc_dns_local", "A loopback exchange failed");
+            call_closesocket(s_sock);
+            call_closesocket(r_sock);
+            return;
+        }
+        if ((pkt[3] & 0x0F) != 0 || n < 16 ||
+            pkt[n - 4] != 10 || pkt[n - 3] != 0 || pkt[n - 2] != 2 || pkt[n - 1] != 2) {
+            TAP_NOTOK("tc_dns_local", "A answer is not 10.0.2.2");
+            call_closesocket(s_sock);
+            call_closesocket(r_sock);
+            return;
+        }
+    }
+
+    /* ---- PTR query: 2.2.0.10.in-addr.arpa ---- */
+    {
+        const char *labels[] = { "2", "2", "0", "10", "in-addr", "arpa" };
+        int qlen = 12;
+        for (i = 0; i < 12; i++) pkt[i] = 0;
+        pkt[0] = 0x71; pkt[1] = 0x22;
+        pkt[2] = 0x01; pkt[3] = 0x00;
+        pkt[5] = 1;
         for (i = 0; i < 6; i++) {
-            int n = 0;
-            while (labels[i][n]) n++;
-            q[qlen++] = (UBYTE)n;
-            for (n = 0; labels[i][n]; n++) q[qlen++] = (UBYTE)labels[i][n];
+            int len = 0;
+            const char *lp2 = labels[i];
+            while (lp2[len]) len++;
+            pkt[qlen++] = (UBYTE)len;
+            while (*lp2) pkt[qlen++] = (UBYTE)*lp2++;
         }
-        q[qlen++] = 0;
-        q[qlen++] = 0; q[qlen++] = 12; /* PTR */
-        q[qlen++] = 0; q[qlen++] = 1;  /* IN  */
-    }
+        pkt[qlen++] = 0;
+        pkt[qlen++] = 0; pkt[qlen++] = 12; /* PTR */
+        pkt[qlen++] = 0; pkt[qlen++] = 1;  /* IN */
 
-    if (call_sendto(s, q, qlen, 0, (struct sockaddr *)&sin, sizeof(sin)) != qlen) {
-        call_closesocket(s);
-        TAP_NOTOK("tc_dns_local", "PTR query send failed");
-        return;
-    }
-
-    {
-        fd_set rfds;
-        struct timeval tv;
-        LONG sel;
-        UBYTE r[512];
-        LONG rl;
-        FD_ZERO(&rfds);
-        FD_SET(s, &rfds);
-        tv.tv_secs = 3;
-        tv.tv_micro = 0;
-        sel = call_waitselect(s + 1, &rfds, NULL, NULL, &tv, NULL);
-        if (sel <= 0) {
-            call_closesocket(s);
-            TAP_NOTOK("tc_dns_local", "PTR reply timeout");
-            return;
-        }
-        rl = call_recv(s, r, sizeof(r), 0);
-        call_closesocket(s);
-        if (rl < 12 + qlen - 12) {
-            TAP_NOTOK("tc_dns_local", "PTR reply too short");
-            return;
-        }
-        /* rcode in flags byte 3; skip question; first RR rdata holds the name */
-        if ((r[3] & 0x0F) != 0) {
-            TAP_NOTOK("tc_dns_local", "PTR reply rcode != 0");
+        if (!tc_dns_exchange(s_sock, r_sock, pkt, qlen, &n)) {
+            TAP_NOTOK("tc_dns_local", "PTR loopback exchange failed");
+            call_closesocket(s_sock);
+            call_closesocket(r_sock);
             return;
         }
         {
-            /* walk past header + question (name + 4) */
-            LONG off = 12;
-            while (off < rl && r[off] != 0) off += r[off] + 1;
-            off += 1 + 4;              /* root label + qtype/qclass */
-            /* answer name may be a compression pointer (2 bytes) */
-            if (off < rl && (r[off] & 0xC0) == 0xC0) off += 2;
-            else { while (off < rl && r[off] != 0) off += r[off] + 1; off += 1; }
-            off += 8;                  /* type, class, TTL */
-            if (off + 2 > rl) {
-                TAP_NOTOK("tc_dns_local", "PTR answer truncated");
-                return;
+            const UBYTE want[] = {
+                4, 't','e','s','t', 8, 't','o','l','u','n','n','e','t',
+                3, 'l','a','n', 0
+            };
+            int wl = (int)sizeof(want);
+            int k;
+            BOOL ok = FALSE;
+            for (k = 0; k + wl <= n; k++) {
+                if (memcmp(&pkt[k], want, (size_t)wl) == 0) { ok = TRUE; break; }
             }
-            off += 2;                  /* rdlength */
-            /* rdata: name labels */
-            {
-                char name[64];
-                int no = 0;
-                while (off < rl && r[off] != 0) {
-                    int n = r[off++];
-                    while (n-- > 0 && off < rl && no < (int)sizeof(name) - 2) {
-                        name[no++] = (char)r[off++];
-                    }
-                    name[no++] = '.';
-                }
-                while (no > 0 && name[no - 1] == '.') no--;
-                name[no] = 0;
-                if (strcmp(name, "test.tolunnet.lan") != 0) {
-                    tapf("# tc_dns_local: PTR name '%s'\n", name);
-                    TAP_NOTOK("tc_dns_local", "PTR answer name mismatch");
-                    return;
-                }
+            if (!ok) {
+                TAP_NOTOK("tc_dns_local", "PTR answer name mismatch");
+                call_closesocket(s_sock);
+                call_closesocket(r_sock);
+                return;
             }
         }
     }
 
+    call_closesocket(s_sock);
+    call_closesocket(r_sock);
     TAP_OK("tc_dns_local");
 }
-
 static void tc_dns_fail(void)
 {
-    struct hostent *he = call_gethostbyname((CONST_STRPTR)"nonexistent.invalid");
+    /* TNET-111: hermetic — an empty name is rejected by the daemon instantly
+     * (no DNS round trip); a bogus external name would need a resolver. */
+    struct hostent *he = call_gethostbyname((CONST_STRPTR)"");
     if (he == NULL) {
         TAP_OK("tc_dns_fail");
     } else {

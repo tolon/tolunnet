@@ -83,8 +83,8 @@ fi
 # beyond slirp: the HTTP server runs on a fresh random port (orphans killed
 # first) and a local mini_dns answers the resolver instead of the host stack.
 BENCH_HTTP_PORT=$(( 18000 + RANDOM % 1000 ))
-# 5353 is the system mDNS port on Windows (Bonjour/Dnscache hold it and
-# receive the datagrams); use a private high port instead.
+# DNS_PORT is a loopback port answered by the conformance suite itself
+# (tc_dns_local); 5353 must be avoided (system mDNS on Windows).
 BENCH_DNS_PORT="${BENCH_DNS_PORT:-15353}"
 
 kill_port_orphans() { # $1 = port
@@ -105,27 +105,13 @@ wait_port_listening() { # $1 = port, $2 = seconds
 }
 
 kill_port_orphans "$BENCH_HTTP_PORT"
-kill_port_orphans "$BENCH_DNS_PORT"
 
 say "starting host HTTP server on port $BENCH_HTTP_PORT (TNET-111)"
 python -m http.server "$BENCH_HTTP_PORT" --bind 0.0.0.0 >/dev/null 2>&1 &
 HTTP_PID=$!
 
-say "starting mini_dns on port $BENCH_DNS_PORT"
-mkdir -p "$LOG_ROOT"
-python ci/mini_dns.py --port "$BENCH_DNS_PORT" > "$LOG_ROOT/mini_dns.log" 2>&1 &
-DNS_PID=$!
-
 if ! wait_port_listening "$BENCH_HTTP_PORT" 10; then
     die "HTTP server never came up on $BENCH_HTTP_PORT"
-fi
-if ! wait_port_listening "$BENCH_DNS_PORT" 10; then
-    die "mini_dns never came up on $BENCH_DNS_PORT"
-fi
-
-# Host-side mini_dns verification (A query for the bench zone)
-if ! python ci/dns_check.py "$BENCH_DNS_PORT"; then
-    die "mini_dns verification query failed on :$BENCH_DNS_PORT"
 fi
 
 # Generate the guest bench config from the template. NOTE: keep it inside
@@ -136,15 +122,12 @@ sed -e "s/__HTTP_PORT__/$BENCH_HTTP_PORT/" -e "s/__DNS_PORT__/$BENCH_DNS_PORT/" 
 if [ "${BENCH_EXTERNAL:-0}" = "1" ]; then
     echo "TEST_EXTERNAL=YES" >> "$BENCH_CFG"
 fi
-say "bench config: HTTP :$BENCH_HTTP_PORT, DNS 10.0.2.2:$BENCH_DNS_PORT, external=${BENCH_EXTERNAL:-0}"
+say "bench config: HTTP :$BENCH_HTTP_PORT, resolver 127.0.0.1:$BENCH_DNS_PORT (loopback), external=${BENCH_EXTERNAL:-0}"
 
 SUCCESS=0
 cleanup() {
     if [ -n "${HTTP_PID:-}" ]; then
         kill "$HTTP_PID" 2>/dev/null || true
-    fi
-    if [ -n "${DNS_PID:-}" ]; then
-        kill "$DNS_PID" 2>/dev/null || true
     fi
     rm -f "${BENCH_CFG:-ci/.bench-tolunnet.config}" 2>/dev/null || true
     if [ "${SUCCESS:-0}" != "1" ] && [ -n "${LOG_ROOT:-}" ] && [ -d "$LOG_ROOT" ]; then
@@ -225,7 +208,7 @@ for cfg in $CONFIGS; do
             c_ext=$(grep -c '# SKIP external' "$OUT/$lg" 2>/dev/null | tr -d '\r' || echo 0)
             echo "$lg: core: $((c_ok - c_ext)) ok / $c_nok not ok; external: $c_ext skipped"
         done
-        echo "bench services: HTTP :$BENCH_HTTP_PORT, mini_dns 10.0.2.2:$BENCH_DNS_PORT"
+        echo "bench services: HTTP :$BENCH_HTTP_PORT, resolver 127.0.0.1:$BENCH_DNS_PORT (loopback)"
     } > "$OUT/README.txt"
     {
         echo "config: ci/tolunnet-$cfg.uae (HDF copy staged from the pristine WB3.0 image)"
