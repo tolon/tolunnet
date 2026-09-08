@@ -111,12 +111,14 @@ for cfg in $CONFIGS; do
     xd delete C/tolunnet        >/dev/null 2>&1
     xd delete C/SocketConformance >/dev/null 2>&1
     xd delete C/TolunnetSetup   >/dev/null 2>&1
+    xd delete C/S2Toggle        >/dev/null 2>&1
     xd delete S/User-Startup    >/dev/null 2>&1
     xd delete S/Conformance-Script >/dev/null 2>&1
     xd delete Devs/tolunnet.config >/dev/null 2>&1
     xd write build/tolunnet C/tolunnet          || die "xdftool write tolunnet failed"
     xd write build/SocketConformance C/SocketConformance || die "xdftool write conformance failed"
     xd write build/TolunnetSetup C/TolunnetSetup || die "xdftool write TolunnetSetup failed"
+    xd write build/S2Toggle C/S2Toggle || die "xdftool write S2Toggle failed"
     xd write ci/User-Startup-Conformance S/Conformance-Script || die "xdftool write Conformance-Script failed"
     xd write ci/User-Startup-Boot S/User-Startup || die "xdftool write User-Startup failed"
     xd write ci/tolunnet.config Devs/tolunnet.config     || die "xdftool write tolunnet.config failed"

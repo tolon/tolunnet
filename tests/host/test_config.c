@@ -349,7 +349,8 @@ TN_TEST(recfg_key_name_table)
         TN_ASSERT_TRUE(name[0] >= 'A' && name[0] <= 'Z');
         named++;
     }
-    TN_ASSERT_EQ(named, 17); /* every defined bit has a printable name */
+    TN_ASSERT_EQ(named, 18); /* every defined bit has a printable name */
+    TN_ASSERT_STREQ(tn_recfg_key_name(TN_RECFG_S2EVENTS), "S2EVENTS");
 
     TN_ASSERT_TRUE(tn_recfg_key_name(0) == NULL);
     TN_ASSERT_TRUE(tn_recfg_key_name(TN_RECFG_ALL + 1) == NULL);
@@ -393,6 +394,61 @@ TN_TEST(hand_edited_devs_precedence)
     TN_ASSERT_TRUE(env_is_newer);
 }
 
+/* TNET-109: S2EVENTS= mask parsing, formatting, and restart-only diff. */
+TN_TEST(s2events_key_parsing)
+{
+    TnPrefs a, b;
+    char text[TN_CONFIG_TEXT_MAX];
+    uint32_t restart = 1, live = 1;
+
+    memset(&a, 0, sizeof(a));
+
+    tn_config_parse_line(&a, "S2EVENTS", "ONLINE|OFFLINE|ERROR");
+    TN_ASSERT_EQ_U(a.s2events, 0x08u | 0x10u | 0x01u);
+
+    tn_config_parse_line(&a, "S2EVENTS", "HARDWARE|SOFTWARE");
+    TN_ASSERT_EQ_U(a.s2events, 0x40u | 0x80u);
+
+    tn_config_parse_line(&a, "S2EVENTS", "DEFAULT");
+    TN_ASSERT_EQ_U(a.s2events, 0u);
+
+    tn_config_parse_line(&a, "S2EVENTS", "ONLINE");
+    TN_ASSERT_EQ_U(a.s2events, 0x08u);
+
+    /* unknown name rejects the whole value */
+    tn_config_parse_line(&a, "S2EVENTS", "ONLINE|BOGUS");
+    TN_ASSERT_EQ_U(a.s2events, 0x08u);
+
+    /* interior whitespace rejected on the raw value */
+    tn_config_parse_line(&a, "S2EVENTS", "ONLINE OFFLINE");
+    TN_ASSERT_EQ_U(a.s2events, 0x08u);
+
+    /* empty value rejected */
+    tn_config_parse_line(&a, "S2EVENTS", "");
+    TN_ASSERT_EQ_U(a.s2events, 0x08u);
+
+    /* format round trip: non-default mask is written and reparses equal */
+    a.s2events = 0x08u | 0x01u;
+    TN_ASSERT_TRUE(tn_config_format(&a, text, sizeof(text)) > 0);
+    TN_ASSERT_TRUE(strstr(text, "S2EVENTS=ONLINE|ERROR") != NULL);
+    memset(&b, 0, sizeof(b));
+    tn_config_parse_line(&b, "S2EVENTS", "ONLINE|ERROR");
+    TN_ASSERT_EQ_U(b.s2events, a.s2events);
+
+    /* default (0) is not written */
+    a.s2events = 0;
+    TN_ASSERT_TRUE(tn_config_format(&a, text, sizeof(text)) > 0);
+    TN_ASSERT_TRUE(strstr(text, "S2EVENTS=") == NULL);
+
+    /* changed mask classifies restart-only */
+    tn_prefs_default(&a);
+    tn_prefs_default(&b);
+    b.s2events = 0x08u;
+    tn_recfg_diff(&a, &b, &restart, &live);
+    TN_ASSERT_EQ_U(restart, TN_RECFG_S2EVENTS);
+    TN_ASSERT_EQ_U(live, 0);
+}
+
 int main(void)
 {
     TN_TEST_RUN(round_trip_all_keys);
@@ -408,6 +464,7 @@ int main(void)
     TN_TEST_RUN(recfg_effective_loglevel_precedence);
     TN_TEST_RUN(recfg_diff_classification);
     TN_TEST_RUN(recfg_key_name_table);
+    TN_TEST_RUN(s2events_key_parsing);
     TN_TEST_PLAN();
     return tn_test_failures();
 }

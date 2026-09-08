@@ -89,10 +89,11 @@ GET_BIN      = $(BUILD)/TolunnetGet
 PREFS_BIN    = $(BUILD)/TolunnetPrefs
 SETUP_BIN    = $(BUILD)/TolunnetSetup
 CONF_BIN     = $(BUILD)/SocketConformance
+TOGGLE_BIN   = $(BUILD)/S2Toggle
 INSTALL_BIN  = $(BUILD)/Install_Tolunnet
 
 .PHONY: all clean test-host package
-all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN)
+all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN)
 
 # --- Host unit tests (Round 3 §B.1) -----------------------------------------
 # Every tests/host/test_*.c runs under native gcc with sanitizers + Werror;
@@ -186,6 +187,10 @@ $(SETUP_BIN): $(SETUP_OBJS)
 
 # Target: SocketConformance Amiga-side TAP binary (Round 3 §B.2)
 $(CONF_BIN): $(BUILD)/tests/amiga/SocketConformance.o $(BUILD)/src/common/log.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/setup/wifi_mgr.o
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+# Target: S2Toggle SANA-II link-flip bench helper (TNET-109)
+$(TOGGLE_BIN): $(BUILD)/tests/amiga/S2Toggle.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Release Packaging Target (M7)

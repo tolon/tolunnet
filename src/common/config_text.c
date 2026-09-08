@@ -34,6 +34,7 @@ void tn_prefs_default(TnPrefs *prefs)
     prefs->selectors = 0;       /* 0 = TN_MAX_SELECTORS */
     prefs->stats = TRUE;
     prefs->syslog_host[0] = '\0';
+    prefs->s2events = 0;        /* 0 = ONLINE|OFFLINE|ERROR (TNET-109) */
 }
 
 
@@ -59,6 +60,8 @@ static int tn_streq_cfg(const char *a, const char *b)
     while (*a && *a == *b) { a++; b++; }
     return (*a == '\0' && *b == '\0');
 }
+
+
 
 /* TNET-108: raw config-value token check. TRUE when val consists solely of
  * [A-Za-z0-9] plus the given extra characters, optionally followed by
@@ -192,6 +195,39 @@ void tn_config_parse_line(TnPrefs *prefs, const char *key, const char *val)
             strlen(clean_val) < sizeof(prefs->syslog_host)) {
             tn_str_copy_clean(prefs->syslog_host, clean_val, sizeof(prefs->syslog_host));
         }
+    } else if (tn_str_equal_nocase(clean_key, "S2EVENTS")) {
+        /* TNET-109: S2_ONEVENT mask, pipe-separated names (ONLINE|OFFLINE|
+         * ERROR|TX|RX|BUFF|HARDWARE|SOFTWARE). Validated on the raw value
+         * like the other token keys; one unknown name rejects the value. */
+        if (tn_val_token(val, "|") && clean_val[0] != '\0') {
+            if (tn_str_equal_nocase(clean_val, "DEFAULT")) {
+                prefs->s2events = 0;
+            } else {
+                ULONG mask = 0;
+                const char *p = clean_val;
+                int valid = 1;
+                while (*p && valid) {
+                    char name[16];
+                    int n = 0;
+                    while (*p && *p != '|' && n < (int)sizeof(name) - 1) {
+                        name[n++] = *p++;
+                    }
+                    name[n] = '\0';
+                    if (*p == '|') p++;
+                    if (n == 0) { valid = 0; break; }
+                    if      (tn_str_equal_nocase(name, "ONLINE"))   mask |= TN_S2EV_ONLINE;
+                    else if (tn_str_equal_nocase(name, "OFFLINE"))  mask |= TN_S2EV_OFFLINE;
+                    else if (tn_str_equal_nocase(name, "ERROR"))    mask |= TN_S2EV_ERROR;
+                    else if (tn_str_equal_nocase(name, "TX"))       mask |= TN_S2EV_TX;
+                    else if (tn_str_equal_nocase(name, "RX"))       mask |= TN_S2EV_RX;
+                    else if (tn_str_equal_nocase(name, "BUFF"))     mask |= TN_S2EV_BUFF;
+                    else if (tn_str_equal_nocase(name, "HARDWARE")) mask |= TN_S2EV_HARDWARE;
+                    else if (tn_str_equal_nocase(name, "SOFTWARE")) mask |= TN_S2EV_SOFTWARE;
+                    else valid = 0;
+                }
+                if (valid && mask != 0) prefs->s2events = mask;
+            }
+        }
     } else if (tn_str_equal_nocase(clean_key, "VERSION")) {
         /* Config format version recognised */
     }
@@ -298,6 +334,19 @@ int tn_config_format(const TnPrefs *prefs, char *buf, int buf_size)
     if (prefs->syslog_host[0] != '\0') {
         tn_cfg_put_kv_str(&o, "SYSLOG=", prefs->syslog_host);
     }
+    if (prefs->s2events != 0) {
+        tn_cfg_put(&o, "S2EVENTS=");
+        if (prefs->s2events & TN_S2EV_ONLINE)   tn_cfg_put(&o, "ONLINE|");
+        if (prefs->s2events & TN_S2EV_OFFLINE)  tn_cfg_put(&o, "OFFLINE|");
+        if (prefs->s2events & TN_S2EV_ERROR)    tn_cfg_put(&o, "ERROR|");
+        if (prefs->s2events & TN_S2EV_TX)       tn_cfg_put(&o, "TX|");
+        if (prefs->s2events & TN_S2EV_RX)       tn_cfg_put(&o, "RX|");
+        if (prefs->s2events & TN_S2EV_BUFF)     tn_cfg_put(&o, "BUFF|");
+        if (prefs->s2events & TN_S2EV_HARDWARE) tn_cfg_put(&o, "HARDWARE|");
+        if (prefs->s2events & TN_S2EV_SOFTWARE) tn_cfg_put(&o, "SOFTWARE|");
+        o.len--; /* drop the trailing pipe */
+        tn_cfg_put(&o, "\n");
+    }
 
     if (o.overflow) {
         return -1; /* buffer too small; TN_CONFIG_TEXT_MAX is always sufficient */
@@ -351,6 +400,7 @@ void tn_recfg_diff(const TnPrefs *oldp, const TnPrefs *newp,
     if (oldp->selectors != newp->selectors)                 livem |= TN_RECFG_SELECTORS;
     if (oldp->stats != newp->stats)                         livem |= TN_RECFG_STATS;
     if (!tn_streq_cfg(oldp->syslog_host, newp->syslog_host)) livem |= TN_RECFG_SYSLOG;
+    if (oldp->s2events != newp->s2events)                   restart |= TN_RECFG_S2EVENTS;
 
     if (needs_restart) *needs_restart = restart;
     if (live) *live = livem;
@@ -377,6 +427,7 @@ const char *tn_recfg_key_name(uint32_t bit)
     case TN_RECFG_SELECTORS:      return "SELECTORS";
     case TN_RECFG_STATS:          return "STATS";
     case TN_RECFG_SYSLOG:         return "SYSLOG";
+    case TN_RECFG_S2EVENTS:       return "S2EVENTS";
     default:                      return NULL;
     }
 }

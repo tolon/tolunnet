@@ -4,6 +4,7 @@
 
 #include "sana2_netif.h"
 #include "../common/log.h"
+#include "../common/config_text.h"
 #include "../task/task_ctx.h"
 
 #include <stdint.h>
@@ -18,6 +19,18 @@
 #include "lwip/netif.h"
 #include "lwip/pbuf.h"
 #include "netif/etharp.h"
+#include "lwip/dhcp.h"
+
+/* config_text.h mirrors the S2EVENT_* bits for the host-built parser;
+ * keep the two definitions honest against each other (TNET-109). */
+_Static_assert(TN_S2EV_ONLINE   == S2EVENT_ONLINE,   "S2EVENT drift");
+_Static_assert(TN_S2EV_OFFLINE  == S2EVENT_OFFLINE,  "S2EVENT drift");
+_Static_assert(TN_S2EV_ERROR    == S2EVENT_ERROR,    "S2EVENT drift");
+_Static_assert(TN_S2EV_TX       == S2EVENT_TX,       "S2EVENT drift");
+_Static_assert(TN_S2EV_RX       == S2EVENT_RX,       "S2EVENT drift");
+_Static_assert(TN_S2EV_BUFF     == S2EVENT_BUFF,     "S2EVENT drift");
+_Static_assert(TN_S2EV_HARDWARE == S2EVENT_HARDWARE, "S2EVENT drift");
+_Static_assert(TN_S2EV_SOFTWARE == S2EVENT_SOFTWARE, "S2EVENT drift");
 
 static struct IORequest *tn_create_extio(struct MsgPort *port, ULONG size)
 {
@@ -75,6 +88,12 @@ TnS2Result tn_s2_open(TnSana2If *nif, CONST_STRPTR device_name, ULONG unit)
     nif->online = FALSE;
     nif->read_ios = NULL;
     nif->n_read_ios = 0;
+    nif->event_port = NULL;
+    nif->event_io = NULL;
+    nif->event_mask = 0;
+    nif->event_armed = FALSE;
+    nif->event_supported = FALSE;
+    nif->link_down = FALSE;
     nif->mtu = 0;
     nif->addr_bits = 0;
     nif->addr_bytes = 0;
@@ -413,10 +432,165 @@ TnS2Result tn_s2_arm_reads(TnSana2If *nif)
     return TN_S2_OK;
 }
 
+/* ------------------------------------------------- S2_ONEVENT (TNET-109) */
+
+TnS2Result tn_s2_arm_events(TnSana2If *nif, ULONG mask)
+{
+    struct IOSana2Req *eio;
+
+    if (nif == NULL || nif->io == NULL || !nif->online) return TN_S2_INTERNAL;
+    if (mask == 0) mask = TN_S2EV_DEFAULT;
+    if (nif->event_io != NULL) return TN_S2_OK; /* already armed */
+
+    nif->event_port = CreateMsgPort();
+    if (nif->event_port == NULL) return TN_S2_NO_MEM;
+
+    eio = (struct IOSana2Req *)tn_create_extio(nif->event_port,
+                                                sizeof(struct IOSana2Req));
+    if (eio == NULL) {
+        DeleteMsgPort(nif->event_port);
+        nif->event_port = NULL;
+        return TN_S2_NO_MEM;
+    }
+
+    eio->ios2_Req.io_Device    = nif->io->ios2_Req.io_Device;
+    eio->ios2_Req.io_Unit      = nif->io->ios2_Req.io_Unit;
+    eio->ios2_BufferManagement = nif->io->ios2_BufferManagement;
+
+    nif->event_io = eio;
+    nif->event_mask = mask;
+    nif->event_supported = TRUE;
+
+    eio->ios2_Req.io_Command = S2_ONEVENT;
+    eio->ios2_WireError      = mask;   /* SANA-II: request mask in */
+    eio->ios2_Req.io_Error   = 0;
+    SendIO((struct IORequest *)eio);
+    nif->event_armed = TRUE;
+    return TN_S2_OK;
+}
+
+ULONG tn_s2_event_sig(const TnSana2If *nif)
+{
+    if (nif == NULL || nif->event_port == NULL || !nif->event_supported) return 0;
+    return (1UL << nif->event_port->mp_SigBit);
+}
+
+/* Re-arm unarmed CMD_READ slots after the link came back (TNET-109). */
+static void tn_s2_rearm_reads(TnSana2If *nif)
+{
+    ULONG i;
+    for (i = 0; i < nif->n_read_ios; i++) {
+        struct IOSana2Req *rio = nif->read_ios[i];
+        if (rio != NULL && !nif->read_armed[i]) {
+            rio->ios2_Req.io_Command = CMD_READ;
+            rio->ios2_DataLength     = nif->mtu + 32;
+            if (rio->ios2_DataLength < 1600) rio->ios2_DataLength = 1600;
+            rio->ios2_Req.io_Error   = 0;
+            SendIO((struct IORequest *)rio);
+            nif->read_armed[i] = TRUE;
+        }
+    }
+}
+
+static void tn_s2_handle_event_bits(TnSana2If *nif, struct netif *netif, ULONG bits)
+{
+    if (bits == 0) return;
+
+    if (bits & S2EVENT_OFFLINE) {
+        nif->link_down = TRUE;
+        netif_set_link_down(netif);
+        tn_log(TN_LOG_BASIC, "tolunnet: S2 link DOWN (offline event)\n");
+    }
+
+    if (bits & S2EVENT_ONLINE) {
+        nif->link_down = FALSE;
+        netif_set_link_up(netif);
+        tn_s2_rearm_reads(nif);
+        if (g_daemon.prefs.use_dhcp) {
+#if LWIP_DHCP
+            if (netif_dhcp_data(netif) != NULL) {
+                dhcp_renew(netif);
+                tn_log(TN_LOG_BASIC, "tolunnet: link up: DHCP renew requested\n");
+            } else {
+                dhcp_start(netif);
+                tn_log(TN_LOG_BASIC, "tolunnet: link up: DHCP client started\n");
+            }
+#endif
+        } else {
+            netif_set_up(netif);
+            tn_log(TN_LOG_BASIC, "tolunnet: S2 link UP (online event)\n");
+        }
+    }
+
+    if (bits & (S2EVENT_ERROR | S2EVENT_TX | S2EVENT_RX |
+                S2EVENT_BUFF | S2EVENT_HARDWARE | S2EVENT_SOFTWARE)) {
+        g_daemon.s2_link_errors++;
+        tn_logf(TN_LOG_BASIC, "tolunnet: S2 error event bits 0x%lx\n",
+                (ULONG)(bits & (S2EVENT_ERROR | S2EVENT_TX | S2EVENT_RX |
+                                S2EVENT_BUFF | S2EVENT_HARDWARE |
+                                S2EVENT_SOFTWARE)));
+    }
+}
+
+void tn_s2_poll_events(TnSana2If *nif, struct netif *netif)
+{
+    struct Message *msg;
+
+    if (nif == NULL || nif->event_port == NULL || netif == NULL) return;
+
+    while ((msg = GetMsg(nif->event_port)) != NULL) {
+        struct IOSana2Req *eio = (struct IOSana2Req *)msg;
+        nif->event_armed = FALSE;
+
+        if (eio->ios2_Req.io_Error != 0) {
+            /* Driver rejected S2_ONEVENT (e.g. IOERR_NOCMD / NOT_SUPPORTED):
+             * record once, stop re-arming, keep the stack running. */
+            if (nif->event_supported) {
+                nif->event_supported = FALSE;
+                tn_logf(TN_LOG_BASIC,
+                        "tolunnet: S2_ONEVENT not supported by driver "
+                        "(err=%ld wire=%ld); link events disabled\n",
+                        (LONG)eio->ios2_Req.io_Error, (LONG)eio->ios2_WireError);
+            }
+            continue;
+        }
+
+        tn_s2_handle_event_bits(nif, netif, eio->ios2_WireError);
+
+        /* Re-arm at once per SANA-II Rev 7 */
+        eio->ios2_Req.io_Command = S2_ONEVENT;
+        eio->ios2_WireError      = nif->event_mask;
+        eio->ios2_Req.io_Error   = 0;
+        SendIO((struct IORequest *)eio);
+        nif->event_armed = TRUE;
+    }
+}
+
 void tn_s2_offline_close(TnSana2If *nif)
 {
     ULONG i;
     if (nif == NULL) return;
+
+    /* TNET-109: retire the event request BEFORE the CMD_READs and before
+     * S2_OFFLINE/CloseDevice, so the driver never sees the unit torn down
+     * under an armed S2_ONEVENT. */
+    if (nif->event_io != NULL) {
+        if (nif->event_armed) {
+            if (!CheckIO((struct IORequest *)nif->event_io)) {
+                AbortIO((struct IORequest *)nif->event_io);
+            }
+            WaitIO((struct IORequest *)nif->event_io);
+            nif->event_armed = FALSE;
+        }
+        tn_delete_extio((struct IORequest *)nif->event_io);
+        nif->event_io = NULL;
+    }
+    if (nif->event_port != NULL) {
+        struct Message *m;
+        while ((m = GetMsg(nif->event_port)) != NULL) {}
+        DeleteMsgPort(nif->event_port);
+        nif->event_port = NULL;
+    }
 
     if (nif->io != NULL && nif->online) {
         nif->io->ios2_Req.io_Command = S2_UNTRACKTYPE;
@@ -532,6 +706,14 @@ static err_t tn_sana2_igmp_mac_filter(struct netif *netif, const ip4_addr_t *gro
 
 /* --------------------------------------------------------------- lwIP bridge */
 
+/* TNET-109: LWIP_NETIF_LINK_CALLBACK plumbing - mirrors link transitions at
+ * VERBOSE so callback registration is observable in the daemon log. */
+static void tn_sana2_link_callback(struct netif *netif)
+{
+    tn_logf(TN_LOG_VERBOSE, "tolunnet: netif link callback: %s\n",
+            netif_is_link_up(netif) ? "up" : "down");
+}
+
 err_t tn_sana2_netif_init(struct netif *netif)
 {
     TnSana2If *nif = (TnSana2If *)netif->state;
@@ -552,6 +734,10 @@ err_t tn_sana2_netif_init(struct netif *netif)
 
     netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_ETHERNET |
                    NETIF_FLAG_IGMP | NETIF_FLAG_LINK_UP;
+
+#if LWIP_NETIF_LINK_CALLBACK
+    netif_set_link_callback(netif, tn_sana2_link_callback);
+#endif
 
 #if LWIP_IGMP
     netif_set_igmp_mac_filter(netif, tn_sana2_igmp_mac_filter);
@@ -695,13 +881,18 @@ void tn_sana2_poll_input(TnSana2If *nif, struct netif *netif)
             }
         }
 
-        /* Re-arm the I/O slot */
-        rio->ios2_Req.io_Command = CMD_READ;
-        rio->ios2_DataLength     = nif->mtu + 32;
-        if (rio->ios2_DataLength < 1600) rio->ios2_DataLength = 1600;
-        SendIO((struct IORequest *)rio);
-        if (i < nif->n_read_ios) {
-            nif->read_armed[i] = TRUE;
+        /* Re-arm the I/O slot (TNET-109: while the link is down the driver
+         * would complete reads with errors immediately; the ONLINE event
+         * handler re-arms via tn_s2_rearm_reads instead). */
+        if (!nif->link_down) {
+            rio->ios2_Req.io_Command = CMD_READ;
+            rio->ios2_DataLength     = nif->mtu + 32;
+            if (rio->ios2_DataLength < 1600) rio->ios2_DataLength = 1600;
+            rio->ios2_Req.io_Error   = 0;
+            SendIO((struct IORequest *)rio);
+            if (i < nif->n_read_ios) {
+                nif->read_armed[i] = TRUE;
+            }
         }
     }
 }

@@ -33,6 +33,19 @@ int tn_config_format(const TnPrefs *prefs, char *buf, int buf_size);
 int  tn_str_equal_nocase(const char *s1, const char *s2);
 void tn_str_copy_clean(char *dst, const char *src, int max_len);
 
+/* TNET-109: S2EVENT_* bit values mirrored here because devices/sana2.h is
+ * Amiga-only while this parser is host-built. sana2_netif.c statically
+ * asserts these match the real S2EVENT_* constants. */
+#define TN_S2EV_ERROR    (1UL << 0)
+#define TN_S2EV_TX       (1UL << 1)
+#define TN_S2EV_RX       (1UL << 2)
+#define TN_S2EV_ONLINE   (1UL << 3)
+#define TN_S2EV_OFFLINE  (1UL << 4)
+#define TN_S2EV_BUFF     (1UL << 5)
+#define TN_S2EV_HARDWARE (1UL << 6)
+#define TN_S2EV_SOFTWARE (1UL << 7)
+#define TN_S2EV_DEFAULT  (TN_S2EV_ONLINE | TN_S2EV_OFFLINE | TN_S2EV_ERROR)
+
 /* TNET-108: RECONFIG classification (pure, host-testable). */
 #include <stdint.h>
 

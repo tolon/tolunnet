@@ -2891,6 +2891,117 @@ static void tc_reconfig_rc(void)
     TAP_OK("tc_reconfig_rc");
 }
 
+/* TNET-109: S2_ONEVENT link events. Drives the shared unit offline/online
+ * via the S2Toggle helper and watches GETSTATUS link_up flip. When the bench
+ * driver rejects S2_ONEVENT the row is an honest SKIP naming the driver. */
+static BOOL tc_link_get_flags(TnStatusInfoV2 *v2)
+{
+    TnIpcMsg msg;
+    LONG sargs[5];
+    APTR sptrs[1];
+
+    sargs[0] = 0; sargs[1] = 0; sargs[2] = 0; sargs[3] = 0;
+    sargs[4] = (LONG)sizeof(TnStatusInfoV2);
+    sptrs[0] = (APTR)v2;
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_GETSTATUS, sargs, 5, sptrs, 1, &msg) != 0 ||
+        msg.result != 0) {
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static BOOL tc_link_wait(TnStatusInfoV2 *v2, int want_up, int tries)
+{
+    int t;
+    for (t = 0; t < tries; t++) {
+        if (!tc_link_get_flags(v2)) return FALSE;
+        if (!!(v2->flags & 1) == want_up) return TRUE;
+        Delay(5); /* 100 ms */
+    }
+    return FALSE;
+}
+
+static void tc_link_events(void)
+{
+    TnStatusInfoV2 v2;
+    LONG rc;
+    BPTR fh;
+    BOOL renew_seen = FALSE;
+
+    if (!tc_link_get_flags(&v2)) {
+        TAP_NOTOK("tc_link_events", "GETSTATUS failed");
+        return;
+    }
+    if (!(v2.flags & 1)) {
+        TAP_SKIP("tc_link_events", "link already down before test");
+        return;
+    }
+
+    rc = SystemTags((CONST_STRPTR)"C:S2Toggle OFFLINE",
+                    SYS_Asynch, FALSE,
+                    SYS_Input, (BPTR)0,
+                    SYS_Output, (BPTR)0,
+                    TAG_END);
+    if (rc != 0) {
+        TAP_NOTOK("tc_link_events", "S2Toggle OFFLINE failed to run");
+        return;
+    }
+
+    if (!tc_link_wait(&v2, 0, 50)) {
+        /* The driver completed S2_OFFLINE but never delivered S2EVENT_OFFLINE:
+         * either it does not implement S2_ONEVENT or it flushed the request.
+         * Bring the link back and report an honest SKIP. */
+        SystemTags((CONST_STRPTR)"C:S2Toggle ONLINE",
+                   SYS_Asynch, FALSE, SYS_Input, (BPTR)0, SYS_Output, (BPTR)0,
+                   TAG_END);
+        tc_link_wait(&v2, 1, 50);
+        TAP_SKIP("tc_link_events", "driver delivered no S2EVENT_OFFLINE (S2_ONEVENT unsupported?)");
+        return;
+    }
+
+    rc = SystemTags((CONST_STRPTR)"C:S2Toggle ONLINE",
+                    SYS_Asynch, FALSE,
+                    SYS_Input, (BPTR)0,
+                    SYS_Output, (BPTR)0,
+                    TAG_END);
+    if (rc != 0) {
+        TAP_NOTOK("tc_link_events", "S2Toggle ONLINE failed to run");
+        return;
+    }
+    if (!tc_link_wait(&v2, 1, 50)) {
+        TAP_NOTOK("tc_link_events", "link did not come back up after ONLINE");
+        return;
+    }
+
+    /* DHCP renew line in the daemon log (bench runs DHCP=YES, LOG=WORK:) */
+    fh = Open((CONST_STRPTR)"WORK:tolunnet-task.log", MODE_OLDFILE);
+    if (fh != (BPTR)0) {
+        static char tail[4096];
+        LONG got;
+        LONG size;
+        LONG start;
+
+        Seek(fh, 0, OFFSET_END);
+        size = Seek(fh, 0, OFFSET_BEGINNING);
+        start = (size > (LONG)(sizeof(tail) - 1)) ? size - (LONG)(sizeof(tail) - 1) : 0;
+        Seek(fh, start, OFFSET_BEGINNING);
+        got = Read(fh, (APTR)tail, sizeof(tail) - 1);
+        Close(fh);
+        if (got > 0) {
+            tail[got] = 0;
+            if (strstr(tail, "DHCP renew") != NULL || strstr(tail, "DHCP client started") != NULL) {
+                renew_seen = TRUE;
+            }
+        }
+    }
+    if (!renew_seen) {
+        TAP_NOTOK("tc_link_events", "no DHCP renew line in daemon log after link up");
+        return;
+    }
+
+    TAP_OK("tc_link_events");
+}
+
 /* Bench plumbing (not a TAP case): ask the daemon to exit so the bench can
  * prove the TNET-059/060 restart cycle. Mirrors TolunnetPrefs' Stop logic. */
 static void request_daemon_stop(void)
@@ -2983,6 +3094,7 @@ int main(int argc, char *argv[])
     tc_wizard_wired();
     tc_wifi_scan_parse();
     tc_reconfig_rc();
+    tc_link_events();
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
 

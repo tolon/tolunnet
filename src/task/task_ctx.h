@@ -226,6 +226,7 @@ typedef struct TnDaemon {
     uint32_t        s2_tx_frames;
     uint32_t        s2_tx_bytes;
     uint32_t        s2_tx_drops;
+    uint32_t        s2_link_errors;  /* S2EVENT_ERROR-class events (TNET-109) */
     uint32_t        rx_high_water;
     ULONG           start_sec;
 } TnDaemon;

@@ -243,7 +243,8 @@ typedef struct TnStatusInfoV2 {
 #define TN_RECFG_SELECTORS      0x4000u
 #define TN_RECFG_STATS          0x8000u
 #define TN_RECFG_SYSLOG         0x10000u
-#define TN_RECFG_ALL            0x1FFFFu
+#define TN_RECFG_S2EVENTS       0x20000u  /* TNET-109: restart-only */
+#define TN_RECFG_ALL            0x3FFFFu
 
 typedef struct TnReconfigResponse {
     uint16_t struct_size;   /* sizeof(TnReconfigResponse) */

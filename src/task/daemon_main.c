@@ -58,7 +58,7 @@ static int tn_task_real_main(int argc, char *argv[])
     ULONG           unit = 0;
     TnS2Result      s2res;
     ip4_addr_t      ipaddr, netmask, gw;
-    ULONG           s2_sig, timer_sig, ipc_sig, ctrl_c_sig, wait_mask;
+    ULONG           s2_sig, event_sig, timer_sig, ipc_sig, ctrl_c_sig, wait_mask;
     BOOL            use_dhcp = TRUE;
     BOOL            dhcp_logged = FALSE;
     ULONG           tick_count = 0;
@@ -232,6 +232,12 @@ static int tn_task_real_main(int argc, char *argv[])
         return 20;
     }
 
+    /* TNET-109: arm S2_ONEVENT link tracking (dedicated port; a driver that
+     * rejects the command is recorded and reported by tn_s2_poll_events). */
+    if (tn_s2_arm_events(&prim->s2if, g_daemon.prefs.s2events) != TN_S2_OK) {
+        tn_log(TN_LOG_BASIC, "tolunnet: S2_ONEVENT: no memory for event request\n");
+    }
+
     /* DNS servers, DHCP hostname (option 12), MTU clamp, debug tier (TNET-063) */
     tn_apply_live_config(&g_daemon);
 
@@ -295,10 +301,11 @@ static int tn_task_real_main(int argc, char *argv[])
     tn_timer_arm(&g_daemon.timer, 100000);
 
     s2_sig     = 1UL << prim->s2if.rx_port->mp_SigBit;
+    event_sig  = tn_s2_event_sig(&prim->s2if);
     timer_sig  = g_daemon.timer.sig_mask;
     ipc_sig    = 1UL << g_daemon.ipc_port->mp_SigBit;
     ctrl_c_sig = SIGBREAKF_CTRL_C;
-    wait_mask  = s2_sig | timer_sig | ipc_sig | ctrl_c_sig;
+    wait_mask  = s2_sig | event_sig | timer_sig | ipc_sig | ctrl_c_sig;
 
     tn_log(TN_LOG_BASIC, "tolunnet: network task running (Press Ctrl-C to stop)\n");
     g_daemon.running = TRUE;
@@ -339,6 +346,12 @@ static int tn_task_real_main(int argc, char *argv[])
         /* SANA-II Packet Arrival Signal */
         if (sigs & s2_sig) {
             tn_sana2_poll_input(&prim->s2if, &prim->lwip_if);
+            tn_drain_loopback();
+        }
+
+        /* SANA-II Link Event Signal (TNET-109) */
+        if (event_sig != 0 && (sigs & event_sig)) {
+            tn_s2_poll_events(&prim->s2if, &prim->lwip_if);
             tn_drain_loopback();
         }
 
@@ -541,14 +554,22 @@ int main(int argc, char *argv[])
 
         if (opts[OPT_STATUS]) {
             TnIpcMsg msg;
+            TnStatusInfoV2 v2;
+            LONG st_args[5];
+            APTR st_ptrs[1];
             int res;
             FreeArgs(rdargs);
-            res = tn_ipc_oneshot(TN_IPC_CMD_GETSTATUS, NULL, 0, &msg);
+            st_args[0] = 0; st_args[1] = 0; st_args[2] = 0; st_args[3] = 0;
+            st_args[4] = (LONG)sizeof(TnStatusInfoV2);
+            st_ptrs[0] = (APTR)&v2;
+            res = tn_ipc_oneshot_ex(TN_IPC_CMD_GETSTATUS, st_args, 5, st_ptrs, 1, &msg);
             if (res != 0) {
                 PutStr((CONST_STRPTR)"tolunnet: daemon is not running\n");
                 CloseLibrary(dos_base);
                 return 5;
             }
+            PutStr((CONST_STRPTR)((v2.flags & 1) ? "  Link       : up\n"
+                                                  : "  Link       : DOWN\n"));
             {
                 ULONG ip = (ULONG)msg.args[0];
                 ULONG nm = (ULONG)msg.args[1];

@@ -131,7 +131,8 @@ LOGLEVEL=1                 Direct log tier 0..2; overrides the DEBUG-derived tie
 DATABASE_ORDER=local,dns   netdb lookup order flag (local = hosts table first)
 SELECTORS=16               Selector table size, 1..128 (grow-only at runtime)
 STATS=YES                  NO = reset counters and freeze telemetry reports at zero
-SYSLOG=loghost.lan         Mirror the daemon log via UDP syslog (port 514)@{ui}
+SYSLOG=loghost.lan         Mirror the daemon log via UDP syslog (port 514)
+S2EVENTS=ONLINE|OFFLINE|ERROR  S2_ONEVENT link-event mask (restart to apply)@{ui}
 
 Keys from @{b}LOGLEVEL@{ub} onward apply live: after editing the file, run
 @{b}tolunnet RECONFIG@{ub} and the daemon applies them without a restart,

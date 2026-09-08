@@ -37,6 +37,9 @@
 /* TNET-063: HOSTNAME= key → DHCP option 12 + netif hostname */
 #define LWIP_NETIF_HOSTNAME  1
 
+/* TNET-109: S2_ONEVENT link tracking → netif_set_link_up/down plumbing */
+#define LWIP_NETIF_LINK_CALLBACK 1
+
 /* --- IPv4 only --- */
 #define LWIP_IPV6            0
 #define LWIP_IPV4            1
