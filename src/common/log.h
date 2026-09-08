@@ -17,10 +17,23 @@ extern struct Library *g_log_dos;
 extern BPTR            g_log_file;
 extern int             g_log_level;
 
+/* TNET-108: optional per-line sink (daemon registers tn_syslog_sink to
+ * forward its log via UDP-514). NULL in every other binary; called after the
+ * console/file writes so a throwing sink cannot swallow the local log. */
+extern void (*g_log_sink)(const char *msg);
+
 /* Write a raw string to current Output() and optional log file. */
 void tn_log(int tier, const char *msg);
 
 /* Formatted log to Output() (no libc stdio; supports %s, %d, %u, %x, %X, %02x, %p). */
 void tn_logf(int tier, const char *fmt, ...);
+
+/* TNET-108: live log redirection (RECONFIG LOG=).
+ * tn_log_open_file closes any open log file, opens path for append
+ * (requester-suppressed: a bad path never pops "insert volume"), seeks to
+ * end and installs it as g_log_file. Empty path just closes. Returns TRUE
+ * when the file is open on return. */
+BOOL tn_log_open_file(const char *path);
+void tn_log_close_file(void);
 
 #endif /* TOLUNNET_LOG_H */

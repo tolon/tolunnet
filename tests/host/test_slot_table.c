@@ -267,8 +267,63 @@ TN_TEST(event_signaling)
     tn_slot_free(&d, slot_idx);
 }
 
+/* TNET-108: SELECTORS= live grow -- existing entries preserved, new ones
+ * zeroed, shrink requests are a no-op success. */
+TN_TEST(selector_table_grow)
+{
+    TnDaemon d;
+    TnSelector saved;
+    TnSelector *old_ptr;
+
+    tn_slot_table_init(&d);
+    TN_ASSERT_TRUE(d.selectors != NULL);
+    TN_ASSERT_EQ(d.max_selectors, (uint32_t)TN_MAX_SELECTORS);
+
+    /* Occupy one selector entry */
+    d.selectors[1].in_use = TRUE;
+    d.selectors[1].sig_select = 0x80000000u;
+    d.selectors[1].nfds = 8;
+    d.selectors[1].read_mask = 0x000000FFu;
+    d.selector_count = 1;
+    saved = d.selectors[1];
+    old_ptr = d.selectors;
+
+    TN_ASSERT_TRUE(tn_selector_table_grow(&d, 64));
+    TN_ASSERT_EQ(d.max_selectors, 64u);
+    TN_ASSERT_TRUE(d.selectors != old_ptr);      /* reallocated */
+    TN_ASSERT_EQ(d.selectors[1].in_use, saved.in_use);
+    TN_ASSERT_EQ(d.selectors[1].sig_select, saved.sig_select);
+    TN_ASSERT_EQ(d.selectors[1].nfds, saved.nfds);
+    TN_ASSERT_EQ(d.selectors[1].read_mask, saved.read_mask);
+    TN_ASSERT_EQ(d.selector_count, 1);
+    for (int i = 0; i < 64; i++) {
+        if (i == 1) continue;
+        TN_ASSERT_EQ(d.selectors[i].in_use, 0);  /* new slots zeroed */
+    }
+
+    /* Grow past the cap clamps at 128 */
+    TN_ASSERT_TRUE(tn_selector_table_grow(&d, 4096));
+    TN_ASSERT_EQ(d.max_selectors, 128u);
+
+    /* Shrink / same-size is a successful no-op */
+    TN_ASSERT_TRUE(tn_selector_table_grow(&d, 16));
+    TN_ASSERT_EQ(d.max_selectors, 128u);
+
+    /* NULL table -> FALSE */
+    {
+        TnDaemon e;
+        memset(&e, 0, sizeof(e));
+        TN_ASSERT_FALSE(tn_selector_table_grow(&e, 32));
+    }
+
+    tn_selector_table_free(&d);
+    TN_ASSERT_TRUE(d.selectors == NULL);
+    TN_ASSERT_EQ(d.max_selectors, 0u);
+}
+
 int main(void)
 {
+    TN_TEST_RUN(selector_table_grow);
     TN_TEST_RUN(slot_table_init_and_empty);
     TN_TEST_RUN(slot_allocation_and_lookup);
     TN_TEST_RUN(slot_exhaustion_64_limit);

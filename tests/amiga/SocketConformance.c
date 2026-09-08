@@ -2722,6 +2722,151 @@ static void tc_wifi_scan_parse(void)
     TAP_OK("tc_wifi_scan_parse");
 }
 
+/* TNET-108: RECONFIG hot-reload. Rewrites DEVS:tolunnet.config around live
+ * IPC RECONFIGs and asserts the applied/needs_restart/failed masks, the
+ * STATS=NO zero-report gate, and that interface keys stay restart-only.
+ * The bench's original file is saved and restored. */
+static const char *tc_recfg_phase_a =
+    "DEVICE=ethernet.device\n"
+    "UNIT=0\n"
+    "DHCP=YES\n"
+    "DNS=10.0.2.3\n"
+    "DNS2=8.8.8.8\n"
+    "LOG=WORK:tolunnet-task.log\n"
+    "LOGLEVEL=1\n"
+    "PRIORITY=7\n"
+    "SELECTORS=32\n"
+    "STATS=NO\n"
+    "SYSLOG=10.0.2.2\n"
+    "DATABASE_ORDER=local,dns\n";
+
+static BOOL tc_recfg_write_file(const char *path, const char *text)
+{
+    BPTR fh = Open((CONST_STRPTR)path, MODE_NEWFILE);
+    LONG len = (LONG)strlen(text);
+    LONG w;
+    if (fh == (BPTR)0) return FALSE;
+    w = Write(fh, (CONST APTR)text, len);
+    Close(fh);
+    return (w == len);
+}
+
+static void tc_reconfig_rc(void)
+{
+    char saved[1024];
+    LONG saved_len = 0;
+    BPTR fh;
+    TnIpcMsg msg;
+    TnReconfigResponse resp;
+    LONG sargs[5];
+    APTR sptrs[1];
+
+    /* 0. Save the current DEVS:tolunnet.config and drop any newer ENV:
+     * session copy so the file we write is the authoritative store. */
+    fh = Open((CONST_STRPTR)"DEVS:tolunnet.config", MODE_OLDFILE);
+    if (fh != (BPTR)0) {
+        saved_len = Read(fh, (APTR)saved, sizeof(saved) - 1);
+        Close(fh);
+        if (saved_len > 0) saved[saved_len] = '\0';
+    }
+    DeleteFile((CONST_STRPTR)"ENV:tolunnet.prefs");
+
+    /* 1. Baseline: stats counters are live (daemon has been running) */
+    {
+        TnStats before;
+        LONG bsargs[1];
+        APTR bsptrs[1];
+        bsargs[0] = (LONG)sizeof(TnStats);
+        bsptrs[0] = (APTR)&before;
+        if (tn_ipc_oneshot_ex(TN_IPC_CMD_GETSTATS, bsargs, 1, bsptrs, 1, &msg) != 0 ||
+            msg.result != 0 || before.daemon.uptime_secs == 0) {
+            TAP_NOTOK("tc_reconfig_rc", "baseline GETSTATS not live");
+            return;
+        }
+    }
+
+    /* 2. Phase A: hot-reloadable keys only */
+    if (!tc_recfg_write_file("DEVS:tolunnet.config", tc_recfg_phase_a)) {
+        TAP_NOTOK("tc_reconfig_rc", "cannot write phase-A config");
+        return;
+    }
+    sargs[0] = 0; sargs[1] = 0; sargs[2] = 0; sargs[3] = 0;
+    sargs[4] = (LONG)sizeof(TnReconfigResponse);
+    sptrs[0] = (APTR)&resp;
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_RECONFIG, sargs, 5, sptrs, 1, &msg) != 0 || msg.result != 0) {
+        TAP_NOTOK("tc_reconfig_rc", "phase-A RECONFIG failed");
+        return;
+    }
+    if (resp.struct_size != sizeof(TnReconfigResponse) || resp.version != TN_RECFG_VERSION) {
+        TAP_NOTOK("tc_reconfig_rc", "response header wrong");
+        return;
+    }
+    if (resp.needs_restart != 0) {
+        TAP_NOTOK("tc_reconfig_rc", "phase-A reported restart-only keys");
+        return;
+    }
+    if (resp.applied != (TN_RECFG_PRIORITY | TN_RECFG_SELECTORS | TN_RECFG_STATS |
+                         TN_RECFG_SYSLOG | TN_RECFG_DATABASE_ORDER) || resp.failed != 0) {
+        TAP_NOTOK("tc_reconfig_rc", "phase-A applied/failed mask mismatch");
+        return;
+    }
+
+    /* 3. STATS=NO freezes GETSTATS at zero */
+    {
+        TnStats after;
+        LONG bsargs[1];
+        APTR bsptrs[1];
+        bsargs[0] = (LONG)sizeof(TnStats);
+        bsptrs[0] = (APTR)&after;
+        if (tn_ipc_oneshot_ex(TN_IPC_CMD_GETSTATS, bsargs, 1, bsptrs, 1, &msg) != 0 ||
+            msg.result != 0) {
+            TAP_NOTOK("tc_reconfig_rc", "post-RECONFIG GETSTATS failed");
+            return;
+        }
+        if (after.daemon.uptime_secs != 0 || after.daemon.mainloop_ticks != 0 ||
+            after.mem_used != 0 || after.link.recv != 0) {
+            TAP_NOTOK("tc_reconfig_rc", "STATS=NO did not zero the report");
+            return;
+        }
+    }
+
+    /* 4. Phase B: an interface key must land in needs_restart only */
+    if (!tc_recfg_write_file("DEVS:tolunnet.config",
+                             "DEVICE=nonexist.device\n"
+                             "UNIT=0\n"
+                             "DHCP=YES\n"
+                             "DNS=10.0.2.3\n"
+                             "DNS2=8.8.8.8\n"
+                             "LOG=WORK:tolunnet-task.log\n"
+                             "PRIORITY=7\n"
+                             "SELECTORS=32\n")) {
+        TAP_NOTOK("tc_reconfig_rc", "cannot write phase-B config");
+        return;
+    }
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_RECONFIG, sargs, 5, sptrs, 1, &msg) != 0 || msg.result != 0) {
+        TAP_NOTOK("tc_reconfig_rc", "phase-B RECONFIG failed");
+        return;
+    }
+    if (!(resp.needs_restart & TN_RECFG_DEVICE) || (resp.applied & TN_RECFG_DEVICE)) {
+        TAP_NOTOK("tc_reconfig_rc", "DEVICE did not classify as restart-only");
+        return;
+    }
+
+    /* 5. Restore the original store and reload it */
+    if (saved_len > 0) {
+        if (!tc_recfg_write_file("DEVS:tolunnet.config", saved)) {
+            TAP_NOTOK("tc_reconfig_rc", "cannot restore original config");
+            return;
+        }
+    }
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_RECONFIG, sargs, 5, sptrs, 1, &msg) != 0) {
+        TAP_NOTOK("tc_reconfig_rc", "restore RECONFIG failed");
+        return;
+    }
+
+    TAP_OK("tc_reconfig_rc");
+}
+
 /* Bench plumbing (not a TAP case): ask the daemon to exit so the bench can
  * prove the TNET-059/060 restart cycle. Mirrors TolunnetPrefs' Stop logic. */
 static void request_daemon_stop(void)
@@ -2813,6 +2958,7 @@ int main(int argc, char *argv[])
     tc_stats_counters();
     tc_wizard_wired();
     tc_wifi_scan_parse();
+    tc_reconfig_rc();
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
 

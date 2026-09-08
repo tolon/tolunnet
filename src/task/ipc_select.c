@@ -27,11 +27,11 @@ void tn_signal_socket(TnDaemon *d, TnSocketSlot *slot)
     }
 
     /* Event-driven selectors (§D) */
-    if (d == NULL || d->selector_count == 0) return;
+    if (d == NULL || d->selector_count == 0 || d->selectors == NULL) return;
     s_idx = (int)(slot - d->sockets);
     if (s_idx < 0 || s_idx >= TN_MAX_GLOBAL_SOCKETS) return;
 
-    for (sel_i = 0; sel_i < TN_MAX_SELECTORS; sel_i++) {
+    for (sel_i = 0; sel_i < (int)d->max_selectors; sel_i++) {
         TnSelector *sel = &d->selectors[sel_i];
         if (!sel->in_use || sel->base == NULL || sel->task == NULL || sel->sig_select == 0) continue;
 
@@ -109,6 +109,11 @@ int tn_ipc_cmd_select_arm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         imsg->err_no = EINVAL;
         return 0;
     }
+    if (d->selectors == NULL || d->max_selectors == 0) {
+        imsg->result = -1;
+        imsg->err_no = ENOBUFS;
+        return 0;
+    }
 
     nfds = imsg->args[0];
     in_r = (ULONG)imsg->args[1];
@@ -162,14 +167,14 @@ int tn_ipc_cmd_select_arm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     }
 
     /* Check if base already has an armed selector; otherwise find empty slot */
-    for (i = 0; i < TN_MAX_SELECTORS; i++) {
+    for (i = 0; i < (int)d->max_selectors; i++) {
         if (d->selectors[i].in_use && d->selectors[i].base == base) {
             sel_slot = i;
             break;
         }
     }
     if (sel_slot < 0) {
-        for (i = 0; i < TN_MAX_SELECTORS; i++) {
+        for (i = 0; i < (int)d->max_selectors; i++) {
             if (!d->selectors[i].in_use) {
                 sel_slot = i;
                 break;
@@ -178,7 +183,8 @@ int tn_ipc_cmd_select_arm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     }
 
     if (sel_slot < 0) {
-        tn_logf(TN_LOG_BASIC, "tolunnet: selector table exhausted (max %d)\n", TN_MAX_SELECTORS);
+        tn_logf(TN_LOG_BASIC, "tolunnet: selector table exhausted (max %lu)\n",
+                (ULONG)d->max_selectors);
         imsg->result = -1;
         imsg->err_no = ENOBUFS;
         return 0;
@@ -213,8 +219,8 @@ int tn_ipc_cmd_select_disarm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
     if (d == NULL || imsg == NULL) return 0;
     base = (TnSocketBase *)imsg->socket_base;
-    if (base != NULL) {
-        for (i = 0; i < TN_MAX_SELECTORS; i++) {
+    if (base != NULL && d->selectors != NULL) {
+        for (i = 0; i < (int)d->max_selectors; i++) {
             if (d->selectors[i].in_use && d->selectors[i].base == base) {
                 d->selectors[i].in_use = FALSE;
                 d->selectors[i].base   = NULL;
@@ -233,8 +239,8 @@ int tn_ipc_cmd_select_disarm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 void tn_selector_disarm_all_for_base(TnDaemon *d, const TnSocketBase *base)
 {
     int i;
-    if (d == NULL || base == NULL) return;
-    for (i = 0; i < TN_MAX_SELECTORS; i++) {
+    if (d == NULL || base == NULL || d->selectors == NULL) return;
+    for (i = 0; i < (int)d->max_selectors; i++) {
         if (d->selectors[i].in_use && d->selectors[i].base == base) {
             d->selectors[i].in_use = FALSE;
             d->selectors[i].base   = NULL;

@@ -4,6 +4,7 @@
  */
 #include "tn_test.h"
 #include "../../src/common/config_text.h"
+#include "../../include/ipc.h"
 #include <string.h>
 
 TN_TEST(round_trip_all_keys)
@@ -144,7 +145,216 @@ TN_TEST(defaults_have_no_slirp_literals)
         TN_ASSERT_STREQ(d.gateway, "");
         TN_ASSERT_STREQ(d.dns2, "");
         TN_ASSERT_EQ(d.priority, 5);
+        /* TNET-108 defaults */
+        TN_ASSERT_EQ(d.log_level, -1);      /* derive from DEBUG */
+        TN_ASSERT_STREQ(d.database_order, "");
+        TN_ASSERT_EQ(d.selectors, 0u);      /* TN_MAX_SELECTORS */
+        TN_ASSERT_EQ(d.stats, TRUE);
+        TN_ASSERT_STREQ(d.syslog_host, "");
     }
+}
+
+/* ---- TNET-108: RECONFIG hot-reload keys ---------------------------------- */
+
+TN_TEST(round_trip_tnet108_keys)
+{
+    TnPrefs in, out;
+    char text[TN_CONFIG_TEXT_MAX];
+
+    memset(&in, 0, sizeof(in));
+    strcpy(in.device, "ethernet.device");
+    in.priority = -3;
+    strcpy(in.log_file, "WORK:daemon.log");
+    in.log_level = 2;
+    strcpy(in.database_order, "local,dns");
+    in.selectors = 64;
+    in.stats = FALSE;
+    strcpy(in.syslog_host, "10.0.2.2");
+
+    TN_ASSERT_TRUE(tn_config_format(&in, text, sizeof(text)) > 0);
+    TN_ASSERT_TRUE(strstr(text, "LOGLEVEL=2") != NULL);
+    TN_ASSERT_TRUE(strstr(text, "SELECTORS=64") != NULL);
+    TN_ASSERT_TRUE(strstr(text, "STATS=NO") != NULL);
+    TN_ASSERT_TRUE(strstr(text, "DATABASE_ORDER=local,dns") != NULL);
+    TN_ASSERT_TRUE(strstr(text, "SYSLOG=10.0.2.2") != NULL);
+
+    memset(&out, 0, sizeof(out));
+    {
+        char *line = text;
+        while (*line) {
+            char *nl = strchr(line, '\n');
+            char saved;
+            char *eq;
+            if (nl == NULL) break;
+            saved = *nl; *nl = '\0';
+            eq = strchr(line, '=');
+            if (eq != NULL && line[0] != '#') {
+                *eq = '\0';
+                tn_config_parse_line(&out, line, eq + 1);
+                *eq = '=';
+            }
+            *nl = saved;
+            line = nl + 1;
+        }
+    }
+
+    TN_ASSERT_EQ(out.priority, -3);
+    TN_ASSERT_STREQ(out.log_file, "WORK:daemon.log");
+    TN_ASSERT_EQ(out.log_level, 2);
+    TN_ASSERT_STREQ(out.database_order, "local,dns");
+    TN_ASSERT_EQ(out.selectors, 64u);
+    TN_ASSERT_EQ(out.stats, FALSE);
+    TN_ASSERT_STREQ(out.syslog_host, "10.0.2.2");
+}
+
+TN_TEST(tnet108_key_bounds_and_validation)
+{
+    TnPrefs p;
+    memset(&p, 0, sizeof(p));
+
+    /* LOGLEVEL bounds: 0..2 accepted, outside ignored */
+    tn_config_parse_line(&p, "LOGLEVEL", "2");
+    TN_ASSERT_EQ(p.log_level, 2);
+    tn_config_parse_line(&p, "LOGLEVEL", "3");
+    TN_ASSERT_EQ(p.log_level, 2);
+    tn_config_parse_line(&p, "LOGLEVEL", "-1");
+    TN_ASSERT_EQ(p.log_level, 2);
+
+    /* SELECTORS bounds: 1..128 accepted, outside ignored */
+    tn_config_parse_line(&p, "SELECTORS", "128");
+    TN_ASSERT_EQ(p.selectors, 128u);
+    tn_config_parse_line(&p, "SELECTORS", "129");
+    TN_ASSERT_EQ(p.selectors, 128u);
+    tn_config_parse_line(&p, "SELECTORS", "0");
+    TN_ASSERT_EQ(p.selectors, 128u);
+
+    /* STATS truth spellings */
+    tn_config_parse_line(&p, "STATS", "NO");
+    TN_ASSERT_EQ(p.stats, FALSE);
+    tn_config_parse_line(&p, "STATS", "YES");
+    TN_ASSERT_EQ(p.stats, TRUE);
+    tn_config_parse_line(&p, "STATS", "OFF");
+    TN_ASSERT_EQ(p.stats, FALSE);
+    tn_config_parse_line(&p, "STATS", "TRUE");
+    TN_ASSERT_EQ(p.stats, TRUE);
+
+    /* SYSLOG charset: hostname/dotted-quad only — spaces, quotes, semicolons
+     * and newlines must be rejected (value keeps its previous state) */
+    tn_config_parse_line(&p, "SYSLOG", "loghost.lan");
+    TN_ASSERT_STREQ(p.syslog_host, "loghost.lan");
+    tn_config_parse_line(&p, "SYSLOG", "bad host; rm -rf");
+    TN_ASSERT_STREQ(p.syslog_host, "loghost.lan");
+    tn_config_parse_line(&p, "SYSLOG", "quote\"host");
+    TN_ASSERT_STREQ(p.syslog_host, "loghost.lan");
+    tn_config_parse_line(&p, "SYSLOG", "");
+    TN_ASSERT_STREQ(p.syslog_host, "loghost.lan");
+
+    /* DATABASE_ORDER charset */
+    tn_config_parse_line(&p, "DATABASE_ORDER", "local,dns");
+    TN_ASSERT_STREQ(p.database_order, "local,dns");
+    tn_config_parse_line(&p, "DATABASE_ORDER", "local;evil");
+    TN_ASSERT_STREQ(p.database_order, "local,dns");
+}
+
+TN_TEST(recfg_effective_loglevel_precedence)
+{
+    TnPrefs p;
+    tn_prefs_default(&p);   /* log_level sentinel -1 = "derive from DEBUG" */
+
+    /* LOGLEVEL unset -> historical DEBUG-derived tier */
+    TN_ASSERT_EQ(tn_recfg_effective_loglevel(&p), 1); /* BASIC */
+    p.debug = 1;
+    TN_ASSERT_EQ(tn_recfg_effective_loglevel(&p), 2); /* VERBOSE */
+    p.debug = 2;
+    TN_ASSERT_EQ(tn_recfg_effective_loglevel(&p), 2);
+
+    /* LOGLEVEL set -> wins over DEBUG */
+    p.log_level = 0;
+    TN_ASSERT_EQ(tn_recfg_effective_loglevel(&p), 0); /* OFF */
+    p.log_level = 1;
+    TN_ASSERT_EQ(tn_recfg_effective_loglevel(&p), 1);
+}
+
+TN_TEST(recfg_diff_classification)
+{
+    TnPrefs a, b;
+    uint32_t restart = 0xFFFFFFFFu, live = 0xFFFFFFFFu;
+
+    /* identical snapshots -> nothing changed */
+    tn_prefs_default(&a);
+    tn_prefs_default(&b);
+    tn_recfg_diff(&a, &b, &restart, &live);
+    TN_ASSERT_EQ_U(restart, 0);
+    TN_ASSERT_EQ_U(live, 0);
+
+    /* interface keys are restart-only */
+    tn_prefs_default(&a);
+    tn_prefs_default(&b);
+    strcpy(b.device, "other.device");
+    b.unit = 2;
+    b.use_dhcp = FALSE;
+    strcpy(b.ip_addr, "10.0.0.5");
+    strcpy(b.netmask, "255.0.0.0");
+    strcpy(b.gateway, "10.0.0.1");
+    tn_recfg_diff(&a, &b, &restart, &live);
+    TN_ASSERT_EQ_U(restart, TN_RECFG_DEVICE | TN_RECFG_UNIT | TN_RECFG_DHCP |
+                             TN_RECFG_IP | TN_RECFG_NETMASK | TN_RECFG_GATEWAY);
+    TN_ASSERT_EQ_U(live, 0);
+
+    /* hot-reloadable keys are live, not restart */
+    tn_prefs_default(&a);
+    tn_prefs_default(&b);
+    strcpy(b.dns_server, "1.1.1.1");
+    strcpy(b.dns2, "1.0.0.1");
+    strcpy(b.hostname, "renamed");
+    b.mtu = 1400;
+    b.log_level = 2;
+    b.priority = 7;
+    strcpy(b.log_file, "WORK:new.log");
+    strcpy(b.database_order, "local,dns");
+    b.selectors = 32;
+    b.stats = FALSE;
+    strcpy(b.syslog_host, "10.0.2.2");
+    tn_recfg_diff(&a, &b, &restart, &live);
+    TN_ASSERT_EQ_U(restart, 0);
+    TN_ASSERT_EQ_U(live, TN_RECFG_DNS | TN_RECFG_DNS2 | TN_RECFG_HOSTNAME |
+                          TN_RECFG_MTU | TN_RECFG_LOGLEVEL | TN_RECFG_PRIORITY |
+                          TN_RECFG_LOG | TN_RECFG_DATABASE_ORDER |
+                          TN_RECFG_SELECTORS | TN_RECFG_STATS | TN_RECFG_SYSLOG);
+
+    /* DEBUG change without LOGLEVEL still maps onto the LOGLEVEL bit */
+    tn_prefs_default(&a);
+    tn_prefs_default(&b);
+    b.debug = 1;
+    tn_recfg_diff(&a, &b, &restart, &live);
+    TN_ASSERT_EQ_U(restart, 0);
+    TN_ASSERT_EQ_U(live, TN_RECFG_LOGLEVEL);
+
+    /* equal DEBUG+LOGLEVEL -> no LOGLEVEL bit */
+    tn_prefs_default(&a);
+    tn_prefs_default(&b);
+    a.debug = 1; b.debug = 1; a.log_level = 2; b.log_level = 2;
+    tn_recfg_diff(&a, &b, &restart, &live);
+    TN_ASSERT_EQ_U(live, 0);
+}
+
+TN_TEST(recfg_key_name_table)
+{
+    uint32_t bit;
+    int named = 0;
+
+    for (bit = 1; bit <= TN_RECFG_ALL; bit <<= 1) {
+        const char *name = tn_recfg_key_name(bit);
+        TN_ASSERT_TRUE(name != NULL);
+        TN_ASSERT_TRUE(name[0] >= 'A' && name[0] <= 'Z');
+        named++;
+    }
+    TN_ASSERT_EQ(named, 17); /* every defined bit has a printable name */
+
+    TN_ASSERT_TRUE(tn_recfg_key_name(0) == NULL);
+    TN_ASSERT_TRUE(tn_recfg_key_name(TN_RECFG_ALL + 1) == NULL);
+    TN_ASSERT_STREQ(tn_recfg_key_name(TN_RECFG_DEVICE), "DEVICE");
+    TN_ASSERT_STREQ(tn_recfg_key_name(TN_RECFG_SYSLOG), "SYSLOG");
 }
 
 TN_TEST(version_header_formatted)
@@ -193,6 +403,11 @@ int main(void)
     TN_TEST_RUN(defaults_have_no_slirp_literals);
     TN_TEST_RUN(version_header_formatted);
     TN_TEST_RUN(hand_edited_devs_precedence);
+    TN_TEST_RUN(round_trip_tnet108_keys);
+    TN_TEST_RUN(tnet108_key_bounds_and_validation);
+    TN_TEST_RUN(recfg_effective_loglevel_precedence);
+    TN_TEST_RUN(recfg_diff_classification);
+    TN_TEST_RUN(recfg_key_name_table);
     TN_TEST_PLAN();
     return tn_test_failures();
 }

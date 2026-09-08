@@ -207,10 +207,14 @@ typedef struct TnDaemon {
     LONG            next_park_id;
     TnPrefs         prefs;
     BOOL            running;
-    TnSelector      selectors[TN_MAX_SELECTORS];
+    /* TNET-108: selector table is heap-allocated so SELECTORS= can grow it
+     * at runtime via RECONFIG (tn_selector_table_grow). */
+    TnSelector     *selectors;
+    uint32_t        max_selectors;
     uint8_t         selector_count;
 
     /* Operational Telemetry (§F) */
+    BOOL            stats_enabled;   /* TNET-108: STATS=NO freezes reports at zero */
     uint32_t        ipc_calls[32];
     uint32_t        deferred_replies;
     uint32_t        sigio_sent;

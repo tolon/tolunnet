@@ -44,7 +44,7 @@ When a client task calls standard BSD socket LVO vectors (e.g. `socket()`, `bind
 | `TN_IPC_CMD_WAITSELECT` | 20 | `WaitSelect(nfds, read_fds, write_fds, except_fds, timeout, sigmask)` |
 | `TN_IPC_CMD_DUP2` | 21 | `Dup2Socket(old_fd, new_fd)` |
 | `TN_IPC_CMD_GETSTATUS` | 22 | Query live interface status + active socket count (TNET-043) |
-| `TN_IPC_CMD_RECONFIG` | 23 | Reload configuration from prefs stores and apply the live subset (TNET-064). Sent by TolunnetPrefs after Save/Use; `socket_base` may be NULL (not a per-socket operation). Applies DNS servers, hostname (DHCP option 12 + future openers), MTU clamp, and debug tier; interface-level changes (device/unit/addressing) are logged as requiring a stack restart. |
+| `TN_IPC_CMD_RECONFIG` | 23 | Reload configuration from prefs stores and apply the live subset (TNET-064, TNET-108). Sent by TolunnetPrefs after Save/Use and by `tolunnet RECONFIG`; `socket_base` may be NULL (not a per-socket operation). Live-applied keys: DNS/DNS2, hostname (DHCP option 12 + future openers), MTU clamp, LOGLEVEL/DEBUG tier, PRIORITY (`SetTaskPri`), LOG (close old file, open new for append), DATABASE_ORDER (netdb reload flag, §D1), SELECTORS (grow-only table resize), STATS (counter reset; NO freezes GETSTATS at zero), SYSLOG (arm/disarm RFC3164 UDP-514 forwarding, §D3). Interface-level keys (DEVICE/UNIT/DHCP/IP/NETMASK/GATEWAY) are reported as needing a stack restart. Reply: masks in `args[0..2]` (`applied`, `needs_restart`, `failed`) and, when the caller passes a buffer in `ptrs[0]` with `args[4] >= sizeof(TnReconfigResponse)`, a versioned `TnReconfigResponse` (see §3). |
 
 ---
 
@@ -62,3 +62,38 @@ typedef struct TnIpcMsg {
     LONG           err_no;      /* POSIX errno if result == -1 */
 } TnIpcMsg;
 ```
+
+### TnReconfigResponse (TNET-108, TN_IPC_CMD_RECONFIG reply)
+
+```c
+#define TN_RECFG_VERSION 1
+
+#define TN_RECFG_DEVICE         0x0001u   /* restart-only keys */
+#define TN_RECFG_UNIT           0x0002u
+#define TN_RECFG_DHCP           0x0004u
+#define TN_RECFG_IP             0x0008u
+#define TN_RECFG_NETMASK        0x0010u
+#define TN_RECFG_GATEWAY        0x0020u
+#define TN_RECFG_DNS            0x0040u   /* live-applied keys */
+#define TN_RECFG_DNS2           0x0080u
+#define TN_RECFG_HOSTNAME       0x0100u
+#define TN_RECFG_MTU            0x0200u
+#define TN_RECFG_LOGLEVEL       0x0400u
+#define TN_RECFG_PRIORITY       0x0800u
+#define TN_RECFG_LOG            0x1000u
+#define TN_RECFG_DATABASE_ORDER 0x2000u
+#define TN_RECFG_SELECTORS      0x4000u
+#define TN_RECFG_STATS          0x8000u
+#define TN_RECFG_SYSLOG         0x10000u
+
+typedef struct TnReconfigResponse {
+    uint16_t struct_size;   /* sizeof(TnReconfigResponse) */
+    uint16_t version;       /* TN_RECFG_VERSION */
+    uint32_t applied;       /* changed keys whose live re-apply succeeded */
+    uint32_t needs_restart; /* changed interface keys: stop/start required */
+    uint32_t failed;        /* live keys the daemon could not apply */
+} TnReconfigResponse;
+```
+
+A key appears in exactly one mask: `failed` wins over `applied` for live keys;
+interface keys are never `applied`. Unchanged keys appear in no mask.

@@ -5,6 +5,9 @@
  */
 #include "ipc_status.h"
 #include "netif_mgr.h"
+#include "slot_table.h"
+#include "syslog.h"
+#include "../common/config_text.h"
 #include <string.h>
 
 #if !defined(TN_HOST_BUILD)
@@ -14,12 +17,11 @@
 #include <lwip/prot/dhcp.h>
 #endif
 
-static BOOL tn_streq(const char *a, const char *b)
-{
-    if (a == NULL || b == NULL) return FALSE;
-    while (*a && *a == *b) { a++; b++; }
-    return (*a == '\0' && *b == '\0');
-}
+#if defined(TN_HOST_BUILD)
+/* Host harness: tn_logf is stubbed by the test, Exec/DOS/lwIP calls below
+ * are compiled out; the mask classification itself stays covered. */
+#define tn_logf(tier, ...) do { (void)(tier); } while (0)
+#endif
 
 int tn_ipc_cmd_getstatus(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
@@ -56,26 +58,167 @@ int tn_ipc_cmd_getstatus(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     return 0; /* TN_IPC_REPLY_NOW */
 }
 
+/* TNET-108: list every set bit of a mask as " KEY KEY ..." (names from
+ * tn_recfg_key_name). Writes "(none)" when the mask is empty. */
+static void tn_recfg_format_mask(uint32_t mask, char *buf, int size)
+{
+    int o = 0;
+    uint32_t bit;
+
+    if (mask == 0) {
+        tn_str_copy_clean(buf, "(none)", size);
+        return;
+    }
+    buf[0] = '\0';
+    for (bit = 1; bit <= TN_RECFG_ALL; bit <<= 1) {
+        if (mask & bit) {
+            const char *name = tn_recfg_key_name(bit);
+            if (name != NULL) {
+                int n = 0;
+                while (name[n] && o + n + 2 < size) n++;
+                if (o > 0 && o + 1 < size) buf[o++] = ' ';
+                while (n-- > 0 && o + 1 < size) buf[o++] = *name++;
+                buf[o] = '\0';
+            }
+        }
+    }
+}
+
 int tn_ipc_cmd_reconfig(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
     TnPrefs old;
+    uint32_t restart = 0;
+    uint32_t live = 0;
+    uint32_t failed = 0;
+    uint32_t applied;
     BOOL loaded;
+    char mask_buf[192];
     (void)slot;
 
     old = d->prefs;
     loaded = tn_prefs_load(&d->prefs);
 
-    g_log_level = TN_LOG_BASIC + ((d->prefs.debug > 0) ? 1 : 0);
+    /* Classify the delta: restart-only interface keys vs hot-reloadable */
+    tn_recfg_diff(&old, &d->prefs, &restart, &live);
+
+    /* LOGLEVEL: apply first so the summary lines below follow the new tier */
+    if (live & TN_RECFG_LOGLEVEL) {
+        g_log_level = tn_recfg_effective_loglevel(&d->prefs);
+        tn_logf(TN_LOG_BASIC, "tolunnet: RECONFIG: log tier -> %d\n", g_log_level);
+    }
+
+    /* PRIORITY: live SetTaskPri on the daemon task (this handler runs in it) */
+#if !defined(TN_HOST_BUILD)
+    if (live & TN_RECFG_PRIORITY) {
+        struct Task *self = FindTask(NULL);
+        BYTE prev = SetTaskPri(self, (BYTE)d->prefs.priority);
+        tn_logf(TN_LOG_BASIC, "tolunnet: RECONFIG: task priority %ld -> %ld\n",
+                (LONG)prev, (LONG)d->prefs.priority);
+    }
+#endif
+
+    /* LOG: close old handle, open new path for append (requester-suppressed) */
+#if !defined(TN_HOST_BUILD)
+    if (live & TN_RECFG_LOG) {
+        if (d->prefs.log_file[0] == '\0') {
+            tn_log_close_file();
+            tn_log(TN_LOG_BASIC, "tolunnet: RECONFIG: log file closed\n");
+        } else if (tn_log_open_file(d->prefs.log_file)) {
+            tn_logf(TN_LOG_BASIC, "tolunnet: RECONFIG: log file -> %s\n", d->prefs.log_file);
+        } else {
+            failed |= TN_RECFG_LOG;
+            tn_logf(TN_LOG_BASIC, "tolunnet: RECONFIG: cannot open log file '%s'\n",
+                    d->prefs.log_file);
+        }
+    }
+#endif
+
+    /* DATABASE_ORDER: recorded for the netdb layer (§D1 reload flag) */
+    if (live & TN_RECFG_DATABASE_ORDER) {
+        tn_logf(TN_LOG_BASIC, "tolunnet: RECONFIG: netdb database order -> %s\n",
+                d->prefs.database_order[0] ? d->prefs.database_order : "(default)");
+    }
+
+    /* SELECTORS: grow-only live resize of the selector table */
+    if (live & TN_RECFG_SELECTORS) {
+        uint32_t want = (d->prefs.selectors > 0) ? d->prefs.selectors : TN_MAX_SELECTORS;
+        if (want > d->max_selectors) {
+            if (tn_selector_table_grow(d, want)) {
+                tn_logf(TN_LOG_BASIC, "tolunnet: RECONFIG: selector table grown to %lu entries\n",
+                        (ULONG)d->max_selectors);
+            } else {
+                failed |= TN_RECFG_SELECTORS;
+                tn_log(TN_LOG_BASIC, "tolunnet: RECONFIG: selector table grow failed (no memory)\n");
+            }
+        }
+    }
+
+    /* STATS: any change resets the counters; NO freezes reports at zero.
+     * Only increment-only counters are zeroed — lwip_stats.mem.used and the
+     * per-pool used counters are alloc/free-paired and would underflow under
+     * live allocations, so they keep running. */
+    if (live & TN_RECFG_STATS) {
+        d->stats_enabled = d->prefs.stats;
+        memset(d->ipc_calls, 0, sizeof(d->ipc_calls));
+        d->deferred_replies = 0;
+        d->sigio_sent = 0;
+        d->selector_wakeups = 0;
+        d->mainloop_ticks = 0;
+        d->s2_rx_frames = 0;
+        d->s2_rx_bytes = 0;
+        d->s2_rx_drops = 0;
+        d->s2_tx_frames = 0;
+        d->s2_tx_bytes = 0;
+        d->s2_tx_drops = 0;
+        d->rx_high_water = 0;
+#if !defined(TN_HOST_BUILD) && LWIP_STATS
+        memset(&lwip_stats.link,   0, sizeof(lwip_stats.link));
+        memset(&lwip_stats.etharp, 0, sizeof(lwip_stats.etharp));
+        memset(&lwip_stats.ip,     0, sizeof(lwip_stats.ip));
+        memset(&lwip_stats.icmp,   0, sizeof(lwip_stats.icmp));
+        memset(&lwip_stats.udp,    0, sizeof(lwip_stats.udp));
+        memset(&lwip_stats.tcp,    0, sizeof(lwip_stats.tcp));
+        lwip_stats.mem.err  = 0;
+        lwip_stats.mem.max  = 0;
+#endif
+        tn_logf(TN_LOG_BASIC, "tolunnet: RECONFIG: statistics counters reset (%s)\n",
+                d->stats_enabled ? "reporting on" : "reporting off");
+    }
+
+    /* SYSLOG: arm/disarm UDP-514 forwarding of the daemon log */
+#if !defined(TN_HOST_BUILD)
+    if (live & TN_RECFG_SYSLOG) {
+        if (!tn_syslog_apply(d->prefs.syslog_host)) {
+            failed |= TN_RECFG_SYSLOG;
+        }
+    }
+#endif
+
+    /* DNS/DNS2/HOSTNAME/MTU: pre-existing live keys (TNET-063/064) */
     tn_apply_live_config(d);
 
-    if (!tn_streq(old.device, d->prefs.device) || old.unit != d->prefs.unit ||
-        old.use_dhcp != d->prefs.use_dhcp ||
-        !tn_streq(old.ip_addr, d->prefs.ip_addr) ||
-        !tn_streq(old.netmask, d->prefs.netmask) ||
-        !tn_streq(old.gateway, d->prefs.gateway)) {
-        tn_log(TN_LOG_BASIC, "tolunnet: RECONFIG: interface settings changed - stop and start the stack to apply them\n");
+    applied = live & ~failed;
+
+    if (restart != 0) {
+        tn_recfg_format_mask(restart, mask_buf, sizeof(mask_buf));
+        tn_logf(TN_LOG_BASIC, "tolunnet: RECONFIG: needs restart: %s\n", mask_buf);
     } else {
-        tn_log(TN_LOG_BASIC, "tolunnet: RECONFIG applied (DNS, hostname, MTU, debug tier)\n");
+        tn_log(TN_LOG_BASIC, "tolunnet: RECONFIG applied\n");
+    }
+
+    /* Reply: legacy masks in args[0..2] + versioned struct when a buffer of
+     * sufficient size was supplied in ptrs[0] / args[4] (GETSTATUS convention). */
+    imsg->args[0] = (LONG)applied;
+    imsg->args[1] = (LONG)restart;
+    imsg->args[2] = (LONG)failed;
+    if (imsg->ptrs[0] != NULL && imsg->args[4] >= (LONG)sizeof(TnReconfigResponse)) {
+        TnReconfigResponse *resp = (TnReconfigResponse *)imsg->ptrs[0];
+        memset(resp, 0, sizeof(TnReconfigResponse));
+        resp->struct_size = sizeof(TnReconfigResponse);
+        resp->version = TN_RECFG_VERSION;
+        resp->applied = applied;
+        resp->needs_restart = restart;
+        resp->failed = failed;
     }
 
     imsg->result = loaded ? 0 : -1;
@@ -359,6 +502,17 @@ int tn_ipc_cmd_getstats(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         out->daemon.s2_tx_drops      = d->s2_tx_drops;
         out->daemon.rx_high_water    = d->rx_high_water;
         out->daemon.uptime_secs      = d->mainloop_ticks / 10;
+    }
+
+    /* TNET-108: STATS=NO — reporting off. Counters were zeroed when the key
+     * was applied; report zeroed tables so a disabled stack cannot leak
+     * telemetry through GETSTATS. */
+    if (!d->stats_enabled) {
+        uint16_t keep_size = out->struct_size;
+        uint16_t keep_ver  = out->version;
+        memset(out, 0, sizeof(TnStats));
+        out->struct_size = keep_size;
+        out->version = keep_ver;
     }
 
     imsg->result = 0;

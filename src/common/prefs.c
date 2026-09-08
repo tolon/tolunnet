@@ -12,9 +12,11 @@
 #include <proto/exec.h>
 #include <dos/dos.h>
 
-/* Read the binary blob (TnPrefs struct image) from fh into *out. Tolerates the
- * older, smaller pre-TNET-063 struct: fields beyond the read prefix keep the
- * defaults already present in *out. Returns TRUE on a recognised blob. */
+/* Read the binary blob (TnPrefs struct image) from fh into *out. Tolerates
+ * older, smaller pre-TNET-063/TNET-108 structs: any prefix of the current
+ * layout at least as large as the pre-TNET-063 blob is recognised, and fields
+ * beyond the read prefix keep the defaults already present in *out. Returns
+ * TRUE on a recognised blob. */
 static BOOL tn_prefs_read_blob(TnPrefs *out, BPTR fh)
 {
     TnPrefs tmp;
@@ -23,8 +25,7 @@ static BOOL tn_prefs_read_blob(TnPrefs *out, BPTR fh)
     tn_prefs_default(&tmp);
     Seek(fh, 0, OFFSET_BEGINNING);
     read_bytes = Read(fh, &tmp, sizeof(TnPrefs));
-    if (read_bytes == (LONG)sizeof(TnPrefs) ||
-        read_bytes == (LONG)offsetof(TnPrefs, hostname)) {
+    if (read_bytes >= (LONG)offsetof(TnPrefs, hostname) && read_bytes <= (LONG)sizeof(TnPrefs)) {
         *out = tmp;
         return TRUE;
     }

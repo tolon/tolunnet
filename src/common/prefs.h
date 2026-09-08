@@ -43,6 +43,12 @@ typedef struct TnPrefs {
     ULONG debug;              /* 0..2 log tier */
     LONG  priority;           /* task priority (-128..127, default 5) (TNET-066) */
     char  log_file[64];       /* W3 item 6: log file path; empty = no file log */
+    /* TNET-108: RECONFIG hot-reload keys */
+    LONG  log_level;          /* LOGLEVEL 0..2 direct tier; -1 = derive from DEBUG */
+    char  database_order[40]; /* netdb lookup order (§D1); empty = default */
+    ULONG selectors;          /* selector table size; 0 = TN_MAX_SELECTORS (16), max 128 */
+    BOOL  stats;              /* NO = counters frozen/reported as zero */
+    char  syslog_host[48];    /* RFC3164 UDP-514 forward target (§D3); empty = off */
 } TnPrefs;
 
 /* TNET-064: Amiga Prefs convention.

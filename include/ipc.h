@@ -216,6 +216,43 @@ typedef struct TnStatusInfoV2 {
     uint32_t flags;
 } TnStatusInfoV2;
 
+/* TNET-108: RECONFIG reply. The daemon compares the newly loaded TnPrefs
+ * against the previous one and classifies every changed key:
+ *  - needs_restart: interface-level keys the daemon cannot re-apply live
+ *    (stop/start the stack to activate them)
+ *  - applied:       keys whose live re-apply succeeded
+ *  - failed:        keys the daemon tried to apply live but could not
+ *    (unopenable LOG= path, SYSLOG= host unresolvable, SELECTORS= alloc ...)
+ * Legacy callers read the same masks from args[0..2]. */
+#define TN_RECFG_VERSION 1
+
+#define TN_RECFG_DEVICE         0x0001u
+#define TN_RECFG_UNIT           0x0002u
+#define TN_RECFG_DHCP           0x0004u
+#define TN_RECFG_IP             0x0008u
+#define TN_RECFG_NETMASK        0x0010u
+#define TN_RECFG_GATEWAY        0x0020u
+#define TN_RECFG_DNS            0x0040u
+#define TN_RECFG_DNS2           0x0080u
+#define TN_RECFG_HOSTNAME       0x0100u
+#define TN_RECFG_MTU            0x0200u
+#define TN_RECFG_LOGLEVEL       0x0400u
+#define TN_RECFG_PRIORITY       0x0800u
+#define TN_RECFG_LOG            0x1000u
+#define TN_RECFG_DATABASE_ORDER 0x2000u
+#define TN_RECFG_SELECTORS      0x4000u
+#define TN_RECFG_STATS          0x8000u
+#define TN_RECFG_SYSLOG         0x10000u
+#define TN_RECFG_ALL            0x1FFFFu
+
+typedef struct TnReconfigResponse {
+    uint16_t struct_size;   /* sizeof(TnReconfigResponse) */
+    uint16_t version;       /* TN_RECFG_VERSION */
+    uint32_t applied;
+    uint32_t needs_restart;
+    uint32_t failed;
+} TnReconfigResponse;
+
 /* IPC Message passed via Exec PutMsg/GetMsg/ReplyMsg */
 typedef struct TnIpcMsg {
     struct Message msg;         /* Standard Exec Message node */

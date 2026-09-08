@@ -10,6 +10,11 @@
 #include "task_ctx.h"
 
 void tn_slot_table_init(TnDaemon *d);
+/* TNET-108: grow the heap selector table to new_max entries (never shrinks;
+ * existing entries are preserved, new ones zeroed). Returns TRUE on success
+ * (including "already big enough"), FALSE on allocation failure or bad args. */
+BOOL tn_selector_table_grow(TnDaemon *d, uint32_t new_max);
+void tn_selector_table_free(TnDaemon *d);
 TnSocketSlot *tn_slot_alloc(TnDaemon *d, TnSocketBase *base, struct Task *task,
                            int domain, int type, int protocol, int *out_slot_idx);
 void tn_slot_free(TnDaemon *d, int slot_idx);

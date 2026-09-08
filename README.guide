@@ -124,7 +124,19 @@ DNS=192.168.1.1            Primary nameserver (DNS1=/NAMESERVER= also accepted)
 DNS2=1.1.1.1               Secondary nameserver; omit or leave empty for none
 HOSTNAME=amiga             Host name (sent as DHCP option 12; gethostname())
 MTU=1500                   576..1500 to clamp below the driver default; 0 = driver default
-DEBUG=0                    Log verbosity: 0 = normal, 1 = verbose, 2 = reserved@{ui}
+DEBUG=0                    Log verbosity: 0 = normal, 1 = verbose, 2 = reserved
+PRIORITY=5                 Daemon task priority, -128..127
+LOG=WORK:tolunnet.log      Append daemon log to this file (no requester on bad path)
+LOGLEVEL=1                 Direct log tier 0..2; overrides the DEBUG-derived tier
+DATABASE_ORDER=local,dns   netdb lookup order flag (local = hosts table first)
+SELECTORS=16               Selector table size, 1..128 (grow-only at runtime)
+STATS=YES                  NO = reset counters and freeze telemetry reports at zero
+SYSLOG=loghost.lan         Mirror the daemon log via UDP syslog (port 514)@{ui}
+
+Keys from @{b}LOGLEVEL@{ub} onward apply live: after editing the file, run
+@{b}tolunnet RECONFIG@{ub} and the daemon applies them without a restart,
+replying with an @{i}applied@{ui} and a @{i}needs restart@{ui} list.
+DEVICE/UNIT/DHCP/IP/NETMASK/GATEWAY always need a stack restart.
 
 @{b}TolunnetPrefs@{ub} (in SYS:Prefs) edits this file with the standard Amiga
 Prefs buttons:

@@ -67,6 +67,7 @@ TN_TEST(stats_daemon_counter_copy)
 
     memset(&d, 0, sizeof(d));
     memset(&msg, 0, sizeof(msg));
+    d.stats_enabled = TRUE; /* TNET-108: STATS=YES daemon reports counters */
 
     /* Populate mock daemon telemetry */
     d.ipc_calls[TN_IPC_CMD_SOCKET] = 42;
@@ -106,10 +107,42 @@ TN_TEST(stats_daemon_counter_copy)
     TN_ASSERT_EQ(stats.daemon.rx_high_water, 8);
 }
 
+/* TNET-108: STATS=NO freezes GETSTATS at zero — a disabled stack reports no
+ * telemetry, and the version header survives the zeroing. */
+TN_TEST(stats_disabled_reports_zero)
+{
+    TnDaemon d;
+    TnIpcMsg msg;
+    TnStats stats;
+
+    memset(&d, 0, sizeof(d));
+    memset(&msg, 0, sizeof(msg));
+    memset(&stats, 0xA5, sizeof(stats));
+
+    d.stats_enabled = FALSE;
+    d.ipc_calls[TN_IPC_CMD_SOCKET] = 42;
+    d.mainloop_ticks = 1000;
+    d.sigio_sent = 123;
+
+    msg.cmd = TN_IPC_CMD_GETSTATS;
+    msg.args[0] = (LONG)sizeof(TnStats);
+    msg.ptrs[0] = &stats;
+
+    TN_ASSERT_EQ(tn_ipc_cmd_getstats(&d, &msg, NULL), 0);
+    TN_ASSERT_EQ(msg.result, 0);
+    TN_ASSERT_EQ(stats.struct_size, sizeof(TnStats));
+    TN_ASSERT_EQ(stats.version, 1);
+    TN_ASSERT_EQ(stats.daemon.ipc_calls[TN_IPC_CMD_SOCKET], 0);
+    TN_ASSERT_EQ(stats.daemon.mainloop_ticks, 0);
+    TN_ASSERT_EQ(stats.daemon.sigio_sent, 0);
+    TN_ASSERT_EQ(stats.daemon.uptime_secs, 0);
+}
+
 int main(void)
 {
     TN_TEST_RUN(stats_struct_versioning_and_size);
     TN_TEST_RUN(stats_daemon_counter_copy);
+    TN_TEST_RUN(stats_disabled_reports_zero);
     TN_TEST_PLAN();
     return tn_test_failures();
 }

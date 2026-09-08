@@ -12,7 +12,7 @@ NDK_INC    ?= $(shell if [ -d "$$(dirname $$(which $(CC) 2>/dev/null))/../m68k-a
 
 CFLAGS      = -O2 -fomit-frame-pointer -m68000 -msoft-float -noixemul -Wall -Wextra -Wshadow \
               -Ilwipopts -Iinclude -Iinclude/netinclude -Ivendor/lwip/src/include -Isrc \
-              $(NDK_INC) -std=c11
+              $(NDK_INC) -std=c11 -MMD -MP
 LDFLAGS     = -noixemul -msoft-float
 
 DEBUG      ?= 0
@@ -77,7 +77,8 @@ TASK_OBJS   = $(BUILD)/src/task/daemon_main.o \
               $(BUILD)/src/task/ipc_msg.o \
               $(BUILD)/src/task/ipc_select.o \
               $(BUILD)/src/task/ipc_netdb.o \
-              $(BUILD)/src/task/ipc_status.o
+              $(BUILD)/src/task/ipc_status.o \
+              $(BUILD)/src/task/syslog.o
 
 # Targets
 TOLUNNET_BIN = $(BUILD)/tolunnet
@@ -140,6 +141,12 @@ $(BUILD)/%.o: %.c
 $(BUILD)/%.o: %.s
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+# Header dependency files (-MMD -MP): every object rebuilds when any header it
+# includes changes. This is the structural fix for the TNET-096 / TNET-108
+# incidents where task_ctx.h struct changes were linked against stale objects.
+DEP_FILES := $(shell find $(BUILD) -name '*.d' 2>/dev/null)
+-include $(DEP_FILES)
 
 # Target: Network Task with embedded bsdsocket.library (M2/M3)
 $(TOLUNNET_BIN): $(TASK_OBJS) $(LIB_OBJS) $(SANA2_OBJS) $(COMMON_OBJS) $(LWIP_OBJS)

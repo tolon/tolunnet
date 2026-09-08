@@ -184,14 +184,36 @@ err_t raw_sendto(struct raw_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_ip)
     return ERR_OK;
 }
 
+/* AllocVec registry: daemon-side tables (selector table, TNET-108) are
+ * process-lifetime allocations in the host harness — the Amiga daemon frees
+ * them explicitly at shutdown, but the tests exit without teardown. Holding
+ * every allocation in this static array keeps it reachable at exit so LSan
+ * does not flag it; entries are dropped when the free goes through
+ * mock_freevec (tests that free mock memory directly simply leave a stale
+ * root, which is harmless). */
+#define MOCK_MAX_ALLOCS 64
+static void *s_allocs[MOCK_MAX_ALLOCS];
+static int   s_alloc_count;
+
 void *mock_allocvec(uint32_t size, uint32_t flags)
 {
+    void *p = calloc(1, size);
     (void)flags;
-    return calloc(1, size);
+    if (p != NULL && s_alloc_count < MOCK_MAX_ALLOCS) {
+        s_allocs[s_alloc_count++] = p;
+    }
+    return p;
 }
 
 void mock_freevec(void *ptr)
 {
+    int i;
+    for (i = 0; i < s_alloc_count; i++) {
+        if (s_allocs[i] == ptr) {
+            s_allocs[i] = s_allocs[--s_alloc_count];
+            break;
+        }
+    }
     free(ptr);
 }
 

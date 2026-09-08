@@ -1,0 +1,10 @@
+# tolunnet — step R: recover the uncommitted tree (D:\Projeler\tolunnet). Toolchain in WSL. Bench: `ci/bench.sh` (Git Bash).
+STOP RULES: if the bench fails twice in a row, or 3 h pass without a commit, stop and write STOP-REPORT.md (what changed, what failed, verbatim `not ok`/Guru lines). Never cite a `-dirty` log as proof. One commit per numbered item below.
+
+Situation: HEAD `a2fd332` is green (68000+a1200, 31/31). Working tree has ~27 files / 1370 lines uncommitted mixing two jobs (W3 security fixes, G hot-reload) and the 68000 bench now dies after `tc_sockopt_matrix` (5/31). Ten dirty bench runs, no commit since 08-Sep 02:10.
+
+1. `git stash push -m wip-w3-g`. `ci/bench.sh` on clean HEAD → must be 31/31 both configs (baseline). If not, STOP-REPORT.
+2. `git stash pop`. Commit **only** W3 files: `src/setup/stack_detect.c` (temp-file + Rename), `src/setup/wifi_mgr.c/.h` (SSID from `S2INFO_SSID`, hex-SSID escaping, cmd validation, passphrase zeroing), `src/cmds/TolunnetSetup.c` (masked passphrase), `src/task/daemon_main.c` **only** the `WORK:` log removal + `pr_WindowPtr` guard, `tests/host/test_wizard_config.c`, `ci/tolunnet.config`, `ci/bench.sh` dirty-refusal. Use `git add -p`; everything G-related (RECONFIG bitmasks, `needs_restart`, `netif_mgr.c` live-apply, `ipc_status.c`, `include/ipc.h`, `prefs.h`, `config_text.c`, `test_config.c`, `SocketConformance.c` new `tc_reconfig_rc`) stays unstaged. Build, `make test-host`, bench. Green → commit `fix(setup): W3 security fixes (TNET-099..105)`, ISSUES rows.
+3. Stage the G remainder, build, bench. If 68000 dies again after `tc_sockopt_matrix`: WinUAE debugger `il 8` armed, run `SocketConformance` in the 68000 config, record PC + fault address + `objdump -d -l` line in ISSUES **TNET-108**; fix; re-bench. Commit `feat(config): RECONFIG hot-reload (TNET-108)`.
+4. Delete every `docs/bench-logs/*-dirty/` dir; commit `docs(bench): drop dirty logs`.
+Report: 4 commit hashes, both clean bench dir names, TAP `not ok` lines verbatim (or "none").

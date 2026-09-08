@@ -31,8 +31,10 @@
 #include "sana2/sana2_netif.h"
 #include "timers.h"
 #include "lib/lib_init.h"
+#include "syslog.h"
 #include "common/log.h"
 #include "common/prefs.h"
+#include "common/config_text.h"
 #include "common/ipc_client.h"
 
 /* Daemon Singleton State */
@@ -59,7 +61,6 @@ static int tn_task_real_main(int argc, char *argv[])
     ULONG           s2_sig, timer_sig, ipc_sig, ctrl_c_sig, wait_mask;
     BOOL            use_dhcp = TRUE;
     BOOL            dhcp_logged = FALSE;
-    BPTR            log_fh = (BPTR)0;
     ULONG           tick_count = 0;
     int             i;
     TnNetif        *prim = tn_netif_primary(&g_daemon);
@@ -71,13 +72,20 @@ static int tn_task_real_main(int argc, char *argv[])
     g_log_level = TN_LOG_VERBOSE;
 
     /* Load persistent configuration first (defaults when absent) so every
-     * key — including HOSTNAME/DNS2/MTU/DEBUG (TNET-063) — is honoured.
-     * CLI arguments override the interface-level keys. */
+     * key — including HOSTNAME/DNS2/MTU/DEBUG (TNET-063) and the TNET-108
+     * hot-reload keys — is honoured. CLI arguments override the
+     * interface-level keys. */
     tn_prefs_load(&g_daemon.prefs);
-    g_log_level = TN_LOG_BASIC + ((g_daemon.prefs.debug > 0) ? 1 : 0);
+    g_log_level = tn_recfg_effective_loglevel(&g_daemon.prefs);
 
 
     tn_slot_table_init(&g_daemon);
+    if (g_daemon.selectors == NULL) {
+        tn_log(TN_LOG_BASIC, "tolunnet: cannot allocate selector table\n");
+        CloseLibrary(DOSBase);
+        return 20;
+    }
+    g_daemon.stats_enabled = g_daemon.prefs.stats;
     g_daemon.if_count = 1;
     prim->in_use = TRUE;
 
@@ -143,29 +151,18 @@ static int tn_task_real_main(int argc, char *argv[])
             (LONG)g_daemon.prefs.priority, (LONG)old_pri);
 
 
-    /* Safe log redirection (§G) */
+    /* Safe log redirection (§G, TNET-108): tn_log_open_file suppresses
+     * requesters and re-opens for append; the same call serves RECONFIG. */
     if (g_daemon.prefs.log_file[0] != '\0') {
-        struct Process *pr = (struct Process *)FindTask(NULL);
-        APTR old_wp = NULL;
-        if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
-            old_wp = pr->pr_WindowPtr;
-            pr->pr_WindowPtr = (APTR)-1;
+        if (!tn_log_open_file(g_daemon.prefs.log_file)) {
+            tn_logf(TN_LOG_BASIC, "tolunnet: cannot open log file '%s'\n",
+                    g_daemon.prefs.log_file);
         }
-        log_fh = Open((CONST_STRPTR)g_daemon.prefs.log_file, MODE_READWRITE);
-        if (log_fh == (BPTR)0 && IoErr() == ERROR_OBJECT_NOT_FOUND) {
-            log_fh = Open((CONST_STRPTR)g_daemon.prefs.log_file, MODE_NEWFILE);
-        }
-        if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
-            pr->pr_WindowPtr = old_wp;
-        }
-        if (log_fh != (BPTR)0) {
-            Seek(log_fh, 0, OFFSET_END);
-            g_log_file = log_fh;
-        }
-    } else {
-        log_fh = (BPTR)0;
-        g_log_file = (BPTR)0;
     }
+
+    /* TNET-108 (§D3): mirror daemon log lines to SYSLOG=host via UDP-514.
+     * The sink is inert until tn_syslog_apply arms it (after lwIP is up). */
+    g_log_sink = tn_syslog_sink;
 
     /* 1. Initialize timer.device */
     if (!tn_timer_init(&g_daemon.timer)) {
@@ -237,6 +234,11 @@ static int tn_task_real_main(int argc, char *argv[])
 
     /* DNS servers, DHCP hostname (option 12), MTU clamp, debug tier (TNET-063) */
     tn_apply_live_config(&g_daemon);
+
+    /* TNET-108 (§D3): arm initial SYSLOG= forwarding now that lwIP is up */
+    if (g_daemon.prefs.syslog_host[0] != '\0') {
+        tn_syslog_apply(g_daemon.prefs.syslog_host);
+    }
 
     if (use_dhcp) {
         tn_log(TN_LOG_BASIC, "tolunnet: starting DHCP client...\n");
@@ -414,10 +416,9 @@ static int tn_task_real_main(int argc, char *argv[])
 
     tn_log(TN_LOG_BASIC, "tolunnet: shutdown complete.\n");
 
-    if (log_fh != (BPTR)0) {
-        g_log_file = (BPTR)0;
-        Close(log_fh);
-    }
+    tn_syslog_shutdown();
+    tn_selector_table_free(&g_daemon);
+    tn_log_close_file();
     CloseLibrary(DOSBase);
     return 0;
 }
@@ -474,15 +475,66 @@ int main(int argc, char *argv[])
         }
 
         if (opts[OPT_RECONFIG]) {
-            int res;
+            TnReconfigResponse resp;
+            LONG sargs[5];
+            APTR sptrs[1];
+            TnIpcMsg msg;
+            int res, mi;
+
+            sargs[0] = 0; sargs[1] = 0; sargs[2] = 0; sargs[3] = 0;
+            sargs[4] = (LONG)sizeof(TnReconfigResponse);
+            sptrs[0] = (APTR)&resp;
             FreeArgs(rdargs);
-            res = tn_ipc_oneshot(TN_IPC_CMD_RECONFIG, NULL, 0, NULL);
+            res = tn_ipc_oneshot_ex(TN_IPC_CMD_RECONFIG, sargs, 5, sptrs, 1, &msg);
             if (res != 0) {
-                PutStr((CONST_STRPTR)"tolunnet: daemon is not running\n");
+                /* oneshot conflates transport failure and the daemon's -1:
+                 * both mean "nothing was reloaded" */
+                PutStr((CONST_STRPTR)"tolunnet: daemon is not running or no configuration store could be read\n");
                 CloseLibrary(dos_base);
                 return 5;
             }
             PutStr((CONST_STRPTR)"tolunnet: configuration reloaded\n");
+            {
+                /* Print the applied / needs-restart / failed key lists */
+                const uint32_t masks[3] = {
+                    (uint32_t)msg.args[0], (uint32_t)msg.args[1], (uint32_t)msg.args[2]
+                };
+                static const char *const labels[3] = {
+                    "applied     ", "needs restart", "failed      "
+                };
+                for (mi = 0; mi < 3; mi++) {
+                    char list_buf[192];
+                    uint32_t bit;
+                    int o = 0;
+
+                    if (masks[mi] == 0) {
+                        if (mi == 2) continue; /* no failed keys: stay quiet */
+                        PutStr((CONST_STRPTR)"tolunnet: ");
+                        PutStr((CONST_STRPTR)labels[mi]);
+                        PutStr((CONST_STRPTR)": (none)\n");
+                        continue;
+                    }
+                    list_buf[0] = '\0';
+                    for (bit = 1; bit <= TN_RECFG_ALL; bit <<= 1) {
+                        if (masks[mi] & bit) {
+                            const char *name = tn_recfg_key_name(bit);
+                            if (name != NULL) {
+                                int n = 0;
+                                if (o > 0 && o + 1 < (int)sizeof(list_buf)) list_buf[o++] = ' ';
+                                while (name[n] && o + 1 < (int)sizeof(list_buf)) {
+                                    list_buf[o++] = name[n++];
+                                }
+                                list_buf[o] = '\0';
+                            }
+                        }
+                    }
+                    PutStr((CONST_STRPTR)"tolunnet: ");
+                    PutStr((CONST_STRPTR)labels[mi]);
+                    PutStr((CONST_STRPTR)": ");
+                    PutStr((CONST_STRPTR)list_buf);
+                    PutStr((CONST_STRPTR)"\n");
+                }
+            }
             CloseLibrary(dos_base);
             return 0;
         }

@@ -10,9 +10,43 @@ void tn_slot_table_init(TnDaemon *d)
 {
     if (d == NULL) return;
     memset(d->sockets, 0, sizeof(d->sockets));
-    memset(d->selectors, 0, sizeof(d->selectors));
+    /* Always a fresh allocation — callers may pass an uninitialized TnDaemon
+     * (host tests use stack locals; the daemon's g_daemon is a zeroed global,
+     * so this is simply its one and only allocation). NULL only under
+     * catastrophic memory pressure; the daemon startup checks for it. */
+    d->selectors = (TnSelector *)AllocVec(TN_MAX_SELECTORS * sizeof(TnSelector),
+                                          MEMF_PUBLIC | MEMF_CLEAR);
+    d->max_selectors = (d->selectors != NULL) ? TN_MAX_SELECTORS : 0;
     d->selector_count = 0;
     d->next_park_id = 1;
+}
+
+BOOL tn_selector_table_grow(TnDaemon *d, uint32_t new_max)
+{
+    TnSelector *grown;
+
+    if (d == NULL || d->selectors == NULL) return FALSE;
+    if (new_max <= d->max_selectors) return TRUE;
+    if (new_max > 128) new_max = 128;
+
+    grown = (TnSelector *)AllocVec((ULONG)new_max * sizeof(TnSelector),
+                                   MEMF_PUBLIC | MEMF_CLEAR);
+    if (grown == NULL) return FALSE;
+
+    memcpy(grown, d->selectors, (size_t)d->max_selectors * sizeof(TnSelector));
+    FreeVec(d->selectors);
+    d->selectors = grown;
+    d->max_selectors = new_max;
+    return TRUE;
+}
+
+void tn_selector_table_free(TnDaemon *d)
+{
+    if (d == NULL || d->selectors == NULL) return;
+    FreeVec(d->selectors);
+    d->selectors = NULL;
+    d->max_selectors = 0;
+    d->selector_count = 0;
 }
 
 int tn_slot_live_count(const TnDaemon *d)

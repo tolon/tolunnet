@@ -4,6 +4,8 @@
  */
 
 #include "config_text.h"
+#include "../../include/ipc.h"
+#include <string.h>
 
 /* Factory defaults. NOTE (TNET-078, Round 3 §C3): the 10.0.2.x literals below
  * are bench/slirp values and are scheduled to become empty strings so a
@@ -27,6 +29,11 @@ void tn_prefs_default(TnPrefs *prefs)
     prefs->debug = 0;
     prefs->priority = 5; /* TNET-066 */
     prefs->log_file[0] = '\0';
+    prefs->log_level = -1;      /* TNET-108: derive from DEBUG when unset */
+    prefs->database_order[0] = '\0';
+    prefs->selectors = 0;       /* 0 = TN_MAX_SELECTORS */
+    prefs->stats = TRUE;
+    prefs->syslog_host[0] = '\0';
 }
 
 
@@ -42,6 +49,43 @@ int tn_str_equal_nocase(const char *s1, const char *s2)
         s1++; s2++;
     }
     return (*s1 == '\0' && *s2 == '\0');
+}
+
+/* Exact string equality for config VALUE comparison (TNET-108 diff masks). */
+static int tn_streq_cfg(const char *a, const char *b)
+{
+    if (a == b) return 1;
+    if (a == NULL || b == NULL) return 0;
+    while (*a && *a == *b) { a++; b++; }
+    return (*a == '\0' && *b == '\0');
+}
+
+/* TNET-108: raw config-value token check. TRUE when val consists solely of
+ * [A-Za-z0-9] plus the given extra characters, optionally followed by
+ * trailing whitespace/CR/LF. Anything else (interior space, quote, semicolon,
+ * control char) makes the value invalid so the key is ignored. */
+static int tn_val_token(const char *val, const char *extra)
+{
+    size_t end = 0;
+    size_t i;
+
+    if (val == NULL) return 0;
+    while (val[end] != '\0') end++;
+    while (end > 0 && (val[end - 1] == ' ' || val[end - 1] == '\t' ||
+                       val[end - 1] == '\r' || val[end - 1] == '\n')) {
+        end--;
+    }
+    for (i = 0; i < end; i++) {
+        char c = val[i];
+        int ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+        if (!ok && extra != NULL) {
+            const char *e = extra;
+            while (*e != '\0' && *e != c) e++;
+            ok = (*e == c);
+        }
+        if (!ok) return 0;
+    }
+    return 1;
 }
 
 void tn_str_copy_clean(char *dst, const char *src, int max_len)
@@ -119,6 +163,35 @@ void tn_config_parse_line(TnPrefs *prefs, const char *key, const char *val)
         if (tn_str_to_long(clean_val, &p) && p >= -128 && p <= 127) prefs->priority = p;
     } else if (tn_str_equal_nocase(clean_key, "LOG")) {
         tn_str_copy_clean(prefs->log_file, clean_val, sizeof(prefs->log_file));
+    } else if (tn_str_equal_nocase(clean_key, "LOGLEVEL")) {
+        /* TNET-108: direct log tier control (0=OFF..2=VERBOSE). Overrides the
+         * DEBUG-derived tier while set. */
+        LONG lv = 0;
+        if (tn_str_to_long(clean_val, &lv) && lv >= 0 && lv <= 2) prefs->log_level = lv;
+    } else if (tn_str_equal_nocase(clean_key, "DATABASE_ORDER")) {
+        /* TNET-108 (§D1): netdb lookup order, e.g. "local,dns". Validated on
+         * the RAW value: interior whitespace is silently truncated by the
+         * clean copy, so checking clean_val alone would accept "a b" as "a". */
+        if (tn_val_token(val, ",_-") && clean_val[0] != '\0') {
+            tn_str_copy_clean(prefs->database_order, clean_val, sizeof(prefs->database_order));
+        }
+    } else if (tn_str_equal_nocase(clean_key, "SELECTORS")) {
+        LONG n = 0;
+        if (tn_str_to_long(clean_val, &n) && n >= 1 && n <= 128) prefs->selectors = (ULONG)n;
+    } else if (tn_str_equal_nocase(clean_key, "STATS")) {
+        if (tn_str_equal_nocase(clean_val, "NO") || tn_str_equal_nocase(clean_val, "0") ||
+            tn_str_equal_nocase(clean_val, "FALSE") || tn_str_equal_nocase(clean_val, "OFF")) {
+            prefs->stats = FALSE;
+        } else {
+            prefs->stats = TRUE;
+        }
+    } else if (tn_str_equal_nocase(clean_key, "SYSLOG")) {
+        /* TNET-108 (§D3): UDP-514 forward target — dotted quad or hostname.
+         * Raw-value validation, same reasoning as DATABASE_ORDER. */
+        if (tn_val_token(val, ".-") && clean_val[0] != '\0' &&
+            strlen(clean_val) < sizeof(prefs->syslog_host)) {
+            tn_str_copy_clean(prefs->syslog_host, clean_val, sizeof(prefs->syslog_host));
+        }
     } else if (tn_str_equal_nocase(clean_key, "VERSION")) {
         /* Config format version recognised */
     }
@@ -215,10 +288,95 @@ int tn_config_format(const TnPrefs *prefs, char *buf, int buf_size)
     if (prefs->log_file[0] != '\0') {
         tn_cfg_put_kv_str(&o, "LOG=", prefs->log_file);
     }
+    tn_cfg_put_kv_long(&o, "LOGLEVEL=", prefs->log_level);
+    tn_cfg_put_kv_int(&o, "SELECTORS=", prefs->selectors);
+    tn_cfg_put(&o, "STATS=");
+    tn_cfg_put(&o, prefs->stats ? "YES\n" : "NO\n");
+    if (prefs->database_order[0] != '\0') {
+        tn_cfg_put_kv_str(&o, "DATABASE_ORDER=", prefs->database_order);
+    }
+    if (prefs->syslog_host[0] != '\0') {
+        tn_cfg_put_kv_str(&o, "SYSLOG=", prefs->syslog_host);
+    }
 
     if (o.overflow) {
         return -1; /* buffer too small; TN_CONFIG_TEXT_MAX is always sufficient */
     }
     buf[o.len] = '\0';
     return o.len;
+}
+
+/* TNET-108: effective log tier — LOGLEVEL wins when set, else DEBUG-derived
+ * (the historical formula the daemon used before LOGLEVEL existed). */
+int tn_recfg_effective_loglevel(const TnPrefs *p)
+{
+    if (p == NULL) return 1; /* TN_LOG_BASIC */
+    if (p->log_level >= 0 && p->log_level <= 2) return (int)p->log_level;
+    return 1 + ((p->debug > 0) ? 1 : 0);
+}
+
+/* TNET-108: classify every changed key between two TnPrefs snapshots into
+ * needs_restart (interface-level) and live (hot-reloadable) masks. Pure
+ * function — the daemon layer decides whether each live key actually applies
+ * (failures are reported in the `failed` mask, not here). */
+void tn_recfg_diff(const TnPrefs *oldp, const TnPrefs *newp,
+                   uint32_t *needs_restart, uint32_t *live)
+{
+    uint32_t restart = 0;
+    uint32_t livem = 0;
+
+    if (oldp == NULL || newp == NULL) {
+        if (needs_restart) *needs_restart = 0;
+        if (live) *live = 0;
+        return;
+    }
+
+    if (!tn_streq_cfg(oldp->device, newp->device))          restart |= TN_RECFG_DEVICE;
+    if (oldp->unit != newp->unit)                           restart |= TN_RECFG_UNIT;
+    if (oldp->use_dhcp != newp->use_dhcp)                   restart |= TN_RECFG_DHCP;
+    if (!tn_streq_cfg(oldp->ip_addr, newp->ip_addr))        restart |= TN_RECFG_IP;
+    if (!tn_streq_cfg(oldp->netmask, newp->netmask))        restart |= TN_RECFG_NETMASK;
+    if (!tn_streq_cfg(oldp->gateway, newp->gateway))        restart |= TN_RECFG_GATEWAY;
+
+    if (!tn_streq_cfg(oldp->dns_server, newp->dns_server))  livem |= TN_RECFG_DNS;
+    if (!tn_streq_cfg(oldp->dns2, newp->dns2))              livem |= TN_RECFG_DNS2;
+    if (!tn_streq_cfg(oldp->hostname, newp->hostname))      livem |= TN_RECFG_HOSTNAME;
+    if (oldp->mtu != newp->mtu)                             livem |= TN_RECFG_MTU;
+    if (tn_recfg_effective_loglevel(oldp) != tn_recfg_effective_loglevel(newp))
+                                                            livem |= TN_RECFG_LOGLEVEL;
+    if (oldp->priority != newp->priority)                   livem |= TN_RECFG_PRIORITY;
+    if (!tn_streq_cfg(oldp->log_file, newp->log_file))      livem |= TN_RECFG_LOG;
+    if (!tn_streq_cfg(oldp->database_order, newp->database_order))
+                                                            livem |= TN_RECFG_DATABASE_ORDER;
+    if (oldp->selectors != newp->selectors)                 livem |= TN_RECFG_SELECTORS;
+    if (oldp->stats != newp->stats)                         livem |= TN_RECFG_STATS;
+    if (!tn_streq_cfg(oldp->syslog_host, newp->syslog_host)) livem |= TN_RECFG_SYSLOG;
+
+    if (needs_restart) *needs_restart = restart;
+    if (live) *live = livem;
+}
+
+/* TNET-108: printable name for one TN_RECFG_* bit (NULL for unknown/invalid). */
+const char *tn_recfg_key_name(uint32_t bit)
+{
+    switch (bit) {
+    case TN_RECFG_DEVICE:         return "DEVICE";
+    case TN_RECFG_UNIT:           return "UNIT";
+    case TN_RECFG_DHCP:           return "DHCP";
+    case TN_RECFG_IP:             return "IP";
+    case TN_RECFG_NETMASK:        return "NETMASK";
+    case TN_RECFG_GATEWAY:        return "GATEWAY";
+    case TN_RECFG_DNS:            return "DNS";
+    case TN_RECFG_DNS2:           return "DNS2";
+    case TN_RECFG_HOSTNAME:       return "HOSTNAME";
+    case TN_RECFG_MTU:            return "MTU";
+    case TN_RECFG_LOGLEVEL:       return "LOGLEVEL";
+    case TN_RECFG_PRIORITY:       return "PRIORITY";
+    case TN_RECFG_LOG:            return "LOG";
+    case TN_RECFG_DATABASE_ORDER: return "DATABASE_ORDER";
+    case TN_RECFG_SELECTORS:      return "SELECTORS";
+    case TN_RECFG_STATS:          return "STATS";
+    case TN_RECFG_SYSLOG:         return "SYSLOG";
+    default:                      return NULL;
+    }
 }

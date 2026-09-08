@@ -7,12 +7,16 @@
 
 #include "log.h"
 
+#include <proto/exec.h>
 #include <proto/dos.h>
+#include <exec/types.h>
+#include <dos/dosextens.h>
 #include <stdarg.h>
 
 struct Library *g_log_dos   = NULL;
 BPTR            g_log_file  = (BPTR)0;
 int             g_log_level = TN_LOG_OFF;
+void          (*g_log_sink)(const char *msg) = NULL;
 
 void tn_log(int tier, const char *msg)
 {
@@ -34,6 +38,49 @@ void tn_log(int tier, const char *msg)
     if (g_log_file != (BPTR)0) {
         Write(g_log_file, (CONST APTR)msg, len);
         Flush(g_log_file);
+    }
+
+    if (g_log_sink != NULL) {
+        g_log_sink(msg);
+    }
+}
+
+BOOL tn_log_open_file(const char *path)
+{
+    struct Process *pr = (struct Process *)FindTask(NULL);
+    APTR old_wp = NULL;
+    BPTR fh = (BPTR)0;
+
+    if (g_log_file != (BPTR)0) {
+        Close(g_log_file);
+        g_log_file = (BPTR)0;
+    }
+    if (path == NULL || path[0] == '\0') return FALSE;
+
+    /* A bad path must never raise an "insert volume" requester (W3 item 6). */
+    if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
+        old_wp = pr->pr_WindowPtr;
+        pr->pr_WindowPtr = (APTR)-1;
+    }
+    fh = Open((CONST_STRPTR)path, MODE_READWRITE);
+    if (fh == (BPTR)0 && IoErr() == ERROR_OBJECT_NOT_FOUND) {
+        fh = Open((CONST_STRPTR)path, MODE_NEWFILE);
+    }
+    if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
+        pr->pr_WindowPtr = old_wp;
+    }
+    if (fh == (BPTR)0) return FALSE;
+
+    Seek(fh, 0, OFFSET_END);
+    g_log_file = fh;
+    return TRUE;
+}
+
+void tn_log_close_file(void)
+{
+    if (g_log_file != (BPTR)0) {
+        Close(g_log_file);
+        g_log_file = (BPTR)0;
     }
 }
 
