@@ -99,6 +99,11 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
             tn_set_errno_val(base, ENOBUFS);
             return -1;
         }
+        /* the wrapper pre-filled args/ptrs in the embedded message — carry
+         * them over; header fields and result are set fresh below */
+        *heap_msg = base->ipc_msg;
+        heap_msg->result = 0;
+        heap_msg->err_no = 0;
         msg = heap_msg;
     } else {
         msg = &base->ipc_msg;
