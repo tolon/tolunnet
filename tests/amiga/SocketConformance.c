@@ -2937,13 +2937,26 @@ static void tc_link_events(void)
         return;
     }
 
+    /* The bench driver (uaenet) both fakes S2_ONEVENT completions and hangs
+     * on S2_OFFLINE from a second opener; flipping the link under it froze
+     * the whole suite (bench incidents 556ea30/184cd29). S2Toggle therefore
+     * runs only when the operator opts in per driver via a marker file
+     * (real-hardware iron test); everything below is async + time-bounded so
+     * even a hung toggle child can never wedge the suite. */
+    fh = Open((CONST_STRPTR)"WORK:linktest-on", MODE_OLDFILE);
+    if (fh == (BPTR)0) {
+        TAP_SKIP("tc_link_events", "link flip not enabled for this driver (create WORK:linktest-on)");
+        return;
+    }
+    Close(fh);
+
     rc = SystemTags((CONST_STRPTR)"C:S2Toggle OFFLINE",
-                    SYS_Asynch, FALSE,
+                    SYS_Asynch, TRUE,
                     SYS_Input, (BPTR)0,
                     SYS_Output, (BPTR)0,
                     TAG_END);
     if (rc != 0) {
-        TAP_NOTOK("tc_link_events", "S2Toggle OFFLINE failed to run");
+        TAP_NOTOK("tc_link_events", "S2Toggle OFFLINE failed to start");
         return;
     }
 
@@ -2952,7 +2965,7 @@ static void tc_link_events(void)
          * either it does not implement S2_ONEVENT or it flushed the request.
          * Bring the link back and report an honest SKIP. */
         SystemTags((CONST_STRPTR)"C:S2Toggle ONLINE",
-                   SYS_Asynch, FALSE, SYS_Input, (BPTR)0, SYS_Output, (BPTR)0,
+                   SYS_Asynch, TRUE, SYS_Input, (BPTR)0, SYS_Output, (BPTR)0,
                    TAG_END);
         tc_link_wait(&v2, 1, 50);
         TAP_SKIP("tc_link_events", "driver delivered no S2EVENT_OFFLINE (S2_ONEVENT unsupported?)");
@@ -2960,12 +2973,12 @@ static void tc_link_events(void)
     }
 
     rc = SystemTags((CONST_STRPTR)"C:S2Toggle ONLINE",
-                    SYS_Asynch, FALSE,
+                    SYS_Asynch, TRUE,
                     SYS_Input, (BPTR)0,
                     SYS_Output, (BPTR)0,
                     TAG_END);
     if (rc != 0) {
-        TAP_NOTOK("tc_link_events", "S2Toggle ONLINE failed to run");
+        TAP_NOTOK("tc_link_events", "S2Toggle ONLINE failed to start");
         return;
     }
     if (!tc_link_wait(&v2, 1, 50)) {

@@ -365,6 +365,9 @@ static int tn_task_real_main(int argc, char *argv[])
             sys_check_timeouts();
             tn_drain_loopback();
 
+            /* TNET-109: bounded re-arm of error-completed CMD_READ slots */
+            tn_s2_rearm_reads(&prim->s2if);
+
             /* Check DHCP lease progress */
             if (use_dhcp && !dhcp_logged && dhcp_supplied_address(&prim->lwip_if)) {
                 char str_ip[16], str_nm[16], str_gw[16];

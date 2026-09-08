@@ -85,6 +85,9 @@ ULONG tn_s2_event_sig(const TnSana2If *nif);
  * the lwIP netif, and re-arm. Called from the daemon main loop. */
 void tn_s2_poll_events(TnSana2If *nif, struct netif *netif);
 
+/* TNET-109: re-arm unarmed CMD_READ slots (ONLINE event + 100 ms tick). */
+void tn_s2_rearm_reads(TnSana2If *nif);
+
 /* Frame I/O */
 LONG       tn_s2_send(TnSana2If *nif, const void *buf, LONG len,
                       BOOL broadcast, ULONG packet_type, const UBYTE *dst_addr);

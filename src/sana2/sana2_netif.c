@@ -477,10 +477,14 @@ ULONG tn_s2_event_sig(const TnSana2If *nif)
     return (1UL << nif->event_port->mp_SigBit);
 }
 
-/* Re-arm unarmed CMD_READ slots after the link came back (TNET-109). */
-static void tn_s2_rearm_reads(TnSana2If *nif)
+/* Re-arm unarmed CMD_READ slots. Called on the ONLINE event and once per
+ * 100 ms timer tick: error-completed reads are NOT re-armed inline (that is
+ * a livelock under a driver that completes them instantly while offline),
+ * so this is the single bounded re-arm path. (TNET-109) */
+void tn_s2_rearm_reads(TnSana2If *nif)
 {
     ULONG i;
+    if (nif == NULL || nif->link_down) return;
     for (i = 0; i < nif->n_read_ios; i++) {
         struct IOSana2Req *rio = nif->read_ios[i];
         if (rio != NULL && !nif->read_armed[i]) {
@@ -595,8 +599,8 @@ void tn_s2_poll_events(TnSana2If *nif, struct netif *netif)
         nif->event_armed = TRUE;
     }
 
-    /* A calm poll (fewer than a full batch) clears the strike count. */
-    nif->event_strikes = 0;
+    /* Strikes are monotonic by design: three capped batches at any time is
+     * an instant-completion driver; genuine transitions never fill a batch. */
 }
 
 void tn_s2_offline_close(TnSana2If *nif)
@@ -847,6 +851,13 @@ void tn_sana2_poll_input(TnSana2If *nif, struct netif *netif)
                 nif->read_armed[i] = FALSE;
                 break;
             }
+        }
+
+        if (rio->ios2_Req.io_Error != 0) {
+            /* Error completion (e.g. unit went offline and the event stream
+             * is unavailable): leave the slot unarmed; the timer tick or the
+             * ONLINE handler re-arms it. Inline re-arm would spin. */
+            continue;
         }
 
         if (rio->ios2_Req.io_Error == 0 && rio->ios2_DataLength > 0) {
