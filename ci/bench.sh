@@ -50,7 +50,7 @@ fi
 
 if [ "${SKIP_BUILD:-0}" != "1" ]; then
     say "building (make all)"
-    wsl -d Ubuntu-24.04 -e bash -c "cd /mnt/d/Projeler/tolunnet && make all CROSS=$CROSS" >/dev/null \
+    wsl -d Ubuntu-24.04 -e bash -c "export PATH=/home/tolon/opt/m68k-amigaos/bin:\$PATH && cd /mnt/d/Projeler/tolunnet && make all CROSS=$CROSS" >/dev/null \
         || die "make all failed"
 fi
 [ -f build/tolunnet ] || die "build/tolunnet missing (run without SKIP_BUILD)"
@@ -64,6 +64,10 @@ if [[ "$GIT_DESC" == *-dirty* ]]; then
     say "  WARNING: WORKING TREE IS DIRTY ($GIT_DESC)"
     say "  Logs from this run CANNOT be cited as clean commit proof."
     say "****************************************************************"
+    if [ "${ALLOW_DIRTY:-0}" != "1" ]; then
+        echo "[bench] FATAL: refusing bench run on dirty tree (set ALLOW_DIRTY=1 to override)" >&2
+        exit 2
+    fi
 fi
 
 STAMP="$(date +%Y%m%d-%H%M%S)-$GIT_DESC"
@@ -108,16 +112,18 @@ for cfg in $CONFIGS; do
     xd delete C/SocketConformance >/dev/null 2>&1
     xd delete C/TolunnetSetup   >/dev/null 2>&1
     xd delete S/User-Startup    >/dev/null 2>&1
+    xd delete S/Conformance-Script >/dev/null 2>&1
     xd delete Devs/tolunnet.config >/dev/null 2>&1
     xd write build/tolunnet C/tolunnet          || die "xdftool write tolunnet failed"
     xd write build/SocketConformance C/SocketConformance || die "xdftool write conformance failed"
     xd write build/TolunnetSetup C/TolunnetSetup || die "xdftool write TolunnetSetup failed"
-    xd write ci/User-Startup-Conformance S/User-Startup  || die "xdftool write User-Startup failed"
+    xd write ci/User-Startup-Conformance S/Conformance-Script || die "xdftool write Conformance-Script failed"
+    xd write ci/User-Startup-Boot S/User-Startup || die "xdftool write User-Startup failed"
     xd write ci/tolunnet.config Devs/tolunnet.config     || die "xdftool write tolunnet.config failed"
-    say "staged: tolunnet + SocketConformance + TolunnetSetup + User-Startup + tolunnet.config -> $HDF_WIN"
+    say "staged: tolunnet + SocketConformance + TolunnetSetup + Conformance-Script + User-Startup + tolunnet.config -> $HDF_WIN"
 
     # ---- run headless ---------------------------------------------------
-    rm -f "$WORK_DIR/conformance.log" "$WORK_DIR/conformance2.log" "$WORK_DIR/bench-done"
+    rm -f "$WORK_DIR/conformance.log" "$WORK_DIR/conformance2.log" "$WORK_DIR/bench-done" "$WORK_DIR/tolunnet-task.log"
     CFG_WIN=$(cygpath -w "$REPO_ROOT/ci/tolunnet-$cfg.uae")
     say "launching WinUAE headless ($CFG_WIN), timeout ${TIMEOUT_SECS}s"
     "$WINUAE" -f "$CFG_WIN" >/dev/null 2>&1 &
@@ -144,10 +150,11 @@ for cfg in $CONFIGS; do
     # ---- collect --------------------------------------------------------
     OUT="$LOG_ROOT/$cfg"
     mkdir -p "$OUT"
-    cp "$WORK_DIR/conformance.log"  "$OUT/" 2>/dev/null || echo "(missing)" > "$OUT/conformance.log"
-    cp "$WORK_DIR/conformance2.log" "$OUT/" 2>/dev/null || echo "(missing)" > "$OUT/conformance2.log"
-    cp "$WORK_DIR/daemon.log"       "$OUT/" 2>/dev/null || true
-    cp "$WORK_DIR/daemon2.log"      "$OUT/" 2>/dev/null || true
+    cp "$WORK_DIR/conformance.log"   "$OUT/" 2>/dev/null || echo "(missing)" > "$OUT/conformance.log"
+    cp "$WORK_DIR/conformance2.log"  "$OUT/" 2>/dev/null || echo "(missing)" > "$OUT/conformance2.log"
+    cp "$WORK_DIR/daemon.log"        "$OUT/" 2>/dev/null || true
+    cp "$WORK_DIR/daemon2.log"       "$OUT/" 2>/dev/null || true
+    cp "$WORK_DIR/tolunnet-task.log" "$OUT/" 2>/dev/null || true
     echo "$cfg: $(date)" > "$OUT/README.txt"
     {
         echo "config: ci/tolunnet-$cfg.uae (HDF copy staged from the pristine WB3.0 image)"

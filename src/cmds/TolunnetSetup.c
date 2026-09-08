@@ -102,7 +102,85 @@ static struct Gadget *g_gad_back = NULL;
 
 static STRPTR g_hw_labels[MAX_DETECTED_HW + 1];
 
+#ifdef __AMIGA__
+#include <intuition/sghooks.h>
+
+static char s_pass_display_buf[64];
+
+static ULONG pass_edit_hook_fn(struct Hook *hook __asm__("a0"),
+                               struct SGWork *sgw __asm__("a2"),
+                               ULONG *msg __asm__("a1"))
+{
+    (void)hook;
+    if (!msg || *msg != SGH_KEY) return 1;
+
+    if (g_ws.wifi_show_pass) return 1;
+
+    if (sgw->EditOp == EO_INSERTCHAR || sgw->EditOp == EO_REPLACECHAR) {
+        UWORD code = sgw->Code;
+        if (code >= 32 && code < 127 && code != '"') {
+            WORD pos = sgw->BufferPos;
+            if (pos > 0 && pos < (WORD)sizeof(g_ws.wifi_pass)) {
+                g_ws.wifi_pass[pos - 1] = (char)code;
+                g_ws.wifi_pass[pos] = '\0';
+                sgw->WorkBuffer[pos - 1] = '*';
+            }
+        }
+    } else if (sgw->EditOp == EO_DELBACKWARD) {
+        WORD pos = sgw->BufferPos;
+        if (pos >= 0 && pos < (WORD)sizeof(g_ws.wifi_pass)) {
+            g_ws.wifi_pass[pos] = '\0';
+        }
+    } else if (sgw->EditOp == EO_RESET || sgw->EditOp == EO_CLEAR) {
+        volatile char *vp = (volatile char *)g_ws.wifi_pass;
+        for (size_t i = 0; i < sizeof(g_ws.wifi_pass); i++) vp[i] = 0;
+    }
+    return 1;
+}
+
+static struct Hook s_pass_hook = {
+    { NULL, NULL },
+    (ULONG (*)())pass_edit_hook_fn,
+    NULL,
+    NULL
+};
+#endif
+
 static void rebuild_page_gadgets(void);
+
+static void sync_page_gadgets_to_state(void)
+{
+    if (!g_page_glist) return;
+    struct Gadget *g = g_page_glist;
+    while (g) {
+        if (g->GadgetType == GTYP_STRGADGET || (g->SpecialInfo != NULL && (g->GadgetType & 0x0F) == GTYP_STRGADGET)) {
+            struct StringInfo *si = (struct StringInfo *)g->SpecialInfo;
+            if (si && si->Buffer) {
+                switch (g->GadgetID) {
+                case GID_P3_PASS_STR:
+                    if (g_ws.wifi_show_pass) {
+                        strncpy(g_ws.wifi_pass, (const char *)si->Buffer, sizeof(g_ws.wifi_pass) - 1);
+                        g_ws.wifi_pass[sizeof(g_ws.wifi_pass) - 1] = '\0';
+                    }
+                    break;
+                case GID_P4_IP_STR:
+                    strncpy(g_ws.ip_str, (const char *)si->Buffer, sizeof(g_ws.ip_str) - 1);
+                    break;
+                case GID_P4_NM_STR:
+                    strncpy(g_ws.nm_str, (const char *)si->Buffer, sizeof(g_ws.nm_str) - 1);
+                    break;
+                case GID_P4_GW_STR:
+                    strncpy(g_ws.gw_str, (const char *)si->Buffer, sizeof(g_ws.gw_str) - 1);
+                    break;
+                case GID_P4_DNS1_STR:
+                    strncpy(g_ws.dns1_str, (const char *)si->Buffer, sizeof(g_ws.dns1_str) - 1);
+                    break;
+                }
+            }
+        }
+        g = g->NextGadget;
+    }
+}
 
 static void update_nav_buttons(void)
 {
@@ -128,6 +206,7 @@ static void update_nav_buttons(void)
 
 static void advance_next_page(void)
 {
+    sync_page_gadgets_to_state();
     if (g_ws.current_page < WIZARD_PAGE_COUNT - 1) {
         g_ws.current_page++;
         /* Skip WiFi if hardware is wired */
@@ -147,6 +226,7 @@ static void advance_next_page(void)
 
 static void retreat_back_page(void)
 {
+    sync_page_gadgets_to_state();
     if (g_ws.current_page > 0) {
         g_ws.current_page--;
         /* Skip WiFi backwards if wired */
@@ -250,6 +330,7 @@ static void draw_page_content(void)
 static void rebuild_page_gadgets(void)
 {
     if (!g_win) return;
+    sync_page_gadgets_to_state();
 
     if (g_page_glist) {
         RemoveGList(g_win, g_page_glist, -1);
@@ -323,10 +404,25 @@ static void rebuild_page_gadgets(void)
         ng.ng_GadgetText = (STRPTR)"Passphrase:";
         ng.ng_GadgetID   = GID_P3_PASS_STR;
         ng.ng_Flags      = PLACETEXT_LEFT;
-        prev = CreateGadget(STRING_KIND, prev, &ng,
-                            GTST_String, (ULONG)g_ws.wifi_pass,
-                            GTST_MaxChars, 63,
-                            TAG_END);
+        if (g_ws.wifi_show_pass) {
+            strncpy(s_pass_display_buf, g_ws.wifi_pass, sizeof(s_pass_display_buf) - 1);
+            s_pass_display_buf[sizeof(s_pass_display_buf) - 1] = '\0';
+            prev = CreateGadget(STRING_KIND, prev, &ng,
+                                GTST_String, (ULONG)s_pass_display_buf,
+                                GTST_MaxChars, 63,
+                                TAG_END);
+        } else {
+            size_t plen = strlen(g_ws.wifi_pass);
+            for (size_t i = 0; i < plen && i < sizeof(s_pass_display_buf) - 1; i++) {
+                s_pass_display_buf[i] = '*';
+            }
+            s_pass_display_buf[plen < sizeof(s_pass_display_buf) ? plen : sizeof(s_pass_display_buf) - 1] = '\0';
+            prev = CreateGadget(STRING_KIND, prev, &ng,
+                                GTST_String, (ULONG)s_pass_display_buf,
+                                GTST_EditHook, (ULONG)&s_pass_hook,
+                                GTST_MaxChars, 63,
+                                TAG_END);
+        }
 
         ng.ng_LeftEdge   = 370;
         ng.ng_TopEdge    = 116;
@@ -474,6 +570,18 @@ static void apply_wizard_finish(void)
     if (g_ws.start_at_boot) {
         tn_install_boot_block(TRUE);
     }
+
+    /* Zero the memory containing passphrase immediately after writing */
+    volatile char *vpass = (volatile char *)g_ws.wifi_pass;
+    for (size_t i = 0; i < sizeof(g_ws.wifi_pass); i++) {
+        vpass[i] = 0;
+    }
+#ifdef __AMIGA__
+    volatile char *vdisp = (volatile char *)s_pass_display_buf;
+    for (size_t i = 0; i < sizeof(s_pass_display_buf); i++) {
+        vdisp[i] = 0;
+    }
+#endif
 }
 
 int main(int argc, char **argv)
@@ -631,6 +739,10 @@ int main(int argc, char **argv)
                 tn_setup_rexx_process(rexx_port, &g_ws, NULL);
                 if (g_ws.rexx_done) {
                     apply_wizard_finish();
+                    if (g_ws.rexx_finish_msg) {
+                        ReplyMsg(g_ws.rexx_finish_msg);
+                        g_ws.rexx_finish_msg = NULL;
+                    }
                     break;
                 }
                 if (g_ws.rexx_cancel) {
@@ -656,6 +768,10 @@ int main(int argc, char **argv)
             tn_setup_rexx_process(rexx_port, &g_ws, rebuild_page_gadgets);
             if (g_ws.rexx_done) {
                 apply_wizard_finish();
+                if (g_ws.rexx_finish_msg) {
+                    ReplyMsg(g_ws.rexx_finish_msg);
+                    g_ws.rexx_finish_msg = NULL;
+                }
                 running = FALSE;
                 break;
             }
@@ -747,6 +863,7 @@ int main(int argc, char **argv)
 
                     case GID_P3_SHOWPASS_CHK:
                         g_ws.wifi_show_pass = !g_ws.wifi_show_pass;
+                        rebuild_page_gadgets();
                         break;
 
                     case GID_P4_IPMODE_CYCLE:
@@ -774,6 +891,11 @@ int main(int argc, char **argv)
         } /* if (sigs & win_sig) */
     } /* while (running) */
     } /* else */
+
+    if (g_ws.rexx_finish_msg) {
+        ReplyMsg(g_ws.rexx_finish_msg);
+        g_ws.rexx_finish_msg = NULL;
+    }
 
     if (rexx_port) {
         tn_setup_rexx_cleanup(rexx_port);
@@ -806,6 +928,11 @@ int main(int argc, char **argv)
 
     if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
         pr->pr_WindowPtr = old_win_ptr;
+    }
+
+    volatile char *vpass_clean = (volatile char *)g_ws.wifi_pass;
+    for (size_t i = 0; i < sizeof(g_ws.wifi_pass); i++) {
+        vpass_clean[i] = 0;
     }
 
     return 0;

@@ -121,6 +121,8 @@ void tn_setup_rexx_process(struct MsgPort *port, WizardState *ws, void (*on_refr
                     if (on_refresh) on_refresh();
                 } else if (strcasecmp(verb, "FINISH") == 0) {
                     ws->rexx_done = TRUE;
+                    ws->rexx_finish_msg = msg;
+                    continue; /* ReplyMsg will be sent after apply_wizard_finish() completes */
                 } else if (strcasecmp(verb, "CANCEL") == 0 || strcasecmp(verb, "QUIT") == 0) {
                     ws->rexx_cancel = TRUE;
                 } else if (strcasecmp(verb, "STATUS") == 0) {

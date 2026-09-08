@@ -24,6 +24,7 @@ TN_TEST(round_trip_all_keys)
     in.mtu = 1400;
     in.debug = 2;
     in.priority = 10;
+    strcpy(in.log_file, "WORK:test.log");
 
     TN_ASSERT_TRUE(tn_config_format(&in, text, sizeof(text)) > 0);
 
@@ -60,6 +61,7 @@ TN_TEST(round_trip_all_keys)
     TN_ASSERT_EQ(out.mtu, 1400u);
     TN_ASSERT_EQ(out.debug, 2u);
     TN_ASSERT_EQ(out.priority, 10);
+    TN_ASSERT_STREQ(out.log_file, "WORK:test.log");
 }
 
 TN_TEST(key_dialects_and_case)

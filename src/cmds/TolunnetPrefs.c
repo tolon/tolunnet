@@ -738,16 +738,28 @@ int main(int argc, char *argv[])
 
                     case GID_PING:
                         {
-                            char ping_cmd[192];
+                            char ping_cmd[256];
                             CONST_STRPTR target = (prefs.gateway[0] != '\0') ? (CONST_STRPTR)prefs.gateway : (CONST_STRPTR)"1.1.1.1";
-                            char *p = ping_cmd;
-                            CONST_STRPTR s1 = (CONST_STRPTR)"ping ";
-                            CONST_STRPTR s2 = (CONST_STRPTR)" 4 >\"CON:60/60/460/160/tolunnet Live Ping Probe/AUTO/CLOSE/WAIT\"";
-                            while (*s1) *p++ = *s1++;
-                            while (*target) *p++ = *target++;
-                            while (*s2) *p++ = *s2++;
-                            *p = '\0';
-                            Execute((CONST_STRPTR)ping_cmd, (BPTR)0, (BPTR)0);
+                            BOOL target_valid = TRUE;
+                            size_t tlen = strlen((const char *)target);
+                            if (tlen == 0 || tlen > 63) target_valid = FALSE;
+                            for (size_t i = 0; i < tlen; i++) {
+                                char c = target[i];
+                                if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                                      (c >= '0' && c <= '9') || c == '.' || c == ':' || c == '-')) {
+                                    target_valid = FALSE;
+                                    break;
+                                }
+                            }
+                            if (!target_valid) {
+                                target = (CONST_STRPTR)"1.1.1.1";
+                            }
+                            int ret = snprintf(ping_cmd, sizeof(ping_cmd),
+                                               "ping %s 4 >\"CON:60/60/460/160/tolunnet Live Ping Probe/AUTO/CLOSE/WAIT\"",
+                                               target);
+                            if (ret > 0 && (size_t)ret < sizeof(ping_cmd)) {
+                                Execute((CONST_STRPTR)ping_cmd, (BPTR)0, (BPTR)0);
+                            }
                         }
                         break;
 

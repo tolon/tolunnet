@@ -45,6 +45,7 @@ static const LONG *g_cli_unit = NULL;
 static const char *g_cli_ip = NULL;
 static const char *g_cli_netmask = NULL;
 static const char *g_cli_gateway = NULL;
+static const UWORD  g_raw_putch[] = { 0x16c0, 0x4e75 }; /* move.b d0,(a3)+ ; rts (aligned) */
 
 static int tn_task_real_main(int argc, char *argv[])
 {
@@ -69,15 +70,16 @@ static int tn_task_real_main(int argc, char *argv[])
     g_log_dos = DOSBase;
     g_log_level = TN_LOG_VERBOSE;
 
-    tn_slot_table_init(&g_daemon);
-    g_daemon.if_count = 1;
-    prim->in_use = TRUE;
-
     /* Load persistent configuration first (defaults when absent) so every
      * key — including HOSTNAME/DNS2/MTU/DEBUG (TNET-063) — is honoured.
      * CLI arguments override the interface-level keys. */
     tn_prefs_load(&g_daemon.prefs);
     g_log_level = TN_LOG_BASIC + ((g_daemon.prefs.debug > 0) ? 1 : 0);
+
+
+    tn_slot_table_init(&g_daemon);
+    g_daemon.if_count = 1;
+    prim->in_use = TRUE;
 
     /* TNET-066: Set task priority from prefs (default 5) */
     self_task = FindTask(NULL);
@@ -140,8 +142,30 @@ static int tn_task_real_main(int argc, char *argv[])
     tn_logf(TN_LOG_BASIC, "tolunnet: task priority set to %ld (was %ld)\n",
             (LONG)g_daemon.prefs.priority, (LONG)old_pri);
 
-    log_fh = Open((CONST_STRPTR)"WORK:tolunnet-task.log", MODE_NEWFILE);
-    g_log_file = log_fh;
+
+    /* Safe log redirection (§G) */
+    if (g_daemon.prefs.log_file[0] != '\0') {
+        struct Process *pr = (struct Process *)FindTask(NULL);
+        APTR old_wp = NULL;
+        if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
+            old_wp = pr->pr_WindowPtr;
+            pr->pr_WindowPtr = (APTR)-1;
+        }
+        log_fh = Open((CONST_STRPTR)g_daemon.prefs.log_file, MODE_READWRITE);
+        if (log_fh == (BPTR)0 && IoErr() == ERROR_OBJECT_NOT_FOUND) {
+            log_fh = Open((CONST_STRPTR)g_daemon.prefs.log_file, MODE_NEWFILE);
+        }
+        if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
+            pr->pr_WindowPtr = old_wp;
+        }
+        if (log_fh != (BPTR)0) {
+            Seek(log_fh, 0, OFFSET_END);
+            g_log_file = log_fh;
+        }
+    } else {
+        log_fh = (BPTR)0;
+        g_log_file = (BPTR)0;
+    }
 
     /* 1. Initialize timer.device */
     if (!tn_timer_init(&g_daemon.timer)) {
@@ -485,16 +509,16 @@ int main(int argc, char *argv[])
 
                 PutStr((CONST_STRPTR)"tolunnet daemon status: RUNNING\n");
 
-                RawDoFmt((CONST_STRPTR)"  IP Address : %lu.%lu.%lu.%lu\n", (APTR)ip_parts, (VOID (*)())"\x16\xc0\x4e\x75", buf);
+                RawDoFmt((CONST_STRPTR)"  IP Address : %lu.%lu.%lu.%lu\n", (APTR)ip_parts, (VOID (*)())g_raw_putch, buf);
                 PutStr((CONST_STRPTR)buf);
 
-                RawDoFmt((CONST_STRPTR)"  Netmask    : %lu.%lu.%lu.%lu\n", (APTR)nm_parts, (VOID (*)())"\x16\xc0\x4e\x75", buf);
+                RawDoFmt((CONST_STRPTR)"  Netmask    : %lu.%lu.%lu.%lu\n", (APTR)nm_parts, (VOID (*)())g_raw_putch, buf);
                 PutStr((CONST_STRPTR)buf);
 
-                RawDoFmt((CONST_STRPTR)"  Gateway    : %lu.%lu.%lu.%lu\n", (APTR)gw_parts, (VOID (*)())"\x16\xc0\x4e\x75", buf);
+                RawDoFmt((CONST_STRPTR)"  Gateway    : %lu.%lu.%lu.%lu\n", (APTR)gw_parts, (VOID (*)())g_raw_putch, buf);
                 PutStr((CONST_STRPTR)buf);
 
-                RawDoFmt((CONST_STRPTR)"  Sockets    : %ld active\n", (APTR)&socks, (VOID (*)())"\x16\xc0\x4e\x75", buf);
+                RawDoFmt((CONST_STRPTR)"  Sockets    : %ld active\n", (APTR)&socks, (VOID (*)())g_raw_putch, buf);
                 PutStr((CONST_STRPTR)buf);
             }
             CloseLibrary(dos_base);

@@ -23,31 +23,175 @@
 #define S2_GETNETWORKS        0xc011
 #define S2_GETNETWORKINFO     0xc014
 
+static int is_safe_ssid_char(char c)
+{
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+        return 1;
+    }
+    if (c == ' ' || c == '.' || c == '_' || c == '-') {
+        return 1;
+    }
+    return 0;
+}
+
 int tn_format_wireless_block(const char *ssid, const char *passphrase, char *out_buf, int out_max)
 {
     if (!ssid || !out_buf || out_max <= 0) return 0;
 
+    /* Check if SSID needs hex formatting */
+    int needs_hex = 0;
+    size_t slen = strlen(ssid);
+    if (slen == 0 || slen > 32) return 0;
+
+    for (size_t i = 0; i < slen; i++) {
+        if (!is_safe_ssid_char(ssid[i])) {
+            needs_hex = 1;
+            break;
+        }
+    }
+
+    char ssid_line[128];
+    if (needs_hex) {
+        char hex_ssid[65];
+        for (size_t i = 0; i < slen; i++) {
+            snprintf(&hex_ssid[i * 2], 3, "%02x", (unsigned char)ssid[i]);
+        }
+        hex_ssid[slen * 2] = '\0';
+        snprintf(ssid_line, sizeof(ssid_line), "    ssid=%s\n", hex_ssid);
+    } else {
+        snprintf(ssid_line, sizeof(ssid_line), "    ssid=\"%s\"\n", ssid);
+    }
+
     int written = 0;
     if (passphrase && passphrase[0] != '\0') {
+        size_t plen = strlen(passphrase);
+        if (plen < 8 || plen > 63) return 0;
+
+        /* Reject quotes and control characters */
+        for (size_t i = 0; i < plen; i++) {
+            unsigned char uc = (unsigned char)passphrase[i];
+            if (uc < 32 || uc == 127 || uc == '"') {
+                return 0;
+            }
+        }
+
         /* WPA/WPA2 with passphrase */
         written = snprintf(out_buf, out_max,
                            "network={\n"
-                           "    ssid=\"%s\"\n"
+                           "%s"
                            "    psk=\"%s\"\n"
                            "    scan_ssid=1\n"
                            "}\n",
-                           ssid, passphrase);
+                           ssid_line, passphrase);
     } else {
         /* Open network */
         written = snprintf(out_buf, out_max,
                            "network={\n"
-                           "    ssid=\"%s\"\n"
+                           "%s"
                            "    key_mgmt=NONE\n"
                            "    scan_ssid=1\n"
                            "}\n",
-                           ssid);
+                           ssid_line);
     }
     return written;
+}
+
+BOOL tn_wifi_validate_devname(const char *devname)
+{
+    if (!devname) return FALSE;
+    size_t len = strlen(devname);
+    if (len == 0 || len > 31) return FALSE;
+
+    for (size_t i = 0; i < len; i++) {
+        char c = devname[i];
+        if (!((c >= 'a' && c <= 'z') ||
+              (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') ||
+              c == '.' || c == '_' || c == '-')) {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+BOOL tn_parse_wifi_tagitem(const void *tags_ptr, WifiNetwork *out_net)
+{
+    if (!tags_ptr || !out_net) return FALSE;
+
+    const struct TagItem *tags = (const struct TagItem *)tags_ptr;
+    memset(out_net, 0, sizeof(*out_net));
+
+    out_net->channel = 1;
+    out_net->signal_dbm = -70;
+    out_net->noise_dbm = -90;
+    out_net->encryption = 3; /* WPA2 default */
+
+    const char *ssid_ptr = NULL;
+    const UBYTE *bssid_ptr = NULL;
+
+    for (const struct TagItem *t = tags; t->ti_Tag != TAG_DONE; t++) {
+        switch (t->ti_Tag) {
+        case S2INFO_SSID:
+            ssid_ptr = (const char *)(uintptr_t)t->ti_Data;
+            break;
+        case S2INFO_BSSID:
+            bssid_ptr = (const UBYTE *)(uintptr_t)t->ti_Data;
+            break;
+        case S2INFO_Channel:
+            out_net->channel = (WORD)t->ti_Data;
+            break;
+        case S2INFO_Signal:
+            out_net->signal_dbm = (LONG)t->ti_Data;
+            break;
+        case S2INFO_Noise:
+            out_net->noise_dbm = (LONG)t->ti_Data;
+            break;
+        case S2INFO_Encryption:
+            out_net->encryption = (WORD)t->ti_Data;
+            break;
+        default:
+            break;
+        }
+    }
+
+    if (bssid_ptr) {
+        memcpy(out_net->bssid, bssid_ptr, 6);
+    }
+
+    if (ssid_ptr && ssid_ptr[0] != '\0') {
+        size_t slen = 0;
+        while (slen < 32 && ssid_ptr[slen] != '\0') {
+            out_net->ssid[slen] = ssid_ptr[slen];
+            slen++;
+        }
+        out_net->ssid[slen] = '\0';
+    } else if (bssid_ptr && bssid_ptr[8] != '\0') {
+        /* Fallback for drivers where SSID was packed into BSSID buffer +8 */
+        strncpy(out_net->ssid, (const char *)&bssid_ptr[8], sizeof(out_net->ssid) - 1);
+        out_net->ssid[sizeof(out_net->ssid) - 1] = '\0';
+    } else {
+        strncpy(out_net->ssid, "Unknown AP", sizeof(out_net->ssid) - 1);
+        out_net->ssid[sizeof(out_net->ssid) - 1] = '\0';
+    }
+
+    /* Signal percentage mapping:
+     * -100 dBm = 0%, -50 dBm = 100%
+     * Linear mapping formula: (signal_dbm + 100) * 2, clamped to [0, 100]
+     */
+    int pct = (int)((out_net->signal_dbm + 100) * 2);
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+
+    const char *enc_name = "Open";
+    if (out_net->encryption == 3) enc_name = "WPA2";
+    else if (out_net->encryption == 2) enc_name = "WPA";
+    else if (out_net->encryption == 1) enc_name = "WEP";
+
+    snprintf(out_net->display_str, sizeof(out_net->display_str),
+             "%-18.18s Ch:%-2d %3d%%  [%s]",
+             out_net->ssid, out_net->channel, pct, enc_name);
+
+    return TRUE;
 }
 
 #ifdef __AMIGA__
@@ -99,6 +243,7 @@ void tn_wifi_scan(WizardState *ws)
     BYTE err = OpenDevice((CONST_STRPTR)hw->device_name, hw->unit, (struct IORequest *)req, 0);
     if (err == 0) {
         static const struct TagItem apParams[] = {
+            {S2INFO_SSID, 0},
             {S2INFO_BSSID, 0},
             {S2INFO_Channel, 0},
             {S2INFO_Capabilities, 0},
@@ -127,35 +272,9 @@ void tn_wifi_scan(WizardState *ws)
                         if (!tags) continue;
 
                         WifiNetwork *net = &ws->wifi[ws->wifi_count];
-                        char *bssid_ptr = (char *)GetTagData(S2INFO_BSSID, 0, tags);
-                        if (bssid_ptr) {
-                            memcpy(net->bssid, bssid_ptr, 6);
-                            /* SSID starts at byte 8 in SANA-II standard */
-                            strncpy(net->ssid, &bssid_ptr[8], sizeof(net->ssid) - 1);
-                        } else {
-                            strncpy(net->ssid, "Unknown AP", sizeof(net->ssid) - 1);
+                        if (tn_parse_wifi_tagitem(tags, net)) {
+                            ws->wifi_count++;
                         }
-
-                        net->channel = (WORD)GetTagData(S2INFO_Channel, 1, tags);
-                        net->signal_dbm = (LONG)GetTagData(S2INFO_Signal, -70, tags);
-                        net->noise_dbm = (LONG)GetTagData(S2INFO_Noise, -90, tags);
-                        net->encryption = (WORD)GetTagData(S2INFO_Encryption, 3, tags);
-
-                        const char *enc_name = "Open";
-                        if (net->encryption == 3) enc_name = "WPA2";
-                        else if (net->encryption == 2) enc_name = "WPA";
-                        else if (net->encryption == 1) enc_name = "WEP";
-
-                        /* Estimate percentage: -100 dBm = 0%, -50 dBm = 100% */
-                        int pct = (int)((net->signal_dbm + 100) * 2);
-                        if (pct < 0) pct = 0;
-                        if (pct > 100) pct = 100;
-
-                        snprintf(net->display_str, sizeof(net->display_str),
-                                 "%-18.18s Ch:%-2d %3d%%  [%s]",
-                                 net->ssid, net->channel, pct, enc_name);
-
-                        ws->wifi_count++;
                     }
                 }
             }
@@ -199,20 +318,32 @@ BOOL tn_wifi_write_prefs(const char *ssid, const char *passphrase)
     BOOL ok1 = write_text_to_file("ENVARC:Sys/Wireless.prefs", block, len);
     BOOL ok2 = write_text_to_file("ENV:Sys/Wireless.prefs", block, len);
 
+    /* Zero the memory containing passphrase after writing */
+    volatile char *vblk = (volatile char *)block;
+    for (size_t i = 0; i < sizeof(block); i++) {
+        vblk[i] = 0;
+    }
+
     return (ok1 || ok2);
 }
 
 BOOL tn_wifi_start_manager(const char *device_name, ULONG unit)
 {
     if (!device_name) return FALSE;
+    if (!tn_wifi_validate_devname(device_name)) return FALSE;
 
-    char cmd[128];
+    char cmd[256];
+    int ret;
     if (strcasecmp(device_name, "wifipi.device") == 0) {
-        snprintf(cmd, sizeof(cmd),
-                 "Run <>NIL: C:WirelessManager DEVICE=\"%s\" UNIT=%lu CONFIG=\"ENVARC:Sys/Wireless.prefs\"",
-                 device_name, (unsigned long)unit);
+        ret = snprintf(cmd, sizeof(cmd),
+                       "Run <>NIL: C:WirelessManager DEVICE=\"%s\" UNIT=%lu CONFIG=\"ENVARC:Sys/Wireless.prefs\"",
+                       device_name, (unsigned long)unit);
     } else {
-        snprintf(cmd, sizeof(cmd), "Run <>NIL: C:WirelessManager %s", device_name);
+        ret = snprintf(cmd, sizeof(cmd), "Run <>NIL: C:WirelessManager %s", device_name);
+    }
+
+    if (ret < 0 || (size_t)ret >= sizeof(cmd)) {
+        return FALSE;
     }
 
     LONG rc = SystemTags((CONST_STRPTR)cmd,
@@ -271,7 +402,12 @@ BOOL tn_wifi_wait_association(const char *device_name, ULONG unit, int timeout_s
 
 void tn_wifi_scan(WizardState *ws) { (void)ws; }
 BOOL tn_wifi_write_prefs(const char *ssid, const char *passphrase) { (void)ssid; (void)passphrase; return TRUE; }
-BOOL tn_wifi_start_manager(const char *device_name, ULONG unit) { (void)device_name; (void)unit; return TRUE; }
+BOOL tn_wifi_start_manager(const char *device_name, ULONG unit)
+{
+    (void)unit;
+    if (!device_name) return FALSE;
+    return tn_wifi_validate_devname(device_name);
+}
 BOOL tn_wifi_wait_association(const char *device_name, ULONG unit, int timeout_secs,
                               char *err_msg, int err_max)
 {

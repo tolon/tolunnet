@@ -29,6 +29,7 @@
 #include "../../src/common/log.h"
 #include "../../include/ipc.h"
 #include "../../src/common/ipc_client.h"
+#include "../../src/setup/wifi_mgr.h"
 
 static struct Library *SocketBase = NULL;
 static BPTR            g_log_fh   = (BPTR)0;
@@ -54,7 +55,10 @@ static void tapf(const char *fmt, ...)
 
     while (buf[len]) len++;
     out = Output();
-    if (out) Write(out, (CONST APTR)buf, len);
+    if (out) {
+        Write(out, (CONST APTR)buf, len);
+        Flush(out);
+    }
     if (g_log_fh) {
         Write(g_log_fh, (CONST APTR)buf, len);
         Flush(g_log_fh);
@@ -747,6 +751,14 @@ static void tc_multicast_join(void)
 
         call_sendto(s_sender, "mDNS_TEST", 9, 0, (struct sockaddr *)&dst, sizeof(dst));
         call_closesocket(s_sender);
+    }
+
+    char rx_buf[32];
+    rc = call_recv(s, rx_buf, sizeof(rx_buf), 0);
+    if (rc != 9 || memcmp(rx_buf, "mDNS_TEST", 9) != 0) {
+        call_closesocket(s);
+        TAP_NOTOK("tc_multicast_join", "multicast loopback receive mismatch");
+        return;
     }
 
     /* Drop membership */
@@ -2536,6 +2548,9 @@ static void tc_wizard_wired(void)
 
     /* Step W2: Append fake legacy stack lines to S:User-Startup to verify migration */
     BPTR us_fh = Open((CONST_STRPTR)"S:User-Startup", MODE_READWRITE);
+    if (!us_fh) {
+        us_fh = Open((CONST_STRPTR)"S:User-Startup", MODE_NEWFILE);
+    }
     if (us_fh) {
         Seek(us_fh, 0, OFFSET_END);
         const char *fake_lines = "\nRun MiamiDx\nAmiTCP:bin/startnet\n";
@@ -2664,6 +2679,49 @@ static void tc_wizard_wired(void)
     TAP_OK("tc_wizard_wired");
 }
 
+static void tc_wifi_scan_parse(void)
+{
+    const char *fake_ssid = "TolunAmigaNet";
+    const UBYTE fake_bssid[6] = {0x00, 0x80, 0x10, 0x20, 0x30, 0x40};
+    struct TagItem fake_tags[] = {
+        {S2INFO_SSID, (ULONG)fake_ssid},
+        {S2INFO_BSSID, (ULONG)fake_bssid},
+        {S2INFO_Channel, 6},
+        {S2INFO_Signal, (ULONG)-65},
+        {S2INFO_Encryption, 3},
+        {TAG_END, 0}
+    };
+
+    WifiNetwork net;
+    if (!tn_parse_wifi_tagitem(fake_tags, &net)) {
+        TAP_NOTOK("tc_wifi_scan_parse", "tn_parse_wifi_tagitem returned FALSE");
+        return;
+    }
+
+    if (strcmp(net.ssid, "TolunAmigaNet") != 0) {
+        TAP_NOTOK("tc_wifi_scan_parse", "SSID mismatch");
+        return;
+    }
+
+    if (memcmp(net.bssid, fake_bssid, 6) != 0) {
+        TAP_NOTOK("tc_wifi_scan_parse", "BSSID mismatch");
+        return;
+    }
+
+    if (net.channel != 6 || net.signal_dbm != -65 || net.encryption != 3) {
+        TAP_NOTOK("tc_wifi_scan_parse", "Channel/signal/encryption mismatch");
+        return;
+    }
+
+    /* Signal: (-65 + 100) * 2 = 70% */
+    if (strstr(net.display_str, "70%") == NULL || strstr(net.display_str, "WPA2") == NULL) {
+        TAP_NOTOK("tc_wifi_scan_parse", "Display string formatting error");
+        return;
+    }
+
+    TAP_OK("tc_wifi_scan_parse");
+}
+
 /* Bench plumbing (not a TAP case): ask the daemon to exit so the bench can
  * prove the TNET-059/060 restart cycle. Mirrors TolunnetPrefs' Stop logic. */
 static void request_daemon_stop(void)
@@ -2754,6 +2812,7 @@ int main(int argc, char *argv[])
     tc_every_vector_callable();
     tc_stats_counters();
     tc_wizard_wired();
+    tc_wifi_scan_parse();
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
 

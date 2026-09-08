@@ -42,6 +42,7 @@ typedef struct TnPrefs {
     ULONG mtu;                /* 0 = driver default; 576..1500 honoured */
     ULONG debug;              /* 0..2 log tier */
     LONG  priority;           /* task priority (-128..127, default 5) (TNET-066) */
+    char  log_file[64];       /* W3 item 6: log file path; empty = no file log */
 } TnPrefs;
 
 /* TNET-064: Amiga Prefs convention.

@@ -26,6 +26,7 @@ void tn_prefs_default(TnPrefs *prefs)
     prefs->mtu  = 0;   /* 0 = use driver-reported MTU */
     prefs->debug = 0;
     prefs->priority = 5; /* TNET-066 */
+    prefs->log_file[0] = '\0';
 }
 
 
@@ -116,6 +117,8 @@ void tn_config_parse_line(TnPrefs *prefs, const char *key, const char *val)
     } else if (tn_str_equal_nocase(clean_key, "PRIORITY")) {
         LONG p = 5;
         if (tn_str_to_long(clean_val, &p) && p >= -128 && p <= 127) prefs->priority = p;
+    } else if (tn_str_equal_nocase(clean_key, "LOG")) {
+        tn_str_copy_clean(prefs->log_file, clean_val, sizeof(prefs->log_file));
     } else if (tn_str_equal_nocase(clean_key, "VERSION")) {
         /* Config format version recognised */
     }
@@ -209,6 +212,9 @@ int tn_config_format(const TnPrefs *prefs, char *buf, int buf_size)
     tn_cfg_put_kv_int(&o, "MTU=", prefs->mtu);
     tn_cfg_put_kv_int(&o, "DEBUG=", prefs->debug);
     tn_cfg_put_kv_long(&o, "PRIORITY=", prefs->priority);
+    if (prefs->log_file[0] != '\0') {
+        tn_cfg_put_kv_str(&o, "LOG=", prefs->log_file);
+    }
 
     if (o.overflow) {
         return -1; /* buffer too small; TN_CONFIG_TEXT_MAX is always sufficient */

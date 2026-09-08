@@ -83,18 +83,10 @@ int main(int argc, char *argv[])
     }
 
     /* Build command: "<installer_cmd> <script_name>" */
-    {
-        char *p = cmd_buf;
-        CONST_STRPTR s = installer_cmd;
-        while (*s) *p++ = *s++;
-        *p++ = ' ';
-        s = script_name;
-        while (*s) *p++ = *s++;
-        *p = '\0';
+    int ret = snprintf(cmd_buf, sizeof(cmd_buf), "%s %s", installer_cmd, script_name);
+    if (ret > 0 && (size_t)ret < sizeof(cmd_buf)) {
+        Execute((CONST_STRPTR)cmd_buf, (BPTR)0, (BPTR)0);
     }
-
-    /* Execute Installer */
-    Execute((CONST_STRPTR)cmd_buf, (BPTR)0, (BPTR)0);
 
     /* Restore current dir */
     if (old_cd != (BPTR)0) {

@@ -111,6 +111,7 @@ typedef struct WizardState {
     /* Navigation & Scripting control */
     BOOL rexx_done;
     BOOL rexx_cancel;
+    struct Message *rexx_finish_msg;
 } WizardState;
 
 #endif /* TOLUNNET_SETUP_TYPES_H */

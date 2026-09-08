@@ -23,11 +23,11 @@ extern struct ExecBase *SysBase;
 extern struct DosLibrary *DOSBase;
 #endif
 
-static int case_str_contains(const char *haystack, const char *needle)
+
+static int case_slice_contains(const char *haystack, size_t hlen, const char *needle)
 {
     if (!haystack || !needle) return 0;
     size_t nlen = strlen(needle);
-    size_t hlen = strlen(haystack);
     if (nlen > hlen) return 0;
 
     for (size_t i = 0; i <= hlen - nlen; i++) {
@@ -42,25 +42,26 @@ static int case_str_contains(const char *haystack, const char *needle)
     return 0;
 }
 
-static int is_stack_keyword_line(const char *line)
+static int is_stack_keyword_slice(const char *line, size_t len)
 {
-    /* Ignore lines that are already pure comments unless they are disabled markers */
     const char *p = line;
-    while (*p == ' ' || *p == '\t') p++;
-    if (*p == ';' || *p == '#') {
+    const char *end = line + len;
+    while (p < end && (*p == ' ' || *p == '\t')) p++;
+    if (p < end && (*p == ';' || *p == '#')) {
         return 0;
     }
 
-    if (case_str_contains(line, "miamidx") ||
-        case_str_contains(line, "miami") ||
-        case_str_contains(line, "miamiinit") ||
-        case_str_contains(line, "amitcp") ||
-        case_str_contains(line, "addnetinterface") ||
-        case_str_contains(line, "configurenetinterface") ||
-        case_str_contains(line, "netshutdown") ||
-        case_str_contains(line, "genesis") ||
-        case_str_contains(line, "startnet") ||
-        case_str_contains(line, "stopnet")) {
+    size_t active_len = (size_t)(end - p);
+    if (case_slice_contains(p, active_len, "miamidx") ||
+        case_slice_contains(p, active_len, "miami") ||
+        case_slice_contains(p, active_len, "miamiinit") ||
+        case_slice_contains(p, active_len, "amitcp") ||
+        case_slice_contains(p, active_len, "addnetinterface") ||
+        case_slice_contains(p, active_len, "configurenetinterface") ||
+        case_slice_contains(p, active_len, "netshutdown") ||
+        case_slice_contains(p, active_len, "genesis") ||
+        case_slice_contains(p, active_len, "startnet") ||
+        case_slice_contains(p, active_len, "stopnet")) {
         return 1;
     }
     return 0;
@@ -77,39 +78,47 @@ int tn_parse_startup_script(const char *content, char *out_buf, int out_max, int
     out_buf[0] = '\0';
 
     while (*p) {
-        /* Extract line */
         const char *line_start = p;
         while (*p && *p != '\n') p++;
-        int line_len = (int)(p - line_start);
-        if (*p == '\n') p++;
+        const char *line_end = p;
+        int has_lf = (*p == '\n');
+        if (has_lf) p++;
 
-        char line[512];
-        if (line_len >= (int)sizeof(line)) line_len = (int)sizeof(line) - 1;
-        memcpy(line, line_start, line_len);
-        line[line_len] = '\0';
-
-        /* Strip trailing CR */
-        if (line_len > 0 && line[line_len - 1] == '\r') {
-            line[line_len - 1] = '\0';
-            line_len--;
+        int has_cr = 0;
+        if (line_end > line_start && *(line_end - 1) == '\r') {
+            has_cr = 1;
+            line_end--;
         }
+        size_t line_len = (size_t)(line_end - line_start);
 
-        if (is_stack_keyword_line(line)) {
+        if (is_stack_keyword_slice(line_start, line_len)) {
             dis_count++;
-            int written = snprintf(out_buf + out_len, out_max - out_len,
-                                   "; tolunnet-disabled: %s\n", line);
-            if (written > 0 && written < out_max - out_len) {
-                out_len += written;
+            const char *prefix = "; tolunnet-disabled: ";
+            size_t plen = strlen(prefix);
+            if (out_len + (int)plen < out_max) {
+                memcpy(out_buf + out_len, prefix, plen);
+                out_len += (int)plen;
+            }
+            if (out_len + (int)line_len < out_max) {
+                memcpy(out_buf + out_len, line_start, line_len);
+                out_len += (int)line_len;
             }
         } else {
-            int written = snprintf(out_buf + out_len, out_max - out_len,
-                                   "%s\n", line);
-            if (written > 0 && written < out_max - out_len) {
-                out_len += written;
+            if (out_len + (int)line_len < out_max) {
+                memcpy(out_buf + out_len, line_start, line_len);
+                out_len += (int)line_len;
             }
+        }
+
+        if (has_cr && out_len < out_max - 1) {
+            out_buf[out_len++] = '\r';
+        }
+        if (has_lf && out_len < out_max - 1) {
+            out_buf[out_len++] = '\n';
         }
     }
 
+    out_buf[out_len] = '\0';
     if (disabled_count) *disabled_count = dis_count;
     return out_len;
 }
@@ -127,37 +136,43 @@ int tn_uncomment_startup_script(const char *content, char *out_buf, int out_max,
     while (*p) {
         const char *line_start = p;
         while (*p && *p != '\n') p++;
-        int line_len = (int)(p - line_start);
-        if (*p == '\n') p++;
+        const char *line_end = p;
+        int has_lf = (*p == '\n');
+        if (has_lf) p++;
 
-        char line[512];
-        if (line_len >= (int)sizeof(line)) line_len = (int)sizeof(line) - 1;
-        memcpy(line, line_start, line_len);
-        line[line_len] = '\0';
-
-        if (line_len > 0 && line[line_len - 1] == '\r') {
-            line[line_len - 1] = '\0';
-            line_len--;
+        int has_cr = 0;
+        if (line_end > line_start && *(line_end - 1) == '\r') {
+            has_cr = 1;
+            line_end--;
         }
+        size_t line_len = (size_t)(line_end - line_start);
 
         const char *prefix = "; tolunnet-disabled: ";
         size_t plen = strlen(prefix);
-        if (strncmp(line, prefix, plen) == 0) {
+        if (line_len >= plen && memcmp(line_start, prefix, plen) == 0) {
             res_count++;
-            int written = snprintf(out_buf + out_len, out_max - out_len,
-                                   "%s\n", line + plen);
-            if (written > 0 && written < out_max - out_len) {
-                out_len += written;
+            const char *act_start = line_start + plen;
+            size_t act_len = line_len - plen;
+            if (out_len + (int)act_len < out_max) {
+                memcpy(out_buf + out_len, act_start, act_len);
+                out_len += (int)act_len;
             }
         } else {
-            int written = snprintf(out_buf + out_len, out_max - out_len,
-                                   "%s\n", line);
-            if (written > 0 && written < out_max - out_len) {
-                out_len += written;
+            if (out_len + (int)line_len < out_max) {
+                memcpy(out_buf + out_len, line_start, line_len);
+                out_len += (int)line_len;
             }
+        }
+
+        if (has_cr && out_len < out_max - 1) {
+            out_buf[out_len++] = '\r';
+        }
+        if (has_lf && out_len < out_max - 1) {
+            out_buf[out_len++] = '\n';
         }
     }
 
+    out_buf[out_len] = '\0';
     if (restored_count) *restored_count = res_count;
     return out_len;
 }
@@ -185,10 +200,10 @@ static BOOL scan_script_file(const char *path)
 
     while ((bytes = Read(fh, buf, sizeof(buf) - 1)) > 0) {
         buf[bytes] = '\0';
-        if (case_str_contains(buf, "miami") ||
-            case_str_contains(buf, "amitcp") ||
-            case_str_contains(buf, "addnetinterface") ||
-            case_str_contains(buf, "genesis")) {
+        if (case_slice_contains(buf, (size_t)bytes, "miami") ||
+            case_slice_contains(buf, (size_t)bytes, "amitcp") ||
+            case_slice_contains(buf, (size_t)bytes, "addnetinterface") ||
+            case_slice_contains(buf, (size_t)bytes, "genesis")) {
             found = TRUE;
             break;
         }
@@ -455,37 +470,70 @@ static BOOL rewrite_file_with_parser(const char *filepath, int (*parser)(const c
     BPTR fh = Open((CONST_STRPTR)filepath, MODE_OLDFILE);
     if (!fh) return FALSE;
 
-    /* Read entire file up to 64 KB */
-    char *in_buf = (char *)malloc(65536);
-    char *out_buf = (char *)malloc(98304);
-    if (!in_buf || !out_buf) {
-        if (in_buf) free(in_buf);
-        if (out_buf) free(out_buf);
+    struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
+    LONG file_size = 0;
+    if (fib) {
+        if (ExamineFH(fh, fib)) {
+            file_size = fib->fib_Size;
+        }
+        FreeDosObject(DOS_FIB, fib);
+    }
+    if (file_size <= 0) {
         Close(fh);
         return FALSE;
     }
 
-    LONG r = Read(fh, in_buf, 65535);
+    /* Allocate buffer for reading file plus null terminator */
+    char *in_buf = (char *)AllocVec(file_size + 1, MEMF_PUBLIC | MEMF_CLEAR);
+    if (!in_buf) {
+        Close(fh);
+        return FALSE;
+    }
+
+    LONG r = Read(fh, in_buf, file_size);
     Close(fh);
     if (r <= 0) {
-        free(in_buf);
-        free(out_buf);
+        FreeVec(in_buf);
         return FALSE;
     }
     in_buf[r] = '\0';
 
+    /* Max expansion: every line could gain prefix length ~22 bytes */
+    LONG out_cap = file_size * 2 + 1024;
+    char *out_buf = (char *)AllocVec(out_cap, MEMF_PUBLIC | MEMF_CLEAR);
+    if (!out_buf) {
+        FreeVec(in_buf);
+        return FALSE;
+    }
+
     int count = 0;
-    int out_len = parser(in_buf, out_buf, 98300, &count);
-    free(in_buf);
+    int out_len = parser(in_buf, out_buf, out_cap - 1, &count);
+    FreeVec(in_buf);
 
     if (count > 0 && out_len > 0) {
-        fh = Open((CONST_STRPTR)filepath, MODE_NEWFILE);
-        if (fh) {
-            Write(fh, out_buf, out_len);
-            Close(fh);
+        char temp_path[256];
+        snprintf(temp_path, sizeof(temp_path), "%s.tolunnet-new", filepath);
+
+        BPTR out_fh = Open((CONST_STRPTR)temp_path, MODE_NEWFILE);
+        if (!out_fh) {
+            FreeVec(out_buf);
+            return FALSE;
+        }
+
+        LONG written = Write(out_fh, out_buf, out_len);
+        Close(out_fh);
+
+        if (written == out_len) {
+            DeleteFile((CONST_STRPTR)filepath);
+            Rename((CONST_STRPTR)temp_path, (CONST_STRPTR)filepath);
+        } else {
+            DeleteFile((CONST_STRPTR)temp_path);
+            FreeVec(out_buf);
+            return FALSE;
         }
     }
-    free(out_buf);
+
+    FreeVec(out_buf);
     return TRUE;
 }
 
@@ -593,6 +641,14 @@ void tn_stack_request_quit(WizardState *ws)
 
     /* 4. Wait loop up to 10s for legacy stack ports to terminate */
     BOOL any_running = FALSE;
+    Forbid();
+    any_running = (FindPort((CONST_STRPTR)"MIAMI") != NULL ||
+                   FindPort((CONST_STRPTR)"MIAMIDX") != NULL ||
+                   FindPort((CONST_STRPTR)"AmiTCP") != NULL ||
+                   FindPort((CONST_STRPTR)"AmiTCP_DAEMON") != NULL);
+    Permit();
+    if (!any_running) return;
+
     for (int i = 0; i < 20; i++) {
         Delay(25); /* 500ms */
         Forbid();

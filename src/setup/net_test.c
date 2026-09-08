@@ -266,15 +266,31 @@ void tn_run_network_tests(WizardState *ws)
     /* 2. Gateway Ping Test */
     /* If gateway is configured or detected, run a test ping */
     const char *gw = ws->gw_str[0] ? ws->gw_str : "127.0.0.1";
-    char cmd[128];
-    snprintf(cmd, sizeof(cmd), "C:TolunnetPing %s COUNT=1 >NIL: <NIL:", gw);
-    LONG rc = SystemTags((CONST_STRPTR)cmd, TAG_END);
-    if (rc == 0) {
-        ws->test_ping_ok = 1;
-        snprintf(ws->test_details[1], sizeof(ws->test_details[1]), "Ping to %s verified", gw);
-    } else {
-        ws->test_ping_ok = 1; /* Non-fatal in isolated test environments */
-        snprintf(ws->test_details[1], sizeof(ws->test_details[1]), "Ping dispatched to %s", gw);
+    BOOL gw_valid = TRUE;
+    size_t gw_len = strlen(gw);
+    if (gw_len == 0 || gw_len > 15) gw_valid = FALSE;
+    for (size_t i = 0; i < gw_len; i++) {
+        char c = gw[i];
+        if (!((c >= '0' && c <= '9') || c == '.')) {
+            gw_valid = FALSE;
+            break;
+        }
+    }
+    if (!gw_valid) {
+        gw = "127.0.0.1";
+    }
+
+    char cmd[256];
+    int ret = snprintf(cmd, sizeof(cmd), "C:TolunnetPing %s COUNT=1 >NIL: <NIL:", gw);
+    if (ret > 0 && (size_t)ret < sizeof(cmd)) {
+        LONG rc = SystemTags((CONST_STRPTR)cmd, TAG_END);
+        if (rc == 0) {
+            ws->test_ping_ok = 1;
+            snprintf(ws->test_details[1], sizeof(ws->test_details[1]), "Ping to %s verified", gw);
+        } else {
+            ws->test_ping_ok = 1; /* Non-fatal in isolated test environments */
+            snprintf(ws->test_details[1], sizeof(ws->test_details[1]), "Ping dispatched to %s", gw);
+        }
     }
 
     /* 3. DNS Lookup Test */
