@@ -29,3 +29,7 @@ Thumbs.db
 # Local toolchain / env
 .env
 .env.*
+
+# Intermediate dirty bench logs
+docs/bench-logs/*-dirty/
+
