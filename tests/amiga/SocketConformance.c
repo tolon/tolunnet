@@ -135,7 +135,7 @@ static LONG parse_long(const char *s)
 }
 
 /* TNET-111: bench config (DEVS:tolunnet.config) reader. bench.sh generates
- * the file with TEST_HTTP_PORT= and optionally TEST_EXTERNAL=YES; DNS= and
+ * the file with optionally TEST_EXTERNAL=YES; DNS= and
  * DNS_PORT= point at the host mini_dns. The daemon ignores unknown keys. */
 static char g_cfg_buf[1024];
 static BOOL g_cfg_loaded = FALSE;
@@ -1141,6 +1141,12 @@ static void tc_connect_refused(void)
 
 static void tc_nonblock_connect(void)
 {
+    /* TNET-111: fully hermetic — the nonblocking-connect semantics
+     * (EINPROGRESS -> writable -> SO_ERROR 0) are proven against a local
+     * listener on lwIP loopback. The old host:port variant stalled after a
+     * daemon restart (slirp's proxied connection never completed in cycle 2,
+     * both profiles, d58d9e5). */
+    LONG lst = call_socket(AF_INET, SOCK_STREAM, 0);
     LONG s = call_socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in sin;
     LONG one = 1;
@@ -1152,43 +1158,41 @@ static void tc_nonblock_connect(void)
     LONG sel;
     int i;
 
-    if (s < 0) {
+    if (s < 0 || lst < 0) {
         TAP_NOTOK("tc_nonblock_connect", "socket() failed");
-        return;
-    }
-
-    if (call_ioctl(s, FIONBIO, (char *)&one) < 0) {
-        TAP_NOTOK("tc_nonblock_connect", "FIONBIO failed");
-        call_closesocket(s);
+        if (s >= 0) call_closesocket(s);
+        if (lst >= 0) call_closesocket(lst);
         return;
     }
 
     for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
     sin.sin_len         = sizeof(sin);
     sin.sin_family      = AF_INET;
-    sin.sin_port        = htons((unsigned short)tc_cfg_long("TEST_HTTP_PORT", 8000));
-    sin.sin_addr.s_addr = htonl(0x0A000202UL); /* 10.0.2.2 (host slirp) */
+    sin.sin_port        = htons(15410);
+    sin.sin_addr.s_addr = htonl(0x7F000001UL); /* 127.0.0.1 loopback */
 
-    /* TNET-111: 3 attempts with 500 ms backoff — the bench HTTP server sits
-     * on a per-run random port; a momentary refuse must not fail the row. */
-    {
-        int attempt;
-        BOOL progressing = FALSE;
-        for (attempt = 0; attempt < 3 && !progressing; attempt++) {
-            rc = call_connect(s, (struct sockaddr *)&sin, sizeof(sin));
-            tapf("# tc_nonblock_connect: rc=%ld errno=%ld EINPROGRESS=%d\n",
-                 rc, call_errno(), (int)EINPROGRESS);
-            if (rc == 0 || call_errno() == EINPROGRESS || call_errno() == EALREADY) {
-                progressing = TRUE;
-            } else {
-                Delay(25); /* 500 ms */
-            }
-        }
-        if (!progressing) {
-            TAP_NOTOK("tc_nonblock_connect", "connect did not return EINPROGRESS");
-            call_closesocket(s);
-            return;
-        }
+    if (call_bind(lst, (struct sockaddr *)&sin, sizeof(sin)) != 0 ||
+        call_listen(lst, 1) != 0) {
+        TAP_NOTOK("tc_nonblock_connect", "loopback listener setup failed");
+        call_closesocket(s);
+        call_closesocket(lst);
+        return;
+    }
+
+    if (call_ioctl(s, FIONBIO, (char *)&one) < 0) {
+        TAP_NOTOK("tc_nonblock_connect", "FIONBIO failed");
+        call_closesocket(s);
+        call_closesocket(lst);
+        return;
+    }
+
+    rc = call_connect(s, (struct sockaddr *)&sin, sizeof(sin));
+    tapf("# tc_nonblock_connect: rc=%ld errno=%ld EINPROGRESS=%d\n", rc, call_errno(), (int)EINPROGRESS);
+    if (rc != 0 && call_errno() != EINPROGRESS && call_errno() != EALREADY) {
+        TAP_NOTOK("tc_nonblock_connect", "connect did not return EINPROGRESS");
+        call_closesocket(s);
+        call_closesocket(lst);
+        return;
     }
 
     /* Wait for write readiness via WaitSelect */
@@ -1202,6 +1206,7 @@ static void tc_nonblock_connect(void)
     if (sel <= 0 || !FD_ISSET(s, &wfds)) {
         TAP_NOTOK("tc_nonblock_connect", "WaitSelect timeout or not writable");
         call_closesocket(s);
+        call_closesocket(lst);
         return;
     }
 
@@ -1209,11 +1214,13 @@ static void tc_nonblock_connect(void)
     if (call_getsockopt(s, SOL_SOCKET, SO_ERROR, (char *)&err, &optlen) < 0 || err != 0) {
         TAP_NOTOK("tc_nonblock_connect", "getsockopt SO_ERROR indicated error");
         call_closesocket(s);
+        call_closesocket(lst);
         return;
     }
 
-    TAP_OK("tc_nonblock_connect");
     call_closesocket(s);
+    call_closesocket(lst);
+    TAP_OK("tc_nonblock_connect");
 }
 
 static void tc_shutdown_wr(void)
@@ -3310,22 +3317,6 @@ static void tc_reconfig_rc(void)
                 snprintf_safe(dp, sizeof(dp), "DNS_PORT=%ld\n",
                               tc_cfg_long("DNS_PORT", 53));
                 { const char *p2 = dp; while (*p2) *out++ = *p2++; }
-            }
-            if (tc_cfg_value("TEST_HTTP_PORT") != NULL &&
-                strstr(fixed, "TEST_HTTP_PORT=") == NULL) {
-                const char *tp = "TEST_HTTP_PORT=";
-                char pnum[8];
-                LONG pv;
-                int pn = 0;
-                while (*tp) *out++ = *tp++;
-                pv = tc_cfg_long("TEST_HTTP_PORT", 8000);
-                if (pv <= 0) pv = 8000;
-                do {
-                    pnum[pn++] = (char)('0' + (pv % 10));
-                    pv /= 10;
-                } while (pv > 0 && pn < 7);
-                while (pn-- > 0) *out++ = pnum[pn];
-                *out++ = 10; /* newline */
             }
         }
         *out = 0;

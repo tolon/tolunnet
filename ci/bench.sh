@@ -79,40 +79,9 @@ if [ -z "${MUFORCE_ADF:-}" ]; then
     MUFORCE_NOTE="SKIP (MuForce/Enforcer not present on this bench; MUFORCE_ADF unset)"
 fi
 
-# TNET-111: hermetic bench services. The suite must never depend on anything
-# beyond slirp: the HTTP server runs on a fresh random port (orphans killed
-# first) and a local mini_dns answers the resolver instead of the host stack.
-BENCH_HTTP_PORT=$(( 18000 + RANDOM % 1000 ))
-# DNS_PORT is a loopback port answered by the conformance suite itself
-# (tc_dns_local); 5353 must be avoided (system mDNS on Windows).
-BENCH_DNS_PORT="${BENCH_DNS_PORT:-15353}"
-
-kill_port_orphans() { # $1 = port
-    netstat -ano | grep ":$1 " | grep LISTENING | awk '{print $5}' | sort -u | while read -r pid; do
-        [ -n "$pid" ] && taskkill //F //PID "$pid" >/dev/null 2>&1 || true
-    done
-}
-
-wait_port_listening() { # $1 = port, $2 = seconds
-    # TCP rows say LISTENING; UDP (mini_dns) rows show "*:*" instead
-    local waited=0
-    while [ $waited -lt $(( $2 * 10 )) ]; do
-        netstat -an | grep ":$1 " | grep -qE "LISTENING|\*:\*" && return 0
-        sleep 0.2 2>/dev/null || sleep 1
-        waited=$((waited + 1))
-    done
-    return 1
-}
-
-kill_port_orphans "$BENCH_HTTP_PORT"
-
-say "starting host HTTP server on port $BENCH_HTTP_PORT (TNET-111)"
-python -m http.server "$BENCH_HTTP_PORT" --bind 0.0.0.0 >/dev/null 2>&1 &
-HTTP_PID=$!
-
-if ! wait_port_listening "$BENCH_HTTP_PORT" 10; then
-    die "HTTP server never came up on $BENCH_HTTP_PORT"
-fi
+# TNET-111: the suite is fully hermetic (loopback listeners only); the only
+# host service bench.sh itself needs is none. Keep the port helpers for
+# future diagnostics.
 
 # Generate the guest bench config from the template. NOTE: keep it inside
 # the repo tree — Git Bash /tmp is invisible to the WSL xdftool invocation.
@@ -122,13 +91,10 @@ sed -e "s/__HTTP_PORT__/$BENCH_HTTP_PORT/" -e "s/__DNS_PORT__/$BENCH_DNS_PORT/" 
 if [ "${BENCH_EXTERNAL:-0}" = "1" ]; then
     echo "TEST_EXTERNAL=YES" >> "$BENCH_CFG"
 fi
-say "bench config: HTTP :$BENCH_HTTP_PORT, resolver 127.0.0.1:$BENCH_DNS_PORT (loopback), external=${BENCH_EXTERNAL:-0}"
+say "bench config: resolver 127.0.0.1:$BENCH_DNS_PORT (loopback), external=${BENCH_EXTERNAL:-0}"
 
 SUCCESS=0
 cleanup() {
-    if [ -n "${HTTP_PID:-}" ]; then
-        kill "$HTTP_PID" 2>/dev/null || true
-    fi
     rm -f "${BENCH_CFG:-ci/.bench-tolunnet.config}" 2>/dev/null || true
     if [ "${SUCCESS:-0}" != "1" ] && [ -n "${LOG_ROOT:-}" ] && [ -d "$LOG_ROOT" ]; then
         say "run had failures; keeping log directory for analysis: $LOG_ROOT"
@@ -208,7 +174,7 @@ for cfg in $CONFIGS; do
             c_ext=$(grep -c '# SKIP external' "$OUT/$lg" 2>/dev/null | tr -d '\r' || echo 0)
             echo "$lg: core: $((c_ok - c_ext)) ok / $c_nok not ok; external: $c_ext skipped"
         done
-        echo "bench services: HTTP :$BENCH_HTTP_PORT, resolver 127.0.0.1:$BENCH_DNS_PORT (loopback)"
+        echo "bench services: none (suite is loopback-hermetic); DNS_PORT=$BENCH_DNS_PORT"
     } > "$OUT/README.txt"
     {
         echo "config: ci/tolunnet-$cfg.uae (HDF copy staged from the pristine WB3.0 image)"
