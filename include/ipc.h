@@ -306,6 +306,7 @@ typedef struct TnSocketBase {
      * the next call). Used by the conformance suite's per-test watchdog. */
     uint32_t        ipc_timeout_ms;
     uint32_t        ipc_timeouts;
+    APTR            ipc_orphan;             /* timed-out call awaiting its late reply (drained next call) */
     char            inet_ntoa_buf[16];      /* Per-task static buffer for Inet_NtoA */
     char            hostname[32];           /* Per-task hostname */
 

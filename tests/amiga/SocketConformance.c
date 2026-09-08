@@ -214,7 +214,7 @@ static ULONG tc_cfg_ip(const char *key, ULONG def)
     return htonl((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]);
 }
 
-#define TAP_OK(name)        do { g_count++; tapf("ok %d - %s' + BS + 'n", g_count, name); } while (0)
+#define TAP_OK(name)        do { g_count++; tapf("ok %d - %s\n", g_count, name); } while (0)
 #define TAP_NOTOK(name, why) do { g_count++; g_not_ok_count++; tapf("not ok %d - %s # %s\n", g_count, name, why); } while (0)
 
 /* TNET-111: run one case under the 5 s IPC reply watchdog; an expired

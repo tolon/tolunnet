@@ -66,6 +66,7 @@ static BOOL tn_ensure_timer(TnSocketBase *base);
 static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
 {
     TnIpcMsg *msg;
+    TnIpcMsg *heap_msg = NULL;
 
     if (base == NULL) return -1;
 
@@ -77,7 +78,32 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
         }
     }
 
-    msg = &base->ipc_msg;
+    if (base->ipc_timeout_ms > 0) {
+        /* TNET-111: timeout mode uses a heap message per call. A timed-out
+         * request may STILL be replied by the daemon at any time; reusing
+         * the embedded ipc_msg would let that late reply alias (and corrupt)
+         * the next request — the bench froze exactly there. The orphan is
+         * drained and freed by the next call. */
+        if (base->ipc_orphan != NULL) {
+            struct Message *m;
+            while ((m = GetMsg(base->reply_port)) != NULL) {
+                if ((void *)m == base->ipc_orphan) {
+                    FreeVec(base->ipc_orphan);
+                    base->ipc_orphan = NULL;
+                    break;
+                }
+            }
+        }
+        heap_msg = (TnIpcMsg *)AllocVec(sizeof(TnIpcMsg), MEMF_CLEAR | MEMF_PUBLIC);
+        if (heap_msg == NULL) {
+            tn_set_errno_val(base, ENOBUFS);
+            return -1;
+        }
+        msg = heap_msg;
+    } else {
+        msg = &base->ipc_msg;
+    }
+
     msg->msg.mn_Node.ln_Type = NT_MESSAGE;
     msg->msg.mn_Node.ln_Pri  = 0;
     msg->msg.mn_ReplyPort    = base->reply_port;
@@ -86,16 +112,9 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
     msg->client_task         = base->owner_task;
     msg->socket_base         = (APTR)base;
 
-    /* TNET-111: drain any late reply from a previous timed-out call so the
-     * stale message cannot satisfy this call's wait with an old result. */
-    if (base->ipc_timeouts > 0) {
-        struct Message *stale;
-        while ((stale = GetMsg(base->reply_port)) != NULL) {}
-    }
-
     PutMsg(base->tolunnet_port, (struct Message *)msg);
 
-    if (base->ipc_timeout_ms > 0 && tn_ensure_timer(base)) {
+    if (heap_msg != NULL && tn_ensure_timer(base)) {
         /* Reply watchdog (TNET-111): a wedged daemon fails the call fast
          * instead of hanging the client process. The timer channel is the
          * same one WaitSelect uses; the two wait paths never overlap in a
@@ -125,19 +144,35 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
 
         if (!(fired & reply_sig)) {
             base->ipc_timeouts++;
+            base->ipc_orphan = heap_msg; /* keep alive for the late reply */
             tn_set_errno_val(base, ETIMEDOUT);
             return -1;
         }
     } else {
         WaitPort(base->reply_port);
     }
-    GetMsg(base->reply_port);
+    {
+        struct Message *got = GetMsg(base->reply_port);
+        if (got == (struct Message *)base->ipc_orphan) {
+            /* late reply for the timed-out call: discard and take ours */
+            FreeVec(base->ipc_orphan);
+            base->ipc_orphan = NULL;
+            WaitPort(base->reply_port);
+            (void)GetMsg(base->reply_port);
+        }
 
-    if (msg->result < 0 && msg->err_no != 0) {
-        tn_set_errno_val(base, msg->err_no);
+        if (msg->result < 0 && msg->err_no != 0) {
+            tn_set_errno_val(base, msg->err_no);
+        }
+
+        {
+            LONG r = msg->result;
+            if (heap_msg != NULL) {
+                FreeVec(heap_msg);
+            }
+            return r;
+        }
     }
-
-    return msg->result;
 }
 
 /* ------------------------------------------------------------------ LIB_OPEN */
