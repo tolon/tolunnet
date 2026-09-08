@@ -433,6 +433,8 @@ TnS2Result tn_s2_arm_reads(TnSana2If *nif)
 }
 
 /* ------------------------------------------------- S2_ONEVENT (TNET-109) */
+/* Max event completions handled per poll call (storm defense). */
+#define TN_S2_EVENT_BATCH 4
 
 TnS2Result tn_s2_arm_events(TnSana2If *nif, ULONG mask)
 {
@@ -497,28 +499,32 @@ static void tn_s2_handle_event_bits(TnSana2If *nif, struct netif *netif, ULONG b
     if (bits == 0) return;
 
     if (bits & S2EVENT_OFFLINE) {
-        nif->link_down = TRUE;
-        netif_set_link_down(netif);
-        tn_log(TN_LOG_BASIC, "tolunnet: S2 link DOWN (offline event)\n");
+        if (!nif->link_down) {
+            nif->link_down = TRUE;
+            netif_set_link_down(netif);
+            tn_log(TN_LOG_BASIC, "tolunnet: S2 link DOWN (offline event)\n");
+        }
     }
 
     if (bits & S2EVENT_ONLINE) {
-        nif->link_down = FALSE;
-        netif_set_link_up(netif);
-        tn_s2_rearm_reads(nif);
-        if (g_daemon.prefs.use_dhcp) {
+        if (nif->link_down) {
+            nif->link_down = FALSE;
+            netif_set_link_up(netif);
+            tn_s2_rearm_reads(nif);
+            if (g_daemon.prefs.use_dhcp) {
 #if LWIP_DHCP
-            if (netif_dhcp_data(netif) != NULL) {
-                dhcp_renew(netif);
-                tn_log(TN_LOG_BASIC, "tolunnet: link up: DHCP renew requested\n");
-            } else {
-                dhcp_start(netif);
-                tn_log(TN_LOG_BASIC, "tolunnet: link up: DHCP client started\n");
-            }
+                if (netif_dhcp_data(netif) != NULL) {
+                    dhcp_renew(netif);
+                    tn_log(TN_LOG_BASIC, "tolunnet: link up: DHCP renew requested\n");
+                } else {
+                    dhcp_start(netif);
+                    tn_log(TN_LOG_BASIC, "tolunnet: link up: DHCP client started\n");
+                }
 #endif
-        } else {
-            netif_set_up(netif);
-            tn_log(TN_LOG_BASIC, "tolunnet: S2 link UP (online event)\n");
+            } else {
+                netif_set_up(netif);
+                tn_log(TN_LOG_BASIC, "tolunnet: S2 link UP (online event)\n");
+            }
         }
     }
 
@@ -535,6 +541,7 @@ static void tn_s2_handle_event_bits(TnSana2If *nif, struct netif *netif, ULONG b
 void tn_s2_poll_events(TnSana2If *nif, struct netif *netif)
 {
     struct Message *msg;
+    int handled = 0;
 
     if (nif == NULL || nif->event_port == NULL || netif == NULL) return;
 
@@ -557,6 +564,29 @@ void tn_s2_poll_events(TnSana2If *nif, struct netif *netif)
 
         tn_s2_handle_event_bits(nif, netif, eio->ios2_WireError);
 
+        /* Storm defense (bench incident 556ea30): uaenet completes S2_ONEVENT
+         * instantly, alternating ONLINE/OFFLINE per request, which turns the
+         * drain-and-rearm loop into a livelock that starves the whole system.
+         * Cap the batch; three capped batches in a row (i.e. a sustained
+         * instant-completion rate no physical link can produce) disables
+         * event tracking for this driver for good. */
+        if (++handled >= TN_S2_EVENT_BATCH) {
+            if (++nif->event_strikes >= 3) {
+                nif->event_supported = FALSE;
+                tn_log(TN_LOG_BASIC,
+                       "tolunnet: S2_ONEVENT storm from driver "
+                       "(instant completions); link events disabled\n");
+                return;
+            }
+            /* Re-arm once and yield back to the main loop. */
+            eio->ios2_Req.io_Command = S2_ONEVENT;
+            eio->ios2_WireError      = nif->event_mask;
+            eio->ios2_Req.io_Error   = 0;
+            SendIO((struct IORequest *)eio);
+            nif->event_armed = TRUE;
+            return;
+        }
+
         /* Re-arm at once per SANA-II Rev 7 */
         eio->ios2_Req.io_Command = S2_ONEVENT;
         eio->ios2_WireError      = nif->event_mask;
@@ -564,6 +594,9 @@ void tn_s2_poll_events(TnSana2If *nif, struct netif *netif)
         SendIO((struct IORequest *)eio);
         nif->event_armed = TRUE;
     }
+
+    /* A calm poll (fewer than a full batch) clears the strike count. */
+    nif->event_strikes = 0;
 }
 
 void tn_s2_offline_close(TnSana2If *nif)

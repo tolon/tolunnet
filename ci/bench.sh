@@ -145,6 +145,7 @@ for cfg in $CONFIGS; do
         sleep "$GRACE_SECS"
     else
         say "quitting stuck emulator"
+        fail=1
     fi
     taskkill //F //IM winuae64.exe >/dev/null 2>&1
     sleep 2
@@ -183,6 +184,10 @@ for cfg in $CONFIGS; do
         fi
         real_nok=$((nok - todo))
         [ "$real_nok" -gt 0 ] 2>/dev/null && fail=1
+        # An empty log means the suite never even started (system hang):
+        # without this check a timed-out run reports a false ALL-GREEN
+        # (bench incident 556ea30).
+        [ "$ok" -eq 0 ] && fail=1
     done
 done
 

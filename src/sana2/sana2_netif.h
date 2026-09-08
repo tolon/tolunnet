@@ -52,6 +52,7 @@ typedef struct TnSana2If {
     ULONG              event_mask;      /* S2EVENT_* bits we asked for     */
     BOOL               event_armed;     /* event_io active in device queue */
     BOOL               event_supported; /* driver answered S2_ONEVENT      */
+    UWORD              event_strikes;   /* storm-defense strike count       */
     BOOL               link_down;       /* last S2EVENT_OFFLINE/ONLINE state */
     ULONG              mtu;             /* from S2_DEVICEQUERY            */
     UWORD              addr_bits;       /* AddrFieldSize from query       */
