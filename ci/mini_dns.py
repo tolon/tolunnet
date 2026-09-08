@@ -92,7 +92,9 @@ def main():
     args = ap.parse_args()
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    # no SO_REUSEADDR: on Windows it lets a second process silently stack on
+    # the same UDP port and steal each other's datagrams — a busy port must
+    # fail the bind loudly instead (5353 is the system mDNS port!).
     sock.bind((args.bind, args.port))
     print("mini_dns: listening on %s:%d" % (args.bind, args.port), flush=True)
 

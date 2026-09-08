@@ -83,7 +83,9 @@ fi
 # beyond slirp: the HTTP server runs on a fresh random port (orphans killed
 # first) and a local mini_dns answers the resolver instead of the host stack.
 BENCH_HTTP_PORT=$(( 18000 + RANDOM % 1000 ))
-BENCH_DNS_PORT="${BENCH_DNS_PORT:-5353}"
+# 5353 is the system mDNS port on Windows (Bonjour/Dnscache hold it and
+# receive the datagrams); use a private high port instead.
+BENCH_DNS_PORT="${BENCH_DNS_PORT:-15353}"
 
 kill_port_orphans() { # $1 = port
     netstat -ano | grep ":$1 " | grep LISTENING | awk '{print $5}' | sort -u | while read -r pid; do

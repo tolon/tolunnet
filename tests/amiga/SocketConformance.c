@@ -2990,28 +2990,51 @@ static void tc_wifi_scan_parse(void)
  * the daemon's loaded prefs to the bench baseline: in restart cycle 2 the
  * daemon boots from the wizard-written config (DEBUG=1), which would make
  * the LOGLEVEL bit of the phase-A diff cycle-dependent. */
-static const char *tc_recfg_phase_0 =
-    "DEVICE=ethernet.device\n"
-    "UNIT=0\n"
-    "DHCP=YES\n"
-    "DNS=10.0.2.2\n"
-    "DNS_PORT=5353\n"
-    "LOG=WORK:tolunnet-task.log\n"
-    "DEBUG=0\n";
+/* TNET-111: phases are built at run time from the cached bench config
+ * (DNS=/DNS_PORT=/LOG=) so any BENCH_DNS_PORT works and the daemon-startup
+ * diff stays empty at phase 0. */
+static char tc_recfg_phase_0[512];
+static char tc_recfg_phase_a[512];
+static char tc_recfg_phase_b[512];
 
-static const char *tc_recfg_phase_a =
-    "DEVICE=ethernet.device\n"
-    "UNIT=0\n"
-    "DHCP=YES\n"
-    "DNS=10.0.2.2\n"
-    "DNS_PORT=5353\n"
-    "LOG=WORK:tolunnet-task.log\n"
-    "LOGLEVEL=1\n"
-    "PRIORITY=7\n"
-    "SELECTORS=32\n"
-    "STATS=NO\n"
-    "SYSLOG=10.0.2.2\n"
-    "DATABASE_ORDER=local,dns\n";
+static void tc_recfg_build_phases(void)
+{
+    ULONG dip = ntohl(tc_cfg_ip("DNS", 0x0A000202UL));
+    LONG dns_port = tc_cfg_long("DNS_PORT", 53);
+    const char *lp = tc_cfg_value("LOG");
+    char log_buf[64];
+    int li = 0;
+
+    if (lp == NULL) lp = "WORK:tolunnet-task.log";
+    while (lp[li] && lp[li] != 13 && lp[li] != 10 && li < 60) {
+        log_buf[li] = lp[li];
+        li++;
+    }
+    log_buf[li] = 0;
+
+    snprintf_safe(tc_recfg_phase_0, sizeof(tc_recfg_phase_0),
+        "DEVICE=ethernet.device\nUNIT=0\nDHCP=YES\n"
+        "DNS=%lu.%lu.%lu.%lu\nDNS_PORT=%ld\n"
+        "LOG=%s\nDEBUG=0\n",
+        (dip >> 24) & 0xFF, (dip >> 16) & 0xFF, (dip >> 8) & 0xFF, dip & 0xFF,
+        dns_port, log_buf);
+
+    snprintf_safe(tc_recfg_phase_a, sizeof(tc_recfg_phase_a),
+        "DEVICE=ethernet.device\nUNIT=0\nDHCP=YES\n"
+        "DNS=%lu.%lu.%lu.%lu\nDNS_PORT=%ld\n"
+        "LOG=%s\nLOGLEVEL=1\nPRIORITY=7\n"
+        "SELECTORS=32\nSTATS=NO\nSYSLOG=10.0.2.2\n"
+        "DATABASE_ORDER=local,dns\n",
+        (dip >> 24) & 0xFF, (dip >> 16) & 0xFF, (dip >> 8) & 0xFF, dip & 0xFF,
+        dns_port, log_buf);
+
+    snprintf_safe(tc_recfg_phase_b, sizeof(tc_recfg_phase_b),
+        "DEVICE=nonexist.device\nUNIT=0\nDHCP=YES\n"
+        "DNS=%lu.%lu.%lu.%lu\nDNS_PORT=%ld\n"
+        "LOG=%s\nPRIORITY=7\nSELECTORS=32\n",
+        (dip >> 24) & 0xFF, (dip >> 16) & 0xFF, (dip >> 8) & 0xFF, dip & 0xFF,
+        dns_port, log_buf);
+}
 
 static BOOL tc_recfg_write_file(const char *path, const char *text)
 {
@@ -3037,6 +3060,9 @@ static void tc_reconfig_rc(void)
     sargs[0] = 0; sargs[1] = 0; sargs[2] = 0; sargs[3] = 0;
     sargs[4] = (LONG)sizeof(TnReconfigResponse);
     sptrs[0] = (APTR)&resp;
+
+    tc_cfg_load();
+    tc_recfg_build_phases();
 
     /* 0. Save the current DEVS:tolunnet.config and drop any newer ENV:
      * session copy so the file we write is the authoritative store. */
@@ -3116,15 +3142,7 @@ static void tc_reconfig_rc(void)
     }
 
     /* 4. Phase B: an interface key must land in needs_restart only */
-    if (!tc_recfg_write_file("DEVS:tolunnet.config",
-                             "DEVICE=nonexist.device\n"
-                             "UNIT=0\n"
-                             "DHCP=YES\n"
-                             "DNS=10.0.2.2\n"
-    "DNS_PORT=5353\n"
-                                                      "LOG=WORK:tolunnet-task.log\n"
-                             "PRIORITY=7\n"
-                             "SELECTORS=32\n")) {
+    if (!tc_recfg_write_file("DEVS:tolunnet.config", tc_recfg_phase_b)) {
         TAP_NOTOK("tc_reconfig_rc", "cannot write phase-B config");
         return;
     }
@@ -3175,13 +3193,19 @@ static void tc_reconfig_rc(void)
          * staged file read at the first tc_cfg_* call this cycle). */
         {
             if (!has_dns) {
-                const char *dl = "DNS=10.0.2.2\n";
-                while (*dl) *out++ = *dl++;
+                char dl[40];
+                ULONG dip2 = ntohl(tc_cfg_ip("DNS", 0x0A000202UL));
+                snprintf_safe(dl, sizeof(dl), "DNS=%lu.%lu.%lu.%lu\n",
+                              (dip2 >> 24) & 0xFF, (dip2 >> 16) & 0xFF,
+                              (dip2 >> 8) & 0xFF, dip2 & 0xFF);
+                { const char *p2 = dl; while (*p2) *out++ = *p2++; }
             }
             if (tc_cfg_value("DNS_PORT") != NULL &&
                 strstr(fixed, "DNS_PORT=") == NULL) {
-                const char *dp = "DNS_PORT=5353\n";
-                while (*dp) *out++ = *dp++;
+                char dp[24];
+                snprintf_safe(dp, sizeof(dp), "DNS_PORT=%ld\n",
+                              tc_cfg_long("DNS_PORT", 53));
+                { const char *p2 = dp; while (*p2) *out++ = *p2++; }
             }
             if (tc_cfg_value("TEST_HTTP_PORT") != NULL &&
                 strstr(fixed, "TEST_HTTP_PORT=") == NULL) {
