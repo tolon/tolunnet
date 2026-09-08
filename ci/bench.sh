@@ -79,15 +79,15 @@ if [ -z "${MUFORCE_ADF:-}" ]; then
     MUFORCE_NOTE="SKIP (MuForce/Enforcer not present on this bench; MUFORCE_ADF unset)"
 fi
 
-# TNET-111: the suite is fully hermetic (loopback listeners only); the only
-# host service bench.sh itself needs is none. Keep the port helpers for
-# future diagnostics.
+# TNET-111: the suite is fully hermetic — loopback listeners only, no host
+# services are started. DNS_PORT is the loopback resolver port used by
+# tc_dns_local (5353 must be avoided: system mDNS on Windows).
+BENCH_DNS_PORT="${BENCH_DNS_PORT:-15353}"
 
 # Generate the guest bench config from the template. NOTE: keep it inside
 # the repo tree — Git Bash /tmp is invisible to the WSL xdftool invocation.
 BENCH_CFG="ci/.bench-tolunnet.config"
-sed -e "s/__HTTP_PORT__/$BENCH_HTTP_PORT/" -e "s/__DNS_PORT__/$BENCH_DNS_PORT/" \
-    ci/tolunnet.config > "$BENCH_CFG"
+sed -e "s/__DNS_PORT__/$BENCH_DNS_PORT/" ci/tolunnet.config > "$BENCH_CFG"
 if [ "${BENCH_EXTERNAL:-0}" = "1" ]; then
     echo "TEST_EXTERNAL=YES" >> "$BENCH_CFG"
 fi
