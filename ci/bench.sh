@@ -127,8 +127,9 @@ if ! python ci/dns_check.py "$BENCH_DNS_PORT"; then
     die "mini_dns verification query failed on :$BENCH_DNS_PORT"
 fi
 
-# Generate the guest bench config from the template
-BENCH_CFG="$(mktemp)"
+# Generate the guest bench config from the template. NOTE: keep it inside
+# the repo tree — Git Bash /tmp is invisible to the WSL xdftool invocation.
+BENCH_CFG="ci/.bench-tolunnet.config"
 sed -e "s/__HTTP_PORT__/$BENCH_HTTP_PORT/" -e "s/__DNS_PORT__/$BENCH_DNS_PORT/" \
     ci/tolunnet.config > "$BENCH_CFG"
 if [ "${BENCH_EXTERNAL:-0}" = "1" ]; then
@@ -144,7 +145,7 @@ cleanup() {
     if [ -n "${DNS_PID:-}" ]; then
         kill "$DNS_PID" 2>/dev/null || true
     fi
-    rm -f "${BENCH_CFG:-/dev/null}" 2>/dev/null || true
+    rm -f "${BENCH_CFG:-ci/.bench-tolunnet.config}" 2>/dev/null || true
     if [ "${SUCCESS:-0}" != "1" ] && [ -n "${LOG_ROOT:-}" ] && [ -d "$LOG_ROOT" ]; then
         say "run had failures; keeping log directory for analysis: $LOG_ROOT"
     fi
