@@ -1218,6 +1218,23 @@ static void tc_nonblock_connect(void)
         return;
     }
 
+    /* Accept the connection before closing the listener: closing a listen
+     * pcb with an un-accepted connection in its backlog left the daemon's
+     * loopback TCP in a state where the NEXT listen+connect pair (tests
+     * 26/27) failed (bench 87d4ce7). */
+    {
+        struct sockaddr_in acc;
+        socklen_t alen = sizeof(acc);
+        LONG a = call_accept(lst, (struct sockaddr *)&acc, &alen);
+        if (a < 0) {
+            TAP_NOTOK("tc_nonblock_connect", "accept on listener failed");
+            call_closesocket(s);
+            call_closesocket(lst);
+            return;
+        }
+        call_closesocket(a);
+    }
+
     call_closesocket(s);
     call_closesocket(lst);
     TAP_OK("tc_nonblock_connect");
