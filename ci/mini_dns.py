@@ -77,6 +77,9 @@ def serve(sock):
         if len(q) < 12:
             continue
         qid = struct.unpack(">H", q[:2])[0]
+        qname, _ = parse_name(q, 12)
+        qtype = struct.unpack(">HH", q[len(qname) + 14:len(qname) + 18])[0] if qname else 0
+        print("query %s from %s type %d" % (qname, addr, qtype), flush=True)
         try:
             reply = build_reply(q, qid, 0)
             if reply is not None:

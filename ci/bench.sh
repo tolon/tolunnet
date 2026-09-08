@@ -112,7 +112,8 @@ python -m http.server "$BENCH_HTTP_PORT" --bind 0.0.0.0 >/dev/null 2>&1 &
 HTTP_PID=$!
 
 say "starting mini_dns on port $BENCH_DNS_PORT"
-python ci/mini_dns.py --port "$BENCH_DNS_PORT" >/dev/null 2>&1 &
+mkdir -p "$LOG_ROOT"
+python ci/mini_dns.py --port "$BENCH_DNS_PORT" > "$LOG_ROOT/mini_dns.log" 2>&1 &
 DNS_PID=$!
 
 if ! wait_port_listening "$BENCH_HTTP_PORT" 10; then
