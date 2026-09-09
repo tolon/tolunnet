@@ -28,3 +28,7 @@ floppy0type=-1
 nr_floppies=0
 sound_output=none
 win32.start_minimized=yes
+
+; ANX-01: never let WinUAE provide its own bsdsocket.library -
+; the bench must exercise the tolunnet stack only (gated in ci/bench.sh)
+bsdsocket_emu=false

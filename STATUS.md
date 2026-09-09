@@ -18,6 +18,7 @@
 | **M6** | Roadshow / Miami DX Suite | **EMULATOR-PROVEN** | [`docs/bench-logs/20260906-014843-c744255/`](file:///d:/Projeler/tolunnet/docs/bench-logs/20260906-014843-c744255/) — SocketBaseTagList, netdb tables, SIGIO, WaitSelect, lo0 |
 | **M7** | Release Packaging | **BUILT** | [`build/tolunnet-1.2.0-rc1.lha`](file:///d:/Projeler/tolunnet/build/tolunnet-1.2.0-rc1.lha) and [`build/tolunnet.adf`](file:///d:/Projeler/tolunnet/build/tolunnet.adf) generated via `make package` (`xdftool`) |
 | **M8** | Workbench Preferences GUI | **EMULATOR-PROVEN** | [`docs/bench-logs/20260905-232628-897281c/`](file:///d:/Projeler/tolunnet/docs/bench-logs/20260905-232628-897281c/) — non-blocking daemon control, ToolTypes, WBStartup, NTSC 640×200 layout |
+| **M9** | bsdsocktest (third-party bsdsocket conformance; UAE emulation gated off) | **BENCH-BASELINED 102/142** | ANX-01 bench dir `SUMMARY.txt` — `bsdsocktest: 102/142` identical on a1200 and 68000, core 35/35 both; 25 OPEN rows in ISSUES.md (TNET-114…TNET-138) |
 
 ---
 

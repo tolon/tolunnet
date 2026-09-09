@@ -1,0 +1,148 @@
+/*
+ * bsdsocktest — Shared test utilities
+ *
+ * Library management, socket helpers, port allocation, data patterns.
+ */
+
+#ifndef BSDSOCKTEST_TESTUTIL_H
+#define BSDSOCKTEST_TESTUTIL_H
+
+#include <exec/types.h>
+#include <proto/exec.h>
+
+/* Default base port for test sockets */
+#define DEFAULT_BASE_PORT 7700
+
+/* Not defined in Amiga netinet/in.h */
+#ifndef INADDR_LOOPBACK
+#define INADDR_LOOPBACK 0x7f000001UL
+#endif
+
+/* Check for Ctrl-C between tests. Emits TAP bail out and returns. */
+#define CHECK_CTRLC() do { \
+    if (SetSignal(0L, SIGBREAKF_CTRL_C) & SIGBREAKF_CTRL_C) { \
+        tap_bail("Interrupted by Ctrl-C"); \
+        return; \
+    } \
+} while(0)
+
+/* ---- Library management ---- */
+
+/* Open bsdsocket.library v4+, register errno/h_errno pointers.
+ * Returns 0 on success, -1 on failure (diagnostic emitted). */
+int open_bsdsocket(void);
+
+/* Close bsdsocket.library. */
+void close_bsdsocket(void);
+
+/* Close any leftover sockets from previous runs and log the count.
+ * Call once after open_bsdsocket() before running tests. */
+void reset_socket_state(void);
+
+/* Get the bsdsocket.library version string (via SBTC_RELEASESTRPTR).
+ * Returns NULL if library is not open or string is unavailable. */
+const char *get_bsdsocket_version(void);
+
+/* Access the bsdsocket errno value (separate from libnix errno). */
+LONG get_bsd_errno(void);
+
+/* Access the bsdsocket h_errno value. */
+LONG get_bsd_h_errno(void);
+
+/* Restore the bsd_errno/h_errno pointers after SetErrnoPtr experiments.
+ * Call this after any test that uses SetErrnoPtr to change the errno
+ * pointer to a local variable. */
+void restore_bsd_errno(void);
+
+/* ---- Socket helpers ---- */
+
+/* Create a TCP (SOCK_STREAM) socket. Returns fd or -1. */
+LONG make_tcp_socket(void);
+
+/* Create a UDP (SOCK_DGRAM) socket. Returns fd or -1. */
+LONG make_udp_socket(void);
+
+/* Create a TCP listener on loopback at the given port.
+ * Sets SO_REUSEADDR, binds, and calls listen(5).
+ * Returns the listener fd or -1. */
+LONG make_loopback_listener(int port);
+
+/* Connect a TCP socket to loopback at the given port.
+ * Returns the connected fd or -1. */
+LONG make_loopback_client(int port);
+
+/* Accept one connection on a listener socket.
+ * Returns the accepted fd or -1. */
+LONG accept_one(LONG listener_fd);
+
+/* Set a socket to non-blocking mode via IoctlSocket(FIONBIO).
+ * Returns 0 on success, -1 on failure. */
+int set_nonblocking(LONG fd);
+
+/* Set a receive timeout on a socket (in seconds).
+ * Uses struct timeval with tv_secs/tv_micro.
+ * Returns 0 on success, -1 on failure. */
+int set_recv_timeout(LONG fd, int seconds);
+
+/* Close a socket safely (ignores fd == -1). */
+void safe_close(LONG fd);
+
+/* Close an array of sockets. Sets each entry to -1 after closing. */
+void close_all(LONG *fds, int count);
+
+/* ---- Port allocation ---- */
+
+/* Set the base port (from ReadArgs PORT/N parameter). */
+void set_base_port(int port);
+
+/* Get a test port: base + offset. */
+int get_test_port(int offset);
+
+/* ---- Signal helpers ---- */
+
+/* Allocate a signal bit. Returns the bit number (0-31) or -1 on failure. */
+BYTE alloc_signal(void);
+
+/* Free a signal bit. Tolerates -1 (no-op). */
+void free_signal(BYTE sigbit);
+
+/* ---- High-resolution timing (timer.device) ---- */
+
+/* Opaque timestamp with microsecond precision.
+ * Same layout as AmigaOS struct timeval; avoids exposing devices/timer.h. */
+struct bst_timestamp {
+    ULONG ts_secs;
+    ULONG ts_micro;
+};
+
+/* Open timer.device for microsecond timing.
+ * Returns 0 on success, -1 on failure (diagnostic emitted).
+ * Must be called once before any timing functions. */
+int timer_init(void);
+
+/* Close timer.device. */
+void timer_cleanup(void);
+
+/* Capture the current system time. */
+void timer_now(struct bst_timestamp *ts);
+
+/* Return elapsed microseconds between two timestamps.
+ * Overflows after ~71 minutes — acceptable for all tests. */
+ULONG timer_elapsed_us(const struct bst_timestamp *start,
+                       const struct bst_timestamp *end);
+
+/* Return elapsed milliseconds (rounded to nearest). */
+ULONG timer_elapsed_ms(const struct bst_timestamp *start,
+                       const struct bst_timestamp *end);
+
+/* ---- Data patterns ---- */
+
+/* Fill a buffer with a deterministic test pattern seeded by 'seed'. */
+void fill_test_pattern(unsigned char *buf, int len, unsigned int seed);
+
+/* Verify a buffer matches the test pattern for the given seed.
+ * Returns 0 if the pattern matches, or the 1-based byte offset
+ * of the first mismatch. */
+int verify_test_pattern(const unsigned char *buf, int len, unsigned int seed);
+
+#endif /* BSDSOCKTEST_TESTUTIL_H */

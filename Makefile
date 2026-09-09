@@ -89,11 +89,12 @@ GET_BIN      = $(BUILD)/TolunnetGet
 PREFS_BIN    = $(BUILD)/TolunnetPrefs
 SETUP_BIN    = $(BUILD)/TolunnetSetup
 CONF_BIN     = $(BUILD)/SocketConformance
+BSDTEST_BIN  = $(BUILD)/bsdsocktest
 TOGGLE_BIN   = $(BUILD)/S2Toggle
 INSTALL_BIN  = $(BUILD)/Install_Tolunnet
 
 .PHONY: all clean test-host package
-all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN)
+all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN) $(BSDTEST_BIN)
 
 # --- Host unit tests (Round 3 §B.1) -----------------------------------------
 # Every tests/host/test_*.c runs under native gcc with sanitizers + Werror;
@@ -191,6 +192,33 @@ $(CONF_BIN): $(BUILD)/tests/amiga/SocketConformance.o $(BUILD)/src/common/log.o 
 
 # Target: S2Toggle SANA-II link-flip bench helper (TNET-109)
 $(TOGGLE_BIN): $(BUILD)/tests/amiga/S2Toggle.o
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+# Target: bsdsocktest third-party bsdsocket.library conformance suite
+# (ANX-01, vendored from github.com/tbdye/bsdsocktest — GPL-3, see
+# THIRD_PARTY_LICENSES.md; built with the project toolchain flags)
+BSDTEST_SRCS = \
+	vendor/bsdsocktest/src/main.c \
+	vendor/bsdsocktest/src/tap.c \
+	vendor/bsdsocktest/src/testutil.c \
+	vendor/bsdsocktest/src/helper_proto.c \
+	vendor/bsdsocktest/src/known_failures.c \
+	vendor/bsdsocktest/src/test_socket.c \
+	vendor/bsdsocktest/src/test_sendrecv.c \
+	vendor/bsdsocktest/src/test_sockopt.c \
+	vendor/bsdsocktest/src/test_waitselect.c \
+	vendor/bsdsocktest/src/test_signals.c \
+	vendor/bsdsocktest/src/test_dns.c \
+	vendor/bsdsocktest/src/test_utility.c \
+	vendor/bsdsocktest/src/test_transfer.c \
+	vendor/bsdsocktest/src/test_errno.c \
+	vendor/bsdsocktest/src/test_misc.c \
+	vendor/bsdsocktest/src/test_icmp.c \
+	vendor/bsdsocktest/src/test_throughput.c
+BSDTEST_OBJS = $(BSDTEST_SRCS:.c=.o)
+BSDTEST_OBJS := $(addprefix $(BUILD)/,$(BSDTEST_OBJS))
+
+$(BSDTEST_BIN): $(BSDTEST_OBJS)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Release Packaging Target (M7)

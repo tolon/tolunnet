@@ -66,3 +66,23 @@ Notice reproduced verbatim from the header files:
 ```
 
 
+
+## bsdsocktest — `vendor/bsdsocktest/`
+
+bsdsocktest is a third-party bsdsocket.library conformance test suite by
+tbdye, vendored (source only) from `https://github.com/tbdye/bsdsocktest`
+at commit `cb08680843bc9cff93d57ca4760e59ab71e93b57` (2026-02-16). It is
+built unmodified with the project toolchain as the `bsdsocktest` Makefile
+target and used as a bench-only test binary (ANX-01); it is not part of
+any distributed package.
+
+bsdsocktest is licensed under the GNU General Public License, version 3.
+The full licence text is reproduced verbatim in
+[`vendor/bsdsocktest/LICENSE`](vendor/bsdsocktest/LICENSE).
+
+```
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+```

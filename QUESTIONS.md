@@ -70,3 +70,10 @@ Status: `open` · `answered` · `superseded`.
 5. **[auto] Screen title uses ASCII `-`** instead of the em-dash in the step text (topaz cannot render U+2014; the dash is decorative).
 6. **[auto] tc_wizard_ntsc proof shape:** the wizard self-reports `ENV:TolunnetSetup.geom` (page, window rect, screen size, lowest gadget edge, compact flag) after every page rebuild; the test walks all 5 pages via the port and asserts window<=screen and lowest gadget < screen bottom on both configs (NTSC 68000 leg runs the actual 640×200 case), and dumps IFF screenshots of the wizard screen to WORK: for the bench log.
 7. **[auto] Clipboard "Copy report"** (STOP-REPORT punch list) is not in the step-file page-5 spec — skipped; "Save log..." covers reporting.
+
+## Auto-Decisions (implementation-time, ANX-01 — 2026-09-09)
+
+1. **[auto] bsdsocktest runs BEFORE SocketConformance in cycle 1**, on the fresh bench-config daemon — not after the cycles on a third daemon. Evidence: the after-cycles arrangement failed (`20260909-154725-a392d82-dirty/a1200`): the third daemon provided no bsdsocket.library (wizard-rewritten config / daemon stop-restart race) and the leg froze before bench-done. Reordered arrangement proven end-to-end on both profiles (ALL-GREEN, 154 s / 258 s to bench-done).
+2. **[auto] LOOPBACK tier only** (`bsdsocktest LOOPBACK NOPAGE LOG WORK:bsdsocktest.log`): the NETWORK tier needs a host helper which the hermetic bench does not provide; its 15 rows SKIP by design ("host helper not connected").
+3. **[auto] bsdsocktest failures do not gate the bench** — each failing row becomes its own OPEN ISSUES row (fixes are explicitly out of scope for ANX-01). Only the core 35-test suite must stay green on both profiles.
+4. **[auto] bsdsocktest is bench-only, not distributed:** vendored under `vendor/bsdsocktest/` (GPL-3, commit cb08680, notice in THIRD_PARTY_LICENSES.md), built by the `bsdsocktest` Makefile target with the project's `-m68000 -msoft-float -noixemul` flags (upstream Makefile's `-m68020` overridden per TNET-074 universal-binary rule).

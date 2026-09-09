@@ -44,6 +44,12 @@ die() { echo "[bench] FATAL: $*" >&2; exit 1; }
 [ -f "$PRISTINE_HDF" ] || die "pristine bench HDF not found"
 command -v wsl >/dev/null || die "wsl not available (xdftool runs in WSL)"
 
+# ANX-01: the bench must never exercise WinUAE's own bsdsocket.library.
+for cfg in $CONFIGS; do
+    grep -q '^bsdsocket_emu=false' "ci/tolunnet-$cfg.uae" \
+        || die "ci/tolunnet-$cfg.uae lacks bsdsocket_emu=false"
+done
+
 if tasklist //FI "IMAGENAME eq winuae64.exe" 2>/dev/null | grep -qi winuae64; then
     die "a winuae64.exe is already running — close it first (the script kills by image name)"
 fi
@@ -55,6 +61,7 @@ if [ "${SKIP_BUILD:-0}" != "1" ]; then
 fi
 [ -f build/tolunnet ] || die "build/tolunnet missing (run without SKIP_BUILD)"
 [ -f build/SocketConformance ] || die "build/SocketConformance missing"
+[ -f build/bsdsocktest ] || die "build/bsdsocktest missing (vendor/bsdsocktest)"
 
 GIT_DESC="$(git describe --always --dirty 2>/dev/null || echo nogit)"
 IS_DIRTY=0
@@ -120,6 +127,7 @@ for cfg in $CONFIGS; do
     xd delete C/SocketConformance >/dev/null 2>&1
     xd delete C/TolunnetSetup   >/dev/null 2>&1
     xd delete C/S2Toggle        >/dev/null 2>&1
+    xd delete C/bsdsocktest     >/dev/null 2>&1
     xd delete S/User-Startup    >/dev/null 2>&1
     xd delete S/Conformance-Script >/dev/null 2>&1
     xd delete Devs/tolunnet.config >/dev/null 2>&1
@@ -127,13 +135,14 @@ for cfg in $CONFIGS; do
     xd write build/SocketConformance C/SocketConformance || die "xdftool write conformance failed"
     xd write build/TolunnetSetup C/TolunnetSetup || die "xdftool write TolunnetSetup failed"
     xd write build/S2Toggle C/S2Toggle || die "xdftool write S2Toggle failed"
+    xd write build/bsdsocktest C/bsdsocktest || die "xdftool write bsdsocktest failed"
     xd write ci/User-Startup-Conformance S/Conformance-Script || die "xdftool write Conformance-Script failed"
     xd write ci/User-Startup-Boot S/User-Startup || die "xdftool write User-Startup failed"
     xd write "$BENCH_CFG" Devs/tolunnet.config          || die "xdftool write tolunnet.config failed"
-    say "staged: tolunnet + SocketConformance + TolunnetSetup + Conformance-Script + User-Startup + tolunnet.config -> $HDF_WIN"
+    say "staged: tolunnet + SocketConformance + bsdsocktest + TolunnetSetup + Conformance-Script + User-Startup + tolunnet.config -> $HDF_WIN"
 
     # ---- run headless ---------------------------------------------------
-    rm -f "$WORK_DIR/conformance.log" "$WORK_DIR/conformance2.log" "$WORK_DIR/bench-done" "$WORK_DIR/tolunnet-task.log" "$WORK_DIR"/wizard-*.iff
+    rm -f "$WORK_DIR/conformance.log" "$WORK_DIR/conformance2.log" "$WORK_DIR/bench-done" "$WORK_DIR/tolunnet-task.log" "$WORK_DIR/bsdsocktest.log" "$WORK_DIR"/wizard-*.iff
     CFG_WIN=$(cygpath -w "$REPO_ROOT/ci/tolunnet-$cfg.uae")
     say "launching WinUAE headless ($CFG_WIN), timeout ${TIMEOUT_SECS}s"
     "$WINUAE" -f "$CFG_WIN" >/dev/null 2>&1 &
@@ -168,6 +177,23 @@ for cfg in $CONFIGS; do
     cp "$WORK_DIR/tolunnet-task.log" "$OUT/" 2>/dev/null || true
     # TNET-110: wizard page screenshots (PAL + NTSC) from tc_wizard_ntsc
     cp "$WORK_DIR"/wizard-*.iff "$OUT/" 2>/dev/null || true
+    # ANX-01: third-party bsdsocktest log (does not gate the bench)
+    cp "$WORK_DIR/bsdsocktest.log" "$OUT/" 2>/dev/null \
+        || echo "(missing)" > "$OUT/bsdsocktest.log"
+
+    # ANX-01: per-config bsdsocktest score line -> SUMMARY.txt
+    # log format: "# Results: N passed, F failed, K known, S skipped (T total)"
+    {
+        bs_line=$(grep '^# Results:' "$OUT/bsdsocktest.log" | tail -1)
+        bs_n=$(echo "$bs_line" | sed -n 's/^# Results: \([0-9]*\) passed.*/\1/p')
+        bs_t=$(echo "$bs_line" | sed -n 's/.*(\([0-9]*\) total)/\1/p')
+        bs_f=$(echo "$bs_line" | sed -n 's/.*, \([0-9]*\) failed.*/\1/p')
+        if [ -n "$bs_n" ] && [ -n "$bs_t" ]; then
+            echo "$cfg: bsdsocktest: $bs_n/$bs_t (failed ${bs_f:-?}) — $LOG_ROOT/$cfg/bsdsocktest.log"
+        else
+            echo "$cfg: bsdsocktest: NO-RESULT (log incomplete or crashed) — $LOG_ROOT/$cfg/bsdsocktest.log"
+        fi
+    } >> "$LOG_ROOT/SUMMARY.txt"
     {
         echo "$cfg: $(date)"
         for lg in conformance.log conformance2.log; do
