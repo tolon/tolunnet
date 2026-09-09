@@ -485,6 +485,41 @@ TN_TEST(dns_port_key)
     TN_ASSERT_EQ_U(live, TN_RECFG_DNS);
 }
 
+TN_TEST(font_key_tnet110)
+{
+    TnPrefs a;
+    char text[TN_CONFIG_TEXT_MAX];
+
+    memset(&a, 0, sizeof(a));
+
+    /* valid spec parses */
+    tn_config_parse_line(&a, "FONT", "topaz/11");
+    TN_ASSERT_STREQ(a.font, "topaz/11");
+
+    /* bad values are rejected, previous value kept */
+    tn_config_parse_line(&a, "FONT", "topaz/99");
+    TN_ASSERT_STREQ(a.font, "topaz/11");
+    tn_config_parse_line(&a, "FONT", "topaz");
+    TN_ASSERT_STREQ(a.font, "topaz/11");
+    tn_config_parse_line(&a, "FONT", "bad name/9");
+    TN_ASSERT_STREQ(a.font, "topaz/11");
+    tn_config_parse_line(&a, "FONT", "topaz/x");
+    TN_ASSERT_STREQ(a.font, "topaz/11");
+    tn_config_parse_line(&a, "FONT", "");
+    TN_ASSERT_STREQ(a.font, "topaz/11");
+
+    /* formatted only when set; round-trips through the parser */
+    TN_ASSERT_TRUE(tn_config_format(&a, text, sizeof(text)) > 0);
+    TN_ASSERT_TRUE(strstr(text, "FONT=topaz/11") != NULL);
+    a.font[0] = '\0';
+    TN_ASSERT_TRUE(tn_config_format(&a, text, sizeof(text)) > 0);
+    TN_ASSERT_TRUE(strstr(text, "FONT=") == NULL);
+
+    /* default is empty (screen font) */
+    tn_prefs_default(&a);
+    TN_ASSERT_EQ(a.font[0], '\0');
+}
+
 int main(void)
 {
     TN_TEST_RUN(round_trip_all_keys);
@@ -502,6 +537,7 @@ int main(void)
     TN_TEST_RUN(recfg_key_name_table);
     TN_TEST_RUN(s2events_key_parsing);
     TN_TEST_RUN(dns_port_key);
+    TN_TEST_RUN(font_key_tnet110);
     TN_TEST_PLAN();
     return tn_test_failures();
 }

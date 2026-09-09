@@ -19,6 +19,9 @@ BOOL tn_write_tolunnet_config(const WizardState *ws);
 /* Write Roadshow-style DEVS:NetInterfaces/<ifname> */
 BOOL tn_write_roadshow_interface(const WizardState *ws);
 
+/* Write Roadshow-style DEVS:Internet/name_resolution and routes */
+BOOL tn_write_roadshow_internet(const WizardState *ws);
+
 /* Add or remove the marked tolunnet boot block in S:User-Startup */
 BOOL tn_install_boot_block(BOOL enable);
 

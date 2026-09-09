@@ -60,3 +60,13 @@ Status: `open` · `answered` · `superseded`.
    2026-09-05). Supply an ADF/LhA with MuForce + MuGuardianAngel (68020
    config) or Enforcer + Wipeout and set `MUFORCE_ADF` in `ci/bench.sh` to
    enable the memory-hit pass; it currently prints an explicit SKIP.
+
+## Auto-Decisions (implementation-time, TNET-110 part 3 — 2026-09-09)
+
+1. **[auto] FONT= precedence:** CLI argument > icon ToolType > `DEVS:tolunnet.config` FONT= key > screen font (the step file's stated default). Rationale: more specific launch contexts override the general config; the config key is what TolunnetPrefs "Large text" writes (`FONT=topaz/11`, removed when unchecked).
+2. **[auto] DNS 2 in DHCP mode:** written to the config only when the Advanced checkbox "Use DHCP DNS, fall back to DNS 2" is set (Manual mode always writes DNS2=). Keeps wizard output byte-identical to before unless the user opts in.
+3. **[auto] Advanced window contents follow the step file** (priority, log file, DATABASE_ORDER, DEVS:Internet checkbox, DNS2-fallback checkbox). The STOP-REPORT punch-list's "NTP/IPv6 placeholder" items are not in the normative page-4 spec and were skipped.
+4. **[auto] "Run tests again (default until all pass)":** RETURN on the Test page runs the tests instead of Finish while any of the 5 checks has not passed; ARexx FINISH is never blocked (bench compatibility).
+5. **[auto] Screen title uses ASCII `-`** instead of the em-dash in the step text (topaz cannot render U+2014; the dash is decorative).
+6. **[auto] tc_wizard_ntsc proof shape:** the wizard self-reports `ENV:TolunnetSetup.geom` (page, window rect, screen size, lowest gadget edge, compact flag) after every page rebuild; the test walks all 5 pages via the port and asserts window<=screen and lowest gadget < screen bottom on both configs (NTSC 68000 leg runs the actual 640×200 case), and dumps IFF screenshots of the wizard screen to WORK: for the bench log.
+7. **[auto] Clipboard "Copy report"** (STOP-REPORT punch list) is not in the step-file page-5 spec — skipped; "Save log..." covers reporting.

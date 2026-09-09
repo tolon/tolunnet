@@ -36,6 +36,7 @@ void tn_prefs_default(TnPrefs *prefs)
     prefs->syslog_host[0] = '\0';
     prefs->s2events = 0;        /* 0 = ONLINE|OFFLINE|ERROR (TNET-109) */
     prefs->dns_port = 0;        /* 0 = default 53 (TNET-111) */
+    prefs->font[0] = '\0';      /* empty = TolunnetSetup uses the screen font */
 }
 
 
@@ -235,6 +236,28 @@ void tn_config_parse_line(TnPrefs *prefs, const char *key, const char *val)
                 if (valid && mask != 0) prefs->s2events = mask;
             }
         }
+    } else if (tn_str_equal_nocase(clean_key, "FONT")) {
+        /* TNET-110: TolunnetSetup GUI font override, "name/size" (e.g.
+         * topaz/11). Validated on the raw value like the other token keys;
+         * size outside 6..24 is rejected (the wizard clamps anyway). */
+        if (tn_val_token(val, ".-/") && clean_val[0] != '\0' &&
+            strlen(clean_val) < sizeof(prefs->font)) {
+            const char *slash = clean_val;
+            while (*slash && *slash != '/') slash++;
+            if (*slash == '/') {
+                LONG size = 0;
+                const char *sz = slash + 1;
+                int ok = (*sz != '\0');
+                const char *d = sz;
+                while (*d) {
+                    if (*d < '0' || *d > '9') { ok = 0; break; }
+                    d++;
+                }
+                if (ok && tn_str_to_long(sz, &size) && size >= 6 && size <= 24) {
+                    tn_str_copy_clean(prefs->font, clean_val, sizeof(prefs->font));
+                }
+            }
+        }
     } else if (tn_str_equal_nocase(clean_key, "VERSION")) {
         /* Config format version recognised */
     }
@@ -356,6 +379,9 @@ int tn_config_format(const TnPrefs *prefs, char *buf, int buf_size)
         if (prefs->s2events & TN_S2EV_SOFTWARE) tn_cfg_put(&o, "SOFTWARE|");
         o.len--; /* drop the trailing pipe */
         tn_cfg_put(&o, "\n");
+    }
+    if (prefs->font[0] != '\0') {
+        tn_cfg_put_kv_str(&o, "FONT=", prefs->font);
     }
 
     if (o.overflow) {

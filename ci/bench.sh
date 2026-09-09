@@ -133,7 +133,7 @@ for cfg in $CONFIGS; do
     say "staged: tolunnet + SocketConformance + TolunnetSetup + Conformance-Script + User-Startup + tolunnet.config -> $HDF_WIN"
 
     # ---- run headless ---------------------------------------------------
-    rm -f "$WORK_DIR/conformance.log" "$WORK_DIR/conformance2.log" "$WORK_DIR/bench-done" "$WORK_DIR/tolunnet-task.log"
+    rm -f "$WORK_DIR/conformance.log" "$WORK_DIR/conformance2.log" "$WORK_DIR/bench-done" "$WORK_DIR/tolunnet-task.log" "$WORK_DIR"/wizard-*.iff
     CFG_WIN=$(cygpath -w "$REPO_ROOT/ci/tolunnet-$cfg.uae")
     say "launching WinUAE headless ($CFG_WIN), timeout ${TIMEOUT_SECS}s"
     "$WINUAE" -f "$CFG_WIN" >/dev/null 2>&1 &
@@ -166,6 +166,8 @@ for cfg in $CONFIGS; do
     cp "$WORK_DIR/daemon.log"        "$OUT/" 2>/dev/null || true
     cp "$WORK_DIR/daemon2.log"       "$OUT/" 2>/dev/null || true
     cp "$WORK_DIR/tolunnet-task.log" "$OUT/" 2>/dev/null || true
+    # TNET-110: wizard page screenshots (PAL + NTSC) from tc_wizard_ntsc
+    cp "$WORK_DIR"/wizard-*.iff "$OUT/" 2>/dev/null || true
     {
         echo "$cfg: $(date)"
         for lg in conformance.log conformance2.log; do

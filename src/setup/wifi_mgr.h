@@ -38,6 +38,7 @@ void tn_wifi_scan(WizardState *ws);
 
 /* Write ENVARC:Sys/Wireless.prefs and ENV:Sys/Wireless.prefs */
 BOOL tn_wifi_write_prefs(const char *ssid, const char *passphrase);
+BOOL tn_wifi_write_prefs_multi(const WizardState *ws);
 
 /* Launch or restart WirelessManager for the given device */
 BOOL tn_wifi_start_manager(const char *device_name, ULONG unit);
@@ -54,5 +55,6 @@ BOOL tn_parse_wifi_tagitem(const void *tags, WifiNetwork *out_net);
 
 /* Pure string formatting helper (for host unit tests) */
 int tn_format_wireless_block(const char *ssid, const char *passphrase, char *out_buf, int out_max);
+int tn_format_wireless_block_priority(const char *ssid, const char *passphrase, int priority, char *out_buf, int out_max);
 
 #endif /* TOLUNNET_WIFI_MGR_H */

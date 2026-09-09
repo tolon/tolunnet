@@ -51,6 +51,7 @@ typedef struct TnPrefs {
     char  syslog_host[48];    /* RFC3164 UDP-514 forward target (§D3); empty = off */
     ULONG s2events;           /* S2EVENTS= mask (TNET-109); 0 = ONLINE|OFFLINE|ERROR */
     ULONG dns_port;           /* DNS_PORT= resolver port (TNET-111); 0 = 53 */
+    char  font[24];           /* FONT=name/size for TolunnetSetup; empty = screen font */
 } TnPrefs;
 
 /* TNET-064: Amiga Prefs convention.

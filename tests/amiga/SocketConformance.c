@@ -13,10 +13,14 @@
 
 #include <proto/exec.h>
 #include <proto/dos.h>
+#include <proto/graphics.h>
+#include <proto/intuition.h>
 #include <dos/dostags.h>
 #include <exec/types.h>
 #include <exec/ports.h>
 #include <devices/timer.h>
+#include <graphics/gfx.h>
+#include <intuition/screens.h>
 #include <libraries/bsdsocket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -32,6 +36,8 @@
 #include "../../src/setup/wifi_mgr.h"
 
 static struct Library *SocketBase = NULL;
+struct GfxBase *GfxBase = NULL;
+struct IntuitionBase *IntuitionBase = NULL;
 static BPTR            g_log_fh   = (BPTR)0;
 
 static int g_count = 0;
@@ -3068,6 +3074,294 @@ static void tc_wizard_wired(void)
     TAP_OK("tc_wizard_wired");
 }
 
+/* ----------------------------------------------------------------------- */
+/* TNET-110 part 3: NTSC fit proof + page screenshots.                      */
+
+/* Find the screen the wizard lives on: its own custom screen (bench boots
+ * before Workbench) by title, else the default public screen. Sets
+ * *from_publock when the screen must be UnlockPubScreen'd. */
+static struct Screen *find_wizard_screen(BOOL *from_publock)
+{
+    struct Screen *s = NULL;
+    *from_publock = FALSE;
+    Forbid();
+    for (s = IntuitionBase->FirstScreen; s; s = s->NextScreen) {
+        if (s->Title != NULL &&
+            strcmp((const char *)s->Title, "tolunnet Network Setup") == 0) {
+            Permit();
+            return s;
+        }
+    }
+    Permit();
+    s = LockPubScreen(NULL);
+    if (s) *from_publock = TRUE;
+    return s;
+}
+
+/* IFF ILBM dumper: the wizard's screen, uncompressed planar.
+ * Best-effort artifact for the bench log (PAL + NTSC page shots). */
+#define IFF_PUT32(b, o, v) do { ULONG _v = (ULONG)(v); memcpy((b) + (o), &_v, 4); (o) += 4; } while (0)
+#define IFF_PUT16(b, o, v) do { UWORD _v = (UWORD)(v); memcpy((b) + (o), &_v, 2); (o) += 2; } while (0)
+
+static BOOL write_iff_screen(const char *path)
+{
+    struct Screen *scr;
+    struct BitMap *bm;
+    UBYTE *buf = NULL;
+    ULONG *rgb = NULL;
+    BPTR fh;
+    LONG ncolors, cmap_size, body_size, total, off;
+    UWORD w, h, bpr, row;
+    UBYTE depth, plane;
+    BOOL ok = FALSE;
+    BOOL locked = FALSE;
+
+    if (!IntuitionBase || !GfxBase) return FALSE;
+
+    scr = find_wizard_screen(&locked);
+    if (!scr) return FALSE;
+
+    bm = &scr->BitMap;
+    if (bm->Depth < 1 || bm->Depth > 8 || bm->Planes[0] == NULL ||
+        scr->ViewPort.ColorMap == NULL) {
+        goto out;
+    }
+
+    w = (UWORD)scr->Width;
+    h = (UWORD)scr->Height;
+    depth = (UBYTE)bm->Depth;
+    bpr = bm->BytesPerRow;
+    ncolors = 1L << depth;
+    cmap_size = ncolors * 3;
+    body_size = (LONG)bpr * (LONG)h * (LONG)depth;
+    total = 12 + (8 + 20) + (8 + cmap_size) + (8 + body_size);
+
+    buf = (UBYTE *)AllocVec((ULONG)total, MEMF_CLEAR);
+    rgb = (ULONG *)AllocVec((ULONG)(ncolors * 3 * sizeof(ULONG)), MEMF_ANY);
+    if (!buf || !rgb) goto out;
+
+    off = 0;
+    memcpy(buf + off, "FORM", 4); off += 4;
+    IFF_PUT32(buf, off, total - 8);
+    memcpy(buf + off, "ILBM", 4); off += 4;
+
+    memcpy(buf + off, "BMHD", 4); off += 4;
+    IFF_PUT32(buf, off, 20);
+    IFF_PUT16(buf, off, w);
+    IFF_PUT16(buf, off, h);
+    IFF_PUT16(buf, off, 0);                 /* LeftEdge */
+    IFF_PUT16(buf, off, 0);                 /* TopEdge  */
+    buf[off++] = depth;                     /* nPlanes  */
+    buf[off++] = 0;                         /* masking: none */
+    buf[off++] = 0;                         /* compression: none */
+    buf[off++] = 0;                         /* pad */
+    IFF_PUT16(buf, off, 0);                 /* transparent color */
+    buf[off++] = 1; buf[off++] = 1;         /* aspect 1:1 */
+    IFF_PUT16(buf, off, w);                 /* page width  */
+    IFF_PUT16(buf, off, h);                 /* page height */
+
+    memcpy(buf + off, "CMAP", 4); off += 4;
+    IFF_PUT32(buf, off, cmap_size);
+    GetRGB32(scr->ViewPort.ColorMap, 0, (ULONG)ncolors, rgb);
+    {
+        LONG c;
+        for (c = 0; c < ncolors; c++) {
+            buf[off++] = (UBYTE)(rgb[c * 3 + 0] >> 24);
+            buf[off++] = (UBYTE)(rgb[c * 3 + 1] >> 24);
+            buf[off++] = (UBYTE)(rgb[c * 3 + 2] >> 24);
+        }
+    }
+
+    memcpy(buf + off, "BODY", 4); off += 4;
+    IFF_PUT32(buf, off, body_size);
+    for (row = 0; row < h; row++) {
+        for (plane = 0; plane < depth; plane++) {
+            const UBYTE *src = bm->Planes[plane]
+                ? (const UBYTE *)bm->Planes[plane] + (LONG)row * bpr
+                : NULL;
+            if (src) {
+                memcpy(buf + off, src, bpr);
+            }
+            off += bpr;
+        }
+    }
+
+    fh = Open((CONST_STRPTR)path, MODE_NEWFILE);
+    if (fh) {
+        ok = (Write(fh, (CONST APTR)buf, (LONG)total) == total);
+        Close(fh);
+    }
+
+out:
+    if (buf) FreeVec(buf);
+    if (rgb) FreeVec(rgb);
+    if (locked) UnlockPubScreen(NULL, scr);
+    return ok;
+}
+
+/* The wizard writes its layout self-report after every page rebuild */
+static BOOL wizard_geom_read(int *page, LONG *winw, LONG *winh, LONG *wintop,
+                             LONG *scrw, LONG *scrh, LONG *maxbottom, int *compact)
+{
+    char buf[160];
+    LONG n;
+    BPTR fh = Open((CONST_STRPTR)"ENV:TolunnetSetup.geom", MODE_OLDFILE);
+    if (!fh) return FALSE;
+    n = Read(fh, (APTR)buf, sizeof(buf) - 1);
+    Close(fh);
+    if (n <= 0) return FALSE;
+    buf[n] = '\0';
+    return sscanf(buf,
+                  "page=%d winw=%d winh=%d wintop=%d scrw=%d scrh=%d maxbottom=%d compact=%d",
+                  page, winw, winh, wintop, scrw, scrh, maxbottom, compact) == 8;
+}
+
+/* Send one command with a bounded reply wait (5 s) */
+static BOOL wizard_msg(struct MsgPort *port, struct MsgPort *reply,
+                       const char *cmd)
+{
+    struct Message msg;
+    int i;
+    memset(&msg, 0, sizeof(msg));
+    msg.mn_ReplyPort = reply;
+    msg.mn_Node.ln_Name = (char *)cmd;
+    PutMsg(port, &msg);
+    for (i = 0; i < 125; i++) {
+        if (GetMsg(reply) != NULL) return TRUE;
+        Delay(2);
+    }
+    return FALSE;
+}
+
+static void tc_wizard_ntsc(void)
+{
+    /*
+     * TNET-110: the wizard must fit the screen it opens on — including a
+     * 640x200 NTSC Workbench. Walk all 5 pages through the port, read the
+     * geometry self-report after each rebuild and assert that no gadget
+     * extends below the screen. Each page is dumped as an IFF screenshot
+     * to WORK: for the bench log (PAL + NTSC).
+     */
+    char reason[128];
+    struct MsgPort *reply_port;
+    struct MsgPort *wizard_port = NULL;
+    int i, page = -1, compact = -1;
+    LONG winw = 0, winh = 0, wintop = 0, scrw = 0, scrh = 0, maxbottom = 0;
+    const char *fail = NULL;
+
+    GfxBase = (struct GfxBase *)OpenLibrary((CONST_STRPTR)"graphics.library", 36);
+    IntuitionBase = (struct IntuitionBase *)OpenLibrary((CONST_STRPTR)"intuition.library", 36);
+
+    reply_port = CreateMsgPort();
+    if (!reply_port || !GfxBase || !IntuitionBase) {
+        if (reply_port) DeleteMsgPort(reply_port);
+        if (GfxBase) CloseLibrary((struct Library *)GfxBase);
+        if (IntuitionBase) CloseLibrary((struct Library *)IntuitionBase);
+        GfxBase = NULL;
+        IntuitionBase = NULL;
+        TAP_NOTOK("tc_wizard_ntsc", "bases/port open failed");
+        return;
+    }
+
+    DeleteFile((CONST_STRPTR)"ENV:TolunnetSetup.geom");
+
+    LONG rc = SystemTags((CONST_STRPTR)"C:TolunnetSetup",
+                         SYS_Asynch, TRUE,
+                         SYS_Input, (BPTR)0,
+                         SYS_Output, (BPTR)0,
+                         NP_StackSize, 32768,
+                         TAG_END);
+    if (rc != 0) {
+        SystemTags((CONST_STRPTR)"Run <NIL: >NIL: C:TolunnetSetup",
+                   SYS_Input, (BPTR)0,
+                   SYS_Output, (BPTR)0,
+                   TAG_END);
+    }
+
+    for (i = 0; i < 100; i++) {
+        Delay(5);
+        Forbid();
+        wizard_port = FindPort((CONST_STRPTR)"TOLUNNETSETUP");
+        Permit();
+        if (wizard_port) break;
+    }
+    if (!wizard_port) {
+        DeleteMsgPort(reply_port);
+        CloseLibrary((struct Library *)GfxBase);
+        CloseLibrary((struct Library *)IntuitionBase);
+        GfxBase = NULL;
+        IntuitionBase = NULL;
+        TAP_NOTOK("tc_wizard_ntsc", "TOLUNNETSETUP port not found");
+        return;
+    }
+
+    for (i = 0; i < 5 && !fail; i++) {
+        char cmd[16], shot[48];
+        snprintf(cmd, sizeof(cmd), "PAGE %d", i);
+        if (!wizard_msg(wizard_port, reply_port, cmd)) {
+            fail = "no reply to PAGE";
+            break;
+        }
+        if (!wizard_geom_read(&page, &winw, &winh, &wintop,
+                              &scrw, &scrh, &maxbottom, &compact)) {
+            fail = "geometry report missing";
+            break;
+        }
+        if (page != i) {
+            fail = "geometry page mismatch";
+            break;
+        }
+        if (winw > scrw || winh > scrh) {
+            fail = "window larger than screen";
+            break;
+        }
+        if (wintop < 0 || wintop + maxbottom >= scrh) {
+            fail = "gadget below the screen";
+            break;
+        }
+        if (maxbottom >= winh) {
+            fail = "gadget below the window";
+            break;
+        }
+        if (compact != ((scrh < 240) ? 1 : 0)) {
+            fail = "compact flag wrong for screen height";
+            break;
+        }
+
+        snprintf(shot, sizeof(shot), "WORK:wizard-%d-%s.iff",
+                 i, (scrh == 200) ? "ntsc" : "pal");
+        write_iff_screen(shot);
+    }
+
+    wizard_msg(wizard_port, reply_port, "CANCEL");
+
+    for (i = 0; i < 30; i++) {
+        Delay(5);
+        Forbid();
+        if (FindPort((CONST_STRPTR)"TOLUNNETSETUP") == NULL) {
+            Permit();
+            break;
+        }
+        Permit();
+    }
+
+    DeleteMsgPort(reply_port);
+    CloseLibrary((struct Library *)GfxBase);
+    CloseLibrary((struct Library *)IntuitionBase);
+    GfxBase = NULL;
+    IntuitionBase = NULL;
+
+    if (fail) {
+        snprintf(reason, sizeof(reason),
+                 "%s (page %d: win %dx%d top %d scr %dx%d maxbottom %d compact %d)",
+                 fail, page, (int)winw, (int)winh, (int)wintop,
+                 (int)scrw, (int)scrh, (int)maxbottom, compact);
+        TAP_NOTOK("tc_wizard_ntsc", reason);
+        return;
+    }
+    TAP_OK("tc_wizard_ntsc");
+}
+
 static void tc_wifi_scan_parse(void)
 {
     const char *fake_ssid = "TolunAmigaNet";
@@ -3570,6 +3864,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_every_vector_callable);
     TN_RUN(tc_stats_counters);
     TN_RUN(tc_wizard_wired);
+    TN_RUN(tc_wizard_ntsc);
     TN_RUN(tc_wifi_scan_parse);
     TN_RUN(tc_reconfig_rc);
     TN_RUN(tc_link_events);

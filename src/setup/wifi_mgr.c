@@ -34,7 +34,7 @@ static int is_safe_ssid_char(char c)
     return 0;
 }
 
-int tn_format_wireless_block(const char *ssid, const char *passphrase, char *out_buf, int out_max)
+int tn_format_wireless_block_priority(const char *ssid, const char *passphrase, int priority, char *out_buf, int out_max)
 {
     if (!ssid || !out_buf || out_max <= 0) return 0;
 
@@ -62,6 +62,11 @@ int tn_format_wireless_block(const char *ssid, const char *passphrase, char *out
         snprintf(ssid_line, sizeof(ssid_line), "    ssid=\"%s\"\n", ssid);
     }
 
+    char prio_line[32] = "";
+    if (priority > 0) {
+        snprintf(prio_line, sizeof(prio_line), "    priority=%d\n", priority);
+    }
+
     int written = 0;
     if (passphrase && passphrase[0] != '\0') {
         size_t plen = strlen(passphrase);
@@ -80,21 +85,29 @@ int tn_format_wireless_block(const char *ssid, const char *passphrase, char *out
                            "network={\n"
                            "%s"
                            "    psk=\"%s\"\n"
+                           "%s"
                            "    scan_ssid=1\n"
                            "}\n",
-                           ssid_line, passphrase);
+                           ssid_line, passphrase, prio_line);
     } else {
         /* Open network */
         written = snprintf(out_buf, out_max,
                            "network={\n"
                            "%s"
                            "    key_mgmt=NONE\n"
+                           "%s"
                            "    scan_ssid=1\n"
                            "}\n",
-                           ssid_line);
+                           ssid_line, prio_line);
     }
     return written;
 }
+
+int tn_format_wireless_block(const char *ssid, const char *passphrase, char *out_buf, int out_max)
+{
+    return tn_format_wireless_block_priority(ssid, passphrase, 0, out_buf, out_max);
+}
+
 
 BOOL tn_wifi_validate_devname(const char *devname)
 {
@@ -327,6 +340,62 @@ BOOL tn_wifi_write_prefs(const char *ssid, const char *passphrase)
     return (ok1 || ok2);
 }
 
+BOOL tn_wifi_write_prefs_multi(const WizardState *ws)
+{
+    if (!ws) return FALSE;
+
+    /* If only primary ssid is present */
+    const char *ssid = (ws->selected_wifi_idx >= 0 && ws->selected_wifi_idx < ws->wifi_count)
+                       ? ws->wifi[ws->selected_wifi_idx].ssid : ws->wifi_ssid_str;
+    if (!ssid || ssid[0] == '\0') {
+        ssid = ws->wifi_ssid_str;
+    }
+    if (!ssid || ssid[0] == '\0') return FALSE;
+
+    char combined[2048];
+    int total_len = 0;
+
+    /* Write selected network with priority 4 */
+    int len = tn_format_wireless_block_priority(ssid, ws->wifi_pass, 4,
+                                                combined + total_len,
+                                                sizeof(combined) - total_len);
+    if (len > 0) total_len += len;
+
+    /* Include up to 3 additional scanned networks with lower priorities if needed */
+    int added = 1;
+    for (int i = 0; i < ws->wifi_count && added < 4; i++) {
+        if (i == ws->selected_wifi_idx) continue;
+        if (ws->wifi[i].ssid[0] == '\0') continue;
+        if (strcmp(ws->wifi[i].ssid, ssid) == 0) continue;
+        if (ws->wifi[i].encryption == 0) { /* Open networks can be written without pass */
+            len = tn_format_wireless_block_priority(ws->wifi[i].ssid, NULL, 4 - added,
+                                                    combined + total_len,
+                                                    sizeof(combined) - total_len);
+            if (len > 0) {
+                total_len += len;
+                added++;
+            }
+        }
+    }
+
+    if (total_len <= 0) return FALSE;
+
+    BPTR lock = CreateDir((CONST_STRPTR)"ENVARC:Sys");
+    if (lock) UnLock(lock);
+    lock = CreateDir((CONST_STRPTR)"ENV:Sys");
+    if (lock) UnLock(lock);
+
+    BOOL ok1 = write_text_to_file("ENVARC:Sys/Wireless.prefs", combined, total_len);
+    BOOL ok2 = write_text_to_file("ENV:Sys/Wireless.prefs", combined, total_len);
+
+    volatile char *vc = (volatile char *)combined;
+    for (size_t i = 0; i < sizeof(combined); i++) {
+        vc[i] = 0;
+    }
+    return (ok1 || ok2);
+}
+
+
 BOOL tn_wifi_start_manager(const char *device_name, ULONG unit)
 {
     if (!device_name) return FALSE;
@@ -402,6 +471,7 @@ BOOL tn_wifi_wait_association(const char *device_name, ULONG unit, int timeout_s
 
 void tn_wifi_scan(WizardState *ws) { (void)ws; }
 BOOL tn_wifi_write_prefs(const char *ssid, const char *passphrase) { (void)ssid; (void)passphrase; return TRUE; }
+BOOL tn_wifi_write_prefs_multi(const WizardState *ws) { (void)ws; return TRUE; }
 BOOL tn_wifi_start_manager(const char *device_name, ULONG unit)
 {
     (void)unit;

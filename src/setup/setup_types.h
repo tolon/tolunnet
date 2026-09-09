@@ -99,16 +99,25 @@ typedef struct WizardState {
     char mtu_str[8];        /* TNET-110: blank = driver default, 576..1500 */
     char host_str[32];
     char domain_str[64];
-    BOOL write_roadshow;     /* Checkbox: write DEVS:NetInterfaces (default TRUE) */
+    BOOL write_roadshow;          /* Checkbox: write DEVS:NetInterfaces (default TRUE) */
+    /* Advanced dialog options */
+    LONG task_priority;           /* Priority (-128..127, default 5) */
+    char log_file[64];            /* Log file path; empty = none */
+    char database_order[40];      /* Lookup order: "hosts,dns" */
+    BOOL write_roadshow_internet; /* Checkbox: write Roadshow DEVS:Internet/ files */
+    BOOL dhcp_fallback_dns2;      /* Checkbox: Use DHCP DNS, fall back to DNS 2 */
 
     /* Page 5: Test & Finish */
-    BOOL start_at_boot;      /* Checkbox: Start at boot (default TRUE) */
-    int  test_daemon_ok;     /* -1 = not run, 0 = failed, 1 = OK */
+    BOOL start_at_boot;           /* Checkbox: Start at boot (default TRUE) */
+    BOOL open_prefs_after_finish; /* Checkbox: Open Prefs after finish */
+    int  test_daemon_ok;          /* -1 = not run, 0 = failed, 1 = OK */
+    int  test_dhcp_ok;
     int  test_ping_ok;
     int  test_dns_ok;
     int  test_http_ok;
-    char test_details[4][48];
-    BOOL needs_reboot;       /* TRUE if legacy stack did not exit cleanly within 10s */
+    char test_details[5][64];
+    char test_advice[5][64];
+    BOOL needs_reboot;            /* TRUE if legacy stack did not exit cleanly within 10s */
 
     /* Navigation & Scripting control */
     BOOL rexx_done;

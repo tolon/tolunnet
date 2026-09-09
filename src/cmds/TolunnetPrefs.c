@@ -66,6 +66,7 @@ struct DosLibrary    *DOSBase       = NULL;
 #define GID_MTU         16
 #define GID_SETUP       17
 #define GID_UNDO        18
+#define GID_LARGETEXT   19
 
 static const STRPTR g_mode_labels[] = {
     (STRPTR)"DHCP (Automatic)",
@@ -90,7 +91,7 @@ typedef struct PrefsLayout {
     WORD  win_left, win_top;    /* window position on screen */
     UWORD  col1_x, col2_x;      /* gadget column left edges */
     UWORD  col1_w, col2_w;      /* gadget column widths   */
-    UWORD  row_y[5];            /* y of data rows 0..4    */
+    UWORD  row_y[6];            /* y of data rows 0..5    */
     UWORD  btn_y, btn_w, btn_h; /* button bar geometry    */
 } PrefsLayout;
 
@@ -138,6 +139,15 @@ static LONG gad_get_int(struct Gadget *g, LONG fallback)
         return si->LongInt;
     }
     return fallback;
+}
+
+/* Read a CHECKBOX_KIND gadget's checked state */
+static BOOL gad_get_chk(struct Gadget *g, struct Window *win, BOOL fallback)
+{
+    ULONG checked = fallback ? 1 : 0;
+    if (g == NULL) return fallback;
+    GT_GetGadgetAttrs(g, win, NULL, GTCB_Checked, (ULONG)&checked, TAG_END);
+    return checked ? TRUE : FALSE;
 }
 
 /* TNET-064/082: tell a running daemon to reload its configuration */
@@ -265,12 +275,12 @@ static void compute_layout(PrefsLayout *lo, struct Screen *scr)
     lo->col1_x = TN_BORDER_PAD + lab_w;
     lo->col2_x = lo->col1_x + lo->col1_w + TN_COL_GAP + lab_w;
 
-    for (i = 0; i < 5; i++) {
+    for (i = 0; i < 6; i++) {
         lo->row_y[i] = (UWORD)(6 + i * lo->pitch);
     }
 
     lo->btn_h = lo->gh + 2;
-    lo->btn_y = (UWORD)(6 + 5 * lo->pitch + 4);
+    lo->btn_y = (UWORD)(6 + 6 * lo->pitch + 4);
     lo->win_w = lo->col2_x + lo->col2_w + TN_BORDER_PAD;
     if (lo->win_w < 520) {
         lo->win_w = 520;
@@ -350,6 +360,7 @@ int main(int argc, char *argv[])
     struct Gadget *gad_dns2  = NULL;
     struct Gadget *gad_host  = NULL;
     struct Gadget *gad_mtu   = NULL;
+    struct Gadget *gad_largetext = NULL;
     struct Gadget *gad_start = NULL;
     struct Gadget *gad_stop  = NULL;
 
@@ -577,6 +588,19 @@ int main(int argc, char *argv[])
                             TAG_END);
     if (!gad_host) goto cleanup;
 
+    /* Large text (TNET-110): TolunnetSetup font override via FONT=topaz/11 */
+    ng.ng_TopEdge    = (WORD)lo.row_y[5];
+    ng.ng_LeftEdge   = TN_BORDER_PAD;
+    ng.ng_Width      = lo.gh;
+    ng.ng_Height     = lo.gh;
+    ng.ng_GadgetText = (STRPTR)"Large text (wizard)";
+    ng.ng_GadgetID   = GID_LARGETEXT;
+    ng.ng_Flags      = PLACETEXT_RIGHT;
+    gad_largetext = CreateGadget(CHECKBOX_KIND, gad_host, &ng,
+                                 GTCB_Checked, (prefs.font[0] != '\0') ? TRUE : FALSE,
+                                 TAG_END);
+    if (!gad_largetext) goto cleanup;
+
     /* =========================================================================
      * BUTTON BAR (TNET-064/065)
      * ========================================================================= */
@@ -723,6 +747,14 @@ int main(int argc, char *argv[])
                                 prefs.mtu = (ULONG)mtu;
                             } else {
                                 prefs.mtu = 0;
+                            }
+
+                            /* TNET-110: Large text -> FONT=topaz/11 in the
+                             * config; unchecked removes the override */
+                            if (gad_get_chk(gad_largetext, win, FALSE)) {
+                                str_copy_len(prefs.font, "topaz/11", sizeof(prefs.font));
+                            } else {
+                                prefs.font[0] = '\0';
                             }
 
                             /* TNET-064: Use = ENV: only; Save = ENV:+ENVARC:+DEVS: */

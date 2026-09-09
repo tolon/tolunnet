@@ -32,10 +32,12 @@
 #include <proto/dos.h>
 #include <proto/diskfont.h>
 #include <proto/icon.h>
+#include <proto/asl.h>
 
 #include <intuition/intuition.h>
 #include <intuition/gadgetclass.h>
 #include <libraries/gadtools.h>
+#include <libraries/asl.h>
 #include <libraries/diskfont.h>
 #include <workbench/startup.h>
 #include <workbench/icon.h>
@@ -44,6 +46,7 @@
 #include <intuition/screens.h>
 #include <devices/timer.h>
 #include <dos/dos.h>
+#include <dos/dostags.h>
 #include <exec/execbase.h>
 
 extern struct ExecBase      *SysBase;
@@ -52,6 +55,8 @@ struct IntuitionBase *IntuitionBase = NULL;
 struct GfxBase       *GfxBase       = NULL;
 struct Library       *GadToolsBase  = NULL;
 struct Library       *DiskfontBase  = NULL;
+struct Library       *IconBase      = NULL;
+struct Library       *AslBase       = NULL;
 unsigned long        __stack        = 32768;
 
 /* Gadget IDs */
@@ -62,16 +67,23 @@ unsigned long        __stack        = 32768;
 
 /* Page 1: Replace */
 #define GID_P1_REPLACE_CHK  110
+#define GID_P1_IMPORT_CHK   112
 
 /* Page 2: Hardware */
 #define GID_P2_HW_CYCLE     120
 #define GID_P2_SCAN_BTN     121
+#define GID_P2_LIST         122
+#define GID_P2_TEST_BTN     123
 
 /* Page 3: WiFi */
 #define GID_P3_WIFI_LIST    130
 #define GID_P3_RESCAN_BTN   131
 #define GID_P3_PASS_STR     132
 #define GID_P3_SHOWPASS_CHK 133
+#define GID_P3_NETLIST      134
+#define GID_P3_SSID_STR     135
+#define GID_P3_ADD_HIDDEN_BTN 136
+#define GID_P3_FORGET_BTN     137
 
 /* Page 4: Address */
 #define GID_P4_IPMODE_CYCLE 140
@@ -82,17 +94,26 @@ unsigned long        __stack        = 32768;
 #define GID_P4_DNS2_STR     145
 #define GID_P4_HOST_STR     146
 #define GID_P4_ROADSHOW_CHK 147
+#define GID_P4_MTU_STR      148
+#define GID_P4_DOMAIN_STR   149
+#define GID_P4_ADVANCED_BTN 160
 
 /* Page 5: Test */
 #define GID_P5_TEST_BTN     150
-#define GID_P1_IMPORT_CHK   112
-#define GID_P2_LIST         122
-#define GID_P2_TEST_BTN     123
-#define GID_P3_NETLIST      134
-#define GID_P3_SSID_STR     135
-#define GID_P4_MTU_STR      148
-#define GID_P5_CHECKLIST     152
 #define GID_P5_BOOT_CHK     151
+#define GID_P5_CHECKLIST    152
+#define GID_P5_SAVELOG_BTN  153
+#define GID_P5_PREFS_CHK    154
+
+/* Sibling Advanced Window Gadgets */
+#define GID_ADV_PRIO_STR         201
+#define GID_ADV_LOG_STR          202
+#define GID_ADV_DB_STR           203
+#define GID_ADV_ROADSHOW_CHK     204
+#define GID_ADV_DNS2FALLBACK_CHK 205
+#define GID_ADV_OK_BTN           206
+#define GID_ADV_CANCEL_BTN       207
+
 
 static const STRPTR g_page_names[] = {
     (STRPTR)"1. Replace Stacks",
@@ -144,8 +165,18 @@ static struct DrawInfo *g_dri = NULL;
 
 static struct Gadget *g_gad_next = NULL;
 static struct Gadget *g_gad_back = NULL;
+static struct Gadget *g_gad_cancel = NULL;
 static struct Gadget *g_gad_status = NULL;
 static struct Gadget *g_gad_listview = NULL;
+
+static struct Window *g_adv_win = NULL;
+static struct Gadget *g_adv_glist = NULL;
+
+static char g_adv_prio_buf[16];
+static char g_adv_log_buf[64];
+static char g_adv_db_buf[40];
+static BOOL g_adv_write_roadshow = FALSE;
+static BOOL g_adv_dhcp_fallback  = FALSE;
 
 #ifndef NewList
 #define NewList(l) do { \
@@ -169,10 +200,11 @@ static char        g_wifi_lines[MAX_WIFI_NETWORKS + 1][96];
 
 static struct List g_check_list;
 static struct Node g_check_nodes[6];
-static char        g_check_lines[6][96];
+static char        g_check_lines[6][128];
 
 static char g_status_text[96] = "Ready.";
-static char g_scr_title[48];
+static char g_scr_title[64];
+
 
 /* 1 s status tick (TNET-110): async progress without Delay() */
 static struct MsgPort  *g_tick_port = NULL;
@@ -180,48 +212,96 @@ static struct timerequest *g_tick_io = NULL;
 static ULONG g_tick_sig = 0;
 static ULONG g_last_secs = 0;   /* seconds counter for elapsed displays */
 
-/* FONT=name/size — CLI argument first, then the WB ToolType */
-static void setup_font(char **argv)
+/* FONT=name/size — override chain (TNET-110): CLI argument, then the WB
+ * icon ToolType, then the FONT= key in DEVS:tolunnet.config; with no
+ * override the wizard follows the screen font (derive_metrics). */
+static BOOL g_font_spec_set = FALSE;   /* TRUE = g_gui_font carries a spec */
+
+static BOOL font_from_config(char *spec, size_t speclen)
+{
+    BPTR fh = Open((CONST_STRPTR)"DEVS:tolunnet.config", MODE_OLDFILE);
+    if (!fh) return FALSE;
+
+    char line[160];
+    while (FGets(fh, (STRPTR)line, (LONG)sizeof(line))) {
+        if (strncmp(line, "FONT=", 5) == 0) {
+            size_t n = strlen(line);
+            while (n > 5 && (line[n - 1] == '\n' || line[n - 1] == '\r')) {
+                line[--n] = '\0';
+            }
+            strncpy(spec, line + 5, speclen - 1);
+            spec[speclen - 1] = '\0';
+            Close(fh);
+            return TRUE;
+        }
+    }
+    Close(fh);
+    return FALSE;
+}
+
+static void setup_font(int argc, char **argv)
 {
     char spec[64] = "";
     const char *src = NULL;
-    struct WBStartup *wbmsg = NULL;
-    struct DiskObject *dobj = NULL;
-    char **toolarray = NULL;
     int i;
 
-    for (i = 0; argv && argv[i]; i++) {
+    for (i = 1; argv && argv[i]; i++) {
         if (strncmp(argv[i], "FONT=", 5) == 0) {
             src = argv[i] + 5;
             break;
         }
     }
 
-    /* ToolType FONT= support lands with the part-2 icon work; the CLI
-     * argument covers the bench and scripts today. */
-    (void)wbmsg; (void)dobj; (void)toolarray;
-
-    if (src != NULL) {
-        strncpy(spec, src, sizeof(spec) - 1);
-        spec[sizeof(spec) - 1] = '\0';
+    /* Workbench launch: FONT= ToolType of our own icon */
+    if (src == NULL && argc == 0) {
+        struct WBStartup *wbmsg = (struct WBStartup *)argv;
+        if (wbmsg && wbmsg->sm_NumArgs > 0 && wbmsg->sm_ArgList &&
+            wbmsg->sm_ArgList[0].wa_Name && wbmsg->sm_ArgList[0].wa_Name[0]) {
+            if (IconBase == NULL) {
+                IconBase = OpenLibrary((CONST_STRPTR)"icon.library", 36);
+            }
+            if (IconBase) {
+                struct DiskObject *dobj = GetDiskObject(
+                    (CONST_STRPTR)wbmsg->sm_ArgList[0].wa_Name);
+                if (dobj) {
+                    UBYTE *tt = (UBYTE *)FindToolType(
+                        (CONST_STRPTR *)dobj->do_ToolTypes,
+                        (CONST_STRPTR)"FONT");
+                    if (tt) {
+                        strncpy(spec, (const char *)tt, sizeof(spec) - 1);
+                        spec[sizeof(spec) - 1] = '\0';
+                        src = spec;
+                    }
+                    FreeDiskObject(dobj);
+                }
+            }
+        }
     }
 
-    if (spec[0]) {
+    /* DEVS:tolunnet.config FONT= key (written by TolunnetPrefs) */
+    if (src == NULL) {
+        if (font_from_config(spec, sizeof(spec)) && spec[0]) {
+            src = spec;
+        }
+    }
+
+    if (src != NULL && src[0]) {
         static char fname[32];
-        char *slash = strchr(spec, '/');
+        char *slash = strchr(src, '/');
         ULONG size = 8;
         if (slash) {
             *slash = '\0';
             size = (ULONG)atol(slash + 1);
             if (size < 6 || size > 24) size = 8;
         }
-        strncpy(fname, spec, sizeof(fname) - 6);
+        strncpy(fname, src, sizeof(fname) - 6);
         fname[sizeof(fname) - 6] = '\0';
         strcat(fname, ".font");
         g_gui_font.ta_Name = (STRPTR)fname;
         g_gui_font.ta_YSize = size;
         g_gui_font.ta_Style = FS_NORMAL;
         g_gui_font.ta_Flags = FPF_DISKFONT;
+        g_font_spec_set = TRUE;
     }
 }
 
@@ -230,10 +310,18 @@ static void derive_metrics(struct Screen *scr)
     memset(&g_m, 0, sizeof(g_m));
     g_m.compact = (scr->Height < 240);
 
-    g_font = OpenDiskFont(&g_gui_font);
+    if (g_font_spec_set) {
+        g_font = OpenDiskFont(&g_gui_font);
+    } else {
+        /* default: follow the screen font (TNET-110); it is already open */
+        if (scr->Font && scr->Font->ta_Name) {
+            g_font = OpenFont(scr->Font);
+        }
+    }
     if (g_font == NULL) {
         g_gui_font.ta_Name = (STRPTR)"topaz.font";
         g_gui_font.ta_YSize = 8;
+        g_gui_font.ta_Style = FS_NORMAL;
         g_gui_font.ta_Flags = FPF_ROMFONT;
         g_font = OpenFont(&g_gui_font);
     }
@@ -253,25 +341,26 @@ static void derive_metrics(struct Screen *scr)
     if (g_m.compact && g_m.pitch < 14) g_m.pitch = 14;
 
     g_m.win_w = 632;
-    g_m.win_h = g_m.compact ? 186 : 240;
+    g_m.win_h = g_m.compact ? 176 : 240;
     if (g_m.win_h > scr->Height - 4) g_m.win_h = scr->Height - 4;
     if (g_m.win_w > scr->Width - 4) g_m.win_w = scr->Width - 4;
 
     g_m.rail_w = 110;
     g_m.pane_l = g_m.rail_w + 8;
     g_m.pane_w = g_m.win_w - g_m.pane_l - 8;
-    g_m.btn_h = g_m.fy + 10;
+    g_m.btn_h = g_m.fy + 6;
 
     /* chrome heights approximated from the window border data */
     {
         LONG border_t = scr->WBorTop + scr->Font->ta_YSize + 1;
         LONG border_b = scr->WBorBottom + 2;
         LONG title_h = border_t + 1;
-        g_m.pane_t = title_h + 6;
-        g_m.btn_t = g_m.win_h - border_b - g_m.btn_h - 4;
-        g_m.status_t = g_m.btn_t - g_m.fy - 8;
-        g_m.pane_h = g_m.status_t - g_m.pane_t - 6;
+        g_m.pane_t = title_h + (g_m.compact ? 3 : 6);
+        g_m.btn_t = g_m.win_h - border_b - g_m.btn_h - 3;
+        g_m.status_t = g_m.btn_t - g_m.fy - 6;
+        g_m.pane_h = g_m.status_t - g_m.pane_t - 4;
     }
+
 
     if (g_dri) {
         g_m.pen_text = g_dri->dri_Pens[TEXTPEN];
@@ -318,7 +407,6 @@ static void render_rail(void)
         if (i == g_ws.current_page) {
             SetAPen(rp, g_m.pen_fill);
             RectFill(rp, 6, y - 2, g_m.rail_w - 8, y + g_m.fy);
-            SetAPen(rp, g_m.pen_filltext);
             SetAPen(rp, g_m.pen_filltext);
             Move(rp, 10, y + g_m.fy - 1);
             Text(rp, (CONST_STRPTR)name, (WORD)len);
@@ -381,10 +469,13 @@ static void render_frames(void)
 /* n / 5 progress in the screen title bar */
 static void update_screen_title(void)
 {
-    snprintf(g_scr_title, sizeof(g_scr_title), "Network Setup  %d / 5",
+    snprintf(g_scr_title, sizeof(g_scr_title), "tolunnet Network Setup 1.2 - %d / 5",
              g_ws.current_page + 1);
-    SetWindowTitles(g_win, (CONST_STRPTR)-1L, (CONST_STRPTR)g_scr_title);
+    if (g_win) {
+        SetWindowTitles(g_win, (CONST_STRPTR)"Network Setup", (CONST_STRPTR)g_scr_title);
+    }
 }
+
 
 #ifdef __AMIGA__
 #include <intuition/sghooks.h>
@@ -465,10 +556,17 @@ static void sync_page_gadgets_to_state(void)
                 case GID_P4_MTU_STR:
                     strncpy(g_ws.mtu_str, (const char *)si->Buffer, sizeof(g_ws.mtu_str) - 1);
                     break;
+                case GID_P4_HOST_STR:
+                    strncpy(g_ws.host_str, (const char *)si->Buffer, sizeof(g_ws.host_str) - 1);
+                    break;
+                case GID_P4_DOMAIN_STR:
+                    strncpy(g_ws.domain_str, (const char *)si->Buffer, sizeof(g_ws.domain_str) - 1);
+                    break;
                 case GID_P3_SSID_STR:
                     strncpy(g_ws.wifi_ssid_str, (const char *)si->Buffer, sizeof(g_ws.wifi_ssid_str) - 1);
                     break;
                 }
+
             }
         }
         g = g->NextGadget;
@@ -533,6 +631,349 @@ static BOOL validate_address_page(void)
     }
     return TRUE;
 }
+
+/* ---------------- TNET-110 part 3: Advanced sibling window + Save log --- */
+
+static void update_nav_buttons(void);
+
+/* While the Advanced window is open the main navigation is frozen */
+static void set_nav_lock(BOOL lock)
+{
+    if (!g_win) return;
+    if (g_gad_cancel) {
+        GT_SetGadgetAttrs(g_gad_cancel, g_win, NULL,
+                          GA_Disabled, lock, TAG_END);
+    }
+    if (g_gad_next) {
+        GT_SetGadgetAttrs(g_gad_next, g_win, NULL,
+                          GA_Disabled, lock, TAG_END);
+    }
+    if (g_gad_back) {
+        GT_SetGadgetAttrs(g_gad_back, g_win, NULL,
+                          GA_Disabled, lock || (g_ws.current_page == 0),
+                          TAG_END);
+    }
+}
+
+static void open_advanced_window(void)
+{
+    if (g_adv_win || !g_win) return;
+
+    snprintf(g_adv_prio_buf, sizeof(g_adv_prio_buf), "%ld",
+             (long)(g_ws.task_priority ? g_ws.task_priority : 5));
+    strncpy(g_adv_log_buf, g_ws.log_file, sizeof(g_adv_log_buf) - 1);
+    g_adv_log_buf[sizeof(g_adv_log_buf) - 1] = '\0';
+    strncpy(g_adv_db_buf, g_ws.database_order, sizeof(g_adv_db_buf) - 1);
+    g_adv_db_buf[sizeof(g_adv_db_buf) - 1] = '\0';
+    g_adv_write_roadshow = g_ws.write_roadshow_internet;
+    g_adv_dhcp_fallback  = g_ws.dhcp_fallback_dns2;
+
+    struct NewGadget ng;
+    memset(&ng, 0, sizeof(ng));
+    ng.ng_VisualInfo = g_vi;
+    ng.ng_TextAttr   = &g_gui_font;
+
+    struct Gadget *prev = CreateContext(&g_adv_glist);
+    if (!prev) return;
+
+    const LONG labw = 14 * g_m.fx;             /* "DATABASE_ORDER:" */
+    const LONG strw = 24 * g_m.fx;
+    const char *chk_roadshow_lbl = "Also write Roadshow-style DEVS:Internet files";
+    const char *chk_fallback_lbl = "Use DHCP DNS, fall back to DNS 2";
+    LONG chk_w = 10 + 26 + 6 + (LONG)strlen(chk_roadshow_lbl) * g_m.fx + 10;
+    {
+        LONG alt = 10 + 26 + 6 + (LONG)strlen(chk_fallback_lbl) * g_m.fx + 10;
+        if (alt > chk_w) chk_w = alt;
+    }
+    const LONG win_w = (10 + labw + 6 + strw + 10 > chk_w)
+                       ? 10 + labw + 6 + strw + 10 : chk_w;
+    LONG y = 10;
+
+    ng.ng_LeftEdge   = 10 + labw;
+    ng.ng_Width      = strw;
+    ng.ng_Height     = g_m.fy + 8;
+    ng.ng_Flags      = PLACETEXT_LEFT;
+
+    ng.ng_TopEdge    = y;
+    ng.ng_GadgetText = (STRPTR)"Priority:";
+    ng.ng_GadgetID   = GID_ADV_PRIO_STR;
+    prev = CreateGadget(STRING_KIND, prev, &ng,
+                        GTST_String, (ULONG)g_adv_prio_buf,
+                        GTST_MaxChars, (LONG)sizeof(g_adv_prio_buf) - 1,
+                        GA_TabCycle, TRUE,
+                        TAG_END);
+    y += g_m.pitch;
+
+    ng.ng_TopEdge    = y;
+    ng.ng_GadgetText = (STRPTR)"Log file:";
+    ng.ng_GadgetID   = GID_ADV_LOG_STR;
+    prev = CreateGadget(STRING_KIND, prev, &ng,
+                        GTST_String, (ULONG)g_adv_log_buf,
+                        GTST_MaxChars, (LONG)sizeof(g_adv_log_buf) - 1,
+                        GA_TabCycle, TRUE,
+                        TAG_END);
+    y += g_m.pitch;
+
+    ng.ng_TopEdge    = y;
+    ng.ng_GadgetText = (STRPTR)"DATABASE_ORDER:";
+    ng.ng_GadgetID   = GID_ADV_DB_STR;
+    prev = CreateGadget(STRING_KIND, prev, &ng,
+                        GTST_String, (ULONG)g_adv_db_buf,
+                        GTST_MaxChars, (LONG)sizeof(g_adv_db_buf) - 1,
+                        GA_TabCycle, TRUE,
+                        TAG_END);
+    y += g_m.pitch;
+
+    ng.ng_LeftEdge   = 10;
+    ng.ng_Width      = 26;
+    ng.ng_Height     = g_m.fy + 6;
+    ng.ng_Flags      = PLACETEXT_RIGHT;
+
+    ng.ng_TopEdge    = y;
+    ng.ng_GadgetText = (STRPTR)"Also write Roadshow-style DEVS:_Internet files";
+    ng.ng_GadgetID   = GID_ADV_ROADSHOW_CHK;
+    prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
+                        GTCB_Checked, g_adv_write_roadshow,
+                        TAG_END);
+    y += g_m.pitch;
+
+    ng.ng_TopEdge    = y;
+    ng.ng_GadgetText = (STRPTR)"Use DHCP DNS, fall back to _DNS 2";
+    ng.ng_GadgetID   = GID_ADV_DNS2FALLBACK_CHK;
+    prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
+                        GTCB_Checked, g_adv_dhcp_fallback,
+                        TAG_END);
+    y += g_m.pitch + 4;
+
+    /* OK / Cancel, bottom right */
+    {
+        LONG bw = 10 * g_m.fx + 8;
+        ng.ng_Flags      = PLACETEXT_IN;
+        ng.ng_Width      = bw;
+        ng.ng_Height     = g_m.btn_h;
+        ng.ng_LeftEdge   = win_w - 10 - 2 * bw - 8;
+        ng.ng_TopEdge    = y;
+        ng.ng_GadgetText = (STRPTR)"_OK";
+        ng.ng_GadgetID   = GID_ADV_OK_BTN;
+        prev = CreateGadget(BUTTON_KIND, prev, &ng,
+                            GT_Underscore, '_', TAG_END);
+
+        ng.ng_LeftEdge   = win_w - 10 - bw;
+        ng.ng_GadgetText = (STRPTR)"_Cancel";
+        ng.ng_GadgetID   = GID_ADV_CANCEL_BTN;
+        prev = CreateGadget(BUTTON_KIND, prev, &ng,
+                            GT_Underscore, '_', TAG_END);
+        y += g_m.btn_h;
+    }
+
+    const LONG win_h = y + 10;
+
+    g_adv_win = OpenWindowTags(NULL,
+                               WA_Left,         g_win->LeftEdge + 40,
+                               WA_Top,          g_win->TopEdge + 40,
+                               WA_Width,        win_w,
+                               WA_Height,       win_h,
+                               WA_IDCMP,        IDCMP_CLOSEWINDOW | IDCMP_GADGETUP |
+                                                IDCMP_RAWKEY,
+                               WA_Flags,        WFLG_DRAGBAR | WFLG_DEPTHGADGET |
+                                                WFLG_CLOSEGADGET | WFLG_SMART_REFRESH |
+                                                WFLG_ACTIVATE,
+                               WA_Title,        (ULONG)"Network Setup - Advanced",
+                               WA_Gadgets,      (ULONG)g_adv_glist,
+                               WA_PubScreen,    (ULONG)g_win->WScreen,
+                               TAG_END);
+    if (!g_adv_win) {
+        FreeGadgets(g_adv_glist);
+        g_adv_glist = NULL;
+        return;
+    }
+
+    set_nav_lock(TRUE);
+    set_status("Advanced: OK keeps the values, Cancel discards them");
+}
+
+static void trim_tail(char *s)
+{
+    size_t n = s ? strlen(s) : 0;
+    while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '\t')) {
+        s[--n] = '\0';
+    }
+}
+
+static void close_advanced_window(BOOL commit)
+{
+    if (!g_adv_win) return;
+
+    if (commit) {
+        long p = atol(g_adv_prio_buf);
+        if (g_adv_prio_buf[0] == '\0') p = 5;
+        if (p < -128) p = -128;
+        if (p > 127)  p = 127;
+        g_ws.task_priority = (LONG)p;
+        trim_tail(g_adv_log_buf);
+        strncpy(g_ws.log_file, g_adv_log_buf, sizeof(g_ws.log_file) - 1);
+        g_ws.log_file[sizeof(g_ws.log_file) - 1] = '\0';
+        trim_tail(g_adv_db_buf);
+        strncpy(g_ws.database_order, g_adv_db_buf, sizeof(g_ws.database_order) - 1);
+        g_ws.database_order[sizeof(g_ws.database_order) - 1] = '\0';
+        g_ws.write_roadshow_internet = g_adv_write_roadshow;
+        g_ws.dhcp_fallback_dns2      = g_adv_dhcp_fallback;
+        set_status("Advanced settings kept - written at Finish");
+    } else {
+        set_status("Advanced settings discarded");
+    }
+
+    if (g_adv_glist) {
+        RemoveGList(g_adv_win, g_adv_glist, -1);
+        FreeGadgets(g_adv_glist);
+        g_adv_glist = NULL;
+    }
+    CloseWindow(g_adv_win);
+    g_adv_win = NULL;
+    set_nav_lock(FALSE);
+    update_nav_buttons();
+}
+
+static BOOL all_tests_passed(void)
+{
+    return g_ws.test_daemon_ok == 1 && g_ws.test_dhcp_ok == 1 &&
+           g_ws.test_ping_ok   == 1 && g_ws.test_dns_ok  == 1 &&
+           g_ws.test_http_ok   == 1;
+}
+
+static void run_page_tests(void)
+{
+    set_status("Running network tests...");
+    tn_run_network_tests(&g_ws);
+    set_status(all_tests_passed() ? "All 5 tests passed"
+                                  : "Tests complete - see the list below");
+    rebuild_page_gadgets();
+}
+
+/* "Save log…" — ASL save requester; without asl.library (or after Cancel)
+ * the report still lands in RAM:tolunnet-setup.log and the path is shown
+ * in an EasyRequest (TN-decision W4p3 #3: never crash, never skip silently) */
+static void save_test_log(void)
+{
+    char path[128];
+    char report[1024];
+    int off = 0;
+    int i;
+    BPTR fh;
+    struct EasyStruct es = {
+        sizeof(struct EasyStruct), 0,
+        (STRPTR)"Network Setup", (STRPTR)"", (STRPTR)"OK" };
+
+    static const char *names[5] = { "Start stack", "DHCP lease", "Ping gateway",
+                                    "DNS lookup", "HTTP HEAD" };
+    const int st[5] = { g_ws.test_daemon_ok, g_ws.test_dhcp_ok, g_ws.test_ping_ok,
+                        g_ws.test_dns_ok, g_ws.test_http_ok };
+
+    strcpy(path, "RAM:tolunnet-setup.log");
+    if (AslBase) {
+        struct FileRequester *fr = (struct FileRequester *)AllocAslRequestTags(
+            ASL_FileRequest,
+            ASLFR_DoSaveMode,   TRUE,
+            ASLFR_TitleText,    (ULONG)"Save tolunnet setup log",
+            ASLFR_InitialFile,  (ULONG)"tolunnet-setup.log",
+            TAG_END);
+        if (fr) {
+            if (AslRequest(fr, NULL)) {
+                const char *drawer = (const char *)fr->fr_Drawer;
+                const char *file   = (const char *)fr->fr_File;
+                size_t dlen = drawer ? strlen(drawer) : 0;
+                size_t flen = file ? strlen(file) : 0;
+                if (dlen + flen + 2 < sizeof(path)) {
+                    if (dlen) {
+                        memcpy(path, drawer, dlen);
+                        if (path[dlen - 1] != ':' && path[dlen - 1] != '/') {
+                            path[dlen++] = '/';
+                        }
+                    }
+                    if (flen == 0) {
+                        file = "tolunnet-setup.log";
+                        flen = strlen(file);
+                    }
+                    memcpy(path + dlen, file, flen);
+                    path[dlen + flen] = '\0';
+                }
+            }
+            FreeAslRequest(fr);
+        }
+    }
+
+    off += snprintf(report + off, sizeof(report) - off,
+                    "tolunnet Network Setup 1.2 - test log\r\n"
+                    "----------------------------------\r\n");
+    for (i = 0; i < 5; i++) {
+        off += snprintf(report + off, sizeof(report) - off,
+                        "%-14s %-6s %s%s%s\r\n",
+                        names[i],
+                        (st[i] == 1) ? "OK" : (st[i] == 0) ? "FAILED" : "..",
+                        g_ws.test_details[i],
+                        (st[i] != 1 && g_ws.test_advice[i][0]) ? " -> " : "",
+                        (st[i] != 1 && g_ws.test_advice[i][0]) ? g_ws.test_advice[i] : "");
+    }
+    off += snprintf(report + off, sizeof(report) - off, "\r\nConfiguration:\r\n");
+    if (g_ws.selected_hw_idx >= 0 && g_ws.selected_hw_idx < g_ws.hw_count) {
+        off += snprintf(report + off, sizeof(report) - off,
+                        "  Device : %s unit %lu (%s)\r\n",
+                        g_ws.hw[g_ws.selected_hw_idx].device_name,
+                        (unsigned long)g_ws.hw[g_ws.selected_hw_idx].unit,
+                        g_ws.hw[g_ws.selected_hw_idx].is_wireless ? "wireless" : "wired");
+    }
+    off += snprintf(report + off, sizeof(report) - off,
+                    "  Mode   : %s\r\n  Host   : %s\r\n",
+                    (g_ws.ip_mode == 0) ? "DHCP" : "Manual",
+                    g_ws.host_str[0] ? g_ws.host_str : "amiga");
+    (void)off;
+
+    fh = Open((CONST_STRPTR)path, MODE_NEWFILE);
+    if (!fh) {
+        strcpy(path, "RAM:tolunnet-setup.log");
+        fh = Open((CONST_STRPTR)path, MODE_NEWFILE);
+    }
+    if (fh) {
+        Write(fh, (CONST_APTR)report, strlen(report));
+        Close(fh);
+        char msg[160];
+        snprintf(msg, sizeof(msg), "Test log written to:\n%s", path);
+        es.es_TextFormat = (STRPTR)msg;
+    } else {
+        es.es_TextFormat = (STRPTR)"Could not write the test log\nto RAM: - disk full?";
+    }
+    EasyRequestArgs(g_win, &es, NULL, NULL);
+}
+
+/* Layout self-report for tc_wizard_ntsc: window + lowest gadget edge in
+ * ENV:TolunnetSetup.geom after every rebuild (TNET-110 proof hook) */
+static void write_layout_geom(void)
+{
+    if (!g_win || !g_win->WScreen) return;
+
+    LONG max_bottom = 0;
+    const struct Gadget *g;
+    for (g = g_nav_glist; g; g = g->NextGadget) {
+        if (g->TopEdge + g->Height > max_bottom) max_bottom = g->TopEdge + g->Height;
+    }
+    for (g = g_page_glist; g; g = g->NextGadget) {
+        if (g->TopEdge + g->Height > max_bottom) max_bottom = g->TopEdge + g->Height;
+    }
+
+    char line[96];
+    snprintf(line, sizeof(line),
+             "page=%d winw=%ld winh=%ld wintop=%ld scrw=%ld scrh=%ld maxbottom=%ld compact=%d\n",
+             g_ws.current_page,
+             (long)g_win->Width, (long)g_win->Height, (long)g_win->TopEdge,
+             (long)g_win->WScreen->Width, (long)g_win->WScreen->Height,
+             (long)max_bottom, g_m.compact ? 1 : 0);
+    BPTR fh = Open((CONST_STRPTR)"ENV:TolunnetSetup.geom", MODE_NEWFILE);
+    if (fh) {
+        Write(fh, (CONST_APTR)line, strlen(line));
+        Close(fh);
+    }
+}
+
 
 /* TNET-110: leaving the WiFi page associates (<= 30 s) with actionable
  * failure text in the status line; Next is held back on failure. */
@@ -609,94 +1050,24 @@ static void retreat_back_page(void)
     }
 }
 
+/* Only the Address page paints custom text; the listview pages render
+ * themselves (TNET-110 part 3 — drawing over them would clobber gadgets) */
 static void draw_page_content(void)
 {
     if (!g_win) return;
-    struct RastPort *rp = g_win->RPort;
-    char buf[128];
+    if (g_ws.current_page != WIZARD_PAGE_ADDRESS) return;
 
-    /* clear pane interior */
+    struct RastPort *rp = g_win->RPort;
+    const char *note = "DHCP obtains IP address, netmask, gateway and DNS servers automatically.";
+    LONG note_y = g_m.pane_t + 4 + g_m.pitch + g_m.pitch;  /* row ct+1 */
+
     SetAPen(rp, g_m.pen_bg);
-    RectFill(rp, g_m.pane_l + 3, g_m.pane_t + 4,
-             g_m.pane_l + g_m.pane_w - 4, g_m.pane_t + g_m.pane_h - 4);
+    RectFill(rp, g_m.pane_l + 14, note_y - g_m.fy,
+             g_m.pane_l + g_m.pane_w - 14, note_y);
     SetAPen(rp, g_m.pen_text);
     SetFont(rp, g_font ? g_font : rp->Font);
-
-    switch (g_ws.current_page) {
-    case WIZARD_PAGE_REPLACE:
-        Move(rp, g_m.pane_l + 14, g_m.pane_t + 4 + g_m.pitch);
-        if (g_ws.stack_count > 0) {
-            snprintf(buf, sizeof(buf), "Detected %d existing network stack(s):", g_ws.stack_count);
-            Text(rp, (CONST_STRPTR)buf, (WORD)strlen(buf));
-            for (int i = 0; i < g_ws.stack_count && i < 4; i++) {
-                Move(rp, g_m.pane_l + 24, g_m.pane_t + 4 + (i + 2) * g_m.pitch);
-                snprintf(buf, sizeof(buf), "* %s: %s", g_ws.stacks[i].name, g_ws.stacks[i].details);
-                Text(rp, (CONST_STRPTR)buf, (WORD)strlen(buf));
-            }
-        } else {
-            Text(rp, (CONST_STRPTR)"No conflicting stacks detected. System is ready for tolunnet.", 61);
-        }
-        break;
-
-    case WIZARD_PAGE_HW:
-        Move(rp, g_m.pane_l + 14, g_m.pane_t + 4 + g_m.pitch);
-        if (g_ws.selected_hw_idx >= 0 && g_ws.selected_hw_idx < g_ws.hw_count) {
-            DetectedHw *hw = &g_ws.hw[g_ws.selected_hw_idx];
-            snprintf(buf, sizeof(buf), "Hardware Type: %s", hw->is_wireless ? "Wireless 802.11" : "Ethernet IEEE 802.3");
-            Text(rp, (CONST_STRPTR)buf, (WORD)strlen(buf));
-            Move(rp, g_m.pane_l + 14, g_m.pane_t + 4 + 2 * g_m.pitch);
-            snprintf(buf, sizeof(buf), "Hardware MAC:  %s     MTU: %lu bytes", hw->mac_str, (unsigned long)hw->mtu);
-            Text(rp, (CONST_STRPTR)buf, (WORD)strlen(buf));
-        } else {
-            Text(rp, (CONST_STRPTR)"No network hardware found. Connect an adapter and press Rescan.", 63);
-        }
-        break;
-
-    case WIZARD_PAGE_WIFI:
-        Move(rp, g_m.pane_l + 14, g_m.pane_t + 4 + g_m.pitch);
-        if (g_ws.wifi_count > 0) {
-            int show = g_m.compact ? 4 : 6;
-            snprintf(buf, sizeof(buf), "Found %d wireless network(s):", g_ws.wifi_count);
-            Text(rp, (CONST_STRPTR)buf, (WORD)strlen(buf));
-            for (int i = 0; i < g_ws.wifi_count && i < show; i++) {
-                char bars[8];
-                int pct = (int)((g_ws.wifi[i].signal_dbm + 100) * 2);
-                int nb = (pct >= 80) ? 5 : (pct >= 60) ? 4 : (pct >= 40) ? 3 : (pct >= 20) ? 2 : 1;
-                if (nb < 1) nb = 1;
-                if (nb > 5) nb = 5;
-                for (int b = 0; b < 5; b++) bars[b] = (b < nb) ? '|' : '.';
-                bars[5] = '\0';
-                Move(rp, g_m.pane_l + 24, g_m.pane_t + 4 + (i + 2) * g_m.pitch);
-                snprintf(buf, sizeof(buf), "%-24s Ch:%2d %s %s",
-                         g_ws.wifi[i].ssid, (int)g_ws.wifi[i].channel, bars,
-                         g_ws.wifi[i].encryption ? "[WPA]" : "[Open]");
-                Text(rp, (CONST_STRPTR)buf, (WORD)strlen(buf));
-            }
-        } else {
-            Text(rp, (CONST_STRPTR)"Click 'Scan APs' to scan for nearby wireless networks.", 54);
-        }
-        break;
-
-    case WIZARD_PAGE_ADDRESS:
-        Move(rp, g_m.pane_l + 14, g_m.pane_t + 4 + g_m.pitch);
-        if (g_ws.ip_mode == 0) {
-            Text(rp, (CONST_STRPTR)"DHCP will automatically obtain IP, netmask, gateway, and DNS", 60);
-            Move(rp, g_m.pane_l + 14, g_m.pane_t + 4 + 2 * g_m.pitch);
-            Text(rp, (CONST_STRPTR)"servers upon interface bring-up.", 32);
-        }
-        break;
-
-    case WIZARD_PAGE_TEST:
-        for (int i = 0; i < 4; i++) {
-            const char *label = (i == 0) ? "Daemon: " : (i == 1) ? "Gateway:" : (i == 2) ? "DNS:    " : "HTTP:   ";
-            int st = (i == 0) ? g_ws.test_daemon_ok : (i == 1) ? g_ws.test_ping_ok : (i == 2) ? g_ws.test_dns_ok : g_ws.test_http_ok;
-            const char *res = (st == 1) ? "[OK]" : (st == 0) ? "[FAILED]" : "[.....]";
-            Move(rp, g_m.pane_l + 14, g_m.pane_t + 4 + (i + 1) * g_m.pitch);
-            snprintf(buf, sizeof(buf), "%s %-8s %s", label, res, g_ws.test_details[i]);
-            Text(rp, (CONST_STRPTR)buf, (WORD)strlen(buf));
-        }
-        break;
-    }
+    Move(rp, g_m.pane_l + 14, note_y);
+    Text(rp, (CONST_STRPTR)note, (WORD)strlen(note));
 }
 
 static void rebuild_page_gadgets(void)
@@ -982,6 +1353,18 @@ static void rebuild_page_gadgets(void)
                             GTCY_Active, g_ws.ip_mode,
                             TAG_END);
 
+        /* Advanced… opens the sibling window (part 3) */
+        ng.ng_LeftEdge   = cl + cw - 100;
+        ng.ng_TopEdge    = ct;
+        ng.ng_Width      = 100;
+        ng.ng_Height     = g_m.btn_h;
+        ng.ng_GadgetText = (STRPTR)"Adv_anced...";
+        ng.ng_GadgetID   = GID_P4_ADVANCED_BTN;
+        ng.ng_Flags      = PLACETEXT_IN;
+        prev = CreateGadget(BUTTON_KIND, prev, &ng,
+                            GT_Underscore, '_',
+                            TAG_END);
+
         if (g_ws.ip_mode == 1) {
             ng.ng_TopEdge    = ct + 2 * g_m.pitch;
             ng.ng_Width      = 130;
@@ -1032,8 +1415,31 @@ static void rebuild_page_gadgets(void)
                             GTST_String, (ULONG)g_ws.mtu_str,
                             GTST_MaxChars, 5, GA_TabCycle, TRUE, TAG_END);
 
+        /* Host + Domain share one row (compact fit, TNET-110 part 3) */
+        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1 ? 5 : 3) * g_m.pitch;
+        ng.ng_Width      = 130;
+        ng.ng_Height     = g_m.fy + 8;
+        ng.ng_Flags      = PLACETEXT_LEFT;
+        ng.ng_GadgetID   = GID_P4_HOST_STR;
+        ng.ng_GadgetText = (STRPTR)"Host:";
+        ng.ng_LeftEdge   = cl + 70;
+        prev = CreateGadget(STRING_KIND, prev, &ng,
+                            GTST_String, (ULONG)g_ws.host_str,
+                            GTST_MaxChars, sizeof(g_ws.host_str) - 1,
+                            GA_TabCycle, TRUE, TAG_END);
+        ng.ng_GadgetID   = GID_P4_DOMAIN_STR;
+        ng.ng_GadgetText = (STRPTR)"Domain:";
+        ng.ng_LeftEdge   = cl + 290;
+        ng.ng_Width      = 200;
+        prev = CreateGadget(STRING_KIND, prev, &ng,
+                            GTST_String, (ULONG)g_ws.domain_str,
+                            GTST_MaxChars, sizeof(g_ws.domain_str) - 1,
+                            GA_TabCycle, TRUE, TAG_END);
+
         ng.ng_LeftEdge   = cl;
-        ng.ng_TopEdge    = ct + (g_m.compact ? 5 : 7) * g_m.pitch;
+        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1
+                                 ? (g_m.compact ? 6 : 7)
+                                 : (g_m.compact ? 5 : 6)) * g_m.pitch;
         ng.ng_Width      = 26;
         ng.ng_Height     = g_m.fy + 6;
         ng.ng_GadgetText = (STRPTR)"Also write _Roadshow-style DEVS:NetInterfaces/ for other tools";
@@ -1046,26 +1452,32 @@ static void rebuild_page_gadgets(void)
 
     case WIZARD_PAGE_TEST: {
         int i;
-        static const char *names[4] = { "Start stack", "Ping gateway",
-                                        "DNS lookup", "HTTP HEAD" };
+        static const char *names[5] = { "Start stack", "DHCP lease",
+                                        "Ping gateway", "DNS lookup",
+                                        "HTTP HEAD" };
         NewList(&g_check_list);
-        for (i = 0; i < 4; i++) {
+        for (i = 0; i < 5; i++) {
             int st = (i == 0) ? g_ws.test_daemon_ok
-                    : (i == 1) ? g_ws.test_ping_ok
-                    : (i == 2) ? g_ws.test_dns_ok : g_ws.test_http_ok;
+                    : (i == 1) ? g_ws.test_dhcp_ok
+                    : (i == 2) ? g_ws.test_ping_ok
+                    : (i == 3) ? g_ws.test_dns_ok : g_ws.test_http_ok;
             snprintf(g_check_lines[i], sizeof(g_check_lines[i]),
-                     "%-14s %-7s %s", names[i],
+                     "%-13s %-6s %s%s%s",
+                     names[i],
                      (st == 1) ? "OK" : (st == 0) ? "FAILED" : "..",
-                     g_ws.test_details[i]);
+                     g_ws.test_details[i],
+                     (st != 1 && g_ws.test_advice[i][0]) ? " -> " : "",
+                     (st != 1 && g_ws.test_advice[i][0]) ? g_ws.test_advice[i] : "");
             memset(&g_check_nodes[i], 0, sizeof(struct Node));
             g_check_nodes[i].ln_Name = g_check_lines[i];
             AddTail(&g_check_list, &g_check_nodes[i]);
         }
 
+        /* checklist leaves room for the two right-side buttons */
         ng.ng_LeftEdge   = cl;
         ng.ng_TopEdge    = ct;
-        ng.ng_Width      = cw;
-        ng.ng_Height     = g_m.pitch * 4 + 6;
+        ng.ng_Width      = cw - 150;
+        ng.ng_Height     = g_m.pitch * 5 + 6;
         ng.ng_GadgetText = (STRPTR)"Checks:";
         ng.ng_GadgetID   = GID_P5_CHECKLIST;
         ng.ng_Flags      = PLACETEXT_ABOVE;
@@ -1075,27 +1487,42 @@ static void rebuild_page_gadgets(void)
                             TAG_END);
         g_gad_listview = prev;
 
-        ng.ng_LeftEdge   = cl + cw - 120;
+        ng.ng_LeftEdge   = cl + cw - 140;
         ng.ng_TopEdge    = ct;
-        ng.ng_Width      = 120;
+        ng.ng_Width      = 140;
         ng.ng_Height     = g_m.btn_h;
-        ng.ng_GadgetText = (STRPTR)"Run _Tests";
+        ng.ng_GadgetText = (STRPTR)"Run tests a_gain";
         ng.ng_GadgetID   = GID_P5_TEST_BTN;
         ng.ng_Flags      = PLACETEXT_IN;
+        prev = CreateGadget(BUTTON_KIND, prev, &ng,
+                            GT_Underscore, '_',
+                            TAG_END);
+
+        ng.ng_TopEdge    = ct + g_m.btn_h + 6;
+        ng.ng_Width      = 140;
+        ng.ng_GadgetText = (STRPTR)"_Save log...";
+        ng.ng_GadgetID   = GID_P5_SAVELOG_BTN;
         prev = CreateGadget(BUTTON_KIND, prev, &ng,
                             GT_Underscore, '_',
                             TAG_END);
     }
 
         ng.ng_LeftEdge   = cl;
-        ng.ng_TopEdge    = ct + g_m.pitch * 4 + 10 + g_m.pitch + 4;
+        ng.ng_TopEdge    = ct + g_m.pitch * 5 + 10;
         ng.ng_Width      = 26;
         ng.ng_Height     = g_m.fy + 6;
-        ng.ng_GadgetText = (STRPTR)"Start tolunnet TCP/IP stack automatically at _boot";
+        ng.ng_GadgetText = (STRPTR)"Start at _boot";
         ng.ng_GadgetID   = GID_P5_BOOT_CHK;
         ng.ng_Flags      = PLACETEXT_RIGHT;
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
                             GTCB_Checked, g_ws.start_at_boot,
+                            TAG_END);
+
+        ng.ng_LeftEdge   = cl + 180;
+        ng.ng_GadgetText = (STRPTR)"Open _Prefs after finish";
+        ng.ng_GadgetID   = GID_P5_PREFS_CHK;
+        prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
+                            GTCB_Checked, g_ws.open_prefs_after_finish,
                             TAG_END);
         break;
     }
@@ -1108,6 +1535,7 @@ static void rebuild_page_gadgets(void)
     render_frames();
     draw_page_content();
     update_screen_title();
+    write_layout_geom();
 }
 
 static void apply_wizard_finish(void)
@@ -1129,18 +1557,23 @@ static void apply_wizard_finish(void)
         tn_stack_request_quit(&g_ws);
     }
 
-    /* 2. Write WiFi credentials if wireless */
+    /* 2. Write WiFi credentials if wireless (saved networks with
+     * priority= in Wireless.prefs, TNET-110 part 3) */
     if (g_ws.selected_hw_idx >= 0 && g_ws.selected_hw_idx < g_ws.hw_count) {
         if (g_ws.hw[g_ws.selected_hw_idx].is_wireless) {
-            const char *ssid = (g_ws.selected_wifi_idx >= 0 && g_ws.selected_wifi_idx < g_ws.wifi_count)
-                               ? g_ws.wifi[g_ws.selected_wifi_idx].ssid : "DefaultAP";
-            tn_wifi_write_prefs(ssid, g_ws.wifi_pass);
+            if (!tn_wifi_write_prefs_multi(&g_ws)) {
+                const char *ssid = (g_ws.selected_wifi_idx >= 0 &&
+                                    g_ws.selected_wifi_idx < g_ws.wifi_count)
+                                   ? g_ws.wifi[g_ws.selected_wifi_idx].ssid : "DefaultAP";
+                tn_wifi_write_prefs(ssid, g_ws.wifi_pass);
+            }
             tn_wifi_start_manager(g_ws.hw[g_ws.selected_hw_idx].device_name,
                                   g_ws.hw[g_ws.selected_hw_idx].unit);
         }
     }
 
-    /* 3. Write tolunnet configuration */
+    /* 3. Write tolunnet configuration (also writes DEVS:Internet/ files
+     * when the Advanced checkbox is set) */
     tn_write_tolunnet_config(&g_ws);
 
     /* 4. Write Roadshow interface if requested */
@@ -1151,6 +1584,29 @@ static void apply_wizard_finish(void)
     /* 5. Install boot block if requested */
     if (g_ws.start_at_boot) {
         tn_install_boot_block(TRUE);
+    }
+
+    /* 6. Optionally hand over to the Prefs editor (TNET-110 part 3) */
+    if (g_ws.open_prefs_after_finish) {
+        const char *prefs_path = NULL;
+        BPTR l = Lock((CONST_STRPTR)"SYS:Prefs/TolunnetPrefs", ACCESS_READ);
+        if (l) {
+            UnLock(l);
+            prefs_path = "SYS:Prefs/TolunnetPrefs";
+        } else {
+            l = Lock((CONST_STRPTR)"TolunnetPrefs", ACCESS_READ);
+            if (l) {
+                UnLock(l);
+                prefs_path = "TolunnetPrefs";
+            }
+        }
+        if (prefs_path) {
+            SystemTags((CONST_STRPTR)prefs_path,
+                       SYS_Asynch, TRUE,
+                       SYS_Input, (BPTR)0,
+                       SYS_Output, (BPTR)0,
+                       TAG_END);
+        }
     }
 
     /* Zero the memory containing passphrase immediately after writing */
@@ -1226,13 +1682,18 @@ static void stop_status_tick(void)
 
 int main(int argc, char **argv)
 {
-    (void)argc;
-
     memset(&g_ws, 0, sizeof(g_ws));
     g_ws.replace_stacks = TRUE;
     g_ws.write_roadshow = TRUE;
     g_ws.start_at_boot  = TRUE;
     g_ws.ip_mode        = 0; /* DHCP default */
+    g_ws.task_priority  = 5;
+    g_ws.open_prefs_after_finish = FALSE;
+    g_ws.test_daemon_ok = -1;
+    g_ws.test_dhcp_ok   = -1;
+    g_ws.test_ping_ok   = -1;
+    g_ws.test_dns_ok    = -1;
+    g_ws.test_http_ok   = -1;
     strncpy(g_ws.ip_str, "192.168.1.100", sizeof(g_ws.ip_str) - 1);
     strncpy(g_ws.nm_str, "255.255.255.0", sizeof(g_ws.nm_str) - 1);
     strncpy(g_ws.gw_str, "192.168.1.1", sizeof(g_ws.gw_str) - 1);
@@ -1253,8 +1714,10 @@ int main(int argc, char **argv)
     GfxBase       = (struct GfxBase *)OpenLibrary((CONST_STRPTR)"graphics.library", 36);
     GadToolsBase  = OpenLibrary((CONST_STRPTR)"gadtools.library", 36);
     DiskfontBase  = OpenLibrary((CONST_STRPTR)"diskfont.library", 37);
+    IconBase      = OpenLibrary((CONST_STRPTR)"icon.library", 36);
+    AslBase       = OpenLibrary((CONST_STRPTR)"asl.library", 36);
 
-    setup_font(argv);
+    setup_font(argc, argv);
 
     /* Run initial scans */
     tn_stack_detect_all(&g_ws);
@@ -1300,6 +1763,7 @@ int main(int argc, char **argv)
             prev = CreateGadget(BUTTON_KIND, prev, &ng,
                                 GT_Underscore, '_',
                                 TAG_END);
+            g_gad_cancel = prev;
 
             ng.ng_LeftEdge   = g_m.win_w - 8 - 2 * (10 * g_m.fx + 8) - 8;
             ng.ng_GadgetText = (STRPTR)"< _Back";
@@ -1344,7 +1808,7 @@ int main(int argc, char **argv)
                                                     WFLG_CLOSEGADGET | WFLG_SMART_REFRESH |
                                                     WFLG_ACTIVATE,
                                    WA_Title,        (ULONG)"tolunnet Network Setup",
-                                   WA_ScreenTitle,  (ULONG)"Network Setup  1 / 5",
+                                   WA_ScreenTitle,  (ULONG)"tolunnet Network Setup 1.2 - 1 / 5",
                                    WA_Gadgets,      (ULONG)g_nav_glist,
                                    WA_PubScreen,    (ULONG)scr,
                                    TAG_END);
@@ -1395,7 +1859,8 @@ int main(int argc, char **argv)
         BOOL running = TRUE;
 
         while (running) {
-            ULONG sigs = Wait(win_sig | rexx_sig | g_tick_sig | SIGBREAKF_CTRL_C);
+            ULONG adv_sig = g_adv_win ? (1UL << g_adv_win->UserPort->mp_SigBit) : 0;
+            ULONG sigs = Wait(win_sig | rexx_sig | g_tick_sig | adv_sig | SIGBREAKF_CTRL_C);
 
         if (sigs & SIGBREAKF_CTRL_C) {
             running = FALSE;
@@ -1444,7 +1909,12 @@ int main(int argc, char **argv)
                     break;
 
                 case IDCMP_RAWKEY:
-                    if (im_code == 0x44) { /* RETURN = Next/Finish */
+                    if (im_code == 0x44) { /* RETURN = default action */
+                        if (g_ws.current_page == WIZARD_PAGE_TEST &&
+                            !all_tests_passed()) {
+                            run_page_tests();   /* "Run tests again" default */
+                            break;
+                        }
                         advance_next_page();
                         if (g_ws.rexx_done) {
                             apply_wizard_finish();
@@ -1543,19 +2013,28 @@ int main(int argc, char **argv)
                         rebuild_page_gadgets();
                         break;
 
+                    case GID_P4_ADVANCED_BTN:
+                        open_advanced_window();
+                        break;
+
                     case GID_P4_ROADSHOW_CHK:
                         g_ws.write_roadshow = !g_ws.write_roadshow;
                         break;
 
                     case GID_P5_TEST_BTN:
-                        set_status("Running network tests...");
-                        tn_run_network_tests(&g_ws);
-                        set_status("Tests complete");
-                        draw_page_content();
+                        run_page_tests();
+                        break;
+
+                    case GID_P5_SAVELOG_BTN:
+                        save_test_log();
                         break;
 
                     case GID_P5_BOOT_CHK:
                         g_ws.start_at_boot = !g_ws.start_at_boot;
+                        break;
+
+                    case GID_P5_PREFS_CHK:
+                        g_ws.open_prefs_after_finish = !g_ws.open_prefs_after_finish;
                         break;
                     }
                     break;
@@ -1563,6 +2042,60 @@ int main(int argc, char **argv)
                 } /* switch (im_class) */
             } /* while (imsg) */
         } /* if (sigs & win_sig) */
+
+        /* Sibling Advanced window (TNET-110 part 3): own UserPort in the
+         * main Wait mask; values are committed to the wizard state only
+         * on OK. Any close breaks out — the port dies with the window. */
+        if (g_adv_win && adv_sig && (sigs & adv_sig)) {
+            struct MsgPort *adv_port = g_adv_win->UserPort;
+            struct IntuiMessage *amsg;
+            BOOL adv_closed = FALSE;
+            while (!adv_closed && (amsg = GT_GetIMsg(adv_port))) {
+                ULONG am_class = amsg->Class;
+                UWORD am_code  = amsg->Code;
+                APTR  am_iaddr = amsg->IAddress;
+                GT_ReplyIMsg(amsg);
+
+                switch (am_class) {
+                case IDCMP_CLOSEWINDOW:
+                    close_advanced_window(FALSE);
+                    adv_closed = TRUE;
+                    break;
+
+                case IDCMP_RAWKEY:
+                    if (am_code == 0x44) {        /* RETURN = OK */
+                        close_advanced_window(TRUE);
+                        adv_closed = TRUE;
+                    } else if (am_code == 0x45) { /* ESC = Cancel */
+                        close_advanced_window(FALSE);
+                        adv_closed = TRUE;
+                    }
+                    break;
+
+                case IDCMP_GADGETUP: {
+                    struct Gadget *agad = (struct Gadget *)am_iaddr;
+                    if (!agad) break;
+                    switch (agad->GadgetID) {
+                    case GID_ADV_OK_BTN:
+                        close_advanced_window(TRUE);
+                        adv_closed = TRUE;
+                        break;
+                    case GID_ADV_CANCEL_BTN:
+                        close_advanced_window(FALSE);
+                        adv_closed = TRUE;
+                        break;
+                    case GID_ADV_ROADSHOW_CHK:
+                        g_adv_write_roadshow = !g_adv_write_roadshow;
+                        break;
+                    case GID_ADV_DNS2FALLBACK_CHK:
+                        g_adv_dhcp_fallback = !g_adv_dhcp_fallback;
+                        break;
+                    }
+                    break;
+                }
+                }
+            }
+        }
     } /* while (running) */
     } /* else */
 
@@ -1576,6 +2109,8 @@ int main(int argc, char **argv)
     }
 
     stop_status_tick();
+
+    close_advanced_window(FALSE);
 
     if (g_gad_listview && g_win) {
         GT_SetGadgetAttrs(g_gad_listview, g_win, NULL, GTLV_Labels, ~0, TAG_DONE);
@@ -1611,6 +2146,8 @@ int main(int argc, char **argv)
         CloseScreen(scr);
     }
 
+    if (AslBase)        CloseLibrary(AslBase);
+    if (IconBase)       CloseLibrary(IconBase);
     if (DiskfontBase)  CloseLibrary(DiskfontBase);
     if (GadToolsBase)  CloseLibrary(GadToolsBase);
     if (GfxBase)       CloseLibrary((struct Library *)GfxBase);
