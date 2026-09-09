@@ -190,44 +190,48 @@ static BOOL file_exists(const char *path)
     return FALSE;
 }
 
-/* TNET-112: requester-proof volume/assign check. Opening or locking a
- * path under an UNASSIGNED volume name (e.g. "AmiTCP:" on a stock system)
- * makes DOS ask the user to insert that volume -- a requester that blocks
- * the whole machine (it froze the 68000 bench during the wizard's
- * migration). Scanning the DosList never touches a handler, so no
- * requester can occur. 'name' is the bare volume name, no colon. */
+/* TNET-112: requester-proof volume/assign check via Lock() with requester suppression.
+ * Appends ':' to name if not present. DOS Lock() with pr_WindowPtr = -1 will safely
+ * return NULL if the volume/assign does not exist, without raising any insert disk requester. */
 static BOOL assign_exists(const char *name)
 {
-    struct DosList *dl;
-    BOOL found = FALSE;
-    int n = 0;
-    int i;
-    const ULONG bits = LDF_READ | LDF_VOLUMES | LDF_DEVICES | LDF_ASSIGNS;
+    if (name == NULL || name[0] == '\0') return FALSE;
 
-    while (name[n] != 0 && name[n] != ':') n++;
-    if (n == 0 || n > 30) return FALSE;
+#ifdef __AMIGA__
+    struct Process *pr = (struct Process *)FindTask(NULL);
+    APTR old = NULL;
+    char path[64];
+    size_t len = strlen(name);
+    BPTR lock;
 
-    dl = LockDosList(bits);
-    if (dl == NULL) return FALSE;
-    while ((dl = NextDosEntry(dl, LDF_VOLUMES | LDF_DEVICES | LDF_ASSIGNS)) != NULL) {
-        /* dol_Name is a BSTR: length byte + characters */
-        UBYTE *bstr = (UBYTE *)dl->dol_Name;
-        if (bstr != NULL && bstr[0] == (UBYTE)n) {
-            for (i = 0; i < n; i++) {
-                char c = (char)bstr[1 + i];
-                char w = name[i];
-                if (c >= 'a' && c <= 'z') c -= 32;
-                if (w >= 'a' && w <= 'z') w -= 32;
-                if (c != w) break;
-            }
-            if (i == n) {
-                found = TRUE;
-                break;
-            }
-        }
+    if (len >= sizeof(path) - 2) return FALSE;
+    strncpy(path, name, sizeof(path) - 2);
+    path[sizeof(path) - 2] = '\0';
+    if (path[len - 1] != ':') {
+        path[len] = ':';
+        path[len + 1] = '\0';
     }
-    UnLockDosList(bits);
-    return found;
+
+    if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
+        old = pr->pr_WindowPtr;
+        pr->pr_WindowPtr = (APTR)-1;
+    }
+
+    lock = Lock((CONST_STRPTR)path, ACCESS_READ);
+
+    if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
+        pr->pr_WindowPtr = old;
+    }
+
+    if (lock != (BPTR)0) {
+        UnLock(lock);
+        return TRUE;
+    }
+    return FALSE;
+#else
+    (void)name;
+    return FALSE;
+#endif
 }
 
 
