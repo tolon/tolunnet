@@ -85,6 +85,13 @@ unsigned long        __stack        = 32768;
 
 /* Page 5: Test */
 #define GID_P5_TEST_BTN     150
+#define GID_P1_IMPORT_CHK   112
+#define GID_P2_LIST         122
+#define GID_P2_TEST_BTN     123
+#define GID_P3_NETLIST      134
+#define GID_P3_SSID_STR     135
+#define GID_P4_MTU_STR      148
+#define GID_P5_CHECKLIST     152
 #define GID_P5_BOOT_CHK     151
 
 static const STRPTR g_page_names[] = {
@@ -140,6 +147,13 @@ static struct Gadget *g_gad_back = NULL;
 static struct Gadget *g_gad_status = NULL;
 
 static STRPTR g_hw_labels[MAX_DETECTED_HW + 1];
+static char    g_hw_lines[MAX_DETECTED_HW][96];
+static STRPTR g_stack_labels[MAX_DETECTED_STACKS + 1];
+static char    g_stack_lines[MAX_DETECTED_STACKS][96];
+static STRPTR g_wifi_labels[MAX_WIFI_NETWORKS + 1];
+static char    g_wifi_lines[MAX_WIFI_NETWORKS][96];
+static char    g_check_lines[6][96];
+static STRPTR g_check_labels[7];
 
 static char g_status_text[96] = "Ready.";
 static char g_scr_title[48];
@@ -429,6 +443,15 @@ static void sync_page_gadgets_to_state(void)
                 case GID_P4_DNS1_STR:
                     strncpy(g_ws.dns1_str, (const char *)si->Buffer, sizeof(g_ws.dns1_str) - 1);
                     break;
+                case GID_P4_DNS2_STR:
+                    strncpy(g_ws.dns2_str, (const char *)si->Buffer, sizeof(g_ws.dns2_str) - 1);
+                    break;
+                case GID_P4_MTU_STR:
+                    strncpy(g_ws.mtu_str, (const char *)si->Buffer, sizeof(g_ws.mtu_str) - 1);
+                    break;
+                case GID_P3_SSID_STR:
+                    strncpy(g_ws.wifi_ssid_str, (const char *)si->Buffer, sizeof(g_ws.wifi_ssid_str) - 1);
+                    break;
                 }
             }
         }
@@ -451,9 +474,94 @@ static void update_nav_buttons(void)
                       TAG_END);
 }
 
+/* TNET-110: validate the Address page on Next — bad field names itself in
+ * an EasyRequest and gets the focus afterwards. */
+static BOOL validate_address_page(void)
+{
+    static const char *labels[4] = { "IP address", "Netmask", "Gateway", "DNS server" };
+    const char *vals[4];
+    vals[0] = g_ws.ip_str;
+    vals[1] = g_ws.nm_str;
+    vals[2] = g_ws.gw_str;
+    vals[3] = g_ws.dns1_str;
+
+    if (g_ws.ip_mode == 1) {
+        int i;
+        for (i = 0; i < 4; i++) {
+            uint32_t addr;
+            if (tn_inet_addr_parse_ex(vals[i], &addr) != 1) {
+                char msg[96];
+                struct EasyStruct es = {
+                    sizeof(struct EasyStruct), 0,
+                    (STRPTR)"Network Setup", (STRPTR)"", (STRPTR)"OK" };
+                snprintf(msg, sizeof(msg),
+                         "The %s is not a valid dotted-quad\naddress: \"%s\"",
+                         labels[i], vals[i]);
+                es.es_TextFormat = (STRPTR)msg;
+                EasyRequestArgs(g_win, &es, NULL, NULL);
+                return FALSE;
+            }
+        }
+    }
+    if (g_ws.mtu_str[0] != '\0') {
+        long mtu = atol(g_ws.mtu_str);
+        if (mtu < 576 || mtu > 1500) {
+            struct EasyStruct es = {
+                sizeof(struct EasyStruct), 0,
+                (STRPTR)"Network Setup",
+                (STRPTR)"MTU must be between 576 and 1500,\nor empty for the driver default",
+                (STRPTR)"OK" };
+            EasyRequestArgs(g_win, &es, NULL, NULL);
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+/* TNET-110: leaving the WiFi page associates (<= 30 s) with actionable
+ * failure text in the status line; Next is held back on failure. */
+static BOOL associate_wifi_page(void)
+{
+    char err[80];
+    DetectedHw *hw;
+    if (g_ws.selected_hw_idx < 0 || g_ws.selected_hw_idx >= g_ws.hw_count) {
+        return TRUE;
+    }
+    hw = &g_ws.hw[g_ws.selected_hw_idx];
+    if (!hw->is_wireless) return TRUE;
+    if (g_ws.wifi_ssid_str[0] == '\0') {
+        set_status("Pick a network or type a hidden SSID first");
+        return FALSE;
+    }
+
+    set_status("Associating with %s (<= 30 s)...", g_ws.wifi_ssid_str);
+    tn_wifi_write_prefs(g_ws.wifi_ssid_str, g_ws.wifi_pass);
+    tn_wifi_start_manager(hw->device_name, hw->unit);
+    err[0] = '\0';
+    if (tn_wifi_wait_association(hw->device_name, hw->unit, 30, err, sizeof(err))) {
+        g_ws.wifi_associated = TRUE;
+        set_status("Associated with %s", g_ws.wifi_ssid_str);
+        return TRUE;
+    }
+    if (err[0] != '\0' && strstr(err, "auth") != NULL) {
+        set_status("Association failed: Wrong password?");
+    } else if (g_ws.wifi_count == 0) {
+        set_status("Association failed: Network not found - 2.4 GHz only?");
+    } else {
+        set_status("Association failed: %s", err[0] ? err : "no response from AP");
+    }
+    return FALSE;
+}
+
 static void advance_next_page(void)
 {
     sync_page_gadgets_to_state();
+    if (g_ws.current_page == WIZARD_PAGE_WIFI && !associate_wifi_page()) {
+        return;
+    }
+    if (g_ws.current_page == WIZARD_PAGE_ADDRESS && !validate_address_page()) {
+        return;
+    }
     if (g_ws.current_page < WIZARD_PAGE_COUNT - 1) {
         g_ws.current_page++;
         if (g_ws.current_page == WIZARD_PAGE_WIFI) {
@@ -599,9 +707,36 @@ static void rebuild_page_gadgets(void)
     const LONG ct = g_m.pane_t + 4 + g_m.pitch;   /* first gadget row */
 
     switch (g_ws.current_page) {
-    case WIZARD_PAGE_REPLACE:
+    case WIZARD_PAGE_REPLACE: {
+        int rows = g_m.compact ? 3 : 5;
+        int i;
+        for (i = 0; i < g_ws.stack_count && i < MAX_DETECTED_STACKS; i++) {
+            snprintf(g_stack_lines[i], sizeof(g_stack_lines[i]), "%-10s %s",
+                     g_ws.stacks[i].name, g_ws.stacks[i].details);
+            g_stack_labels[i] = (STRPTR)g_stack_lines[i];
+        }
+        if (g_ws.stack_count == 0) {
+            snprintf(g_stack_lines[0], sizeof(g_stack_lines[0]), "%s",
+                     "(no other network stacks found)");
+            g_stack_labels[0] = (STRPTR)g_stack_lines[0];
+            i = 1;
+        }
+        g_stack_labels[i] = NULL;
+
         ng.ng_LeftEdge   = cl;
-        ng.ng_TopEdge    = ct + (g_m.compact ? 3 : 5) * g_m.pitch;
+        ng.ng_TopEdge    = ct;
+        ng.ng_Width      = cw;
+        ng.ng_Height     = g_m.pitch * rows + 6;
+        ng.ng_GadgetText = (STRPTR)"Found on this system:";
+        ng.ng_GadgetID   = GID_P2_LIST + 100; /* display-only list */
+        ng.ng_Flags      = PLACETEXT_ABOVE;
+        prev = CreateGadget(LISTVIEW_KIND, prev, &ng,
+                            GTLV_Labels, (ULONG)g_stack_labels,
+                            GTLV_ReadOnly, TRUE,
+                            TAG_END);
+
+        ng.ng_LeftEdge   = cl;
+        ng.ng_TopEdge    = ct + g_m.pitch * rows + 10 + g_m.pitch + 4;
         ng.ng_Width      = 26;
         ng.ng_Height     = g_m.fy + 6;
         ng.ng_GadgetText = (STRPTR)"_Replace with tolunnet (recommended, non-destructive)";
@@ -610,29 +745,54 @@ static void rebuild_page_gadgets(void)
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
                             GTCB_Checked, g_ws.replace_stacks,
                             TAG_END);
+
+        ng.ng_TopEdge    += g_m.pitch;
+        ng.ng_GadgetText = (STRPTR)"_Import Roadshow interface settings (when found)";
+        ng.ng_GadgetID   = GID_P1_IMPORT_CHK;
+        prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
+                            GTCB_Checked, g_ws.imported_settings,
+                            TAG_END);
         break;
+    }
 
-    case WIZARD_PAGE_HW:
-        for (int i = 0; i < g_ws.hw_count; i++) {
-            g_hw_labels[i] = (STRPTR)g_ws.hw[i].friendly_name;
+    case WIZARD_PAGE_HW: {
+        int rows = g_m.compact ? 4 : 6;
+        int i;
+        for (i = 0; i < g_ws.hw_count && i < MAX_DETECTED_HW; i++) {
+            char mark = (i == g_ws.selected_hw_idx) ? '>' : ' ';
+            snprintf(g_hw_lines[i], sizeof(g_hw_lines[i]),
+                     "%c %-26s u%-2lu  %s  MTU %lu%s",
+                     mark,
+                     g_ws.hw[i].friendly_name,
+                     (unsigned long)g_ws.hw[i].unit,
+                     g_ws.hw[i].mac_str,
+                     (unsigned long)g_ws.hw[i].mtu,
+                     g_ws.hw[i].is_operational ? "" : "  (unusable)");
+            g_hw_labels[i] = (STRPTR)g_hw_lines[i];
         }
-        g_hw_labels[g_ws.hw_count] = NULL;
+        if (g_ws.hw_count == 0) {
+            snprintf(g_hw_lines[0], sizeof(g_hw_lines[0]), "%s",
+                     "(no SANA-II adapters found — press Rescan)");
+            g_hw_labels[0] = (STRPTR)g_hw_lines[0];
+            i = 1;
+        }
+        g_hw_labels[i] = NULL;
 
-        ng.ng_LeftEdge   = cl + 60;
-        ng.ng_TopEdge    = ct + 3 * g_m.pitch;
-        ng.ng_Width      = cw - 60 - 100 - 10;
-        ng.ng_Height     = g_m.fy + 8;
+        ng.ng_LeftEdge   = cl;
+        ng.ng_TopEdge    = ct;
+        ng.ng_Width      = cw;
+        ng.ng_Height     = g_m.pitch * rows + 6;
         ng.ng_GadgetText = (STRPTR)"Adapter:";
-        ng.ng_GadgetID   = GID_P2_HW_CYCLE;
-        ng.ng_Flags      = PLACETEXT_LEFT;
-        prev = CreateGadget(CYCLE_KIND, prev, &ng,
-                            GTCY_Labels, (ULONG)g_hw_labels,
-                            GTCY_Active, g_ws.selected_hw_idx,
+        ng.ng_GadgetID   = GID_P2_LIST;
+        ng.ng_Flags      = PLACETEXT_ABOVE;
+        prev = CreateGadget(LISTVIEW_KIND, prev, &ng,
+                            GTLV_Labels, (ULONG)g_hw_labels,
+                            GTLV_Selected, g_ws.selected_hw_idx,
                             TAG_END);
 
-        ng.ng_LeftEdge   = cl + cw - 100;
-        ng.ng_TopEdge    = ct + 3 * g_m.pitch;
-        ng.ng_Width      = 100;
+        ng.ng_LeftEdge   = cl + cw - 2 * 110 - 8;
+        ng.ng_TopEdge    = ct + g_m.pitch * rows + 10 + g_m.pitch + 4;
+        ng.ng_Width      = 110;
         ng.ng_Height     = g_m.btn_h;
         ng.ng_GadgetText = (STRPTR)"_Rescan";
         ng.ng_GadgetID   = GID_P2_SCAN_BTN;
@@ -640,9 +800,60 @@ static void rebuild_page_gadgets(void)
         prev = CreateGadget(BUTTON_KIND, prev, &ng,
                             GT_Underscore, '_',
                             TAG_END);
-        break;
 
-    case WIZARD_PAGE_WIFI:
+        ng.ng_LeftEdge   = cl + cw - 110;
+        ng.ng_GadgetText = (STRPTR)"_Test adapter";
+        ng.ng_GadgetID   = GID_P2_TEST_BTN;
+        prev = CreateGadget(BUTTON_KIND, prev, &ng,
+                            GT_Underscore, '_',
+                            TAG_END);
+        break;
+    }
+
+    case WIZARD_PAGE_WIFI: {
+        int rows = g_m.compact ? 4 : 6;
+        int i;
+        int shown = 0;
+        for (i = 0; i < g_ws.wifi_count && i < MAX_WIFI_NETWORKS; i++) {
+            char bars[8];
+            int pct = (int)((g_ws.wifi[i].signal_dbm + 100) * 2);
+            int nb = (pct >= 80) ? 5 : (pct >= 60) ? 4 : (pct >= 40) ? 3 : (pct >= 20) ? 2 : 1;
+            int b;
+            const char *sec;
+            if (nb < 1) nb = 1;
+            if (nb > 5) nb = 5;
+            for (b = 0; b < 5; b++) bars[b] = (b < nb) ? '#' : '.';
+            bars[5] = '\0';
+            sec = (g_ws.wifi[i].encryption == 0) ? "Open"
+                : (g_ws.wifi[i].encryption == 1) ? "WEP" : "WPA";
+            snprintf(g_wifi_lines[i], sizeof(g_wifi_lines[i]),
+                     "%c %-24s Ch:%-3d %s [%s]",
+                     (i == g_ws.selected_wifi_idx) ? '>' : ' ',
+                     g_ws.wifi[i].ssid[0] ? g_ws.wifi[i].ssid : "<hidden>",
+                     (int)g_ws.wifi[i].channel, bars, sec);
+            g_wifi_labels[i] = (STRPTR)g_wifi_lines[i];
+            shown++;
+        }
+        if (shown == 0) {
+            snprintf(g_wifi_lines[0], sizeof(g_wifi_lines[0]), "%s",
+                     "(press Scan APs — 2.4 GHz networks only)");
+            g_wifi_labels[0] = (STRPTR)g_wifi_lines[0];
+            shown = 1;
+        }
+        g_wifi_labels[shown] = NULL;
+
+        ng.ng_LeftEdge   = cl;
+        ng.ng_TopEdge    = ct;
+        ng.ng_Width      = cw;
+        ng.ng_Height     = g_m.pitch * rows + 6;
+        ng.ng_GadgetText = (STRPTR)"Networks:";
+        ng.ng_GadgetID   = GID_P3_NETLIST;
+        ng.ng_Flags      = PLACETEXT_ABOVE;
+        prev = CreateGadget(LISTVIEW_KIND, prev, &ng,
+                            GTLV_Labels, (ULONG)g_wifi_labels,
+                            GTLV_Selected, g_ws.selected_wifi_idx,
+                            TAG_END);
+
         ng.ng_LeftEdge   = cl + cw - 100;
         ng.ng_TopEdge    = ct;
         ng.ng_Width      = 100;
@@ -654,13 +865,35 @@ static void rebuild_page_gadgets(void)
                             GT_Underscore, '_',
                             TAG_END);
 
-        ng.ng_LeftEdge   = cl + 80;
-        ng.ng_TopEdge    = ct + (g_m.compact ? 6 : 8) * g_m.pitch;
-        ng.ng_Width      = 200;
-        ng.ng_Height     = g_m.fy + 8;
-        ng.ng_GadgetText = (STRPTR)"Passphrase:";
-        ng.ng_GadgetID   = GID_P3_PASS_STR;
-        ng.ng_Flags      = PLACETEXT_LEFT;
+        /* SSID row (editable: hidden networks) */
+        {
+            LONG row_y = ct + g_m.pitch * rows + 10 + g_m.pitch + 4;
+            if (g_ws.wifi_ssid_str[0] == '\0' &&
+                g_ws.selected_wifi_idx >= 0 && g_ws.selected_wifi_idx < g_ws.wifi_count) {
+                strncpy(g_ws.wifi_ssid_str, g_ws.wifi[g_ws.selected_wifi_idx].ssid,
+                        sizeof(g_ws.wifi_ssid_str) - 1);
+                g_ws.wifi_ssid_str[sizeof(g_ws.wifi_ssid_str) - 1] = '\0';
+            }
+            ng.ng_LeftEdge   = cl + 60;
+            ng.ng_TopEdge    = row_y;
+            ng.ng_Width      = 200;
+            ng.ng_Height     = g_m.fy + 8;
+            ng.ng_GadgetText = (STRPTR)"SSID:";
+            ng.ng_GadgetID   = GID_P3_SSID_STR;
+            ng.ng_Flags      = PLACETEXT_LEFT;
+            prev = CreateGadget(STRING_KIND, prev, &ng,
+                                GTST_String, (ULONG)g_ws.wifi_ssid_str,
+                                GTST_MaxChars, 33,
+                                GA_TabCycle, TRUE,
+                                TAG_END);
+
+            ng.ng_LeftEdge   = cl + 60;
+            ng.ng_TopEdge    = row_y + g_m.pitch;
+            ng.ng_Width      = 200;
+            ng.ng_Height     = g_m.fy + 8;
+            ng.ng_GadgetText = (STRPTR)"Passphrase:";
+            ng.ng_GadgetID   = GID_P3_PASS_STR;
+            ng.ng_Flags      = PLACETEXT_LEFT;
         if (g_ws.wifi_show_pass) {
             strncpy(s_pass_display_buf, g_ws.wifi_pass, sizeof(s_pass_display_buf) - 1);
             s_pass_display_buf[sizeof(s_pass_display_buf) - 1] = '\0';
@@ -671,8 +904,11 @@ static void rebuild_page_gadgets(void)
                                 TAG_END);
         } else {
             size_t plen = strlen(g_ws.wifi_pass);
-            for (size_t i = 0; i < plen && i < sizeof(s_pass_display_buf) - 1; i++) {
-                s_pass_display_buf[i] = '*';
+            {
+                size_t pi;
+                for (pi = 0; pi < plen && pi < sizeof(s_pass_display_buf) - 1; pi++) {
+                    s_pass_display_buf[pi] = '*';
+                }
             }
             s_pass_display_buf[plen < sizeof(s_pass_display_buf) ? plen : sizeof(s_pass_display_buf) - 1] = '\0';
             prev = CreateGadget(STRING_KIND, prev, &ng,
@@ -693,7 +929,9 @@ static void rebuild_page_gadgets(void)
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
                             GTCB_Checked, g_ws.wifi_show_pass,
                             TAG_END);
+        }
         break;
+    }
 
     case WIZARD_PAGE_ADDRESS:
         ng.ng_LeftEdge   = cl + 70;
@@ -716,21 +954,47 @@ static void rebuild_page_gadgets(void)
             ng.ng_GadgetID   = GID_P4_IP_STR;
             ng.ng_GadgetText = (STRPTR)"IP:";
             ng.ng_LeftEdge   = cl + 70;
-            prev = CreateGadgetA(STRING_KIND, prev, &ng, NULL);
+            prev = CreateGadget(STRING_KIND, prev, &ng,
+                                GTST_String, (ULONG)g_ws.ip_str,
+                                GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
             ng.ng_GadgetID   = GID_P4_NM_STR;
             ng.ng_GadgetText = (STRPTR)"Mask:";
             ng.ng_LeftEdge   = cl + 290;
-            prev = CreateGadgetA(STRING_KIND, prev, &ng, NULL);
+            prev = CreateGadget(STRING_KIND, prev, &ng,
+                                GTST_String, (ULONG)g_ws.nm_str,
+                                GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
             ng.ng_GadgetID   = GID_P4_GW_STR;
             ng.ng_GadgetText = (STRPTR)"Gateway:";
             ng.ng_LeftEdge   = cl + 70;
             ng.ng_TopEdge    = ct + 3 * g_m.pitch;
-            prev = CreateGadgetA(STRING_KIND, prev, &ng, NULL);
+            prev = CreateGadget(STRING_KIND, prev, &ng,
+                                GTST_String, (ULONG)g_ws.gw_str,
+                                GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
             ng.ng_GadgetID   = GID_P4_DNS1_STR;
-            ng.ng_GadgetText = (STRPTR)"DNS:";
+            ng.ng_GadgetText = (STRPTR)"DNS 1:";
             ng.ng_LeftEdge   = cl + 290;
-            prev = CreateGadgetA(STRING_KIND, prev, &ng, NULL);
+            prev = CreateGadget(STRING_KIND, prev, &ng,
+                                GTST_String, (ULONG)g_ws.dns1_str,
+                                GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
         }
+
+        /* DNS 2 + MTU are mode-independent (TNET-110 v2.1) */
+        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1 ? 4 : 2) * g_m.pitch;
+        ng.ng_Width      = 130;
+        ng.ng_Height     = g_m.fy + 8;
+        ng.ng_Flags      = PLACETEXT_LEFT;
+        ng.ng_GadgetID   = GID_P4_DNS2_STR;
+        ng.ng_GadgetText = (STRPTR)"DNS 2:";
+        ng.ng_LeftEdge   = cl + 70;
+        prev = CreateGadget(STRING_KIND, prev, &ng,
+                            GTST_String, (ULONG)g_ws.dns2_str,
+                            GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
+        ng.ng_GadgetID   = GID_P4_MTU_STR;
+        ng.ng_GadgetText = (STRPTR)"MTU:";
+        ng.ng_LeftEdge   = cl + 290;
+        prev = CreateGadget(STRING_KIND, prev, &ng,
+                            GTST_String, (ULONG)g_ws.mtu_str,
+                            GTST_MaxChars, 5, GA_TabCycle, TRUE, TAG_END);
 
         ng.ng_LeftEdge   = cl;
         ng.ng_TopEdge    = ct + (g_m.compact ? 5 : 7) * g_m.pitch;
@@ -744,7 +1008,34 @@ static void rebuild_page_gadgets(void)
                             TAG_END);
         break;
 
-    case WIZARD_PAGE_TEST:
+    case WIZARD_PAGE_TEST: {
+        int i;
+        static const char *names[4] = { "Start stack", "Ping gateway",
+                                        "DNS lookup", "HTTP HEAD" };
+        for (i = 0; i < 4; i++) {
+            int st = (i == 0) ? g_ws.test_daemon_ok
+                    : (i == 1) ? g_ws.test_ping_ok
+                    : (i == 2) ? g_ws.test_dns_ok : g_ws.test_http_ok;
+            snprintf(g_check_lines[i], sizeof(g_check_lines[i]),
+                     "%-14s %-7s %s", names[i],
+                     (st == 1) ? "OK" : (st == 0) ? "FAILED" : "..",
+                     g_ws.test_details[i]);
+            g_check_labels[i] = (STRPTR)g_check_lines[i];
+        }
+        g_check_labels[4] = NULL;
+
+        ng.ng_LeftEdge   = cl;
+        ng.ng_TopEdge    = ct;
+        ng.ng_Width      = cw;
+        ng.ng_Height     = g_m.pitch * 4 + 6;
+        ng.ng_GadgetText = (STRPTR)"Checks:";
+        ng.ng_GadgetID   = GID_P5_CHECKLIST;
+        ng.ng_Flags      = PLACETEXT_ABOVE;
+        prev = CreateGadget(LISTVIEW_KIND, prev, &ng,
+                            GTLV_Labels, (ULONG)g_check_labels,
+                            GTLV_ReadOnly, TRUE,
+                            TAG_END);
+
         ng.ng_LeftEdge   = cl + cw - 120;
         ng.ng_TopEdge    = ct;
         ng.ng_Width      = 120;
@@ -755,9 +1046,10 @@ static void rebuild_page_gadgets(void)
         prev = CreateGadget(BUTTON_KIND, prev, &ng,
                             GT_Underscore, '_',
                             TAG_END);
+    }
 
         ng.ng_LeftEdge   = cl;
-        ng.ng_TopEdge    = ct + (g_m.compact ? 6 : 8) * g_m.pitch;
+        ng.ng_TopEdge    = ct + g_m.pitch * 4 + 10 + g_m.pitch + 4;
         ng.ng_Width      = 26;
         ng.ng_Height     = g_m.fy + 6;
         ng.ng_GadgetText = (STRPTR)"Start tolunnet TCP/IP stack automatically at _boot";
@@ -781,6 +1073,17 @@ static void rebuild_page_gadgets(void)
 
 static void apply_wizard_finish(void)
 {
+    sync_page_gadgets_to_state();
+
+    /* TNET-110: explicit MTU overrides the driver default in the writer */
+    if (g_ws.mtu_str[0] != '\0' &&
+        g_ws.selected_hw_idx >= 0 && g_ws.selected_hw_idx < g_ws.hw_count) {
+        long m = atol(g_ws.mtu_str);
+        if (m >= 576 && m <= 1500) {
+            g_ws.hw[g_ws.selected_hw_idx].mtu = (ULONG)m;
+        }
+    }
+
     /* 1. Migrate / disable other stacks */
     if (g_ws.replace_stacks) {
         tn_stack_apply_replacement(&g_ws);
@@ -1138,10 +1441,27 @@ int main(int argc, char **argv)
                         g_ws.replace_stacks = !g_ws.replace_stacks;
                         break;
 
-                    case GID_P2_HW_CYCLE:
-                        g_ws.selected_hw_idx = im_code;
-                        draw_page_content();
+                    case GID_P1_IMPORT_CHK:
+                        g_ws.imported_settings = !g_ws.imported_settings;
                         break;
+
+                    case GID_P2_LIST:
+                        g_ws.selected_hw_idx = im_code;
+                        rebuild_page_gadgets();
+                        break;
+
+                    case GID_P2_TEST_BTN: {
+                        const char *res = "adapter ok";
+                        if (g_ws.selected_hw_idx >= 0 &&
+                            g_ws.selected_hw_idx < g_ws.hw_count &&
+                            !g_ws.hw[g_ws.selected_hw_idx].is_operational) {
+                            res = "adapter unusable (S2 error)";
+                        } else if (g_ws.hw_count == 0) {
+                            res = "no adapter selected";
+                        }
+                        set_status("Test adapter: %s", res);
+                        break;
+                    }
 
                     case GID_P2_SCAN_BTN:
                         set_status("Probing adapters...");
@@ -1166,6 +1486,17 @@ int main(int argc, char **argv)
                     case GID_P3_SHOWPASS_CHK:
                         g_ws.wifi_show_pass = !g_ws.wifi_show_pass;
                         rebuild_page_gadgets();
+                        break;
+
+                    case GID_P3_NETLIST:
+                        if ((int)im_code < g_ws.wifi_count) {
+                            g_ws.selected_wifi_idx = im_code;
+                            strncpy(g_ws.wifi_ssid_str,
+                                    g_ws.wifi[im_code].ssid,
+                                    sizeof(g_ws.wifi_ssid_str) - 1);
+                            g_ws.wifi_ssid_str[sizeof(g_ws.wifi_ssid_str) - 1] = '\0';
+                            rebuild_page_gadgets();
+                        }
                         break;
 
                     case GID_P4_IPMODE_CYCLE:

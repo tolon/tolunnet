@@ -84,6 +84,7 @@ typedef struct WizardState {
     WifiNetwork wifi[MAX_WIFI_NETWORKS];
     int         selected_wifi_idx;
     char        wifi_pass[64];
+    char        wifi_ssid_str[34];   /* TNET-110: editable SSID (hidden networks) */
     BOOL        wifi_show_pass;
     BOOL        wifi_associated;
     char        wifi_status_msg[64];
@@ -95,6 +96,7 @@ typedef struct WizardState {
     char gw_str[16];
     char dns1_str[16];
     char dns2_str[16];
+    char mtu_str[8];        /* TNET-110: blank = driver default, 576..1500 */
     char host_str[32];
     char domain_str[64];
     BOOL write_roadshow;     /* Checkbox: write DEVS:NetInterfaces (default TRUE) */
