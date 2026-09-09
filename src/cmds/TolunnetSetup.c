@@ -145,15 +145,31 @@ static struct DrawInfo *g_dri = NULL;
 static struct Gadget *g_gad_next = NULL;
 static struct Gadget *g_gad_back = NULL;
 static struct Gadget *g_gad_status = NULL;
+static struct Gadget *g_gad_listview = NULL;
 
-static STRPTR g_hw_labels[MAX_DETECTED_HW + 1];
-static char    g_hw_lines[MAX_DETECTED_HW][96];
-static STRPTR g_stack_labels[MAX_DETECTED_STACKS + 1];
-static char    g_stack_lines[MAX_DETECTED_STACKS][96];
-static STRPTR g_wifi_labels[MAX_WIFI_NETWORKS + 1];
-static char    g_wifi_lines[MAX_WIFI_NETWORKS][96];
-static char    g_check_lines[6][96];
-static STRPTR g_check_labels[7];
+#ifndef NewList
+#define NewList(l) do { \
+    (l)->lh_Head = (struct Node *)&(l)->lh_Tail; \
+    (l)->lh_Tail = NULL; \
+    (l)->lh_TailPred = (struct Node *)&(l)->lh_Head; \
+} while (0)
+#endif
+
+static struct List g_hw_list;
+static struct Node g_hw_nodes[MAX_DETECTED_HW + 1];
+static char        g_hw_lines[MAX_DETECTED_HW + 1][96];
+
+static struct List g_stack_list;
+static struct Node g_stack_nodes[MAX_DETECTED_STACKS + 1];
+static char        g_stack_lines[MAX_DETECTED_STACKS + 1][96];
+
+static struct List g_wifi_list;
+static struct Node g_wifi_nodes[MAX_WIFI_NETWORKS + 1];
+static char        g_wifi_lines[MAX_WIFI_NETWORKS + 1][96];
+
+static struct List g_check_list;
+static struct Node g_check_nodes[6];
+static char        g_check_lines[6][96];
 
 static char g_status_text[96] = "Ready.";
 static char g_scr_title[48];
@@ -688,6 +704,13 @@ static void rebuild_page_gadgets(void)
     if (!g_win) return;
     sync_page_gadgets_to_state();
 
+    if (g_gad_listview && g_win) {
+        GT_SetGadgetAttrs(g_gad_listview, g_win, NULL,
+                          GTLV_Labels, ~0,
+                          TAG_DONE);
+        g_gad_listview = NULL;
+    }
+
     if (g_page_glist) {
         RemoveGList(g_win, g_page_glist, -1);
         FreeGadgets(g_page_glist);
@@ -710,18 +733,21 @@ static void rebuild_page_gadgets(void)
     case WIZARD_PAGE_REPLACE: {
         int rows = g_m.compact ? 3 : 5;
         int i;
+        NewList(&g_stack_list);
         for (i = 0; i < g_ws.stack_count && i < MAX_DETECTED_STACKS; i++) {
             snprintf(g_stack_lines[i], sizeof(g_stack_lines[i]), "%-10s %s",
                      g_ws.stacks[i].name, g_ws.stacks[i].details);
-            g_stack_labels[i] = (STRPTR)g_stack_lines[i];
+            memset(&g_stack_nodes[i], 0, sizeof(struct Node));
+            g_stack_nodes[i].ln_Name = g_stack_lines[i];
+            AddTail(&g_stack_list, &g_stack_nodes[i]);
         }
         if (g_ws.stack_count == 0) {
             snprintf(g_stack_lines[0], sizeof(g_stack_lines[0]), "%s",
                      "(no other network stacks found)");
-            g_stack_labels[0] = (STRPTR)g_stack_lines[0];
-            i = 1;
+            memset(&g_stack_nodes[0], 0, sizeof(struct Node));
+            g_stack_nodes[0].ln_Name = g_stack_lines[0];
+            AddTail(&g_stack_list, &g_stack_nodes[0]);
         }
-        g_stack_labels[i] = NULL;
 
         ng.ng_LeftEdge   = cl;
         ng.ng_TopEdge    = ct;
@@ -731,9 +757,10 @@ static void rebuild_page_gadgets(void)
         ng.ng_GadgetID   = GID_P2_LIST + 100; /* display-only list */
         ng.ng_Flags      = PLACETEXT_ABOVE;
         prev = CreateGadget(LISTVIEW_KIND, prev, &ng,
-                            GTLV_Labels, (ULONG)g_stack_labels,
+                            GTLV_Labels, (ULONG)&g_stack_list,
                             GTLV_ReadOnly, TRUE,
                             TAG_END);
+        g_gad_listview = prev;
 
         ng.ng_LeftEdge   = cl;
         ng.ng_TopEdge    = ct + g_m.pitch * rows + 10 + g_m.pitch + 4;
@@ -758,6 +785,7 @@ static void rebuild_page_gadgets(void)
     case WIZARD_PAGE_HW: {
         int rows = g_m.compact ? 4 : 6;
         int i;
+        NewList(&g_hw_list);
         for (i = 0; i < g_ws.hw_count && i < MAX_DETECTED_HW; i++) {
             char mark = (i == g_ws.selected_hw_idx) ? '>' : ' ';
             snprintf(g_hw_lines[i], sizeof(g_hw_lines[i]),
@@ -768,15 +796,17 @@ static void rebuild_page_gadgets(void)
                      g_ws.hw[i].mac_str,
                      (unsigned long)g_ws.hw[i].mtu,
                      g_ws.hw[i].is_operational ? "" : "  (unusable)");
-            g_hw_labels[i] = (STRPTR)g_hw_lines[i];
+            memset(&g_hw_nodes[i], 0, sizeof(struct Node));
+            g_hw_nodes[i].ln_Name = g_hw_lines[i];
+            AddTail(&g_hw_list, &g_hw_nodes[i]);
         }
         if (g_ws.hw_count == 0) {
             snprintf(g_hw_lines[0], sizeof(g_hw_lines[0]), "%s",
                      "(no SANA-II adapters found — press Rescan)");
-            g_hw_labels[0] = (STRPTR)g_hw_lines[0];
-            i = 1;
+            memset(&g_hw_nodes[0], 0, sizeof(struct Node));
+            g_hw_nodes[0].ln_Name = g_hw_lines[0];
+            AddTail(&g_hw_list, &g_hw_nodes[0]);
         }
-        g_hw_labels[i] = NULL;
 
         ng.ng_LeftEdge   = cl;
         ng.ng_TopEdge    = ct;
@@ -786,9 +816,10 @@ static void rebuild_page_gadgets(void)
         ng.ng_GadgetID   = GID_P2_LIST;
         ng.ng_Flags      = PLACETEXT_ABOVE;
         prev = CreateGadget(LISTVIEW_KIND, prev, &ng,
-                            GTLV_Labels, (ULONG)g_hw_labels,
+                            GTLV_Labels, (ULONG)&g_hw_list,
                             GTLV_Selected, g_ws.selected_hw_idx,
                             TAG_END);
+        g_gad_listview = prev;
 
         ng.ng_LeftEdge   = cl + cw - 2 * 110 - 8;
         ng.ng_TopEdge    = ct + g_m.pitch * rows + 10 + g_m.pitch + 4;
@@ -814,6 +845,7 @@ static void rebuild_page_gadgets(void)
         int rows = g_m.compact ? 4 : 6;
         int i;
         int shown = 0;
+        NewList(&g_wifi_list);
         for (i = 0; i < g_ws.wifi_count && i < MAX_WIFI_NETWORKS; i++) {
             char bars[8];
             int pct = (int)((g_ws.wifi[i].signal_dbm + 100) * 2);
@@ -831,16 +863,19 @@ static void rebuild_page_gadgets(void)
                      (i == g_ws.selected_wifi_idx) ? '>' : ' ',
                      g_ws.wifi[i].ssid[0] ? g_ws.wifi[i].ssid : "<hidden>",
                      (int)g_ws.wifi[i].channel, bars, sec);
-            g_wifi_labels[i] = (STRPTR)g_wifi_lines[i];
+            memset(&g_wifi_nodes[i], 0, sizeof(struct Node));
+            g_wifi_nodes[i].ln_Name = g_wifi_lines[i];
+            AddTail(&g_wifi_list, &g_wifi_nodes[i]);
             shown++;
         }
         if (shown == 0) {
             snprintf(g_wifi_lines[0], sizeof(g_wifi_lines[0]), "%s",
                      "(press Scan APs — 2.4 GHz networks only)");
-            g_wifi_labels[0] = (STRPTR)g_wifi_lines[0];
+            memset(&g_wifi_nodes[0], 0, sizeof(struct Node));
+            g_wifi_nodes[0].ln_Name = g_wifi_lines[0];
+            AddTail(&g_wifi_list, &g_wifi_nodes[0]);
             shown = 1;
         }
-        g_wifi_labels[shown] = NULL;
 
         ng.ng_LeftEdge   = cl;
         ng.ng_TopEdge    = ct;
@@ -850,9 +885,10 @@ static void rebuild_page_gadgets(void)
         ng.ng_GadgetID   = GID_P3_NETLIST;
         ng.ng_Flags      = PLACETEXT_ABOVE;
         prev = CreateGadget(LISTVIEW_KIND, prev, &ng,
-                            GTLV_Labels, (ULONG)g_wifi_labels,
+                            GTLV_Labels, (ULONG)&g_wifi_list,
                             GTLV_Selected, g_ws.selected_wifi_idx,
                             TAG_END);
+        g_gad_listview = prev;
 
         ng.ng_LeftEdge   = cl + cw - 100;
         ng.ng_TopEdge    = ct;
@@ -1012,6 +1048,7 @@ static void rebuild_page_gadgets(void)
         int i;
         static const char *names[4] = { "Start stack", "Ping gateway",
                                         "DNS lookup", "HTTP HEAD" };
+        NewList(&g_check_list);
         for (i = 0; i < 4; i++) {
             int st = (i == 0) ? g_ws.test_daemon_ok
                     : (i == 1) ? g_ws.test_ping_ok
@@ -1020,9 +1057,10 @@ static void rebuild_page_gadgets(void)
                      "%-14s %-7s %s", names[i],
                      (st == 1) ? "OK" : (st == 0) ? "FAILED" : "..",
                      g_ws.test_details[i]);
-            g_check_labels[i] = (STRPTR)g_check_lines[i];
+            memset(&g_check_nodes[i], 0, sizeof(struct Node));
+            g_check_nodes[i].ln_Name = g_check_lines[i];
+            AddTail(&g_check_list, &g_check_nodes[i]);
         }
-        g_check_labels[4] = NULL;
 
         ng.ng_LeftEdge   = cl;
         ng.ng_TopEdge    = ct;
@@ -1032,9 +1070,10 @@ static void rebuild_page_gadgets(void)
         ng.ng_GadgetID   = GID_P5_CHECKLIST;
         ng.ng_Flags      = PLACETEXT_ABOVE;
         prev = CreateGadget(LISTVIEW_KIND, prev, &ng,
-                            GTLV_Labels, (ULONG)g_check_labels,
+                            GTLV_Labels, (ULONG)&g_check_list,
                             GTLV_ReadOnly, TRUE,
                             TAG_END);
+        g_gad_listview = prev;
 
         ng.ng_LeftEdge   = cl + cw - 120;
         ng.ng_TopEdge    = ct;
@@ -1537,6 +1576,11 @@ int main(int argc, char **argv)
     }
 
     stop_status_tick();
+
+    if (g_gad_listview && g_win) {
+        GT_SetGadgetAttrs(g_gad_listview, g_win, NULL, GTLV_Labels, ~0, TAG_DONE);
+        g_gad_listview = NULL;
+    }
 
     if (g_page_glist) {
         if (g_win) RemoveGList(g_win, g_page_glist, -1);
