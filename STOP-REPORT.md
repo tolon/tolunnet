@@ -63,6 +63,6 @@ a1200 (same three benches): 34/34 × 2 cycles, every time — including the
    networks + WIFI_PRIORITY=, ToolType FONT=, tc_wizard_ntsc, PAL+NTSC
    screenshots, docs/iron-test-wizard.md, ISSUES TNET-110/112 rows.
 
-Evidence dirs: `docs/bench-logs/20260909-102321-f803e48/` (deleted after
-lesson recorded), `docs/bench-logs/20260909-105717-06b0aae/` (kept — cited
+Evidence dirs: `docs/bench-logs/20260909-103740-f803e48/` (f803e48 run),
+`docs/bench-logs/20260909-105717-06b0aae/` (kept — cited
 above). Green proofs: `20260909-054813-4bdae1f/` (both profiles).

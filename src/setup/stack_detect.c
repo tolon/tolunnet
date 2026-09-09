@@ -256,6 +256,15 @@ static BOOL scan_script_file(const char *path)
 
 static void try_import_roadshow(WizardState *ws)
 {
+#ifdef __AMIGA__
+    struct Process *pr = (struct Process *)FindTask(NULL);
+    APTR old = NULL;
+    if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
+        old = pr->pr_WindowPtr;
+        pr->pr_WindowPtr = (APTR)-1;
+    }
+#endif
+
     /* Check DEVS:NetInterfaces */
     BPTR fh = Open((CONST_STRPTR)"DEVS:NetInterfaces/WiFiPi", MODE_OLDFILE);
     if (!fh) fh = Open((CONST_STRPTR)"DEVS:NetInterfaces/Ethernet", MODE_OLDFILE);
@@ -325,11 +334,26 @@ static void try_import_roadshow(WizardState *ws)
         }
         Close(fh);
     }
+
+#ifdef __AMIGA__
+    if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
+        pr->pr_WindowPtr = old;
+    }
+#endif
 }
 
 static void try_import_amitcp(WizardState *ws)
 {
     if (!ws) return;
+
+#ifdef __AMIGA__
+    struct Process *pr = (struct Process *)FindTask(NULL);
+    APTR old = NULL;
+    if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
+        old = pr->pr_WindowPtr;
+        pr->pr_WindowPtr = (APTR)-1;
+    }
+#endif
 
     /* 1. HostName from ENV:HostName or ENVARC:HostName */
     BPTR fh = Open((CONST_STRPTR)"ENV:HostName", MODE_OLDFILE);
@@ -351,7 +375,14 @@ static void try_import_amitcp(WizardState *ws)
 
     /* 2. Check AmiTCP:db/interfaces (TNET-112: never touch an
      * unassigned volume -- that raises the insert-disk requester) */
-    if (!assign_exists("AmiTCP")) return;
+    if (!assign_exists("AmiTCP")) {
+#ifdef __AMIGA__
+        if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
+            pr->pr_WindowPtr = old;
+        }
+#endif
+        return;
+    }
     fh = Open((CONST_STRPTR)"AmiTCP:db/interfaces", MODE_OLDFILE);
     if (fh) {
         char line[256];
@@ -405,26 +436,34 @@ static void try_import_amitcp(WizardState *ws)
     }
 
     /* 4. Check AmiTCP:db/name_resolution or AmiTCP:db/resolv.conf */
-    fh = Open((CONST_STRPTR)"AmiTCP:db/name_resolution", MODE_OLDFILE);
-    if (!fh) fh = Open((CONST_STRPTR)"AmiTCP:db/resolv.conf", MODE_OLDFILE);
-    if (fh) {
-        char line[128];
-        while (FGets(fh, (STRPTR)line, sizeof(line))) {
-            char word[32], ip[32];
-            if (sscanf(line, "%31s %31s", word, ip) == 2) {
-                if (strcasecmp(word, "nameserver") == 0) {
-                    if (ws->dns1_str[0] == '\0') {
-                        strncpy(ws->dns1_str, ip, sizeof(ws->dns1_str) - 1);
-                    } else if (ws->dns2_str[0] == '\0') {
-                        strncpy(ws->dns2_str, ip, sizeof(ws->dns2_str) - 1);
+    if (assign_exists("AmiTCP")) {
+        fh = Open((CONST_STRPTR)"AmiTCP:db/name_resolution", MODE_OLDFILE);
+        if (!fh) fh = Open((CONST_STRPTR)"AmiTCP:db/resolv.conf", MODE_OLDFILE);
+        if (fh) {
+            char line[128];
+            while (FGets(fh, (STRPTR)line, sizeof(line))) {
+                char word[32], ip[32];
+                if (sscanf(line, "%31s %31s", word, ip) == 2) {
+                    if (strcasecmp(word, "nameserver") == 0) {
+                        if (ws->dns1_str[0] == '\0') {
+                            strncpy(ws->dns1_str, ip, sizeof(ws->dns1_str) - 1);
+                        } else if (ws->dns2_str[0] == '\0') {
+                            strncpy(ws->dns2_str, ip, sizeof(ws->dns2_str) - 1);
+                        }
+                    } else if (strcasecmp(word, "domain") == 0) {
+                        strncpy(ws->domain_str, ip, sizeof(ws->domain_str) - 1);
                     }
-                } else if (strcasecmp(word, "domain") == 0) {
-                    strncpy(ws->domain_str, ip, sizeof(ws->domain_str) - 1);
                 }
             }
+            Close(fh);
         }
-        Close(fh);
     }
+
+#ifdef __AMIGA__
+    if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {
+        pr->pr_WindowPtr = old;
+    }
+#endif
 }
 
 void tn_stack_detect_all(WizardState *ws)
