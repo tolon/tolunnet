@@ -15,6 +15,7 @@
 #ifdef __AMIGA__
 #include <proto/exec.h>
 #include <proto/dos.h>
+#include <dos/dosextens.h>
 #include <exec/types.h>
 #include <exec/execbase.h>
 #include <dos/dos.h>
@@ -189,6 +190,47 @@ static BOOL file_exists(const char *path)
     return FALSE;
 }
 
+/* TNET-112: requester-proof volume/assign check. Opening or locking a
+ * path under an UNASSIGNED volume name (e.g. "AmiTCP:" on a stock system)
+ * makes DOS ask the user to insert that volume -- a requester that blocks
+ * the whole machine (it froze the 68000 bench during the wizard's
+ * migration). Scanning the DosList never touches a handler, so no
+ * requester can occur. 'name' is the bare volume name, no colon. */
+static BOOL assign_exists(const char *name)
+{
+    struct DosList *dl;
+    BOOL found = FALSE;
+    int n = 0;
+    int i;
+    const ULONG bits = LDF_READ | LDF_VOLUMES | LDF_DEVICES | LDF_ASSIGNS;
+
+    while (name[n] != 0 && name[n] != ':') n++;
+    if (n == 0 || n > 30) return FALSE;
+
+    dl = LockDosList(bits);
+    if (dl == NULL) return FALSE;
+    while ((dl = NextDosEntry(dl, LDF_VOLUMES | LDF_DEVICES | LDF_ASSIGNS)) != NULL) {
+        /* dol_Name is a BSTR: length byte + characters */
+        UBYTE *bstr = (UBYTE *)dl->dol_Name;
+        if (bstr != NULL && bstr[0] == (UBYTE)n) {
+            for (i = 0; i < n; i++) {
+                char c = (char)bstr[1 + i];
+                char w = name[i];
+                if (c >= 'a' && c <= 'z') c -= 32;
+                if (w >= 'a' && w <= 'z') w -= 32;
+                if (c != w) break;
+            }
+            if (i == n) {
+                found = TRUE;
+                break;
+            }
+        }
+    }
+    UnLockDosList(bits);
+    return found;
+}
+
+
 static BOOL scan_script_file(const char *path)
 {
     BPTR fh = Open((CONST_STRPTR)path, MODE_OLDFILE);
@@ -307,7 +349,9 @@ static void try_import_amitcp(WizardState *ws)
         Close(fh);
     }
 
-    /* 2. Check AmiTCP:db/interfaces */
+    /* 2. Check AmiTCP:db/interfaces (TNET-112: never touch an
+     * unassigned volume -- that raises the insert-disk requester) */
+    if (!assign_exists("AmiTCP")) return;
     fh = Open((CONST_STRPTR)"AmiTCP:db/interfaces", MODE_OLDFILE);
     if (fh) {
         char line[256];
@@ -411,7 +455,8 @@ void tn_stack_detect_all(WizardState *ws)
 
     /* 2. Check Miami / MiamiDx (do not import binary prefs; detect & disable only) */
     BOOL miami_found = FALSE;
-    if (file_exists("Miami:") || file_exists("ENVARC:MiamiDx") || file_exists("ENVARC:Miami") ||
+    if ((assign_exists("Miami") && file_exists("Miami:")) ||
+        file_exists("ENVARC:MiamiDx") || file_exists("ENVARC:Miami") ||
         file_exists("SYS:WBStartup/Miami.info") ||
         scan_script_file("S:User-Startup") || scan_script_file("S:Startup-Sequence")) {
         miami_found = TRUE;
@@ -437,7 +482,7 @@ void tn_stack_detect_all(WizardState *ws)
 
     /* 4. Check AmiTCP / Genesis */
     BOOL amitcp_found = FALSE;
-    if (file_exists("AmiTCP:") || file_exists("AmiTCP:db/") ||
+    if ((assign_exists("AmiTCP") && (file_exists("AmiTCP:") || file_exists("AmiTCP:db/"))) ||
         file_exists("SYS:WBStartup/Genesis.info")) {
         amitcp_found = TRUE;
     }
@@ -635,7 +680,7 @@ void tn_stack_request_quit(WizardState *ws)
     }
 
     /* 3. AmiTCP shutdown */
-    if (file_exists("AmiTCP:bin/stopnet")) {
+    if (assign_exists("AmiTCP") && file_exists("AmiTCP:bin/stopnet")) {
         Execute((CONST_STRPTR)"AmiTCP:bin/stopnet >NIL: <NIL:", 0, 0);
     }
 
