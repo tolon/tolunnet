@@ -77,3 +77,11 @@ Status: `open` · `answered` · `superseded`.
 2. **[auto] LOOPBACK tier only** (`bsdsocktest LOOPBACK NOPAGE LOG WORK:bsdsocktest.log`): the NETWORK tier needs a host helper which the hermetic bench does not provide; its 15 rows SKIP by design ("host helper not connected").
 3. **[auto] bsdsocktest failures do not gate the bench** — each failing row becomes its own OPEN ISSUES row (fixes are explicitly out of scope for ANX-01). Only the core 35-test suite must stay green on both profiles.
 4. **[auto] bsdsocktest is bench-only, not distributed:** vendored under `vendor/bsdsocktest/` (GPL-3, commit cb08680, notice in THIRD_PARTY_LICENSES.md), built by the `bsdsocktest` Makefile target with the project's `-m68000 -msoft-float -noixemul` flags (upstream Makefile's `-m68020` overridden per TNET-074 universal-binary rule).
+
+## Auto-Decisions (implementation-time, ANX-02 — 2026-09-09)
+
+1. **[auto] Status derivation:** BUILT = `tn_lvo_<name>` body exists in `src/lib/lib_vectors.c` and every `TN_IPC_CMD_*` it marshals has a non-NULL handler in `src/task/ipc_dispatch.c` (or it needs no IPC at all); BROKEN = marshaled command with NULL/missing dispatch entry; STUB = no body (honest stub). SFD names are mixed-case, C handlers lowercase — matching is case-insensitive. Current truth: 66 BUILT / 55 STUB / 0 BROKEN (README's old "61 implemented / 72 stubs" was stale and is now generated).
+2. **[auto] PASS column** comes from the newest bench dir's `68000/conformance.log` TAP — only GREEN `tc_*` tests earn the label; the tc→API map lives in `TC_COVERS` in the script.
+3. **[auto] `docs/compat.md` §3 ("What the OS knows about the stack") moved verbatim to `TOLUNNET-COMPAT.md` §5** instead of being deleted with the rest of the file — it is interface documentation, not a status table; §1 (LVO table) is superseded by the generated table, §2 (app matrix) was stale and contradicted the README.
+4. **[auto] Staleness gate:** `make python-checks` regenerates all LVO outputs and fails on `git diff --exit-code` over them (worktree vs index) — the AmiNetXDuo `check-vector-abi.sh` logic; post-commit this equals worktree vs HEAD.
+5. **[auto] The generator refuses to run when `IMPLEMENTED_FUNCS` drifts from `lib_vectors.c`** — the static set stays as the codegen input but source is the asserted truth.

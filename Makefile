@@ -131,6 +131,11 @@ python-checks:
 	python3 scripts/gen_lvo_table.py
 	python3 scripts/verify_icons.py
 	python3 scripts/check_md_links.py
+	@git diff --exit-code -- src/lib/lib_table.gen.c src/lib/lib_stubs.gen.s \
+		src/lib/lib_unimpl.c src/lib/lib_compat_table.gen.md README.md \
+		|| (echo "FAIL: generated LVO/compat files are stale or hand-edited —"; \
+		    echo "       run scripts/gen_lvo_table.py and commit the result (ANX-02)"; \
+		    exit 1)
 
 $(BUILD):
 	mkdir -p $(BUILD)
