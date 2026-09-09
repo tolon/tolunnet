@@ -1,68 +1,76 @@
-# Tolunnet STOP-REPORT: W4 part-2 bench — recurring 68000-leg system freeze
+# Tolunnet STOP-REPORT: ANX-02 bench — recurring 68000 freeze in bsdsocktest #32 (TNET-115)
 
-**Timestamp:** 2026-09-09 11:05
-**Commits this session (all committed, tree clean):** `4bdae1f` (W4 P1 chrome),
-`6830262` (proof), `f803e48` (W4 P2 pages), `06b0aae` (TNET-112 requester guard)
-**Stop rule fired:** bench red twice in a row (`f803e48`, `06b0aae`) — both 68000 freezes.
+**Timestamp:** 2026-09-09 20:38
+**Stop rule fired:** bench red twice in a row (ANX-02 rule 4).
+**Last green bench:** `docs/bench-logs/20260909-170622-20d951e/` (ANX-01 proof, ALL-GREEN both profiles).
+**Commits this session:** `726b33c` (W4 part 3), `a392d82`/`20d951e`/`2beb9ff` (docs),
+`989eebf` (ANX-01), `9bca042` (ANX-02), `e4039fa` (TNET-115 evidence), tree clean.
 
-## 1. What was delivered (all a1200-proven)
+## 1. What was delivered
 
-- **W4 P1 (`4bdae1f`):** v2 window chrome — step rail, recessed pane + bold
-  titles, status line + 1 s timer tick, Cancel/Back/Next bar (Next→Finish),
-  FONT=name/size CLI font engine, NTSC compact, n/5 screen title.
-  Bench `20260909-054813-4bdae1f`: **ALL-GREEN** (a1200 + 68000, 34/34 ×2 cycles).
-- **W4 P2 (`f803e48`):** page internals — LISTVIEWs (stacks, adapters with
-  '>' marker + unusable flag, networks with #/.- signal bars, checks),
-  editable SSID, associate-on-Next (≤30 s, actionable failure text),
-  address validation (tn_inet_addr_parse_ex + EasyRequest), DNS2 + MTU
-  fields flowing into the config writer.
-- **TNET-112 (`06b0aae`):** requester-proof `assign_exists()` DosList guard on
-  every `AmiTCP:`/`Miami:` access in stack_detect (import reads, install
-  detection, stopnet Execute). Root cause: the owner SAW the Amiga ask for
-  the "AmiTCP" disk — an unassigned-volume access raises a DOS insert-volume
-  requester that blocks the whole machine; it froze the 68000 leg at the
-  wizard test in `f803e48`.
+- **W4 Part 3 / TNET-110 (resolved):** wizard Advanced sibling window, 5-check
+  Test page with advice + Save log… (ASL with RAM: fallback), Host/Domain,
+  FONT= chain (CLI > ToolType > config key > screen font) with TolunnetPrefs
+  "Large text", multi-network Wireless.prefs with priority=, `tc_wizard_ntsc`
+  geometry proof + PAL/NTSC IFF screenshots. Clean proofs: 68000
+  `20260909-152832-726b33c` (35/35 ×2), a1200 `20260909-152558-726b33c`
+  (35/35 ×2 ALL-GREEN).
+- **ANX-01 (`989eebf`):** `bsdsocket_emu=false` gated in both .uae configs,
+  bsdsocktest vendored (GPL-3, tbdye@cb08680) and built with project flags,
+  runs in bench cycle 1 before SocketConformance (after-cycles arrangement
+  froze: third daemon had no bsdsocket.library), SUMMARY.txt score lines.
+  Clean proof `20260909-170622-20d951e/`: ALL-GREEN, **bsdsocktest 102/142
+  on both profiles**, identical 25-row failure set → ISSUES TNET-114…138.
+- **ANX-02 (`9bca042`):** compat table generated from three sources
+  (SFD offsets/prototypes; lib_vectors.c + ipc_dispatch.c → BUILT/BROKEN/STUB;
+  latest bench TAP → PASS column). `docs/compat.md` deleted (unique §3 moved
+  to TOLUNNET-COMPAT §5, §2 links the generated table), README lvo-stats
+  block now generated (66 BUILT / 55 STUB / 0 BROKEN — old "61/72" was
+  stale), `make python-checks` regenerates + git-diff gate, generator
+  asserts IMPLEMENTED_FUNCS against lib_vectors.c.
 
 ## 2. The two red benches (verbatim)
 
 ```
-f803e48 / 68000 cycle 1: ok 31 rows, then TIMEOUT 600 s — frozen during
-        tc_wizard_wired (AmiTCP requester, owner-witnessed → fixed by 06b0aae)
-06b0aae / 68000 cycle 1: core: 9 ok / 0 not ok, then TIMEOUT 600 s:
-        frozen right after tc_listen_accept_loopback, mid tc_connect_refused
-        — daemon task log ends at that test's socket() creation, no client
-        output despite the 5 s IPC watchdog ⇒ system-level freeze.
-a1200 (same three benches): 34/34 × 2 cycles, every time — including the
-        wizard test with the new LISTVIEW code.
+20260909-201118-9bca042 / 68000: TIMEOUT 600 s; conformance.log 0 rows;
+    bsdsocktest.log frozen at 41 lines, last row "ok 31 - sendmsg()/recvmsg():
+    single iovec" → frozen inside test #32 (scatter-gather multi-iovec)
+20260909-202632-e4039fa / 68000: TIMEOUT 600 s; conformance.log 0 rows;
+    bsdsocktest.log frozen at the identical point (after ok 31)
+(a1200 in both runs: core 35/35 ×2 green)
 ```
+
+Because bsdsocktest runs first in the boot script (ANX-01 ordering), the
+freeze kills the leg before SocketConformance starts, so the core suite
+never runs on 68000.
 
 ## 3. Analysis
 
-- The `06b0aae` freeze signature (frozen mid `tc_connect_refused`, ~ok 9,
-  daemon silent, client starved) is **identical to last night's `c7c3c6d`
-  68000 freeze**, which predates all W4 code: a nondeterministic,
-  68000-profile-only system freeze at SANA-II/slirp round-trip points.
-- The AmiTCP requester class is real and fixed (user-witnessed, guard cannot
-  raise a requester by construction — DosList scan only); the residual freeze
-  is the older, unrelated instability.
-- a1200 is rock solid across five consecutive cycles tonight, so the W4 P1/P2
-  code and TNET-112 are exercised and green where the host cooperates.
+- The freeze is **TNET-115** (bsdsocktest #32 sendmsg/recvmsg scatter-gather):
+  3 of 6 full 68000 runs froze at the byte-identical point (`20260909-165110`,
+  `20260909-201118`, `20260909-202632`); a1200 always completes (#32 fails
+  functionally there but never hangs). It predates ANX-02: first occurrence
+  was during the ANX-01 clean bench at commit `989eebf`.
+- ANX-02 changed **no Amiga-side code** (generator/docs/Makefile only —
+  `git show --stat 9bca042`), so it cannot be the cause; it is the
+  bystander whose bench proof is blocked.
+- ANX-02 rule 1 forbids fixing another TNET inside this step, and the stop
+  rule has now fired → stopping as designed.
 
-## 4. Next steps
+## 4. Suggested next steps (owner decision)
 
-1. Owner observation: was a volume requester visible in the `06b0aae` 68000
-   run too? (Window text tells which volume — any name other than the log
-   volume means another unguarded path to grep.)
-2. Re-run `ci/bench.sh` on an idle host (tonight's box carried a long
-   session + extra processes).
-3. If the 68000 freeze persists on an idle host: WinUAE debugger armed
-   (`il 8`), reproduce in the 68000 config, record PC + fault address, and
-   open a separate TNET row — do not chase it inside W4.
-4. W4 part 3 punch list: Advanced… requester (PRIORITY/LOG/DATABASE_ORDER/
-   NTP/IPv6 placeholder), ASL "Save log…", clipboard "Copy report", saved
-   networks + WIFI_PRIORITY=, ToolType FONT=, tc_wizard_ntsc, PAL+NTSC
-   screenshots, docs/iron-test-wizard.md, ISSUES TNET-110/112 rows.
+1. Run **ANX-04** ("68000 freeze diagnosis: health counters") next — it was
+   written for exactly this class of freeze; TNET-115 now has three
+   byte-identical repro logs to work from (`tolunnet-task.log` in each dir
+   ends mid-socket-creation, daemon silent).
+2. After the freeze is fixed or bounded, re-run `ci/bench.sh` once at
+   `9bca042`+ to mint the ANX-02 clean-proof bench dir (the ANX-02 commit
+   itself needs no changes: acceptance greps pass, `make python-checks`
+   green, codegen byte-stable).
+3. Optional interim mitigation if a green bench is needed before ANX-04:
+   add a tolunnet profile to bsdsocktest's `known_failures.c` marking #32
+   KNOWN_CRASH (skips the hang on both profiles; masks the a1200 functional
+   failure of #32, which stays documented in TNET-115).
 
-Evidence dirs: `docs/bench-logs/20260909-103740-f803e48/` (f803e48 run),
-`docs/bench-logs/20260909-105717-06b0aae/` (kept — cited
-above). Green proofs: `20260909-054813-4bdae1f/` (both profiles).
+Evidence dirs: `docs/bench-logs/20260909-201118-9bca042/` and
+`docs/bench-logs/20260909-202632-e4039fa/` (kept).
