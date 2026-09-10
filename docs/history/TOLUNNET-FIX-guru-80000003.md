@@ -47,3 +47,21 @@ D. **Stack/StackSwap (only if PC is in startup code)**: stack size and `stk_Poin
 - ISSUES TNET-084 row: PC, fault address, C line, root-cause class (A/B/C/D), commit, log path. Rung L3.
 
 Do not report this fixed on the basis of "compiles" or "works on the 020 config".
+
+## 2026-09-10 addendum — tooling that makes Step 1 scriptable (TNET-139)
+
+- Launch WinUAE with `-conlogfile <file>`: everything the debugger prints is
+  mirrored to a file (WinUAE 6.0+). No screenshots/OCR.
+- Typing into the debugger console with `SendKeys` is unreliable (Windows
+  foreground lock); `ci/debugger/type-console.ps1` writes keystrokes into the
+  console input buffer via `WriteConsoleInput(CONIN$)` — works headless.
+  `ci/debugger/break-hotkey.ps1` sends the Shift+F12 entry, `dump-console.ps1`
+  reads the console screen buffer via `AttachConsole`+`ReadConsoleOutputCharacter`.
+- The `il 8` mask survives `g` — arm it once before starting the daemon.
+- Emulation caveat learned the hard way: the emulated a2065/`ethernet.device`
+  tolerates SANA-II hook register clobbering, so a whole owner-like matrix
+  (KS 2.04/2.05/3.1, Fast RAM, static wizard config, stripped package binary)
+  can stay healthy while real hardware Gurus. Real-driver behaviour cannot be
+  fully reproduced in WinUAE — keep the register convention right by
+  construction (see sana2_stubs.s) and gate the whole class with
+  `-Werror=cast-align` (CFLAGS) + `make align-check` (host strict).
