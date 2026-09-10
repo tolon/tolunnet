@@ -50,6 +50,16 @@ typedef int32_t  s32_t;
 #define TCP_MSS     1460
 #endif
 
+/* pbuf layers/flags used by the daemon code under test (TNET-115) */
+#define PBUF_TRANSPORT   4
+#define PBUF_IP          3
+#define PBUF_RAM         1
+#define TCP_WRITE_FLAG_COPY 0x01
+#ifndef lwip_htons
+#define lwip_htons(n) ((((n) & 0xffUL) << 8) | (((n) >> 8) & 0xffUL))
+#define lwip_ntohs(n) lwip_htons(n)
+#endif
+
 typedef struct ip4_addr {
     uint32_t addr;
 } ip4_addr_t;
@@ -141,6 +151,7 @@ typedef enum MockCallType {
     MOCK_CALL_RAW_REMOVE,
     MOCK_CALL_TCP_WRITE,
     MOCK_CALL_TCP_OUTPUT,
+    MOCK_CALL_TCP_RECVED,
     MOCK_CALL_UDP_SENDTO,
     MOCK_CALL_RAW_SENDTO,
     MOCK_CALL_REPLY_MSG,
@@ -160,10 +171,14 @@ typedef struct MockCall {
 void mock_lwip_reset(void);
 int mock_lwip_call_count(MockCallType type);
 const MockCall *mock_lwip_last_call(void);
+const MockCall *mock_lwip_call_at(int idx);   /* raw ring index, oldest first */
+int mock_lwip_total_calls(void);
 void mock_lwip_record(MockCallType type, void *p1, void *p2, uint32_t a1, uint32_t a2);
 
 /* Mock lwIP Functions */
 struct pbuf *mock_pbuf_alloc(uint16_t length);
+struct pbuf *pbuf_alloc(uint8_t layer, uint16_t length, uint8_t type);
+void tcp_recved(struct tcp_pcb *pcb, uint16_t len);
 void pbuf_free(struct pbuf *p);
 u16_t pbuf_copy_partial(const struct pbuf *buf, void *dataptr, u16_t len, u16_t offset);
 err_t pbuf_take_at(struct pbuf *buf, const void *dataptr, u16_t len, u16_t offset);

@@ -182,14 +182,27 @@ TC_COVERS = {
 }
 
 def latest_bench_green_tests(root_dir):
-    """Newest bench dir's 68000 conformance TAP -> (green tc names, dir name)."""
+    """Newest GREEN bench dir's 68000 conformance TAP -> (green tc names, dir).
+
+    "Green" = the run's own 68000 conformance.log reports no "not ok" line.
+    Red/frozen runs (e.g. the TNET-115 freeze dirs) must not strip the
+    coverage column from the generated table (TNET-139 regen incident)."""
     base = os.path.join(root_dir, "docs", "bench-logs")
     if not os.path.isdir(base):
         return set(), None
     newest = None
     for d in sorted(os.listdir(base)):
-        if os.path.isfile(os.path.join(base, d, "68000", "conformance.log")):
-            newest = d
+        log = os.path.join(base, d, "68000", "conformance.log")
+        if not os.path.isfile(log):
+            continue
+        with open(log, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        has_plan = any(re.match(r"1\.\.[0-9]+", l) for l in lines)
+        has_ok = any(l.startswith("ok ") for l in lines)
+        has_fail = any(l.startswith("not ok") for l in lines)
+        if not (has_plan and has_ok and not has_fail):
+            continue
+        newest = d
     if newest is None:
         return set(), None
     green = set()

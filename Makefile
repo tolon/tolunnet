@@ -10,7 +10,11 @@ STRIP       = $(CROSS)strip
 # Automatic or overridable NDK include directory (TNET-017)
 NDK_INC    ?= $(shell if [ -d "$$(dirname $$(which $(CC) 2>/dev/null))/../m68k-amigaos/ndk-include" ]; then echo "-I$$(dirname $$(which $(CC)))/../m68k-amigaos/ndk-include"; fi)
 
+# TNET-139: -Werror=cast-align keeps the 68000 Address Error class out of
+# the tree (a word/long access through a cast from a byte-typed pointer is
+# exactly the #80000003 Guru). Vendored code builds with its own flags.
 CFLAGS      = -O2 -fomit-frame-pointer -m68000 -msoft-float -noixemul -Wall -Wextra -Wshadow \
+              -Wcast-align -Werror=cast-align \
               -Ilwipopts -Iinclude -Iinclude/netinclude -Ivendor/lwip/src/include -Isrc \
               $(NDK_INC) -std=c11 -MMD -MP
 LDFLAGS     = -noixemul -msoft-float
@@ -62,6 +66,7 @@ COMMON_OBJS = $(BUILD)/src/common/log.o $(BUILD)/src/common/mem.o $(BUILD)/src/c
               $(BUILD)/src/common/sbtc_dispatch.o $(BUILD)/src/common/fdset_util.o \
               $(BUILD)/src/common/ipc_client.o $(BUILD)/src/common/http_url.o \
               $(BUILD)/src/common/errstr.o $(BUILD)/src/common/sockaddr_util.o \
+              $(BUILD)/src/common/rawfmt.o \
               $(BUILD)/src/task/timers.o
 SANA2_OBJS  = $(BUILD)/src/sana2/sana2_netif.o $(BUILD)/src/sana2/sana2_stubs.o $(BUILD)/src/sana2/buffers.o
 LIB_OBJS    = $(BUILD)/src/lib/lib_init.o $(BUILD)/src/lib/lib_vectors.o \
@@ -137,6 +142,11 @@ python-checks:
 		    echo "       run scripts/gen_lvo_table.py and commit the result (ANX-02)"; \
 		    exit 1)
 
+# TNET-139: host-gcc strict cast-alignment gate over src/ (zero-warning).
+.PHONY: align-check
+align-check:
+	@sh scripts/check_cast_align.sh
+
 $(BUILD):
 	mkdir -p $(BUILD)
 
@@ -160,7 +170,7 @@ $(TOLUNNET_BIN): $(TASK_OBJS) $(LIB_OBJS) $(SANA2_OBJS) $(COMMON_OBJS) $(LWIP_OB
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetStatus Diagnostic Tool (M1/M2)
-$(STATUS_BIN): $(BUILD)/src/cmds/TolunnetStatus.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/config_text.o $(BUILD)/src/common/log.o $(BUILD)/src/common/ipc_client.o
+$(STATUS_BIN): $(BUILD)/src/cmds/TolunnetStatus.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/config_text.o $(BUILD)/src/common/log.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/common/rawfmt.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TestSocket Client Binary (M3)
@@ -172,7 +182,7 @@ $(PING_BIN): $(BUILD)/src/cmds/TolunnetPing.o $(BUILD)/src/common/log.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetGet HTTP Client CLI Binary (M5)
-$(GET_BIN): $(BUILD)/src/cmds/TolunnetGet.o $(BUILD)/src/common/log.o $(BUILD)/src/common/http_url.o
+$(GET_BIN): $(BUILD)/src/cmds/TolunnetGet.o $(BUILD)/src/common/log.o $(BUILD)/src/common/http_url.o $(BUILD)/src/common/rawfmt.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetPrefs Native Workbench GadTools GUI Panel
@@ -222,9 +232,16 @@ BSDTEST_SRCS = \
 	vendor/bsdsocktest/src/test_throughput.c
 BSDTEST_OBJS = $(BSDTEST_SRCS:.c=.o)
 BSDTEST_OBJS := $(addprefix $(BUILD)/,$(BSDTEST_OBJS))
+# Vendored suite: cast-align stays a visible warning but is not fatal there
+# (upstream code, TNET-139 gate applies to src/ only).
+BSDTEST_CFLAGS = $(filter-out -Werror=cast-align,$(CFLAGS))
+
+$(BUILD)/vendor/bsdsocktest/src/%.o: vendor/bsdsocktest/src/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(BSDTEST_CFLAGS) -c $< -o $@
 
 $(BSDTEST_BIN): $(BSDTEST_OBJS)
-	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+	$(CC) $(BSDTEST_CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Release Packaging Target (M7)
 VERSION ?= 1.2.0-rc1

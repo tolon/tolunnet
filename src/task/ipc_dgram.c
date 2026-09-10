@@ -7,6 +7,7 @@
 #include "ipc_select.h"
 #include "slot_table.h"
 #include "netif_mgr.h"
+#include "../common/sockaddr_util.h"
 
 void tn_udp_recv_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p,
                    const ip_addr_t *addr, u16_t port)
@@ -78,14 +79,17 @@ u8_t tn_raw_recv_cb(void *arg, struct raw_pcb *pcb, struct pbuf *p,
 
 int tn_ipc_cmd_bind(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
-    const struct sockaddr_in *sin = (const struct sockaddr_in *)imsg->ptrs[0];
+    const void *sin_ptr = (const void *)imsg->ptrs[0];
     socklen_t namelen = (socklen_t)imsg->args[1];
     ip_addr_t bind_ip;
     u16_t port;
+    u16_t sin_family = 0;
+    u16_t sin_port = 0;
+    uint32_t sin_addr = 0;
     err_t berr;
     (void)d;
 
-    if (slot == NULL || sin == NULL) {
+    if (slot == NULL || sin_ptr == NULL) {
         imsg->result = -1;
         imsg->err_no = EBADF;
         return 0;
@@ -97,14 +101,16 @@ int tn_ipc_cmd_bind(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         return 0;
     }
 
-    if (sin->sin_family != AF_INET) {
+    /* TNET-139: client buffer — byte-wise load, no struct cast */
+    tn_sockin_load_bytes(sin_ptr, &sin_family, &sin_port, &sin_addr);
+    if (sin_family != AF_INET) {
         imsg->result = -1;
         imsg->err_no = EAFNOSUPPORT;
         return 0;
     }
 
-    ip_addr_set_ip4_u32(&bind_ip, sin->sin_addr.s_addr);
-    port = lwip_ntohs(sin->sin_port);
+    ip_addr_set_ip4_u32(&bind_ip, sin_addr);
+    port = sin_port;
 
     if (slot->type == SOCK_STREAM) {
         if (slot->tcp_pcb == NULL) {
@@ -154,7 +160,7 @@ int tn_ipc_cmd_sendto(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
     const void *buf = (const void *)imsg->ptrs[0];
     LONG len = imsg->args[1];
-    const struct sockaddr_in *to = (const struct sockaddr_in *)imsg->ptrs[1];
+    const void *to = (const void *)imsg->ptrs[1];
     (void)d;
 
     if (slot == NULL || buf == NULL || len < 0) {
@@ -212,8 +218,12 @@ int tn_ipc_cmd_sendto(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         pbuf_take(p, buf, send_len);
 
         if (to != NULL) {
-            ip_addr_set_ip4_u32(&dst_ip, to->sin_addr.s_addr);
-            dst_port = lwip_ntohs(to->sin_port);
+            /* TNET-139: client buffer — byte-wise load */
+            u16_t to_port = 0;
+            uint32_t to_addr = 0;
+            tn_sockin_load_bytes(to, NULL, &to_port, &to_addr);
+            ip_addr_set_ip4_u32(&dst_ip, to_addr);
+            dst_port = to_port;
         } else {
             dst_ip = slot->udp_pcb->remote_ip;
             dst_port = slot->udp_pcb->remote_port;
@@ -241,7 +251,9 @@ int tn_ipc_cmd_sendto(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         pbuf_take(p, buf, send_len);
 
         if (to != NULL) {
-            ip_addr_set_ip4_u32(&dst_ip, to->sin_addr.s_addr);
+            uint32_t to_addr = 0;
+            tn_sockin_load_bytes(to, NULL, NULL, &to_addr);
+            ip_addr_set_ip4_u32(&dst_ip, to_addr);
         } else {
             dst_ip = slot->raw_pcb->remote_ip;
         }
@@ -270,7 +282,7 @@ int tn_ipc_cmd_recvfrom(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     void *buf = imsg->ptrs[0];
     LONG len = imsg->args[1];
     LONG flags = imsg->args[2];
-    struct sockaddr_in *from = (struct sockaddr_in *)imsg->ptrs[1];
+    void *from = (void *)imsg->ptrs[1];
     socklen_t *fromlen = (socklen_t *)imsg->ptrs[2];
     (void)d;
 
@@ -292,10 +304,9 @@ int tn_ipc_cmd_recvfrom(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             u16_t copied = pbuf_copy_partial(pkt->p, buf, (u16_t)len, 0);
 
             if (from != NULL) {
-                from->sin_len = sizeof(struct sockaddr_in);
-                from->sin_family = AF_INET;
-                from->sin_port   = lwip_htons(pkt->src_port);
-                from->sin_addr.s_addr = ip_addr_get_ip4_u32(&pkt->src_ip);
+                /* TNET-139: byte-wise store into client buffer */
+                tn_sockin_store_bytes(from, AF_INET, pkt->src_port,
+                                      ip_addr_get_ip4_u32(&pkt->src_ip));
                 if (fromlen != NULL) *fromlen = sizeof(struct sockaddr_in);
             }
 
@@ -328,10 +339,9 @@ int tn_ipc_cmd_recvfrom(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             pbuf_copy_partial(pkt->p, buf, to_copy, 0);
 
             if (from != NULL) {
-                from->sin_len = sizeof(struct sockaddr_in);
-                from->sin_family = AF_INET;
-                from->sin_port   = 0;
-                from->sin_addr.s_addr = ip_addr_get_ip4_u32(&pkt->src_ip);
+                /* TNET-139: byte-wise store into client buffer */
+                tn_sockin_store_bytes(from, AF_INET, 0,
+                                      ip_addr_get_ip4_u32(&pkt->src_ip));
                 if (fromlen != NULL) *fromlen = sizeof(struct sockaddr_in);
             }
 

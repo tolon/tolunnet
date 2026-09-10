@@ -14,6 +14,12 @@
 #include "task/slot_table.h"
 #include "sys/socket.h"
 
+/* TNET-115: exercise the REAL scatter-gather message handlers */
+#include "../../src/task/ipc_msg.c"
+
+/* the daemon's loopback pump is outside the unit under test */
+void tn_drain_loopback(void) { }
+
 TN_TEST(rx_pbuf_chain_partial_reads)
 {
     mock_lwip_reset();
@@ -281,12 +287,108 @@ TN_TEST(event_queue_coalescing_per_bsdsocket_doc)
     tn_slot_free(&d, slot_idx);
 }
 
+TN_TEST(sendmsg_recvmsg_scatter_tnet115)
+{
+    /* bsdsocktest #32 replicated: 3-iovec scatter-gather 50+30+20 over a
+     * TCP loopback slot — send side chunking and recv side placement,
+     * with an ODD base offset so no alignment assumption survives. */
+    mock_lwip_reset();
+
+    TnDaemon d;
+    TnSocketBase base;
+    int slot_idx = -1;
+    tn_slot_table_init(&d);
+    memset(&base, 0, sizeof(base));
+
+    TnSocketSlot *slot = tn_slot_alloc(&d, &base, NULL, AF_INET, SOCK_STREAM,
+                                       IPPROTO_TCP, &slot_idx);
+    TN_ASSERT_TRUE(slot != NULL);
+    struct tcp_pcb pcb;
+    memset(&pcb, 0, sizeof(pcb));
+    slot->tcp_pcb = &pcb;
+    slot->tcp_state = TN_TCP_STATE_ESTABLISHED;
+
+    static unsigned char sbuf[8192], rbuf[8192];
+    const int odd = 1;
+    for (int i = 0; i < 100; i++) sbuf[i] = (unsigned char)(i * 7 + 3);
+    memset(rbuf, 0, sizeof(rbuf));
+
+    /* ---- sendmsg: 3 iovecs 50/30/20 ---- */
+    struct iovec iov[3];
+    struct msghdr msg;
+    memset(&msg, 0, sizeof(msg));
+    iov[0].iov_base = sbuf + odd;       iov[0].iov_len = 50;
+    iov[1].iov_base = sbuf + odd + 50;  iov[1].iov_len = 30;
+    iov[2].iov_base = sbuf + odd + 80;  iov[2].iov_len = 20;
+    msg.msg_iov = iov;
+    msg.msg_iovlen = 3;
+
+    TnIpcMsg imsg;
+    memset(&imsg, 0, sizeof(imsg));
+    imsg.ptrs[0] = &msg;
+    imsg.args[1] = 0;
+
+    TN_ASSERT_EQ(tn_ipc_cmd_sendmsg(&d, &imsg, slot), 0);
+    TN_ASSERT_EQ((LONG)imsg.result, 100);
+    TN_ASSERT_EQ(imsg.err_no, 0);
+
+    /* three tcp_write calls: exact sizes, exact client pointers, in order */
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_WRITE), 3);
+    static const u16_t want_len[3] = { 50, 30, 20 };
+    for (int i = 0; i < 3; i++) {
+        const MockCall *w = mock_lwip_call_at(i);
+        TN_ASSERT_TRUE(w != NULL);
+        TN_ASSERT_EQ(w->type, MOCK_CALL_TCP_WRITE);
+        TN_ASSERT_EQ((int)w->arg1, (int)want_len[i]);
+        TN_ASSERT_EQ(w->ptr2, (void *)(sbuf + odd + (i == 0 ? 0 : (i == 1 ? 50 : 80))));
+    }
+
+    /* ---- recvmsg: same 3-iovec geometry into rbuf ---- */
+    struct pbuf *rp = mock_pbuf_alloc(100);
+    TN_ASSERT_TRUE(rp != NULL);
+    memcpy(rp->payload, sbuf, 100);
+    TnRxPacket *rx = (TnRxPacket *)AllocVec(sizeof(TnRxPacket), 0);
+    TN_ASSERT_TRUE(rx != NULL);
+    memset(rx, 0, sizeof(TnRxPacket));
+    rx->p = rp;
+    slot->rx_head = rx;
+    slot->rx_tail = rx;
+    slot->rx_count = 1;
+
+    struct iovec riov[3];
+    struct msghdr rmsg;
+    memset(&rmsg, 0, sizeof(rmsg));
+    riov[0].iov_base = rbuf + odd;       riov[0].iov_len = 50;
+    riov[1].iov_base = rbuf + odd + 50;  riov[1].iov_len = 30;
+    riov[2].iov_base = rbuf + odd + 80;  riov[2].iov_len = 20;
+    rmsg.msg_iov = riov;
+    rmsg.msg_iovlen = 3;
+
+    TnIpcMsg imsg2;
+    memset(&imsg2, 0, sizeof(imsg2));
+    imsg2.ptrs[0] = &rmsg;
+    imsg2.args[1] = 0;
+
+    TN_ASSERT_EQ(tn_ipc_cmd_recvmsg(&d, &imsg2, slot), 0);
+    TN_ASSERT_EQ((LONG)imsg2.result, 100);
+    TN_ASSERT_EQ(imsg2.err_no, 0);
+    TN_ASSERT_EQ(memcmp(rbuf + odd, sbuf, 100), 0);
+
+    /* the consumed packet was popped and the window returned */
+    TN_ASSERT_TRUE(slot->rx_head == NULL);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_RECVED), 1);
+    TN_ASSERT_EQ((int)mock_lwip_last_call()->arg1, 100);
+
+    tn_slot_free(&d, slot_idx);
+}
+
 int main(void)
 {
     TN_TEST_RUN(rx_pbuf_chain_partial_reads);
     TN_TEST_RUN(rx_queue_limit_and_ordering);
     TN_TEST_RUN(accept_queue_abort_on_drain);
     TN_TEST_RUN(event_queue_coalescing_per_bsdsocket_doc);
+    TN_TEST_RUN(sendmsg_recvmsg_scatter_tnet115);
 
     TN_TEST_PLAN();
     return tn_test_failures();

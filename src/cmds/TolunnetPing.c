@@ -17,6 +17,7 @@
 
 #include "../common/log.h"
 #include "../../include/ipc.h"
+#include <string.h>
 
 static struct Library *SocketBase = NULL;
 
@@ -297,7 +298,7 @@ int main(int argc, char *argv[])
     if (target_ip == (in_addr_t)INADDR_NONE) {
         he = call_gethostbyname(target_str);
         if (he != NULL && he->h_addr_list != NULL && he->h_addr_list[0] != NULL) {
-            target_ip = *(in_addr_t *)he->h_addr_list[0];
+            memcpy(&target_ip, he->h_addr_list[0], sizeof(target_ip)); /* TNET-139 */
         } else {
             tn_logf(TN_LOG_BASIC, "ping: cannot resolve %s\n", target_str);
             if (tm_io) { CloseDevice((struct IORequest *)tm_io); FreeVec(tm_io); }
@@ -373,7 +374,7 @@ int main(int argc, char *argv[])
             total_len = size;
             for (i = 0; i < size; i++) tx_buf[i] = (char)('A' + (i % 26));
         } else {
-            struct tn_icmp_hdr *icmp = (struct tn_icmp_hdr *)tx_buf;
+            struct tn_icmp_hdr *icmp = (struct tn_icmp_hdr *)(void *)tx_buf; /* static buffer, even */
             total_len = sizeof(struct tn_icmp_hdr) + size;
             icmp->type   = TN_ICMP_ECHO_REQUEST;
             icmp->code   = 0;
@@ -383,7 +384,7 @@ int main(int argc, char *argv[])
             for (i = 0; i < size; i++) {
                 tx_buf[sizeof(struct tn_icmp_hdr) + i] = (char)(0x20 + (i % 95));
             }
-            icmp->chksum = in_cksum((const UWORD *)tx_buf, (int)total_len);
+            icmp->chksum = in_cksum((const UWORD *)(const void *)tx_buf, (int)total_len) /* static buffer, even */;
         }
 
         if (tm_io != NULL) {
@@ -438,7 +439,7 @@ int main(int argc, char *argv[])
                         /* In SOCK_RAW, rx_buf starts with IPv4 header */
                         int ip_hlen = (rx_buf[0] & 0x0F) * 4;
                         if (rcvd >= ip_hlen + (int)sizeof(struct tn_icmp_hdr)) {
-                            struct tn_icmp_hdr *rep = (struct tn_icmp_hdr *)(rx_buf + ip_hlen);
+                            struct tn_icmp_hdr *rep = (struct tn_icmp_hdr *)(void *)(rx_buf + ip_hlen); /* ip_hlen is a multiple of 4 */
                             UBYTE ttl = (UBYTE)rx_buf[8];
 
                             if (rep->type == TN_ICMP_ECHO_REPLY && ntohs(rep->id) == ping_id) {

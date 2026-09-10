@@ -6,12 +6,15 @@
 #include "ipc_msg.h"
 #include "slot_table.h"
 #include "netif_mgr.h"
+#include "../common/sockaddr_util.h"
 
 int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
     const struct msghdr *msg = (const struct msghdr *)imsg->ptrs[0];
     LONG flags = imsg->args[1];
-    const struct sockaddr_in *to = NULL;
+    uint32_t to_addr_be = 0;
+    u16_t to_port_host = 0;
+    int have_to = 0;
     ULONG total_len = 0;
     ULONG i;
     (void)d;
@@ -49,7 +52,9 @@ int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             imsg->err_no = EINVAL;
             return 0;
         }
-        to = (const struct sockaddr_in *)msg->msg_name;
+        /* TNET-139: client msg_name buffer — byte-wise load */
+        tn_sockin_load_bytes(msg->msg_name, NULL, &to_port_host, &to_addr_be);
+        have_to = 1;
     }
 
     if (slot->type == SOCK_STREAM && slot->tcp_pcb != NULL) {
@@ -118,9 +123,9 @@ int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             }
         }
 
-        if (to != NULL) {
-            ip_addr_set_ip4_u32(&dst_ip, to->sin_addr.s_addr);
-            dst_port = lwip_ntohs(to->sin_port);
+        if (have_to) {
+            ip_addr_set_ip4_u32(&dst_ip, to_addr_be);
+            dst_port = to_port_host;
         } else {
             dst_ip = slot->udp_pcb->remote_ip;
             dst_port = slot->udp_pcb->remote_port;
@@ -155,8 +160,8 @@ int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             }
         }
 
-        if (to != NULL) {
-            ip_addr_set_ip4_u32(&dst_ip, to->sin_addr.s_addr);
+        if (have_to) {
+            ip_addr_set_ip4_u32(&dst_ip, to_addr_be);
         } else {
             dst_ip = slot->raw_pcb->remote_ip;
         }
@@ -251,6 +256,7 @@ int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                 while (slot->rx_head != NULL && cur_iov < msg->msg_iovlen && total_copied < total_space) {
                     TnRxPacket *pkt = slot->rx_head;
                     u16_t avail = pkt->p->tot_len - pkt->offset;
+                    u16_t pkt_copied = 0;
                     while (avail > 0 && cur_iov < msg->msg_iovlen) {
                         u16_t space = (u16_t)(msg->msg_iov[cur_iov].iov_len - iov_offset);
                         if (space == 0) {
@@ -264,9 +270,12 @@ int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                         avail -= chunk;
                         iov_offset += chunk;
                         total_copied += chunk;
-                        if (slot->tcp_pcb != NULL) {
-                            tcp_recved(slot->tcp_pcb, chunk);
-                        }
+                        pkt_copied += chunk;
+                    }
+                    /* one window update per consumed packet, not per chunk
+                     * (3 iovecs of one frame must not trigger 3 ACKs) */
+                    if (pkt_copied > 0 && slot->tcp_pcb != NULL) {
+                        tcp_recved(slot->tcp_pcb, pkt_copied);
                     }
                     if (pkt->offset >= pkt->p->tot_len) {
                         slot->rx_head = pkt->next;
@@ -327,11 +336,10 @@ int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             }
 
             if (msg->msg_name != NULL && msg->msg_namelen >= sizeof(struct sockaddr_in)) {
-                struct sockaddr_in *from = (struct sockaddr_in *)msg->msg_name;
-                from->sin_len = sizeof(struct sockaddr_in);
-                from->sin_family = AF_INET;
-                from->sin_port   = (slot->type == SOCK_DGRAM) ? lwip_htons(pkt->src_port) : 0;
-                from->sin_addr.s_addr = ip_addr_get_ip4_u32(&pkt->src_ip);
+                /* TNET-139: byte-wise store into client msg_name buffer */
+                tn_sockin_store_bytes(msg->msg_name, AF_INET,
+                                      (slot->type == SOCK_DGRAM) ? pkt->src_port : 0,
+                                      ip_addr_get_ip4_u32(&pkt->src_ip));
                 msg->msg_namelen = sizeof(struct sockaddr_in);
             }
 

@@ -24,7 +24,9 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <sys/errno.h>
+#include <string.h>
 #include "../common/fdset_util.h"
+#include "../common/rawfmt.h"
 
 /* Helper to set errno respecting width */
 static inline void tn_set_errno_val(TnSocketBase *base, LONG err)
@@ -212,7 +214,17 @@ struct Library *tn_lib_open(struct Library *lib, ULONG version)
     /* Copy jump table (negative offsets) and Library struct template */
     CopyMem((CONST APTR)((UBYTE *)lib - neg_size), (APTR)raw_mem, neg_size + sizeof(struct Library));
 
-    base = (TnSocketBase *)(raw_mem + neg_size);
+    /* AllocVec is 8-byte aligned and the generated vector table keeps every
+     * LVO slot word-aligned, so raw_mem + neg_size is a valid struct base.
+     * TNET-139: the odd-neg_size case is refused instead of trusted. */
+    if (neg_size & 1) {
+        FreeVec(raw_mem);
+        Forbid();
+        lib->lib_OpenCnt--;
+        Permit();
+        return NULL;
+    }
+    base = (TnSocketBase *)(void *)(raw_mem + neg_size);
     base->lib_node.lib_NegSize = (UWORD)neg_size;
     base->lib_node.lib_PosSize = (UWORD)sizeof(TnSocketBase);
     base->lib_node.lib_OpenCnt = 1;
@@ -869,7 +881,7 @@ STRPTR tn_lvo_inet_ntoa(in_addr_t ip, TnSocketBase *base)
     base->inet_ntoa_buf[0] = '\0';
     RawDoFmt((CONST_STRPTR)"%lu.%lu.%lu.%lu",
              (APTR)octets,
-             (VOID (*)())"\x16\xc0\x4e\x75",
+             TN_RAWFMT_PUTCH,
              base->inet_ntoa_buf);
     return (STRPTR)base->inet_ntoa_buf;
 }
@@ -1539,13 +1551,19 @@ STRPTR tn_lvo_inet_ntop(LONG af, const void *src, STRPTR dst, LONG size, TnSocke
         tn_set_errno_val(base, ENOSPC);
         return NULL;
     }
-    uint32_t ip = ntohl(((const struct in_addr *)src)->s_addr);
+    /* TNET-139: client src buffer — byte-wise load, no struct cast */
+    uint32_t ip = 0;
+    {
+        struct in_addr tmpl;
+        memcpy(&tmpl, src, sizeof(tmpl));
+        ip = ntohl(tmpl.s_addr);
+    }
     ULONG args[4];
     args[0] = (ip >> 24) & 0xFF;
     args[1] = (ip >> 16) & 0xFF;
-    args[2] = (ip >> 8) & 0xFF;
+    args[2] = (ip >> 8)  & 0xFF;
     args[3] = ip & 0xFF;
-    RawDoFmt((CONST_STRPTR)"%lu.%lu.%lu.%lu", (APTR)args, (VOID (*)())"\x16\xc0\x4e\x75", dst);
+    RawDoFmt((CONST_STRPTR)"%lu.%lu.%lu.%lu", (APTR)args, TN_RAWFMT_PUTCH, dst);
     return dst;
 }
 
@@ -1559,7 +1577,8 @@ LONG tn_lvo_inet_pton(LONG af, CONST_STRPTR src, void *dst, TnSocketBase *base)
     if (src == NULL || dst == NULL) return 0;
     uint32_t out_ip = 0;
     if (tn_inet_addr_parse_ex((const char *)src, &out_ip)) {
-        ((struct in_addr *)dst)->s_addr = out_ip;
+        /* TNET-139: client dst buffer — byte-wise store, no struct cast */
+        memcpy(dst, &out_ip, sizeof(out_ip));
         return 1;
     }
     return 0;
@@ -1631,7 +1650,8 @@ struct hostent *tn_lvo_gethostbyname_r(CONST_STRPTR name, struct hostent *hp, AP
     p[i++] = '\0';
     p = (char *)(((uintptr_t)p + 3) & ~3);
 
-    STRPTR *aliases = (STRPTR *)p;
+    /* p was 4-aligned above; the void* hop records that guarantee (TNET-139) */
+    STRPTR *aliases = (STRPTR *)(void *)p;
     aliases[0] = NULL;
     hp->h_aliases = aliases;
     p += sizeof(STRPTR) * 2;
@@ -1639,11 +1659,13 @@ struct hostent *tn_lvo_gethostbyname_r(CONST_STRPTR name, struct hostent *hp, AP
     hp->h_addrtype = res->h_addrtype;
     hp->h_length = res->h_length;
 
-    uint32_t *ip_storage = (uint32_t *)p;
-    *ip_storage = *(uint32_t *)res->h_addr_list[0];
+    uint32_t *ip_storage = (uint32_t *)(void *)p;
+    uint32_t src_ip = 0;
+    memcpy(&src_ip, res->h_addr_list[0], sizeof(src_ip)); /* daemon buffer: no alignment guarantee */
+    *ip_storage = src_ip;
     p += sizeof(uint32_t);
 
-    STRPTR *addrs = (STRPTR *)p;
+    STRPTR *addrs = (STRPTR *)(void *)p;
     addrs[0] = (STRPTR)ip_storage;
     addrs[1] = NULL;
     hp->h_addr_list = (char **)addrs;
@@ -1676,7 +1698,8 @@ struct hostent *tn_lvo_gethostbyaddr_r(CONST_STRPTR addr, LONG len, LONG type, s
     p[i++] = '\0';
     p = (char *)(((uintptr_t)p + 3) & ~3);
 
-    STRPTR *aliases = (STRPTR *)p;
+    /* p was 4-aligned above; the void* hop records that guarantee (TNET-139) */
+    STRPTR *aliases = (STRPTR *)(void *)p;
     aliases[0] = NULL;
     hp->h_aliases = aliases;
     p += sizeof(STRPTR) * 2;
@@ -1684,11 +1707,13 @@ struct hostent *tn_lvo_gethostbyaddr_r(CONST_STRPTR addr, LONG len, LONG type, s
     hp->h_addrtype = res->h_addrtype;
     hp->h_length = res->h_length;
 
-    uint32_t *ip_storage = (uint32_t *)p;
-    *ip_storage = *(uint32_t *)res->h_addr_list[0];
+    uint32_t *ip_storage = (uint32_t *)(void *)p;
+    uint32_t src_ip = 0;
+    memcpy(&src_ip, res->h_addr_list[0], sizeof(src_ip)); /* daemon buffer: no alignment guarantee */
+    *ip_storage = src_ip;
     p += sizeof(uint32_t);
 
-    STRPTR *addrs = (STRPTR *)p;
+    STRPTR *addrs = (STRPTR *)(void *)p;
     addrs[0] = (STRPTR)ip_storage;
     addrs[1] = NULL;
     hp->h_addr_list = (char **)addrs;

@@ -18,6 +18,8 @@
 
 #include "../common/log.h"
 #include "../common/http_url.h"
+#include "../common/rawfmt.h"
+#include <string.h>
 
 struct Library *SocketBase = NULL;
 
@@ -275,7 +277,7 @@ int main(void)
         if (target_ip == (in_addr_t)INADDR_NONE) {
             he = call_gethostbyname((CONST_STRPTR)current_url.host);
             if (he != NULL && he->h_addr_list != NULL && he->h_addr_list[0] != NULL) {
-                target_ip = *(in_addr_t *)he->h_addr_list[0];
+                memcpy(&target_ip, he->h_addr_list[0], sizeof(target_ip)); /* TNET-139 */
             } else {
                 if (!quiet) tn_logf(TN_LOG_BASIC, "wget: unable to resolve host %s\n", current_url.host);
                 exit_code = 20;
@@ -318,13 +320,13 @@ int main(void)
             req_args[1] = (ULONG)current_url.host;
             req_args[2] = (ULONG)resume_offset;
             RawDoFmt((CONST_STRPTR)"GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: TolunnetGet/1.1 (AmigaOS)\r\nRange: bytes=%ld-\r\nConnection: close\r\n\r\n",
-                     (APTR)req_args, (VOID (*)())"\x16\xc0\x4e\x75", req_buf);
+                     (APTR)req_args, TN_RAWFMT_PUTCH, req_buf);
         } else {
             ULONG req_args[2];
             req_args[0] = (ULONG)current_url.path;
             req_args[1] = (ULONG)current_url.host;
             RawDoFmt((CONST_STRPTR)"GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: TolunnetGet/1.1 (AmigaOS)\r\nConnection: close\r\n\r\n",
-                     (APTR)req_args, (VOID (*)())"\x16\xc0\x4e\x75", req_buf);
+                     (APTR)req_args, TN_RAWFMT_PUTCH, req_buf);
         }
 
         call_send(sock, req_buf, str_len(req_buf), 0);

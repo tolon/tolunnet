@@ -50,4 +50,14 @@ int tn_ip_from_sockaddr(const struct sockaddr *sa, socklen_t salen, tn_ip_addr_t
  */
 int tn_sockaddr_from_ip(struct sockaddr *sa, socklen_t *salen, const tn_ip_addr_t *ip, uint16_t port);
 
+/*
+ * TNET-139: client-supplied sockaddr buffers carry no alignment guarantee on
+ * m68k (an odd base is legal memory and word/long field access there is a
+ * 68000 Address Error). Every daemon/library read or write of a sockaddr_in
+ * in CLIENT memory goes through these byte-wise helpers instead of a struct
+ * cast. Port is host byte order on both sides.
+ */
+void tn_sockin_store_bytes(void *dst, uint16_t family, uint16_t port_host, uint32_t addr_network);
+void tn_sockin_load_bytes(const void *src, uint16_t *family, uint16_t *port_host, uint32_t *addr_network);
+
 #endif /* TOLUNNET_SOCKADDR_UTIL_H */

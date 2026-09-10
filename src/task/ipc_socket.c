@@ -8,6 +8,7 @@
 #include "ipc_dgram.h"
 #include "ipc_select.h"
 #include "slot_table.h"
+#include "../common/sockaddr_util.h"
 #include <string.h>
 
 int tn_ipc_cmd_open(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
@@ -935,12 +936,9 @@ int tn_ipc_cmd_ioctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                 ifr->ifr_name[i] = '\0';
 
                 {
-                    struct sockaddr_in *sin = (struct sockaddr_in *)&ifr->ifr_addr;
-                    for (i = 0; i < (int)sizeof(struct sockaddr_in); i++) ((char *)sin)[i] = 0;
-                    sin->sin_len = sizeof(struct sockaddr_in);
-                    sin->sin_family = AF_INET;
-                    sin->sin_port = 0;
-                    sin->sin_addr.s_addr = netif_ip4_addr(netif)->addr;
+                    /* TNET-139: client ifreq buffer — byte-wise store, no struct cast */
+                    tn_sockin_store_bytes(&ifr->ifr_addr, AF_INET, 0,
+                                          netif_ip4_addr(netif)->addr);
                 }
                 ifr++;
                 space -= sizeof(struct ifreq);
@@ -1019,35 +1017,19 @@ int tn_ipc_cmd_ioctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             imsg->result = 0;
             imsg->err_no = 0;
         } else if (req == SIOCGIFADDR || req == OSIOCGIFADDR) {
-            struct sockaddr_in *sin = (struct sockaddr_in *)&ifr->ifr_addr;
-            int i;
-            for (i = 0; i < (int)sizeof(struct sockaddr_in); i++) ((char *)sin)[i] = 0;
-            sin->sin_len = sizeof(struct sockaddr_in);
-            sin->sin_family = AF_INET;
-            sin->sin_port = 0;
-            sin->sin_addr.s_addr = netif_ip4_addr(netif)->addr;
+            tn_sockin_store_bytes(&ifr->ifr_addr, AF_INET, 0,
+                                  netif_ip4_addr(netif)->addr);
             imsg->result = 0;
             imsg->err_no = 0;
         } else if (req == SIOCGIFNETMASK || req == OSIOCGIFNETMASK) {
-            struct sockaddr_in *sin = (struct sockaddr_in *)&ifr->ifr_addr;
-            int i;
-            for (i = 0; i < (int)sizeof(struct sockaddr_in); i++) ((char *)sin)[i] = 0;
-            sin->sin_len = sizeof(struct sockaddr_in);
-            sin->sin_family = AF_INET;
-            sin->sin_port = 0;
-            sin->sin_addr.s_addr = netif_ip4_netmask(netif)->addr;
+            tn_sockin_store_bytes(&ifr->ifr_addr, AF_INET, 0,
+                                  netif_ip4_netmask(netif)->addr);
             imsg->result = 0;
             imsg->err_no = 0;
         } else if (req == SIOCGIFBRDADDR || req == OSIOCGIFBRDADDR) {
-            struct sockaddr_in *sin = (struct sockaddr_in *)&ifr->ifr_broadaddr;
-            int i;
             u32_t ip = netif_ip4_addr(netif)->addr;
             u32_t nm = netif_ip4_netmask(netif)->addr;
-            for (i = 0; i < (int)sizeof(struct sockaddr_in); i++) ((char *)sin)[i] = 0;
-            sin->sin_len = sizeof(struct sockaddr_in);
-            sin->sin_family = AF_INET;
-            sin->sin_port = 0;
-            sin->sin_addr.s_addr = ip | ~nm;
+            tn_sockin_store_bytes(&ifr->ifr_broadaddr, AF_INET, 0, ip | ~nm);
             imsg->result = 0;
             imsg->err_no = 0;
         } else if (req == SIOCGIFMTU) {
@@ -1064,11 +1046,13 @@ int tn_ipc_cmd_ioctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
 int tn_ipc_cmd_getsockname(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
-    struct sockaddr_in *sin = (struct sockaddr_in *)imsg->ptrs[0];
+    void *sin_ptr = (void *)imsg->ptrs[0];
     socklen_t *namelen = (socklen_t *)imsg->ptrs[1];
+    u16_t port_host = 0;
+    uint32_t addr_be = 0;
     (void)d;
 
-    if (slot == NULL || sin == NULL || namelen == NULL) {
+    if (slot == NULL || sin_ptr == NULL || namelen == NULL) {
         imsg->result = -1;
         imsg->err_no = EBADF;
         return 0;
@@ -1080,23 +1064,22 @@ int tn_ipc_cmd_getsockname(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         return 0;
     }
 
-    sin->sin_len    = sizeof(struct sockaddr_in);
-    sin->sin_family = AF_INET;
-
     if (slot->type == SOCK_STREAM && slot->tcp_pcb != NULL) {
-        sin->sin_port        = lwip_htons(slot->tcp_pcb->local_port);
-        sin->sin_addr.s_addr = ip_2_ip4(&slot->tcp_pcb->local_ip)->addr;
+        port_host = slot->tcp_pcb->local_port;
+        addr_be   = ip_2_ip4(&slot->tcp_pcb->local_ip)->addr;
     } else if (slot->type == SOCK_DGRAM && slot->udp_pcb != NULL) {
-        sin->sin_port        = lwip_htons(slot->udp_pcb->local_port);
-        sin->sin_addr.s_addr = ip_2_ip4(&slot->udp_pcb->local_ip)->addr;
+        port_host = slot->udp_pcb->local_port;
+        addr_be   = ip_2_ip4(&slot->udp_pcb->local_ip)->addr;
     } else if (slot->type == SOCK_RAW && slot->raw_pcb != NULL) {
-        sin->sin_port        = lwip_htons((u16_t)slot->protocol);
-        sin->sin_addr.s_addr = ip_2_ip4(&slot->raw_pcb->local_ip)->addr;
+        port_host = (u16_t)slot->protocol;
+        addr_be   = ip_2_ip4(&slot->raw_pcb->local_ip)->addr;
     } else {
-        sin->sin_port        = 0;
-        sin->sin_addr.s_addr = 0;
+        port_host = 0;
+        addr_be   = 0;
     }
 
+    /* TNET-139: byte-wise store into client buffer */
+    tn_sockin_store_bytes(sin_ptr, AF_INET, port_host, addr_be);
     *namelen = sizeof(struct sockaddr_in);
     imsg->result = 0;
     imsg->err_no = 0;
@@ -1105,11 +1088,13 @@ int tn_ipc_cmd_getsockname(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
 int tn_ipc_cmd_getpeername(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
-    struct sockaddr_in *sin = (struct sockaddr_in *)imsg->ptrs[0];
+    void *sin_ptr = (void *)imsg->ptrs[0];
     socklen_t *namelen = (socklen_t *)imsg->ptrs[1];
+    u16_t port_host = 0;
+    uint32_t addr_be = 0;
     (void)d;
 
-    if (slot == NULL || sin == NULL || namelen == NULL) {
+    if (slot == NULL || sin_ptr == NULL || namelen == NULL) {
         imsg->result = -1;
         imsg->err_no = EBADF;
         return 0;
@@ -1121,9 +1106,6 @@ int tn_ipc_cmd_getpeername(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         return 0;
     }
 
-    sin->sin_len    = sizeof(struct sockaddr_in);
-    sin->sin_family = AF_INET;
-
     if (slot->type == SOCK_STREAM && slot->tcp_pcb != NULL) {
         if (slot->tcp_state != TN_TCP_STATE_ESTABLISHED &&
             slot->tcp_state != TN_TCP_STATE_CONNECTING) {
@@ -1131,25 +1113,27 @@ int tn_ipc_cmd_getpeername(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             imsg->err_no = ENOTCONN;
             return 0;
         }
-        sin->sin_port        = lwip_htons(slot->tcp_pcb->remote_port);
-        sin->sin_addr.s_addr = ip_2_ip4(&slot->tcp_pcb->remote_ip)->addr;
+        port_host = slot->tcp_pcb->remote_port;
+        addr_be   = ip_2_ip4(&slot->tcp_pcb->remote_ip)->addr;
     } else if (slot->type == SOCK_DGRAM && slot->udp_pcb != NULL) {
         if (slot->udp_pcb->remote_port == 0) {
             imsg->result = -1;
             imsg->err_no = ENOTCONN;
             return 0;
         }
-        sin->sin_port        = lwip_htons(slot->udp_pcb->remote_port);
-        sin->sin_addr.s_addr = ip_2_ip4(&slot->udp_pcb->remote_ip)->addr;
+        port_host = slot->udp_pcb->remote_port;
+        addr_be   = ip_2_ip4(&slot->udp_pcb->remote_ip)->addr;
     } else if (slot->type == SOCK_RAW && slot->raw_pcb != NULL) {
-        sin->sin_port        = 0;
-        sin->sin_addr.s_addr = ip_2_ip4(&slot->raw_pcb->remote_ip)->addr;
+        port_host = 0;
+        addr_be   = ip_2_ip4(&slot->raw_pcb->remote_ip)->addr;
     } else {
         imsg->result = -1;
         imsg->err_no = ENOTCONN;
         return 0;
     }
 
+    /* TNET-139: byte-wise store into client buffer */
+    tn_sockin_store_bytes(sin_ptr, AF_INET, port_host, addr_be);
     *namelen = sizeof(struct sockaddr_in);
     imsg->result = 0;
     imsg->err_no = 0;

@@ -68,7 +68,7 @@ void tn_setup_rexx_process(struct MsgPort *port, WizardState *ws, void (*on_refr
             cmd = msg->mn_Node.ln_Name;
         } else {
             /* Check if rm_Args[0] is present (RexxMsg structure layout) */
-            char **args = (char **)((char *)msg + sizeof(struct Message) + 8);
+            char **args = (char **)(void *)((char *)msg + sizeof(struct Message) + 8); /* Exec msg aligned, +24 even */
             if (args && args[0]) {
                 cmd = args[0];
             }

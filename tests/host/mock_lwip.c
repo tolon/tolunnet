@@ -47,6 +47,29 @@ const MockCall *mock_lwip_last_call(void)
     return &s_calls[idx];
 }
 
+const MockCall *mock_lwip_call_at(int idx)
+{
+    if (idx < 0 || idx >= MOCK_MAX_CALLS) return NULL;
+    if (idx >= s_call_count) return NULL;
+    return &s_calls[idx];
+}
+
+int mock_lwip_total_calls(void)
+{
+    return s_call_count;
+}
+
+struct pbuf *pbuf_alloc(uint8_t layer, uint16_t length, uint8_t type)
+{
+    (void)layer; (void)type;
+    return mock_pbuf_alloc(length);
+}
+
+void tcp_recved(struct tcp_pcb *pcb, uint16_t len)
+{
+    mock_lwip_record(MOCK_CALL_TCP_RECVED, pcb, NULL, len, 0);
+}
+
 struct pbuf *mock_pbuf_alloc(uint16_t length)
 {
     size_t sz = sizeof(struct pbuf) + length;

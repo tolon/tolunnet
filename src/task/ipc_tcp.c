@@ -7,6 +7,7 @@
 #include "ipc_select.h"
 #include "slot_table.h"
 #include "netif_mgr.h"
+#include "../common/sockaddr_util.h"
 
 err_t tn_tcp_sent_cb(void *arg, struct tcp_pcb *pcb, u16_t len)
 {
@@ -122,7 +123,7 @@ err_t tn_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
     if (slot->pending_accept_msg != NULL) {
         TnIpcMsg *imsg = slot->pending_accept_msg;
         TnSocketBase *base = (TnSocketBase *)imsg->socket_base;
-        struct sockaddr_in *addr = (struct sockaddr_in *)imsg->ptrs[0];
+        void *addr = (void *)imsg->ptrs[0];
         socklen_t *addrlen = (socklen_t *)imsg->ptrs[1];
         int client_fd = -1;
         int new_slot_idx = -1;
@@ -164,10 +165,9 @@ err_t tn_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
         tcp_err(newpcb, tn_tcp_err_cb);
 
         if (addr != NULL && addrlen != NULL && *addrlen >= sizeof(struct sockaddr_in)) {
-            addr->sin_len    = sizeof(struct sockaddr_in);
-            addr->sin_family = AF_INET;
-            addr->sin_port   = lwip_htons(newpcb->remote_port);
-            addr->sin_addr.s_addr = ip_2_ip4(&newpcb->remote_ip)->addr;
+            /* TNET-139: byte-wise store into client buffer */
+            tn_sockin_store_bytes(addr, AF_INET, newpcb->remote_port,
+                                  ip_2_ip4(&newpcb->remote_ip)->addr);
             *addrlen = sizeof(struct sockaddr_in);
         }
 
@@ -230,7 +230,7 @@ int tn_ipc_cmd_listen(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
 int tn_ipc_cmd_accept(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
-    struct sockaddr_in *addr = (struct sockaddr_in *)imsg->ptrs[0];
+    void *addr = (void *)imsg->ptrs[0];
     socklen_t *addrlen = (socklen_t *)imsg->ptrs[1];
     TnSocketBase *base = (TnSocketBase *)imsg->socket_base;
     (void)d;
@@ -279,10 +279,9 @@ int tn_ipc_cmd_accept(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         tcp_err(new_pcb, tn_tcp_err_cb);
 
         if (addr != NULL && addrlen != NULL && *addrlen >= sizeof(struct sockaddr_in)) {
-            addr->sin_len    = sizeof(struct sockaddr_in);
-            addr->sin_family = AF_INET;
-            addr->sin_port   = lwip_htons(new_pcb->remote_port);
-            addr->sin_addr.s_addr = ip_2_ip4(&new_pcb->remote_ip)->addr;
+            /* TNET-139: byte-wise store into client buffer */
+            tn_sockin_store_bytes(addr, AF_INET, new_pcb->remote_port,
+                                  ip_2_ip4(&new_pcb->remote_ip)->addr);
             *addrlen = sizeof(struct sockaddr_in);
         }
 
@@ -305,18 +304,23 @@ int tn_ipc_cmd_accept(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
 int tn_ipc_cmd_connect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
-    struct sockaddr_in *sin = (struct sockaddr_in *)imsg->ptrs[0];
+    const void *sin_ptr = (const void *)imsg->ptrs[0];
+    uint32_t sin_addr = 0;
+    u16_t sin_port = 0;
     (void)d;
 
-    if (slot == NULL || sin == NULL) {
+    if (slot == NULL || sin_ptr == NULL) {
         imsg->result = -1;
         imsg->err_no = EBADF;
         return 0;
     }
 
+    /* TNET-139: client buffer — byte-wise load */
+    tn_sockin_load_bytes(sin_ptr, NULL, &sin_port, &sin_addr);
+
     if (slot->type == SOCK_STREAM && slot->tcp_pcb != NULL) {
         ip_addr_t dst_ip;
-        u16_t dst_port = lwip_ntohs(sin->sin_port);
+        u16_t dst_port = sin_port;
         err_t cerr;
 
         if (slot->tcp_state == TN_TCP_STATE_CONNECTING) {
@@ -330,7 +334,7 @@ int tn_ipc_cmd_connect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             return 0;
         }
 
-        ip_addr_set_ip4_u32(&dst_ip, sin->sin_addr.s_addr);
+        ip_addr_set_ip4_u32(&dst_ip, sin_addr);
 
         slot->tcp_state = TN_TCP_STATE_CONNECTING;
         if (!slot->is_nonblocking) {
@@ -364,15 +368,15 @@ int tn_ipc_cmd_connect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         return 1; /* TN_IPC_DEFER */
     } else if (slot->type == SOCK_DGRAM && slot->udp_pcb != NULL) {
         ip_addr_t dst_ip;
-        u16_t dst_port = lwip_ntohs(sin->sin_port);
-        ip_addr_set_ip4_u32(&dst_ip, sin->sin_addr.s_addr);
+        u16_t dst_port = sin_port;
+        ip_addr_set_ip4_u32(&dst_ip, sin_addr);
         udp_connect(slot->udp_pcb, &dst_ip, dst_port);
         imsg->result = 0;
         imsg->err_no = 0;
         return 0;
     } else if (slot->type == SOCK_RAW && slot->raw_pcb != NULL) {
         ip_addr_t dst_ip;
-        ip_addr_set_ip4_u32(&dst_ip, sin->sin_addr.s_addr);
+        ip_addr_set_ip4_u32(&dst_ip, sin_addr);
         raw_connect(slot->raw_pcb, &dst_ip);
         imsg->result = 0;
         imsg->err_no = 0;

@@ -1,0 +1,17 @@
+;BEGIN tolunnet TNET-139 repro run D (STRIPPED package binary on 68000)
+Stack 32768
+
+If EXISTS WORK:
+  Delete >NIL: WORK:repro139.log QUIET
+  Delete >NIL: WORK:daemon.log QUIET
+  Delete >NIL: WORK:tolunnet-task.log QUIET
+  Echo >WORK:repro139.log "armed; waiting 60s for debugger"
+EndIf
+
+Wait 60
+Echo >>WORK:repro139.log "starting STRIPPED C:tolunnet"
+C:tolunnet >WORK:daemon.log
+Echo >>WORK:repro139.log "tolunnet RETURNED"
+Wait 30
+Echo >>WORK:repro139.log "script tail reached"
+;END

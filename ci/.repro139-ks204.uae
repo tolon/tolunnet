@@ -1,0 +1,29 @@
+config_description=tolunnet TNET-139 repro — 68000 + Kickstart 2.05 (A600), owner-like
+; KS 2.05 profile: dos.library v37 has NO FGets/FPuts (V38+). If the daemon
+; calls FGets at startup (tn_prefs_load with an existing config file) the LVO
+; slot is beyond the v37 jump table -> wild jump -> 68000 Address Error.
+use_gui=no
+kickstart_rom_file=E:\amiga\Shared\rom\amiga-os-204.rom
+chipset=ecs
+chipset_compatible=A600
+cpu_type=68000
+cpu_compatible=true
+cpu_speed=max
+chipmem_size=2
+fastmem_size=4
+ntsc=true
+
+hardfile2=rw,DH0:E:\amiga\Amigatolon\bench\tolunnet\wb30-repro139.hdf,32,1,2,512,0,,uae0
+uaehf0=hdf,rw,DH0:"E:\amiga\Amigatolon\bench\tolunnet\wb30-repro139.hdf",32,1,2,512,0,,uae0
+
+filesystem2=rw,WORK:Work:E:\amiga\Amigatolon\work,-128
+uaehf1=dir,rw,WORK:Work:"E:\amiga\Amigatolon\work",-128
+
+a2065=slirp
+a2065label=tolunnet
+
+floppy0type=-1
+nr_floppies=0
+sound_output=none
+win32.start_minimized=no
+bsdsocket_emu=false

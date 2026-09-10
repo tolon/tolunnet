@@ -18,28 +18,44 @@ static inline uint16_t tn_swap16(uint16_t x) {
 #define tn_ntohs(x) tn_swap16(x)
 #endif
 
+static uint16_t tn_sa_family_load(const struct sockaddr *sa)
+{
+    /* TNET-139: byte-safe read of sa_family — client buffers may be odd */
+    sa_family_t fam;
+    memcpy(&fam, &sa->sa_family, sizeof(fam));
+    return (uint16_t)fam;
+}
+
+static void tn_sa_family_store(struct sockaddr *sa, uint16_t fam)
+{
+    sa_family_t f = (sa_family_t)fam;
+    memcpy(&sa->sa_family, &f, sizeof(f));
+}
+
 int tn_ip_from_sockaddr(const struct sockaddr *sa, socklen_t salen, tn_ip_addr_t *out_ip, uint16_t *out_port)
 {
     if (sa == NULL || salen == 0 || out_ip == NULL) {
         return 0;
     }
 
-    if (sa->sa_family == AF_INET) {
-        const struct sockaddr_in *sin;
+    if (tn_sa_family_load(sa) == AF_INET) {
+        uint16_t family;
+        uint16_t port;
+        uint32_t addr;
         if (salen < (socklen_t)sizeof(struct sockaddr_in)) {
             return 0;
         }
-        sin = (const struct sockaddr_in *)sa;
+        tn_sockin_load_bytes(sa, &family, &port, &addr);
         out_ip->family = AF_INET;
-        out_ip->u.ip4 = sin->sin_addr.s_addr;
+        out_ip->u.ip4 = addr;
         if (out_port != NULL) {
-            *out_port = tn_ntohs(sin->sin_port);
+            *out_port = port;
         }
         return 1;
     }
 
     /* Future AF_INET6 branch: */
-    if (sa->sa_family == AF_INET6) {
+    if (tn_sa_family_load(sa) == AF_INET6) {
         /* If system provides struct sockaddr_in6: */
 #ifdef AF_INET6
         /* 28 bytes minimum for sockaddr_in6 */
@@ -70,18 +86,11 @@ int tn_sockaddr_from_ip(struct sockaddr *sa, socklen_t *salen, const tn_ip_addr_
     }
 
     if (ip->family == AF_INET) {
-        struct sockaddr_in *sin;
         if (*salen < (socklen_t)sizeof(struct sockaddr_in)) {
             return 0;
         }
-        sin = (struct sockaddr_in *)sa;
-        memset(sin, 0, sizeof(struct sockaddr_in));
-#if defined(__AMIGA__) || defined(SIN_LEN) || defined(HAVE_SOCKADDR_LEN)
-        sin->sin_len = sizeof(struct sockaddr_in);
-#endif
-        sin->sin_family = AF_INET;
-        sin->sin_port = tn_htons(port);
-        sin->sin_addr.s_addr = ip->u.ip4;
+        memset(sa, 0, sizeof(struct sockaddr_in));
+        tn_sockin_store_bytes(sa, AF_INET, port, ip->u.ip4);
         *salen = sizeof(struct sockaddr_in);
         return 1;
     }
@@ -94,7 +103,7 @@ int tn_sockaddr_from_ip(struct sockaddr *sa, socklen_t *salen, const tn_ip_addr_
 #if defined(__AMIGA__) || defined(SIN_LEN) || defined(HAVE_SOCKADDR_LEN)
         ((uint8_t *)sa)[0] = 28; /* sin6_len */
 #endif
-        sa->sa_family = AF_INET6;
+        tn_sa_family_store(sa, AF_INET6);
         {
             uint16_t p = tn_htons(port);
             memcpy(((uint8_t *)sa) + 2, &p, 2);
@@ -105,4 +114,41 @@ int tn_sockaddr_from_ip(struct sockaddr *sa, socklen_t *salen, const tn_ip_addr_
     }
 
     return 0;
+}
+
+/*
+ * TNET-139 byte-wise sockaddr_in access: fill/read an aligned local
+ * sockaddr_in and memcpy it to/from the client buffer, so no word/long field
+ * access ever happens on memory whose alignment we do not control. Layout
+ * and byte order come from the platform's own struct definition, which keeps
+ * the host tests honest.
+ */
+void tn_sockin_store_bytes(void *dst, uint16_t family, uint16_t port_host, uint32_t addr_network)
+{
+    struct sockaddr_in tmpl;
+    if (dst == NULL) return;
+    memset(&tmpl, 0, sizeof(tmpl));
+#if defined(__AMIGA__) || defined(SIN_LEN) || defined(HAVE_SOCKADDR_LEN)
+    tmpl.sin_len = sizeof(struct sockaddr_in);
+#endif
+    tmpl.sin_family = family;
+    tmpl.sin_port = tn_htons(port_host);
+    tmpl.sin_addr.s_addr = addr_network;
+    memcpy(dst, &tmpl, sizeof(tmpl));
+}
+
+void tn_sockin_load_bytes(const void *src, uint16_t *family, uint16_t *port_host, uint32_t *addr_network)
+{
+    struct sockaddr_in tmpl;
+    if (src == NULL) return;
+    memcpy(&tmpl, src, sizeof(tmpl));
+    if (family != NULL) {
+        *family = tmpl.sin_family;
+    }
+    if (port_host != NULL) {
+        *port_host = tn_ntohs(tmpl.sin_port);
+    }
+    if (addr_network != NULL) {
+        *addr_network = tmpl.sin_addr.s_addr;
+    }
 }

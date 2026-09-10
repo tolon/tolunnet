@@ -17,6 +17,7 @@
 #include "../common/prefs.h"
 #include "../common/ipc_client.h"
 #include "../../include/ipc.h"
+#include "../common/rawfmt.h"
 
 static int str_ends_with(const char *s, const char *suffix)
 {
@@ -41,7 +42,7 @@ static void ip_to_str(ULONG ip, char *buf)
     buf[0] = '\0';
     RawDoFmt((CONST_STRPTR)"%lu.%lu.%lu.%lu",
              (APTR)octets,
-             (VOID (*)())"\x16\xc0\x4e\x75",
+             TN_RAWFMT_PUTCH,
              buf);
 }
 
@@ -56,13 +57,13 @@ static void format_ip_port(ULONG ip, UWORD port, char *buf)
         ULONG args[4] = {b0, b1, b2, b3};
         RawDoFmt((CONST_STRPTR)"%lu.%lu.%lu.%lu:*",
                  (APTR)args,
-                 (VOID (*)())"\x16\xc0\x4e\x75",
+                 TN_RAWFMT_PUTCH,
                  buf);
     } else {
         ULONG args[5] = {b0, b1, b2, b3, (ULONG)port};
         RawDoFmt((CONST_STRPTR)"%lu.%lu.%lu.%lu:%lu",
                  (APTR)args,
-                 (VOID (*)())"\x16\xc0\x4e\x75",
+                 TN_RAWFMT_PUTCH,
                  buf);
     }
 }

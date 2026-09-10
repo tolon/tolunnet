@@ -9,6 +9,9 @@ cpu_type=68000
 cpu_compatible=true
 cpu_speed=max
 chipmem_size=2
+; TNET-139: match real 68000 desktops (Zorro II Fast RAM). The old profile had
+; bogomem only, so MEMF_ANY allocations never landed in Fast RAM during bench.
+fastmem_size=4
 bogomem_size=4
 ntsc=true
 
