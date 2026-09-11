@@ -239,6 +239,19 @@ static BOOL font_from_config(char *spec, size_t speclen)
     return FALSE;
 }
 
+/* Owner-side diagnostics (2026-09-11): phase progress to the console.
+ * Harmless without one (Run <>NIL:), decisive with one: the last printed
+ * phase in a crash photo pinpoints the failing step. */
+static void wlog(const char *phase)
+{
+    if (DOSBase == NULL) return;
+    if (Output() != (BPTR)0) {
+        PutStr((CONST_STRPTR)"TolunnetSetup: ");
+        PutStr((CONST_STRPTR)phase);
+        PutStr((CONST_STRPTR)"\n");
+    }
+}
+
 static void setup_font(int argc, char **argv)
 {
     char spec[64] = "";
@@ -1707,6 +1720,7 @@ int main(int argc, char **argv)
         pr->pr_WindowPtr = (APTR)-1;
     }
 
+    wlog("startup: opening libraries");
     /* Initialize ARexx host port early so external scripts and bench can connect immediately */
     struct MsgPort *rexx_port = tn_setup_rexx_init();
 
@@ -1717,15 +1731,18 @@ int main(int argc, char **argv)
     IconBase      = OpenLibrary((CONST_STRPTR)"icon.library", 36);
     AslBase       = OpenLibrary((CONST_STRPTR)"asl.library", 36);
 
+    wlog("libraries open, choosing font");
     setup_font(argc, argv);
 
-    /* Run initial scans */
+    wlog("scanning installed stacks");
     tn_stack_detect_all(&g_ws);
+    wlog("scanning network hardware");
     tn_hw_scan_all(&g_ws);
 
     struct Screen *scr = NULL;
     BOOL owns_screen = FALSE;
 
+    wlog("opening screen");
     if (IntuitionBase && GfxBase && GadToolsBase) {
         scr = LockPubScreen(NULL);
         if (!scr) {
@@ -1797,6 +1814,7 @@ int main(int argc, char **argv)
                                 TAG_END);
             g_gad_status = prev;
 
+            wlog("building gadgets");
             g_win = OpenWindowTags(NULL,
                                    WA_Left,         (scr->Width - g_m.win_w) / 2,
                                    WA_Top,          (scr->Height - g_m.win_h) / 2,

@@ -38,7 +38,9 @@
 
 (set #device-name
   (askstring
-    (prompt "Enter the SANA-II device name for your network card:\n(e.g. ethernet.device, a2065.device, cnet.device, ariadne.device)")
+    (prompt "Enter the SANA-II device name for your network card:
+PiStorm WiFi: wifipi.device - others: ethernet.device,
+a2065.device, cnet.device, ariadne.device)")
     (help "Enter the name of the SANA-II network device driver file located in DEVS:Networks/ or DEVS:.")
     (default "ethernet.device")
   )
@@ -176,6 +178,6 @@
   "Launching the Network Setup Wizard now..."
 )
 
-(execute "Run <>NIL: SYS:Prefs/TolunnetSetup")
+(execute "Run SYS:Prefs/TolunnetSetup")
 
 (exit)

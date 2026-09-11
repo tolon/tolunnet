@@ -47,3 +47,31 @@ yapmadığından Address Error sınıfı (#80000003) kapalıdır (TNET-139).
 - Guru alırsanız (beklenmiyor): Guru'daki görev adını ve hex kodu
   bildirin — `docs/history/TOLUNNET-FIX-guru-80000003.md` yöntemiyle
   teşhis için kullanılacak.
+
+## 5. AmigaOS 3.9 / hazır dağıtım (AmiKit vb.) üzerinde
+
+Popüler dağıtımlar (AmiKit for PiStorm gibi) çoğu zaman **kendi TCP/IP
+yığınıyla** (Roadshow/Miami) gelir. Bunlar `bsdsocket.library`'yi LIBS:'te
+taşır; tolunnet kendi kütüphanesini kurarken çakışma doğar. Kurulumda:
+
+1. Installer, sihirbazı artık **konsol penceresiyle** başlatır — açılış
+   aşamaları (`opening libraries`, `scanning installed stacks`,
+   `scanning network hardware`, `opening screen`, `building gadgets`)
+   konsola yazılır. Bir Software Failure görürseniz **konsoldaki son
+   satırın + Guru kutusunun Task satırının yakın çekimini** fotoğraflayıp
+   gönderin: hatayı tam satırına kadar izleriz.
+2. Sihirbazın donanım sayfası mevcut yığını saptayıp devre dışı bırakmayı
+   önerir (Stacks sayfası). Kabul edin; istereniz `TolunnetStatus` ile
+   hangi yığının hizmet verdiğini doğrulayın.
+3. Dağıtımın kendi ağ başlatma satırları (User-Startup içinde
+   `addnetinterface` vb.) sihirbaz tarafından saptanır ve kapatılabilir.
+
+### Beklenmeyen Guru alırsan (test prosedürü, ~3 dakika)
+
+1. Bir Shell açın ve şunu çalıştırın: `SYS:Prefs/TolunnetSetup`
+2. Konsoldaki son aşama satırını not edin.
+3. Guru çıkarsa: Guru kutusunun **Task satırını yakın çekim**
+   fotoğraflayın (görev adı tırnak içindedir).
+4. `TolunnetStatus` çıktısını da ekleyin.
+
+Bu üç veri (son aşama + görev adı + status) teşhisi tek turda bitirir.

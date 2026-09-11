@@ -1,0 +1,32 @@
+config_description=tolunnet GUI-less owner repro — testboot dir + AmiKit copy as DH1
+; BOOT: is a host dir (bootpri 1) whose Startup-Sequence assigns the AmiKit
+; copy (DH1, bootpri 0) environment and then runs the tolunnet daemon and
+; TolunnetSetup wizard against it, headless-friendly with a Wait 60 arming
+; window for the WinUAE debugger (ci/debugger).
+use_gui=no
+kickstart_rom_file=E:\amiga\Shared\rom\amiga-os-310-a1200.rom
+chipset=aga
+cpu_type=68ec020
+cpu_compatible=true
+cpu_speed=max
+chipmem_size=4
+fastmem_size=8
+ntsc=false
+
+filesystem2=rw,BOOT:Work:D:\Projeler\tolunnet\.testboot,1
+uaehf0=dir,rw,BOOT:Work:"D:\Projeler\tolunnet\.testboot",1
+
+hardfile2=rw,DH1:E:\amiga\Amigatolon\bench\tolunnet\amikit-copy.hdf,32,1,2,512,0,,uae0
+uaehf1=hdf,rw,DH1:"E:\amiga\Amigatolon\bench\tolunnet\amikit-copy.hdf",32,1,2,512,0,,uae0
+
+filesystem2=rw,PACK:Work:D:\Projeler\tolunnet\build\release\tolunnet,-130
+uaehf2=dir,rw,PACK:Work:"D:\Projeler\tolunnet\build\release\tolunnet",-130
+
+filesystem2=rw,WORK:Work:E:\amiga\Amigatolon\work,-128
+uaehf3=dir,rw,WORK:Work:"E:\amiga\Amigatolon\work",-128
+
+floppy0type=-1
+nr_floppies=0
+sound_output=none
+win32.start_minimized=no
+bsdsocket_emu=false
