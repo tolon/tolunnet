@@ -74,3 +74,17 @@ never runs on 68000.
 
 Evidence dirs: `docs/bench-logs/20260909-201118-9bca042/` and
 `docs/bench-logs/20260909-202632-e4039fa/` (kept).
+
+---
+
+## 2026-09-11 CLOSURE
+
+**Reopened and closed by:** TNET-139 session (owner-directed).
+- The blocked ANX-02 clean-proof bench now exists: `20260911-001150-5f71f10`
+  (68000 ALL-GREEN at the TNET-139 fix commit, Fast-RAM profile) plus
+  a1200 35/35 ×2 in `20260910-235753-5f71f10` (same commit; its 68000 leg
+  froze — TNET-115 occurrence #4, recorded in ISSUES.md).
+- TNET-115 remains OPEN (4 occurrences, byte-identical point); diagnosis is
+  the ANX-04 next step, now equipped with the WinUAE debugger automation in
+  `ci/debugger/`.
+- This report is historical; no stop rule is currently active.
