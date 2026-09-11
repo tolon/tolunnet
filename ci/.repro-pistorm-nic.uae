@@ -1,0 +1,32 @@
+config_description=tolunnet A500+PiStorm verification — 68ec020 + Fast RAM, NO NIC
+; Owner's target machine: A500 with PiStorm (RPi CPU emulator). Typical
+; PiStorm setup: 68ec020-class core, several MB of Fast RAM on the RPi side,
+; Kickstart 3.1, and NO network card. This profile verifies every startup
+; path that machine can take (daemon with no SANA-II device = clean exit,
+; wizard hardware scan with no NIC, and with-NIC via the a2065 variant
+; ci/.repro-pistorm-nic.uae).
+use_gui=no
+kickstart_rom_file=E:\amiga\Shared\rom\amiga-os-310-a600.rom
+chipset=ecs
+chipset_compatible=A600
+cpu_type=68ec020
+cpu_compatible=true
+cpu_speed=max
+chipmem_size=2
+fastmem_size=8
+ntsc=true
+
+hardfile2=rw,DH0:E:\amiga\Amigatolon\bench\tolunnet\wb30-repro139.hdf,32,1,2,512,0,,uae0
+uaehf0=hdf,rw,DH0:"E:\amiga\Amigatolon\bench\tolunnet\wb30-repro139.hdf",32,1,2,512,0,,uae0
+
+filesystem2=rw,WORK:Work:E:\amiga\Amigatolon\work,-128
+uaehf1=dir,rw,WORK:Work:"E:\amiga\Amigatolon\work",-128
+
+a2065=slirp
+a2065label=tolunnet
+
+floppy0type=-1
+nr_floppies=0
+sound_output=none
+win32.start_minimized=no
+bsdsocket_emu=false

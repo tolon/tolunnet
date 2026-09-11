@@ -1,4 +1,6 @@
-;BEGIN tolunnet TNET-139 repro run D (STRIPPED package binary on 68000)
+;BEGIN tolunnet PiStorm verification (68ec020 + Fast RAM profile)
+; Variants: ci/.repro-pistorm.uae (no NIC — clean-exit path),
+; ci/.repro-pistorm-nic.uae (a2065 stand-in for wifipi.device).
 Stack 32768
 
 If EXISTS WORK:
@@ -9,9 +11,9 @@ If EXISTS WORK:
 EndIf
 
 Wait 60
-Echo >>WORK:repro139.log "starting STRIPPED C:tolunnet"
+Echo >>WORK:repro139.log "starting C:tolunnet"
 C:tolunnet >WORK:daemon.log
 Echo >>WORK:repro139.log "tolunnet RETURNED"
-Wait 30
+Wait 15
 Echo >>WORK:repro139.log "script tail reached"
 ;END
