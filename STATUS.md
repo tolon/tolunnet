@@ -20,13 +20,15 @@
 | **M8** | Workbench Preferences GUI | **EMULATOR-PROVEN** | [`docs/bench-logs/20260905-232628-897281c/`](file:///d:/Projeler/tolunnet/docs/bench-logs/20260905-232628-897281c/) — non-blocking daemon control, ToolTypes, WBStartup, NTSC 640×200 layout |
 | **M9** | bsdsocktest (third-party bsdsocket conformance; UAE emulation gated off) | **BENCH-BASELINED 102/142** | [`docs/bench-logs/20260909-170622-20d951e/`](file:///d:/Projeler/tolunnet/docs/bench-logs/20260909-170622-20d951e/) `SUMMARY.txt` — `bsdsocktest: 102/142` identical on a1200 and 68000, core 35/35 both; 25 OPEN rows in ISSUES.md (TNET-114…TNET-138) |
 | **M10** | TNET-139: 68000 `#80000003` Address Error class fix (SANA-II hook register convention + byte-wise client buffers + `-Werror=cast-align` / `make align-check` CI gates; bench 68000 profile now Fast-RAM) | **DUAL-PROFILE GREEN** | a1200 35/35 both cycles (`20260910-235753-5f71f10`) and 68000 35/35 both cycles on the new Fast-RAM profile (`20260911-001150-5f71f10`, ALL-GREEN, commit `5f71f10`); host tests + zero-warning alignment gates green; TNET-115 froze the first 68000 attempt at the known point (occurrence #4, see ISSUES.md); owner's real-machine verification pending |
+| **M11** | ANX-03 `check-forbid` gate + FORBID.md + PiStorm owner-machine verification profiles | **DUAL-PROFILE GREEN** | `20260911-133244-526d7b3` ALL-GREEN (35/35 ×2 both profiles, commit `526d7b3`); 18 regions inventoried, TNET-140 finding recorded; A500+PiStorm profiles in `ci/.repro-pistorm*.uae` (no-NIC clean exit, with-NIC healthy, WiFiPi source compatibility confirmed) |
 
 ---
 
 ## Working Tree Build Artifacts
 
-- 📦 **LhA Release Archive:** [`build/tolunnet-1.2.0-rc1.lha`](file:///d:/Projeler/tolunnet/build/tolunnet-1.2.0-rc1.lha) (585,480 bytes, universal `-m68000`, 4-color Depth=2 icons)
-- 💾 **ADF Floppy Image:** [`build/tolunnet.adf`](file:///d:/Projeler/tolunnet/build/tolunnet.adf) (901,120-byte standard DD floppy image formatted and packed via `xdftool`)
+- 📦 **LhA Release Archive:** [`build/tolunnet-1.2.0-rc1.lha`](file:///d:/Projeler/tolunnet/build/tolunnet-1.2.0-rc1.lha) — **2026-09-11 rebuild (TNET-139 class fix + ANX-03, commit `526d7b3`): 806,819 bytes, SHA256 `98f00aafe5e20895701db1f15ab2d50e77c9484e740d5a25d732564053e233b5`**; stripped package C:tolunnet smoke-proven on the 68ec020+FastRAM PiStorm profile ("network task running")
+- 💾 **ADF Floppy Image:** [`build/tolunnet.adf`](file:///d:/Projeler/tolunnet/build/tolunnet.adf) — 901,120 bytes, SHA256 `677d6b36dc65760954e9cf5ee47ae514ebabf55efeda68a090f440a93842b04e`
+- 🖥️ **Owner target:** A500 + PiStorm + WiFiPi — install steps and expectations: [`docs/PISTORM-INSTALL.md`](file:///d:/Projeler/tolunnet/docs/PISTORM-INSTALL.md)
 
 ---
 
