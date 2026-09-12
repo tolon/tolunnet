@@ -26,8 +26,8 @@
 
 ## Working Tree Build Artifacts
 
-- 📦 **LhA Release Archive:** [`build/tolunnet-1.2.0-rc1.lha`](file:///d:/Projeler/tolunnet/build/tolunnet-1.2.0-rc1.lha) — **2026-09-12 rebuild (owner-crash diagnostics build, commit `5f1086c`, dual-profile green `20260912-002745-5f1086c`): 806,819+ bytes class, SHA256 `d863a8b3cd7ab41abf3b4d8b635c87154fb3867093565672c32c629a036929a8`**; stripped package C:tolunnet smoke-proven on the 68ec020+FastRAM PiStorm profile ("network task running")
-- 💾 **ADF Floppy Image:** [`build/tolunnet.adf`](file:///d:/Projeler/tolunnet/build/tolunnet.adf) — 901,120 bytes, SHA256 `577ed0064c9f09a34a79fc1bbce99b59f7cf6b8b8b85d3c5bb15d40d86ff9071` (2026-09-12)
+- 📦 **LhA Release Archive:** [`build/tolunnet-1.2.0-rc1.lha`](file:///d:/Projeler/tolunnet/build/tolunnet-1.2.0-rc1.lha) — **2026-09-12 clean rebuild for owner retest (commit `44ea998`, sources identical to the dual-profile-green `5f1086c`; artifacts wiped first): 807,443 bytes, SHA256 `488bff1beb9966623e1b80383d527e488f490267a42192a64663ca35a455619c`**; stripped package C:tolunnet smoke-proven on the 68ec020+FastRAM PiStorm profile ("network task running")
+- 💾 **ADF Floppy Image:** [`build/tolunnet.adf`](file:///d:/Projeler/tolunnet/build/tolunnet.adf) — 901,120 bytes, SHA256 `d85c74e19c1a0dcbe0f2b606597d9ce93543feea93ead79390fa274a7edd9cad` (2026-09-12 clean rebuild)
 - 🖥️ **Owner target:** A500 + PiStorm + WiFiPi — install steps and expectations: [`docs/PISTORM-INSTALL.md`](file:///d:/Projeler/tolunnet/docs/PISTORM-INSTALL.md)
 
 ---
