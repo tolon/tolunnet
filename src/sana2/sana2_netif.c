@@ -133,7 +133,9 @@ TnS2Result tn_s2_open(TnSana2If *nif, CONST_STRPTR device_name, ULONG unit)
 
     io->ios2_BufferManagement = nif->bm_tags;
 
+    tn_log(TN_LOG_VERBOSE, "s2: OpenDevice...\n");
     err = OpenDevice((STRPTR)device_name, unit, (struct IORequest *)io, 0UL);
+    tn_logf(TN_LOG_VERBOSE, "s2: OpenDevice err=%d\n", (int)err);
     if (err != 0) {
         tn_logf(TN_LOG_BASIC, "tolunnet: OpenDevice(%s, %lu) failed err=%d\n",
                 device_name, unit, (int)err);
@@ -164,6 +166,8 @@ static TnS2Result tn_s2_query(TnSana2If *nif)
     io->ios2_Req.io_Error   = 0;
 
     DoIO((struct IORequest *)io);
+    tn_logf(TN_LOG_VERBOSE, "s2: DEVICEQUERY err=%ld MTU=%lu addr_bits=%lu\n",
+           (LONG)io->ios2_Req.io_Error, q.MTU, (ULONG)q.AddrFieldSize);
     if (io->ios2_Req.io_Error != 0) {
         tn_log_s2err("S2_DEVICEQUERY", io->ios2_Req.io_Error, io->ios2_WireError);
         return TN_S2_QUERY_FAIL;
@@ -195,6 +199,7 @@ TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac)
     /* S2_GETSTATIONADDRESS */
     io->ios2_Req.io_Command = S2_GETSTATIONADDRESS;
     io->ios2_Req.io_Error   = 0;
+    tn_log(TN_LOG_VERBOSE, "s2: GETSTATIONADDRESS...\n");
     DoIO((struct IORequest *)io);
     if (io->ios2_Req.io_Error != 0) {
         tn_log_s2err("S2_GETSTATIONADDRESS", io->ios2_Req.io_Error, io->ios2_WireError);
@@ -248,6 +253,7 @@ TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac)
 
     io->ios2_Req.io_Command = S2_CONFIGINTERFACE;
     io->ios2_Req.io_Error   = 0;
+    tn_log(TN_LOG_VERBOSE, "s2: CONFIGINTERFACE...\n");
     DoIO((struct IORequest *)io);
     if (io->ios2_Req.io_Error != 0) {
         if (io->ios2_Req.io_Error == S2ERR_BAD_STATE &&
@@ -276,6 +282,7 @@ TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac)
 
     io->ios2_Req.io_Command = S2_ONLINE;
     io->ios2_Req.io_Error   = 0;
+    tn_log(TN_LOG_VERBOSE, "s2: ONLINE...\n");
     DoIO((struct IORequest *)io);
     if (io->ios2_Req.io_Error != 0) {
         if (io->ios2_Req.io_Error == S2ERR_BAD_STATE &&

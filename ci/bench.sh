@@ -98,6 +98,11 @@ sed -e "s/__DNS_PORT__/$BENCH_DNS_PORT/" ci/tolunnet.config > "$BENCH_CFG"
 if [ "${BENCH_EXTERNAL:-0}" = "1" ]; then
     echo "TEST_EXTERNAL=YES" >> "$BENCH_CFG"
 fi
+# TN_DIAG=1: stage the daemon with crash-diagnostics ON (TNET-139; the
+# config key arms the trap handler + RAM:tolunnet-crash.log capture).
+if [ "${TN_DIAG:-0}" = "1" ]; then
+    echo "DIAG=YES" >> "$BENCH_CFG"
+fi
 say "bench config: resolver 127.0.0.1:$BENCH_DNS_PORT (loopback), external=${BENCH_EXTERNAL:-0}"
 
 SUCCESS=0

@@ -36,6 +36,7 @@ void tn_prefs_default(TnPrefs *prefs)
     prefs->syslog_host[0] = '\0';
     prefs->s2events = 0;        /* 0 = ONLINE|OFFLINE|ERROR (TNET-109) */
     prefs->dns_port = 0;        /* 0 = default 53 (TNET-111) */
+    prefs->diag = FALSE;        /* TNET-139: crash diagnostics off by default */
     prefs->font[0] = '\0';      /* empty = TolunnetSetup uses the screen font */
 }
 
@@ -257,6 +258,14 @@ void tn_config_parse_line(TnPrefs *prefs, const char *key, const char *val)
                     tn_str_copy_clean(prefs->font, clean_val, sizeof(prefs->font));
                 }
             }
+        }
+    } else if (tn_str_equal_nocase(clean_key, "DIAG")) {
+        /* TNET-139: crash diagnostics — trap handler, crash log, step logs */
+        if (tn_str_equal_nocase(clean_val, "YES") || tn_str_equal_nocase(clean_val, "1") ||
+            tn_str_equal_nocase(clean_val, "TRUE") || tn_str_equal_nocase(clean_val, "ON")) {
+            prefs->diag = TRUE;
+        } else {
+            prefs->diag = FALSE;
         }
     } else if (tn_str_equal_nocase(clean_key, "VERSION")) {
         /* Config format version recognised */

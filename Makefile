@@ -73,6 +73,7 @@ LIB_OBJS    = $(BUILD)/src/lib/lib_init.o $(BUILD)/src/lib/lib_vectors.o \
               $(BUILD)/src/lib/lib_table.gen.o $(BUILD)/src/lib/lib_stubs.gen.o \
               $(BUILD)/src/lib/lib_unimpl.o
 TASK_OBJS   = $(BUILD)/src/task/daemon_main.o \
+              $(BUILD)/src/task/crash_log.o $(BUILD)/src/task/crash_trap.o \
               $(BUILD)/src/task/slot_table.o \
               $(BUILD)/src/task/netif_mgr.o \
               $(BUILD)/src/task/ipc_dispatch.o \

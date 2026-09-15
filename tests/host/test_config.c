@@ -520,6 +520,31 @@ TN_TEST(font_key_tnet110)
     TN_ASSERT_EQ(a.font[0], '\0');
 }
 
+static void diag_key_tnet139(void)
+{
+    TnPrefs a;
+    char text[512];
+
+    tn_prefs_default(&a);
+    TN_ASSERT_EQ(a.diag, 0);
+
+    tn_config_parse_line(&a, "DIAG", "YES");
+    TN_ASSERT_EQ(a.diag, 1);
+    tn_config_parse_line(&a, "DIAG", "no");
+    TN_ASSERT_EQ(a.diag, 0);
+    tn_config_parse_line(&a, "DIAG", "ON");
+    TN_ASSERT_EQ(a.diag, 1);
+    tn_config_parse_line(&a, "DIAG", "0");
+    TN_ASSERT_EQ(a.diag, 0);
+
+    /* DIAG is a runtime switch: never formatted into the config file */
+    TN_ASSERT_TRUE(tn_config_format(&a, text, sizeof(text)) > 0);
+    TN_ASSERT_TRUE(strstr(text, "DIAG=") == NULL);
+
+    tn_prefs_default(&a);
+    TN_ASSERT_EQ(a.diag, 0);
+}
+
 int main(void)
 {
     TN_TEST_RUN(round_trip_all_keys);
@@ -538,6 +563,7 @@ int main(void)
     TN_TEST_RUN(s2events_key_parsing);
     TN_TEST_RUN(dns_port_key);
     TN_TEST_RUN(font_key_tnet110);
+    TN_TEST_RUN(diag_key_tnet139);
     TN_TEST_PLAN();
     return tn_test_failures();
 }

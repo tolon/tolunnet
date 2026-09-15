@@ -27,6 +27,7 @@
 #include "task_ctx.h"
 #include "slot_table.h"
 #include "netif_mgr.h"
+#include "crash_log.h"
 #include "ipc_dispatch.h"
 #include "sana2/sana2_netif.h"
 #include "timers.h"
@@ -77,6 +78,15 @@ static int tn_task_real_main(int argc, char *argv[])
      * interface-level keys. */
     tn_prefs_load(&g_daemon.prefs);
     g_log_level = tn_recfg_effective_loglevel(&g_daemon.prefs);
+
+    /* TNET-139 DIAG: capture crashes before the Guru. The ring must be on
+     * before the first tn_log so the trap handler can dump the tail. */
+    if (g_daemon.prefs.diag) {
+        tn_log_ring_enable();
+        tn_crash_arm();
+        g_log_level = TN_LOG_VERBOSE; /* step logs are VERBOSE-tier */
+        tn_log(TN_LOG_BASIC, "tolunnet: DIAG mode ON - crash log -> RAM:tolunnet-crash.log\n");
+    }
 
 
     tn_slot_table_init(&g_daemon);

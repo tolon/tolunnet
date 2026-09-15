@@ -36,4 +36,13 @@ void tn_logf(int tier, const char *fmt, ...);
 BOOL tn_log_open_file(const char *path);
 void tn_log_close_file(void);
 
+/* TNET-139 DIAG: fixed 16-line ring capture of every logged line
+ * (pre-tier-filter). Enabled by tn_log_ring_enable(); read by the crash
+ * handler via tn_log_ring_snapshot()/tn_log_ring_count(). */
+#define TN_LOG_RING_LINES 16
+#define TN_LOG_RING_LEN   96
+void tn_log_ring_enable(void);
+const char *const *tn_log_ring_snapshot(void);
+int tn_log_ring_count(void);
+
 #endif /* TOLUNNET_LOG_H */

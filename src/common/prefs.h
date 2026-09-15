@@ -52,6 +52,7 @@ typedef struct TnPrefs {
     ULONG s2events;           /* S2EVENTS= mask (TNET-109); 0 = ONLINE|OFFLINE|ERROR */
     ULONG dns_port;           /* DNS_PORT= resolver port (TNET-111); 0 = 53 */
     char  font[24];           /* FONT=name/size for TolunnetSetup; empty = screen font */
+    ULONG diag;              /* DIAG=YES: trap handler + crash log + step logging (TNET-139) */
 } TnPrefs;
 
 /* TNET-064: Amiga Prefs convention.

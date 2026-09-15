@@ -1,0 +1,32 @@
+config_description=tolunnet conformance bench — PiStorm-like A500 profile (TN-bugtrack-2 item 1c)
+; Owner-machine profile: 68000 CPU, chip RAM only (no Fast RAM), the
+; WiFiPi-style driver path (a2065 stands in for wifipi.device — WinUAE
+; cannot emulate the RPi-side SDIO hardware the real driver needs), DIAG
+; config staged by ci/bench.sh when TN_DIAG=1 is exported.
+; Kickstart: 3.1 A600 ROM (3.2 is not present in E:\amiga\Shared\rom —
+; see QUESTIONS.md [auto] note; KS 3.2 differs only in ROM-side updates
+; that do not change the SANA-II/DOS interfaces this bench exercises).
+use_gui=no
+kickstart_rom_file=E:\amiga\Shared\rom\amiga-os-310-a600.rom
+chipset=ecs
+chipset_compatible=A600
+cpu_type=68000
+cpu_compatible=true
+cpu_speed=max
+chipmem_size=2
+ntsc=true
+
+hardfile2=rw,DH0:E:\amiga\Amigatolon\bench\tolunnet\wb30-pistorm-68000.hdf,32,1,2,512,0,,uae0
+uaehf0=hdf,rw,DH0:"E:\amiga\Amigatolon\bench\tolunnet\wb30-pistorm-68000.hdf",32,1,2,512,0,,uae0
+
+filesystem2=rw,WORK:Work:E:\amiga\Amigatolon\work,-128
+uaehf1=dir,rw,WORK:Work:"E:\amiga\Amigatolon\work",-128
+
+a2065=slirp
+a2065label=tolunnet
+
+floppy0type=-1
+nr_floppies=0
+sound_output=none
+win32.start_minimized=yes
+bsdsocket_emu=false
