@@ -88,3 +88,62 @@ Evidence dirs: `docs/bench-logs/20260909-201118-9bca042/` and
   the ANX-04 next step, now equipped with the WinUAE debugger automation in
   `ci/debugger/`.
 - This report is historical; no stop rule is currently active.
+---
+
+## 2026-09-15 STOP (TN-bugtrack-2 item 1): pistorm-68000 bench red twice (TNET-115)
+
+**Stop rule fired:** bench red twice in a row.
+**Last green bench:** `docs/bench-logs/20260912-002745-5f1086c/` (a1200 + 68000, 35/35 x2 both).
+**Commits this session:** `35f803e` (item 1: DIAG crash capture), tree clean.
+
+### Delivered (item 1 - TNET-139 DIAG)
+
+- `DIAG=YES` config key: task-local CPU trap handler (tc_TrapCode) for the
+  bus/address/illegal vectors writing PC, SR, fault address (68000 and
+  68010+ frame readings), raw frame, registers, hunk bases and the last 16
+  log lines to `RAM:tolunnet-crash.log` BEFORE the Guru, then chaining to
+  the previous handler. Startup step logging end-to-end with per-line Flush.
+- **Proven functional inside the red runs themselves**: task logs show
+  `s2: OpenDevice... / err=0 / DEVICEQUERY err=0 MTU=1500 addr_bits=48 /
+  GETSTATIONADDRESS... / CONFIGINTERFACE... / ONLINE...` (both dirs).
+- `ci/tolunnet-pistorm-68000.uae` (68000, chip-only, a2065 stand-in; KS 3.1 -
+  no 3.2 ROM exists, QUESTIONS.md [auto] 6-8) + `TN_DIAG=1` bench hook.
+- `docs/OWNER-RETEST.md`: 3-command owner procedure.
+- Host tests green (16 binaries, new DIAG parse case), `-Werror=cast-align`
+  clean. Commit `35f803e`.
+
+### The two red benches (verbatim)
+
+```
+20260915-184929-35f803e / pistorm-68000: TIMEOUT 600 s; conformance 0 rows;
+    bsdsocktest.log 41 lines, last "ok 31 - sendmsg()/recvmsg(): single iovec"
+20260915-190106-35f803e / pistorm-68000: TIMEOUT 600 s; conformance 0 rows;
+    bsdsocktest.log 41 lines, identical last line
+```
+
+Both are the **TNET-115** signature (freeze inside bsdsocktest #32,
+scatter-gather). The new chip-only 68000 profile hit it 2 of 2 runs -
+overall tally now 8 occurrences. The DIAG build is a bystander: the daemon
+completed cycle 1 normally in both (task log ends at the usual RECONFIG
+restart request; no CPU exception fired - the freeze is not a daemon Guru).
+
+### Analysis / handoff
+
+- Item 1's deliverable is code-complete and functional; missing is a green
+  bench at `35f803e` - blocked by TNET-115 on the new profile. Default
+  profiles were not run after the stop rule fired; DIAG is config-gated OFF
+  by default, so default-profile risk is the two new object files plus
+  additive ring/step logging.
+- The new profile is now the **best TNET-115 repro rig**: 2/2, slowest CPU
+  config; item 2 (root cause: `il 8`/`fi` live capture, `Tt` task dump,
+  ipc_msg invariants) should start from it.
+- Owner package rebuilt from `35f803e` after the stop for the promised
+  retest (no bench claim attached; default paths config-gated unchanged).
+
+### Next steps (owner decision)
+
+1. Item 2 (TNET-115) first with the pistorm-68000 rig; then the standard
+   dual bench mints the green for `35f803e`+fix.
+2. Owner retest with the DIAG build per `docs/OWNER-RETEST.md` - the crash
+   log closes TNET-139 independently of bench state.
+3. Items 3-10 of TN-bugtrack-2 unchanged.
