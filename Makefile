@@ -100,7 +100,7 @@ TOGGLE_BIN   = $(BUILD)/S2Toggle
 INSTALL_BIN  = $(BUILD)/Install_Tolunnet
 
 .PHONY: all clean test-host package
-all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN) $(BSDTEST_BIN)
+all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN) $(BSDTEST_BIN) $(FREEZEWATCH_BIN)
 
 # --- Host unit tests (Round 3 §B.1) -----------------------------------------
 # Every tests/host/test_*.c runs under native gcc with sanitizers + Werror;
@@ -206,6 +206,15 @@ $(SETUP_BIN): $(SETUP_OBJS)
 # Target: SocketConformance Amiga-side TAP binary (Round 3 §B.2)
 $(CONF_BIN): $(BUILD)/tests/amiga/SocketConformance.o $(BUILD)/src/common/log.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/setup/wifi_mgr.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+# Target: FreezeWatch TNET-115 capture helper (bench diagnostic only,
+# never shipped in the package; TN-bugtrack-2 item 2)
+FREEZEWATCH_BIN = $(BUILD)/FreezeWatch
+$(FREEZEWATCH_BIN): $(BUILD)/src/cmds/FreezeWatch.o
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+bench-tools: $(FREEZEWATCH_BIN)
+.PHONY: bench-tools
 
 # Target: S2Toggle SANA-II link-flip bench helper (TNET-109)
 $(TOGGLE_BIN): $(BUILD)/tests/amiga/S2Toggle.o

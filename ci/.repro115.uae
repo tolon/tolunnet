@@ -1,0 +1,28 @@
+config_description=tolunnet TNET-115 live-capture rig — windowed pistorm-68000, DIAG on
+; Runs the exact bench boot (daemon -> bsdsocktest -> conformance) on the
+; 2/2-freeze chip-only 68000 profile, windowed with -conlogfile so the
+; freeze can be inspected live: Shift+F12 -> Tt (task PCs) + fi/il 8.
+use_gui=no
+kickstart_rom_file=E:\amiga\Shared\rom\amiga-os-310-a600.rom
+chipset=ecs
+chipset_compatible=A600
+cpu_type=68000
+cpu_compatible=true
+cpu_speed=max
+chipmem_size=2
+ntsc=true
+
+hardfile2=rw,DH0:E:\amiga\Amigatolon\bench\tolunnet\wb30-repro115.hdf,32,1,2,512,0,,uae0
+uaehf0=hdf,rw,DH0:"E:\amiga\Amigatolon\bench\tolunnet\wb30-repro115.hdf",32,1,2,512,0,,uae0
+
+filesystem2=rw,WORK:Work:E:\amiga\Amigatolon\work,-128
+uaehf1=dir,rw,WORK:Work:"E:\amiga\Amigatolon\work",-128
+
+a2065=slirp
+a2065label=tolunnet
+
+floppy0type=-1
+nr_floppies=0
+sound_output=none
+win32.start_minimized=no
+bsdsocket_emu=false

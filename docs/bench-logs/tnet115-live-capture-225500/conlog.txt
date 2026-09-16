@@ -1,0 +1,237 @@
+Couldn't open 'amiga.lib'
+VPOS: 004 ($004) HPOS: 007 ($007) COP: $00000504
+  D0 00000000   D1 00000000   D2 000A0001   D3 00000000 
+  D4 00000000   D5 000000AA   D6 0000B4D8   D7 00C636A4 
+  A0 00DFF000   A1 00F856C2   A2 00C07894   A3 0000EC54 
+  A4 00028110   A5 00F854B8   A6 00C0785C   A7 00C02552 
+USP  00C44A64 ISP  00C02552 
+SR=2300 T=00 S=1 M=0 X=0 N=0 Z=0 V=0 C=0 IM=3 STP=0
+Prefetch 6704 (Bcc) b441 (CMP) Chip latch 00000001
+00f85598 6704                     beq.b #$04 == $00f8559e (F)
+Next PC: 00f8559a
+>VPOS: 004 ($004) HPOS: 007 ($007) COP: $00000504
+  D0 00000000   D1 00000000   D2 000A0001   D3 00000000 
+  D4 00000000   D5 000000AA   D6 0000B4D8   D7 00C636A4 
+  A0 00DFF000   A1 00F856C2   A2 00C07894   A3 0000EC54 
+  A4 00028110   A5 00F854B8   A6 00C0785C   A7 00C02552 
+USP  00C44A64 ISP  00C02552 
+SR=2300 T=00 S=1 M=0 X=0 N=0 Z=0 V=0 C=0 IM=3 STP=0
+Prefetch 6704 (Bcc) b441 (CMP) Chip latch 00000001
+00f85598 6704                     beq.b #$04 == $00f8559e (F)
+Next PC: 00f8559a
+>00f85570 342a 006e                move.w ($006e,a2) == $00c07902 [0001],d2
+00f85574 6744                     beq.b #$44 == $00f855ba (F)
+00f85576 4881                     ext.w d1
+00f85578 b441                     cmp.w d1,d2
+00f8557a 6e3e                     bgt.b #$3e == $00f855ba (T)
+00f8557c 1540 0078                move.b d0,($0078,a2) == $00c0790c [00]
+00f85580 50c3                     st.b d3 (T)
+00f85582 6036                     bra.b #$36 == $00f855ba (T)
+00f85584 1200                     move.b d0,d1
+00f85586 4881                     ext.w d1
+>Execbase at 0x00C00B28
+Current:
+00C3B4C8: PROCESS 'Background CLI'
+ [5, 'C:tolunnet']
+Ready:
+00042F50: PROCESS 'Workbench'
+ [7, 'Workbench']
+          Waiting signals: 80000000
+          SP: 0004474c PC: 00c7a4b8
+00C3A080: PROCESS 'Background CLI'
+ [4, 'C:bsdsocktest']
+          Waiting signals: 00000100
+          SP: 00c7a094 PC: 00c57a18
+00C35870: PROCESS 'Background CLI'
+ [3, 'C:FreezeWatch']
+          Waiting signals: 00000100
+          SP: 00c39f7c PC: 00c370f8
+Waiting:
+00C07EAC: TASK    'card.resource'
+          Waiting signals: 80000000
+          SP: 00c07ea4 PC: 00f82688
+00C0985C: TASK    'carddisk.device'
+          Waiting signals: 80000000
+          SP: 00c09854 PC: 00f82688
+00C0C8F8: TASK    'console.device'
+          Waiting signals: f0000000
+          SP: 00c0c8ec PC: 00c0b730
+00C0CF68: TASK    'UAE fs automounter'
+          Waiting signals: 00002000
+          SP: 00c0d7c0 PC: 00f82688
+00C347D8: PROCESS 'ConClip Process'
+ [2, 'C:ConClip']
+          Waiting signals: 80001000
+          SP: 00c357b8 PC: 00c347d8
+00C32930: PROCESS '« IPrefs »'
+
+          Waiting signals: 0000f000
+          SP: 00c3347c PC: 00000000
+00C1E0F0: PROCESS 'ramlib'
+
+          Waiting signals: 00000010
+          SP: 00c1e9c4 PC: 00c1e0f0
+0009F100: PROCESS 'ToolsDaemon'
+ [1, 'ToolsDaemon']
+          Waiting signals: c0000000
+          SP: 0003a198 PC: 00000fa0
+00C1FF00: TASK    'ethernet.device'
+          Waiting signals: f0000000
+          SP: 00c20f14 PC: 00000000
+00C22848: PROCESS 'RAM'
+
+          Waiting signals: c0000100
+          SP: 00c22b84 PC: 00000000
+00C0F970: PROCESS 'DH0'
+
+          Waiting signals: 40000100
+          SP: 00c10380 PC: 001903ea
+00C17A90: PROCESS 'DF0'
+
+          Waiting signals: 40000100
+          SP: 00c184a0 PC: 001903ea
+00C19F58: PROCESS 'DF1'
+
+          Waiting signals: 40000100
+          SP: 00c1a968 PC: 001903ea
+00C03608: TASK    'UAE fs worker'
+          Waiting signals: 00000100
+          SP: 00c03e60 PC: 00f82688
+00C1C890: PROCESS 'WORK'
+
+          Waiting signals: 00002100
+          SP: 00c1e0dc PC: 00fa0156
+00C1C61C: TASK    'trackdisk.device'
+          Waiting signals: 00000300
+          SP: 00c1c87c PC: 00c0952c
+00C0DD14: TASK    'trackdisk.device'
+          Waiting signals: 00000300
+          SP: 00c0df74 PC: 00c0952c
+00C08122: TASK    'input.device'
+          Waiting signals: c0000000
+          SP: 00c09178 PC: 00f82688
+>00f85530 5708                     illegal 
+00f85532 7600                     moveq #$00,d3
+00f85534 082a 0003 007c           btst.b #$0003,($007c,a2) == $00c07910 [08]
+00f8553a 6648                     bne.b #$48 == $00f85584 (T)
+00f8553c 1200                     move.b d0,d1
+00f8553e 4881                     ext.w d1
+00f85540 3541 0074                move.w d1,($0074,a2) == $00c07908 [0000]
+00f85544 922a 0079                sub.b ($0079,a2) == $00c0790d [00],d1
+00f85548 6a02                     bpl.b #$02 == $00f8554c (T)
+00f8554a 4401                     neg.b d1
+00f8554c 342a 006c                move.w ($006c,a2) == $00c07900 [0001],d2
+00f85550 670c                     beq.b #$0c == $00f8555e (F)
+00f85552 4881                     ext.w d1
+00f85554 b441                     cmp.w d1,d2
+00f85556 6e06                     bgt.b #$06 == $00f8555e (T)
+00f85558 1540 0079                move.b d0,($0079,a2) == $00c0790d [00]
+00f8555c 50c3                     st.b d3 (T)
+00f8555e e048                     lsr.w #$08,d0
+00f85560 1200                     move.b d0,d1
+00f85562 4881                     ext.w d1
+00f85564 3541 0076                move.w d1,($0076,a2) == $00c0790a [0000]
+00f85568 922a 0078                sub.b ($0078,a2) == $00c0790c [00],d1
+00f8556c 6a02                     bpl.b #$02 == $00f85570 (T)
+00f8556e 4401                     neg.b d1
+00f85570 342a 006e                move.w ($006e,a2) == $00c07902 [0001],d2
+00f85574 6744                     beq.b #$44 == $00f855ba (F)
+00f85576 4881                     ext.w d1
+00f85578 b441                     cmp.w d1,d2
+00f8557a 6e3e                     bgt.b #$3e == $00f855ba (T)
+00f8557c 1540 0078                move.b d0,($0078,a2) == $00c0790c [00]
+00f85580 50c3                     st.b d3 (T)
+00f85582 6036                     bra.b #$36 == $00f855ba (T)
+00f85584 1200                     move.b d0,d1
+00f85586 4881                     ext.w d1
+00f85588 d26a 0074                add.w ($0074,a2) == $00c07908 [0000],d1
+00f8558c 3541 0074                move.w d1,($0074,a2) == $00c07908 [0000]
+>00f85500 102a 007d                move.b ($007d,a2) == $00c07911 [01],d0
+00f85504 6f1a                     ble.b #$1a == $00f85520 (F)
+00f85506 4880                     ext.w d0
+00f85508 122a 007c                move.b ($007c,a2) == $00c07910 [08],d1
+00f8550c 0241 0004                and.w #$0004,d1
+00f85510 e548                     lsl.w #$02,d0
+00f85512 227b 000e                movea.l ($0e,pc,d0.w=00f85522) == $00f85522 [1c1c4e75],a1
+00f85516 207c 00df f000           movea.l #$00dff000,a0
+00f8551c 4e91                     jsr (a1)
+00f8551e 6012                     bra.b #$12 == $00f85532 (T)
+00f85520 4cdf 1c1c                movem.l (a7)+,d2-d4/a2-a4
+00f85524 4e75                     rts  == $000aca2f
+00f85526 00f8 56c2 00f8           [ cmp2.b $00f8.w,d5 ]
+00f85528 56c2                     sne.b d2 (T)
+00f8552a 00f8 5708 00f8           [ cmp2.b $00f8.w,d5 ]
+00f8552c 5708                     illegal 
+00f8552e 00f8 5708 7600           [ cmp2.b $7600.w,d5 ]
+00f85530 5708                     illegal 
+00f85532 7600                     moveq #$00,d3
+00f85534 082a 0003 007c           btst.b #$0003,($007c,a2) == $00c07910 [08]
+00f8553a 6648                     bne.b #$48 == $00f85584 (T)
+00f8553c 1200                     move.b d0,d1
+00f8553e 4881                     ext.w d1
+00f85540 3541 0074                move.w d1,($0074,a2) == $00c07908 [0000]
+00f85544 922a 0079                sub.b ($0079,a2) == $00c0790d [00],d1
+00f85548 6a02                     bpl.b #$02 == $00f8554c (T)
+00f8554a 4401                     neg.b d1
+00f8554c 342a 006c                move.w ($006c,a2) == $00c07900 [0001],d2
+00f85550 670c                     beq.b #$0c == $00f8555e (F)
+00f85552 4881                     ext.w d1
+00f85554 b441                     cmp.w d1,d2
+00f85556 6e06                     bgt.b #$06 == $00f8555e (T)
+00f85558 1540 0079                move.b d0,($0079,a2) == $00c0790d [00]
+00f8555c 50c3                     st.b d3 (T)
+00f8555e e048                     lsr.w #$08,d0
+00f85560 1200                     move.b d0,d1
+00f85562 4881                     ext.w d1
+00f85564 3541 0076                move.w d1,($0076,a2) == $00c0790a [0000]
+00f85568 922a 0078                sub.b ($0078,a2) == $00c0790c [00],d1
+00f8556c 6a02                     bpl.b #$02 == $00f85570 (T)
+00f8556e 4401                     neg.b d1
+00f85570 342a 006e                move.w ($006e,a2) == $00c07902 [0001],d2
+00f85574 6744                     beq.b #$44 == $00f855ba (F)
+00f85576 4881                     ext.w d1
+00f85578 b441                     cmp.w d1,d2
+00f8557a 6e3e                     bgt.b #$3e == $00f855ba (T)
+00f8557c 1540 0078                move.b d0,($0078,a2) == $00c0790c [00]
+00f85580 50c3                     st.b d3 (T)
+00f85582 6036                     bra.b #$36 == $00f855ba (T)
+00f85584 1200                     move.b d0,d1
+00f85586 4881                     ext.w d1
+00f85588 d26a 0074                add.w ($0074,a2) == $00c07908 [0000],d1
+00f8558c 3541 0074                move.w d1,($0074,a2) == $00c07908 [0000]
+00f85590 6a02                     bpl.b #$02 == $00f85594 (T)
+00f85592 4441                     neg.w d1
+00f85594 342a 006c                move.w ($006c,a2) == $00c07900 [0001],d2
+00f85598 6704                     beq.b #$04 == $00f8559e (F)
+00f8559a b441                     cmp.w d1,d2
+00f8559c 5fc3                     sle.b d3 (F)
+00f8559e e048                     lsr.w #$08,d0
+00f855a0 4880                     ext.w d0
+00f855a2 d06a 0076                add.w ($0076,a2) == $00c0790a [0000],d0
+00f855a6 3540 0076                move.w d0,($0076,a2) == $00c0790a [0000]
+00f855aa 6a02                     bpl.b #$02 == $00f855ae (T)
+>00f85588 d26a 0074                add.w ($0074,a2) == $00c07908 [0000],d1
+00f8558c 3541 0074                move.w d1,($0074,a2) == $00c07908 [0000]
+00f85590 6a02                     bpl.b #$02 == $00f85594 (T)
+00f85592 4441                     neg.w d1
+00f85594 342a 006c                move.w ($006c,a2) == $00c07900 [0001],d2
+00f85598 6704                     beq.b #$04 == $00f8559e (F)
+00f8559a b441                     cmp.w d1,d2
+00f8559c 5fc3                     sle.b d3 (F)
+00f8559e e048                     lsr.w #$08,d0
+00f855a0 4880                     ext.w d0
+00f855a2 d06a 0076                add.w ($0076,a2) == $00c0790a [0000],d0
+00f855a6 3540 0076                move.w d0,($0076,a2) == $00c0790a [0000]
+00f855aa 6a02                     bpl.b #$02 == $00f855ae (T)
+00f855ac 4440                     neg.w d0
+00f855ae 342a 006e                move.w ($006e,a2) == $00c07902 [0001],d2
+00f855b2 6706                     beq.b #$06 == $00f855ba (F)
+00f855b4 b440                     cmp.w d0,d2
+00f855b6 6e02                     bgt.b #$02 == $00f855ba (T)
+00f855b8 50c3                     st.b d3 (T)
+00f855ba 322a 0026                move.w ($0026,a2) == $00c078ba [0000],d1
+>00C00B44 8FE7 0000 0002 003F 0000 FF3F F4D7 0000  .......?...?....
+00C00B54 0000 0000 0000 0000 0000 00C0 25A0 00C0  ............%...
+00C00B64 0DA0 0010 0000 00F8 31F6 0000 0000 0000  ........1.......
+00C00B74 0000 00C8 0000 A324 0000 0000 0000 0000  .......$........
+>

@@ -1,0 +1,1 @@
+AttachConsole failed: 6

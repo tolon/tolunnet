@@ -382,6 +382,85 @@ TN_TEST(sendmsg_recvmsg_scatter_tnet115)
     tn_slot_free(&d, slot_idx);
 }
 
+TN_TEST(sendmsg_recvmsg_edge_cases_tnet115)
+{
+    /* TN-bugtrack-2 item 2: zero-length iovecs and iovlen>data must
+     * terminate with sane results — no spin, no over-copy. */
+    mock_lwip_reset();
+
+    TnDaemon d;
+    TnSocketBase base;
+    int slot_idx = -1;
+    tn_slot_table_init(&d);
+    memset(&base, 0, sizeof(base));
+
+    TnSocketSlot *slot = tn_slot_alloc(&d, &base, NULL, AF_INET, SOCK_STREAM,
+                                       IPPROTO_TCP, &slot_idx);
+    TN_ASSERT_TRUE(slot != NULL);
+    struct tcp_pcb pcb;
+    memset(&pcb, 0, sizeof(pcb));
+    slot->tcp_pcb = &pcb;
+    slot->tcp_state = TN_TCP_STATE_ESTABLISHED;
+
+    static unsigned char sbuf[256], rbuf[256];
+    for (int i = 0; i < 40; i++) sbuf[i] = (unsigned char)(i + 1);
+    memset(rbuf, 0, sizeof(rbuf));
+
+    /* sendmsg: [0-length, 40 bytes, 0-length] — zero-length iovecs skipped */
+    struct iovec iov[3];
+    struct msghdr msg;
+    memset(&msg, 0, sizeof(msg));
+    iov[0].iov_base = sbuf;      iov[0].iov_len = 0;
+    iov[1].iov_base = sbuf;      iov[1].iov_len = 40;
+    iov[2].iov_base = sbuf + 40; iov[2].iov_len = 0;
+    msg.msg_iov = iov;
+    msg.msg_iovlen = 3;
+
+    TnIpcMsg imsg;
+    memset(&imsg, 0, sizeof(imsg));
+    imsg.ptrs[0] = &msg;
+    imsg.args[1] = 0;
+
+    TN_ASSERT_EQ(tn_ipc_cmd_sendmsg(&d, &imsg, slot), 0);
+    TN_ASSERT_EQ((LONG)imsg.result, 40);
+    TN_ASSERT_EQ(imsg.err_no, 0);
+
+    /* recvmsg: 3 iovecs (10/20/30 = 60 capacity) against 40 bytes of data:
+     * iovlen > available data — must terminate with 40 copied, correct
+     * placement, packet popped. */
+    struct pbuf *p = mock_pbuf_alloc(40);
+    memcpy(p->payload, sbuf, 40);
+    TnRxPacket *pkt = (TnRxPacket *)AllocVec(sizeof(TnRxPacket), 0);
+    memset(pkt, 0, sizeof(TnRxPacket));
+    pkt->p = p;
+    pkt->offset = 0;
+    slot->rx_head = pkt;
+    slot->rx_tail = pkt;
+    slot->rx_count = 1;
+
+    struct iovec riov[3];
+    struct msghdr rmsg;
+    memset(&rmsg, 0, sizeof(rmsg));
+    riov[0].iov_base = rbuf;      riov[0].iov_len = 10;
+    riov[1].iov_base = rbuf + 10; riov[1].iov_len = 20;
+    riov[2].iov_base = rbuf + 30; riov[2].iov_len = 30;
+    rmsg.msg_iov = riov;
+    rmsg.msg_iovlen = 3;
+
+    TnIpcMsg imsg2;
+    memset(&imsg2, 0, sizeof(imsg2));
+    imsg2.ptrs[0] = &rmsg;
+    imsg2.args[1] = 0;
+
+    TN_ASSERT_EQ(tn_ipc_cmd_recvmsg(&d, &imsg2, slot), 0);
+    TN_ASSERT_EQ((LONG)imsg2.result, 40);
+    TN_ASSERT_EQ(imsg2.err_no, 0);
+    TN_ASSERT_EQ(memcmp(rbuf, sbuf, 40), 0);
+    TN_ASSERT_TRUE(slot->rx_head == NULL);
+
+    tn_slot_free(&d, slot_idx);
+}
+
 int main(void)
 {
     TN_TEST_RUN(rx_pbuf_chain_partial_reads);
@@ -389,6 +468,7 @@ int main(void)
     TN_TEST_RUN(accept_queue_abort_on_drain);
     TN_TEST_RUN(event_queue_coalescing_per_bsdsocket_doc);
     TN_TEST_RUN(sendmsg_recvmsg_scatter_tnet115);
+    TN_TEST_RUN(sendmsg_recvmsg_edge_cases_tnet115);
 
     TN_TEST_PLAN();
     return tn_test_failures();
