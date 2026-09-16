@@ -332,16 +332,28 @@ TN_TEST(sendmsg_recvmsg_scatter_tnet115)
     TN_ASSERT_EQ((LONG)imsg.result, 100);
     TN_ASSERT_EQ(imsg.err_no, 0);
 
-    /* three tcp_write calls: exact sizes, exact client pointers, in order */
+    /* three tcp_write calls: exact sizes, exact client pointers, in order —
+     * TNET-115 pattern: each write is flushed by its own tcp_output before
+     * the next write (write, output, write, output, write, output, output) */
     TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_WRITE), 3);
     static const u16_t want_len[3] = { 50, 30, 20 };
-    for (int i = 0; i < 3; i++) {
+    int wi = 0;
+    for (int i = 0; i < mock_lwip_total_calls() && wi < 3; i++) {
         const MockCall *w = mock_lwip_call_at(i);
         TN_ASSERT_TRUE(w != NULL);
-        TN_ASSERT_EQ(w->type, MOCK_CALL_TCP_WRITE);
-        TN_ASSERT_EQ((int)w->arg1, (int)want_len[i]);
-        TN_ASSERT_EQ(w->ptr2, (void *)(sbuf + odd + (i == 0 ? 0 : (i == 1 ? 50 : 80))));
+        if (w->type != MOCK_CALL_TCP_WRITE) {
+            /* only writes and outputs precede the last write */
+            TN_ASSERT_EQ(w->type, MOCK_CALL_TCP_OUTPUT);
+            continue;
+        }
+        TN_ASSERT_EQ((int)w->arg1, (int)want_len[wi]);
+        TN_ASSERT_EQ(w->ptr2, (void *)(sbuf + odd + (wi == 0 ? 0 : (wi == 1 ? 50 : 80))));
+        wi++;
+        /* every write is immediately followed by an output flush */
+        TN_ASSERT_TRUE(i + 1 < mock_lwip_total_calls());
+        TN_ASSERT_EQ(mock_lwip_call_at(i + 1)->type, MOCK_CALL_TCP_OUTPUT);
     }
+    TN_ASSERT_EQ(wi, 3);
 
     /* ---- recvmsg: same 3-iovec geometry into rbuf ---- */
     struct pbuf *rp = mock_pbuf_alloc(100);

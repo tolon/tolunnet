@@ -1333,8 +1333,16 @@ tcp_output(struct tcp_pcb *pcb)
     for (; useg->next != NULL; useg = useg->next);
   }
   /* data available and window allows it to be sent? */
-  while (seg != NULL &&
-         lwip_ntohl(seg->tcphdr->seqno) - pcb->lastack + seg->len <= wnd) {
+  /* tolunnet vendor patch (TNET-115): hard iteration cap. The queue length
+   * bounds the legitimate number of sends in one walk (each iteration
+   * removes a segment from unsent). If a corrupted/cyclic list ever makes
+   * the walk not converge, stop sending instead of spinning forever —
+   * this runs at daemon priority on AmigaOS, where a livelock starves
+   * the whole machine. */
+  {
+    u16_t out_walk_cap = (u16_t)(pcb->snd_queuelen + 2);
+    while (seg != NULL && out_walk_cap-- > 0 &&
+           lwip_ntohl(seg->tcphdr->seqno) - pcb->lastack + seg->len <= wnd) {
     LWIP_ASSERT("RST not expected here!",
                 (TCPH_FLAGS(seg->tcphdr) & TCP_RST) == 0);
     /* Stop sending if the nagle algorithm would prevent it
@@ -1395,12 +1403,32 @@ tcp_output(struct tcp_pcb *pcb)
           struct tcp_seg **cur_seg = &(pcb->unacked);
           while (*cur_seg &&
                  TCP_SEQ_LT(lwip_ntohl((*cur_seg)->tcphdr->seqno), lwip_ntohl(seg->tcphdr->seqno))) {
+            /* tolunnet vendor patch (TNET-115): if seg is already linked at
+             * this position, stop walking — linking it again would create a
+             * cycle and livelock the walk. */
+            if (*cur_seg == seg) {
+              break;
+            }
             cur_seg = &((*cur_seg)->next );
+          }
+          if (*cur_seg == seg) {
+            /* already on the unacked list — do not relink */
+            seg = pcb->unsent;
+            continue;
           }
           seg->next = (*cur_seg);
           (*cur_seg) = seg;
         } else {
           /* add segment to tail of unacked list */
+          /* tolunnet vendor patch (TNET-115): appending seg to itself
+           * (useg == seg, i.e. the segment is simultaneously the unacked
+           * tail and the unsent head) writes seg->next = seg — a self-cycle
+           * that turns this loop into a priority-5 livelock (the whole
+           * machine freezes while the daemon re-checksums the same segment
+           * forever). Stop sending instead. */
+          if (useg == seg) {
+            break;
+          }
           useg->next = seg;
           useg = useg->next;
         }
@@ -1410,6 +1438,7 @@ tcp_output(struct tcp_pcb *pcb)
       tcp_seg_free(seg);
     }
     seg = pcb->unsent;
+    } /* tolunnet vendor patch (TNET-115): end of capped walk */
   }
 #if TCP_OVERSIZE
   if (pcb->unsent == NULL) {

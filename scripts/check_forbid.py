@@ -63,10 +63,29 @@ def scan_file(path, known):
     regions = []
     stack = []  # entries: [type, start_line, calls[list]]
     func = "?"
+    in_block_comment = False  # strip /* */ and // so prose cannot open regions
 
     with open(path, encoding="utf-8", errors="replace") as f:
         for lineno, raw in enumerate(f, 1):
             line = raw.rstrip("\n")
+
+            # comment stripping (line-based, adequate for this scanner)
+            if in_block_comment:
+                end = line.find("*/")
+                if end < 0:
+                    line = ""
+                else:
+                    line = line[end + 2:]
+                    in_block_comment = False
+            if "/*" in line:
+                start = line.find("/*")
+                if "*/" in line[start:]:
+                    line = line[:start] + line[line.find("*/", start) + 2:]
+                else:
+                    line = line[:start]
+                    in_block_comment = True
+            if "//" in line:
+                line = line[:line.find("//")]
 
             if raw.startswith("}"):  # function boundary (col 0)
                 for ent in stack:
