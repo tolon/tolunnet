@@ -48,7 +48,7 @@
 #define MEM_ALIGNMENT        4
 #define MEM_SIZE             (96 * 1024)
 #define PBUF_POOL_SIZE       32
-#define MEMP_NUM_TCP_PCB     32
+#define MEMP_NUM_TCP_PCB     64  /* TNET-131: dtablesize-1 concurrent sockets */
 #define MEMP_NUM_TCP_PCB_LISTEN 8
 #define MEMP_NUM_UDP_PCB     16
 #define MEMP_NUM_RAW_PCB     8

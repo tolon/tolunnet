@@ -278,7 +278,20 @@ struct Library *tn_lib_open(struct Library *lib, ULONG version)
     base->servent_idx = 0;
     base->protoent_idx = 0;
 
-    for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
+    /* TN-bugtrack-2 item 4: per-base dynamic descriptor table */
+    base->dtablesize = TN_DEFAULT_DTABLESIZE;
+    base->fd_map  = (LONG *)AllocVec(sizeof(LONG) * base->dtablesize, MEMF_PUBLIC | MEMF_CLEAR);
+    base->events  = (ULONG *)AllocVec(sizeof(ULONG) * base->dtablesize, MEMF_PUBLIC | MEMF_CLEAR);
+    if (base->fd_map == NULL || base->events == NULL) {
+        if (base->fd_map) { FreeVec(base->fd_map); base->fd_map = NULL; }
+        if (base->events) { FreeVec(base->events); base->events = NULL; }
+        FreeVec((UBYTE *)base - base->lib_node.lib_NegSize);
+        Forbid();
+        lib->lib_OpenCnt--;
+        Permit();
+        return NULL;
+    }
+    for (i = 0; i < base->dtablesize; i++) {
         base->fd_map[i] = -1;
     }
 
@@ -316,6 +329,16 @@ BPTR tn_lib_close(struct Library *lib)
         if (base->timer_port != NULL) {
             DeleteMsgPort(base->timer_port);
             base->timer_port = NULL;
+        }
+
+        /* TN-bugtrack-2 item 4: free the dynamic descriptor table */
+        if (base->fd_map != NULL) {
+            FreeVec(base->fd_map);
+            base->fd_map = NULL;
+        }
+        if (base->events != NULL) {
+            FreeVec(base->events);
+            base->events = NULL;
         }
 
         if (base->reply_port != NULL) {
@@ -364,7 +387,7 @@ LONG tn_lvo_socket(LONG domain, LONG type, LONG protocol, TnSocketBase *base)
         int i;
         typedef int (*fdcb_t)(int, int);
         fdcb_t cb = (fdcb_t)base->fd_callback;
-        for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
+        for (i = 0; i < base->dtablesize; i++) {
             if (base->fd_map[i] == -1 && cb(i, FDCB_CHECK) == 0) {
                 base->ipc_msg.args[3] = i;
                 break;
@@ -411,7 +434,7 @@ LONG tn_lvo_accept(LONG sock, struct sockaddr *addr, socklen_t *addrlen, TnSocke
         int i;
         typedef int (*fdcb_t)(int, int);
         fdcb_t cb = (fdcb_t)base->fd_callback;
-        for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
+        for (i = 0; i < base->dtablesize; i++) {
             if (base->fd_map[i] == -1 && cb(i, FDCB_CHECK) == 0) {
                 base->ipc_msg.args[3] = i;
                 break;
@@ -561,7 +584,7 @@ LONG tn_lvo_closesocket(LONG sock, TnSocketBase *base)
         tn_set_errno_val(base, EBADF);
         return -1;
     }
-    if (base->fd_callback != NULL && sock < TN_MAX_FDS_PER_TASK && base->fd_map[sock] >= 0) {
+    if (base->fd_callback != NULL && sock < base->dtablesize && base->fd_map[sock] >= 0) {
         typedef int (*fdcb_t)(int, int);
         ((fdcb_t)base->fd_callback)((int)sock, FDCB_FREE);
     }
@@ -776,8 +799,8 @@ VOID tn_lvo_setsocketsignals(ULONG int_mask, ULONG io_mask, ULONG urgent_mask, T
 /* -138: getdtablesize() */
 LONG tn_lvo_getdtablesize(TnSocketBase *base)
 {
-    (void)base;
-    return TN_MAX_FDS_PER_TASK;
+    if (base == NULL) return TN_DEFAULT_DTABLESIZE;
+    return base->dtablesize;
 }
 
 /* -144: ObtainSocket(...) */
@@ -795,7 +818,7 @@ LONG tn_lvo_obtainsocket(LONG id, LONG domain, LONG type, LONG protocol, TnSocke
         int i;
         typedef int (*fdcb_t)(int, int);
         fdcb_t cb = (fdcb_t)base->fd_callback;
-        for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
+        for (i = 0; i < base->dtablesize; i++) {
             if (base->fd_map[i] == -1 && cb(i, FDCB_CHECK) == 0) {
                 base->ipc_msg.args[4] = i;
                 break;
@@ -814,7 +837,7 @@ LONG tn_lvo_obtainsocket(LONG id, LONG domain, LONG type, LONG protocol, TnSocke
 /* -150: ReleaseSocket(...) */
 LONG tn_lvo_releasesocket(LONG sock, LONG id, TnSocketBase *base)
 {
-    if (base == NULL || sock < 0 || sock >= TN_MAX_FDS_PER_TASK || base->fd_map[sock] < 0) {
+    if (base == NULL || sock < 0 || sock >= base->dtablesize || base->fd_map[sock] < 0) {
         tn_set_errno_val(base, EBADF);
         return -1;
     }
@@ -831,7 +854,7 @@ LONG tn_lvo_releasesocket(LONG sock, LONG id, TnSocketBase *base)
 /* -156: ReleaseCopyOfSocket(...) */
 LONG tn_lvo_releasecopyofsocket(LONG sock, LONG id, TnSocketBase *base)
 {
-    if (base == NULL || sock < 0 || sock >= TN_MAX_FDS_PER_TASK || base->fd_map[sock] < 0) {
+    if (base == NULL || sock < 0 || sock >= base->dtablesize || base->fd_map[sock] < 0) {
         tn_set_errno_val(base, EBADF);
         return -1;
     }
@@ -1142,8 +1165,25 @@ LONG tn_lvo_dup2socket(LONG old_sock, LONG new_sock, TnSocketBase *base)
 {
     LONG res;
     if (base == NULL) return -1;
-    if (old_sock < 0 || old_sock >= TN_MAX_FDS_PER_TASK ||
-        new_sock < 0 || new_sock >= TN_MAX_FDS_PER_TASK) {
+    if (old_sock < 0 || old_sock >= base->dtablesize) {
+        tn_set_errno_val(base, EBADF);
+        return -1;
+    }
+    /* TNET-130: Dup2Socket(fd, -1) picks the lowest free descriptor */
+    if (new_sock == -1) {
+        LONG i;
+        for (i = 0; i < base->dtablesize; i++) {
+            if (base->fd_map[i] < 0 && i != old_sock) {
+                new_sock = i;
+                break;
+            }
+        }
+        if (new_sock == -1) {
+            tn_set_errno_val(base, EMFILE);
+            return -1;
+        }
+    }
+    if (new_sock < 0 || new_sock >= base->dtablesize) {
         tn_set_errno_val(base, EBADF);
         return -1;
     }
@@ -1172,7 +1212,7 @@ LONG tn_lvo_dup2socket(LONG old_sock, LONG new_sock, TnSocketBase *base)
 LONG tn_lvo_sendmsg(LONG sock, struct msghdr *msg, LONG flags, TnSocketBase *base)
 {
     if (base == NULL) return -1;
-    if (sock < 0 || sock >= TN_MAX_FDS_PER_TASK || base->fd_map[sock] < 0) {
+    if (sock < 0 || sock >= base->dtablesize || base->fd_map[sock] < 0) {
         tn_set_errno_val(base, EBADF);
         return -1;
     }
@@ -1194,7 +1234,7 @@ LONG tn_lvo_sendmsg(LONG sock, struct msghdr *msg, LONG flags, TnSocketBase *bas
 LONG tn_lvo_recvmsg(LONG sock, struct msghdr *msg, LONG flags, TnSocketBase *base)
 {
     if (base == NULL) return -1;
-    if (sock < 0 || sock >= TN_MAX_FDS_PER_TASK || base->fd_map[sock] < 0) {
+    if (sock < 0 || sock >= base->dtablesize || base->fd_map[sock] < 0) {
         tn_set_errno_val(base, EBADF);
         return -1;
     }
@@ -1286,7 +1326,7 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
         st.errno_ptr    = (uint32_t)(uintptr_t)base->errno_ptr;
         st.errno_width  = (uint32_t)base->errno_width;
         st.herrno_ptr   = (uint32_t)(uintptr_t)base->herrno_ptr;
-        st.dtablesize   = TN_MAX_FDS_PER_TASK;
+        st.dtablesize   = (uint32_t)base->dtablesize;
         st.fd_callback  = (uint32_t)(uintptr_t)base->fd_callback;
         st.log_stat     = (uint32_t)base->log_stat;
         st.log_tag_ptr  = (uint32_t)(uintptr_t)base->log_tag_ptr;
@@ -1360,6 +1400,45 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
         case TN_SBTC_OP_SET_IPDEFAULTTTL:
             base->ip_default_ttl = (LONG)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value);
             break;
+        case TN_SBTC_OP_SET_DTABLESIZE:
+            {
+                /* TNET-121: grow the per-base descriptor table live.
+                 * Never shrink below the highest open fd + 1. */
+                LONG newsize = (LONG)r.value;
+                LONG highest_open = -1;
+                LONG i;
+                if (newsize < 4) newsize = 4;
+                if (newsize > TN_MAX_FDS_PER_TASK) newsize = TN_MAX_FDS_PER_TASK;
+                if (newsize <= base->dtablesize) {
+                    for (i = base->dtablesize - 1; i >= 0; i--) {
+                        if (base->fd_map[i] >= 0) { highest_open = i; break; }
+                    }
+                    if (newsize <= highest_open + 1) break; /* EINVAL per spec */
+                }
+                if (newsize != base->dtablesize) {
+                    LONG  *nm = (LONG *)AllocVec(sizeof(LONG) * newsize, MEMF_PUBLIC | MEMF_CLEAR);
+                    ULONG *ne = (ULONG *)AllocVec(sizeof(ULONG) * newsize, MEMF_PUBLIC | MEMF_CLEAR);
+                    if (nm != NULL && ne != NULL) {
+                        LONG copy_n = (newsize < base->dtablesize) ? newsize : base->dtablesize;
+                        for (i = 0; i < copy_n; i++) {
+                            nm[i] = base->fd_map[i];
+                            ne[i] = base->events[i];
+                        }
+                        for (i = copy_n; i < newsize; i++) {
+                            nm[i] = -1;
+                        }
+                        FreeVec(base->fd_map);
+                        FreeVec(base->events);
+                        base->fd_map = nm;
+                        base->events = ne;
+                        base->dtablesize = newsize;
+                    } else {
+                        if (nm) FreeVec(nm);
+                        if (ne) FreeVec(ne);
+                    }
+                }
+            }
+            break;
         case TN_SBTC_OP_GET_ERRNO_STR:
             {
                 int err = (int)((r.is_ref && tag->ti_Data != 0) ? *(ULONG *)(uintptr_t)tag->ti_Data : r.value);
@@ -1431,7 +1510,7 @@ LONG tn_lvo_getsocketevents(ULONG *event_ptr, TnSocketBase *base)
         return -1;
     }
     Forbid();
-    for (fd = 0; fd < TN_MAX_FDS_PER_TASK; fd++) {
+    for (fd = 0; fd < base->dtablesize; fd++) {
         event_ptr[fd] = base->events[fd];
         base->events[fd] = 0;
     }

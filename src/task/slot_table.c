@@ -142,7 +142,7 @@ int tn_fd_alloc(TnSocketBase *base, int slot_idx)
     if (base == NULL || slot_idx < 0 || slot_idx >= TN_MAX_GLOBAL_SOCKETS) {
         return -1;
     }
-    for (fd = 0; fd < TN_MAX_FDS_PER_TASK; fd++) {
+    for (fd = 0; fd < base->dtablesize; fd++) {
         if (base->fd_map[fd] == -1) {
             base->fd_map[fd] = slot_idx;
             return fd;
@@ -156,7 +156,7 @@ TnSocketSlot *tn_slot_lookup(TnDaemon *d, const TnSocketBase *base, int fd, int 
     int slot_idx;
     TnSocketSlot *slot;
 
-    if (d == NULL || base == NULL || fd < 0 || fd >= TN_MAX_FDS_PER_TASK) {
+    if (d == NULL || base == NULL || fd < 0 || fd >= base->dtablesize) {
         return NULL;
     }
     slot_idx = base->fd_map[fd];
@@ -371,7 +371,7 @@ void tn_record_socket_event(TnDaemon *d, TnSocketSlot *slot, ULONG event_mask)
         int fd;
         BOOL posted = FALSE;
 
-        for (fd = 0; fd < TN_MAX_FDS_PER_TASK; fd++) {
+        for (fd = 0; fd < base->dtablesize; fd++) {
             if (base->fd_map[fd] == slot_idx) {
                 base->events[fd] |= event_mask;
                 posted = TRUE;

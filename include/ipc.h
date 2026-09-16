@@ -66,7 +66,8 @@ struct netent { char *n_name; char **n_aliases; int n_addrtype; uint32_t n_net; 
 #define BSDSOCKET_VER      4
 #define BSDSOCKET_REV      1
 
-#define TN_MAX_FDS_PER_TASK 32
+#define TN_MAX_FDS_PER_TASK 128                        /* compiled ceiling */
+#define TN_DEFAULT_DTABLESIZE 64                       /* Roadshow default (TN-bugtrack-2 item 4) */
 
 /* IPC Command Codes */
 typedef enum TnIpcCmd {
@@ -290,8 +291,9 @@ typedef struct TnSocketBase {
     ULONG           sig_event;              /* SBTC_SIGEVENTMASK signal bit mask */
     ULONG           sig_select;             /* Private signal bit mask for WaitSelect (§D) */
     BYTE            sig_select_bit;         /* Private signal bit index (-1 if none allocated) */
-    ULONG           events[TN_MAX_FDS_PER_TASK]; /* Per-fd pending events mask (C4) */
-    LONG            fd_map[TN_MAX_FDS_PER_TASK]; /* Client fd -> Network task slot */
+    LONG            dtablesize;             /* Current descriptor table size (TN-bugtrack-2 item 4) */
+    ULONG          *events;                 /* Per-fd pending events mask (C4) — dtablesize entries */
+    LONG           *fd_map;                 /* Client fd -> Network task slot — dtablesize entries */
     APTR            fd_callback;            /* SBTC_FDCALLBACK hook function (C5) */
     LONG            log_stat;               /* SBTC_LOGSTAT (C5) */
     APTR            log_tag_ptr;            /* SBTC_LOGTAGPTR (C5) */

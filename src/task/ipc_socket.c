@@ -45,7 +45,7 @@ int tn_ipc_cmd_close(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             imsg->client_task);
 
     if (base != NULL) {
-        for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
+        for (i = 0; i < base->dtablesize; i++) {
             int slot_idx = base->fd_map[i];
             if (slot_idx >= 0 && slot_idx < TN_MAX_GLOBAL_SOCKETS && d->sockets[slot_idx].in_use) {
                 base->fd_map[i] = -1;
@@ -103,11 +103,11 @@ int tn_ipc_cmd_socket(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     }
 
     if (base != NULL) {
-        if (pref_fd >= 0 && pref_fd < TN_MAX_FDS_PER_TASK && base->fd_map[pref_fd] == -1) {
+        if (pref_fd >= 0 && pref_fd < base->dtablesize && base->fd_map[pref_fd] == -1) {
             client_fd = pref_fd;
         } else {
             int i;
-            for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
+            for (i = 0; i < base->dtablesize; i++) {
                 if (base->fd_map[i] == -1) {
                     client_fd = i;
                     break;
@@ -207,7 +207,7 @@ int tn_ipc_cmd_dup2(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     int old_slot;
     int existing_new_slot;
 
-    if (slot == NULL || base == NULL || new_fd < 0 || new_fd >= TN_MAX_FDS_PER_TASK) {
+    if (slot == NULL || base == NULL || new_fd < 0 || new_fd >= base->dtablesize) {
         imsg->result = -1;
         imsg->err_no = EBADF;
         return 0;
@@ -340,10 +340,10 @@ int tn_ipc_cmd_obtainsocket(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         return 0;
     }
 
-    if (pref_fd >= 0 && pref_fd < TN_MAX_FDS_PER_TASK && base->fd_map[pref_fd] == -1) {
+    if (pref_fd >= 0 && pref_fd < base->dtablesize && base->fd_map[pref_fd] == -1) {
         client_fd = pref_fd;
     } else {
-        for (i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
+        for (i = 0; i < base->dtablesize; i++) {
             if (base->fd_map[i] == -1) {
                 client_fd = i;
                 break;

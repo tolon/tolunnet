@@ -98,6 +98,7 @@ typedef enum {
     TN_SBTC_OP_SET_ERRNO_PTR,   /* errno_ptr = ti_Data, width = errno_ptr_width */
     TN_SBTC_OP_SET_HERRNO_PTR,  /* herrno_ptr = ti_Data */
     TN_SBTC_OP_SET_FDCALLBACK,  /* base->fd_callback = value */
+    TN_SBTC_OP_SET_DTABLESIZE,  /* TNET-121: grow the descriptor table to value */
     TN_SBTC_OP_SET_LOGSTAT,     /* base->log_stat = value */
     TN_SBTC_OP_SET_LOGTAGPTR,   /* base->log_tag_ptr = value */
     TN_SBTC_OP_SET_LOGFACILITY, /* base->log_facility = value */

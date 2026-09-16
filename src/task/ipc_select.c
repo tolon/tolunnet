@@ -37,7 +37,7 @@ void tn_signal_socket(TnDaemon *d, TnSocketSlot *slot)
 
         BOOL match = FALSE;
         int fd;
-        for (fd = 0; fd < sel->nfds && fd < TN_MAX_FDS_PER_TASK; fd++) {
+        for (fd = 0; fd < sel->nfds && fd < sel->base->dtablesize; fd++) {
             if (sel->base->fd_map[fd] == s_idx) {
                 ULONG mask = (1UL << fd);
                 if ((sel->read_mask & mask) && tn_select_can_read(slot)) {

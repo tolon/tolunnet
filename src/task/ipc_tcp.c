@@ -141,7 +141,7 @@ err_t tn_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
         }
 
         client_fd = (int)imsg->args[3];
-        if (client_fd >= 0 && client_fd < TN_MAX_FDS_PER_TASK && base->fd_map[client_fd] == -1) {
+        if (client_fd >= 0 && client_fd < base->dtablesize && base->fd_map[client_fd] == -1) {
             base->fd_map[client_fd] = new_slot_idx;
         } else {
             client_fd = tn_fd_alloc(base, new_slot_idx);
@@ -256,7 +256,7 @@ int tn_ipc_cmd_accept(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         }
 
         new_fd = (int)imsg->args[3];
-        if (new_fd >= 0 && new_fd < TN_MAX_FDS_PER_TASK && base->fd_map[new_fd] == -1) {
+        if (new_fd >= 0 && new_fd < base->dtablesize && base->fd_map[new_fd] == -1) {
             base->fd_map[new_fd] = new_slot_idx;
         } else {
             new_fd = tn_fd_alloc(base, new_slot_idx);

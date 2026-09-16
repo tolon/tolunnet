@@ -2514,9 +2514,9 @@ static void tc_sbtc_full(void)
     tags[0].ti_Data = 0;
     tags[1].ti_Tag  = TAG_DONE;
     tags[1].ti_Data = 0;
-    if (call_socketbasetaglist(tags) != 0 || tags[0].ti_Data != TN_MAX_FDS_PER_TASK) {
+    if (call_socketbasetaglist(tags) != 0 || tags[0].ti_Data != TN_DEFAULT_DTABLESIZE) {
         tapf("# SBTC_DTABLESIZE GETVAL returned %ld (expected %ld)\n",
-             (LONG)tags[0].ti_Data, (LONG)TN_MAX_FDS_PER_TASK);
+             (LONG)tags[0].ti_Data, (LONG)TN_DEFAULT_DTABLESIZE);
         TAP_NOTOK("tc_sbtc_full", "SBTC_DTABLESIZE GETVAL failed");
         return;
     }
@@ -2527,9 +2527,9 @@ static void tc_sbtc_full(void)
     tags[0].ti_Data = (ULONG)(uintptr_t)&val;
     tags[1].ti_Tag  = TAG_DONE;
     tags[1].ti_Data = 0;
-    if (call_socketbasetaglist(tags) != 0 || val != TN_MAX_FDS_PER_TASK) {
+    if (call_socketbasetaglist(tags) != 0 || val != TN_DEFAULT_DTABLESIZE) {
         tapf("# SBTC_DTABLESIZE GETREF returned %ld (expected %ld)\n",
-             (LONG)val, (LONG)TN_MAX_FDS_PER_TASK);
+             (LONG)val, (LONG)TN_DEFAULT_DTABLESIZE);
         TAP_NOTOK("tc_sbtc_full", "SBTC_DTABLESIZE GETREF failed");
         return;
     }
