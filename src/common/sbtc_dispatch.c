@@ -108,18 +108,22 @@ int tn_sbtc_dispatch_tag(uint32_t raw_tag, uint32_t data,
 
     case TN_SBTC_ERRNOBYTEPTR:
         if (is_set) { res->op = TN_SBTC_OP_SET_ERRNO_PTR; res->errno_ptr_width = 1; res->value = data; }
+        else get_plain(res, is_ref, state->errno_ptr);
         break;
 
     case TN_SBTC_ERRNOWORDPTR:
         if (is_set) { res->op = TN_SBTC_OP_SET_ERRNO_PTR; res->errno_ptr_width = 2; res->value = data; }
+        else get_plain(res, is_ref, state->errno_ptr);
         break;
 
     case TN_SBTC_ERRNOLONGPTR:
         if (is_set) { res->op = TN_SBTC_OP_SET_ERRNO_PTR; res->errno_ptr_width = 4; res->value = data; }
+        else get_plain(res, is_ref, state->errno_ptr);
         break;
 
     case TN_SBTC_HERRNOLONGPTR:
         if (is_set) { res->op = TN_SBTC_OP_SET_HERRNO_PTR; res->value = data; }
+        else get_plain(res, is_ref, state->herrno_ptr);
         break;
 
     case TN_SBTC_RELEASESTRPTR:

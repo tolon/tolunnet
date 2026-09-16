@@ -554,7 +554,13 @@ LONG tn_lvo_ioctlsocket(LONG sock, ULONG req, APTR argp, TnSocketBase *base)
 /* -120: CloseSocket(sock) */
 LONG tn_lvo_closesocket(LONG sock, TnSocketBase *base)
 {
-    if (base == NULL || sock < 0) return -1;
+    /* TNET-132..134: a bad fd must raise EBADF through the client's errno
+     * pointer — the plain -1 return never reached tn_set_errno_val. */
+    if (base == NULL) return -1;
+    if (sock < 0) {
+        tn_set_errno_val(base, EBADF);
+        return -1;
+    }
     if (base->fd_callback != NULL && sock < TN_MAX_FDS_PER_TASK && base->fd_map[sock] >= 0) {
         typedef int (*fdcb_t)(int, int);
         ((fdcb_t)base->fd_callback)((int)sock, FDCB_FREE);
@@ -1277,6 +1283,9 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
         st.sig_event    = base->sig_event;
         st.errno_val    = base->task_errno;
         st.herrno_val   = base->task_herrno;
+        st.errno_ptr    = (uint32_t)(uintptr_t)base->errno_ptr;
+        st.errno_width  = (uint32_t)base->errno_width;
+        st.herrno_ptr   = (uint32_t)(uintptr_t)base->herrno_ptr;
         st.dtablesize   = TN_MAX_FDS_PER_TASK;
         st.fd_callback  = (uint32_t)(uintptr_t)base->fd_callback;
         st.log_stat     = (uint32_t)base->log_stat;

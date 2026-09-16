@@ -21,6 +21,9 @@ static TnSbtcState base_state(void)
     st.sig_event = 0x8000;
     st.errno_val = 35;
     st.herrno_val = 1;
+    st.errno_ptr = 0x00F00000;   /* TNET-119/120: registered errno pointer */
+    st.errno_width = 4;
+    st.herrno_ptr = 0x00F10000;
     st.dtablesize = 32;
     st.fd_callback = 0x12345678;
     st.log_stat = 0x01;
@@ -222,12 +225,37 @@ TN_TEST(full_tag_operations)
     TN_ASSERT_EQ_U(r.value, 0x7Fu);
 }
 
+TN_TEST(errno_ptr_getref_tnet119)
+{
+    /* TNET-119/120: SBTM_GETREF on the errno/h_errno pointer tags must
+     * return the currently registered pointer, not silently do nothing. */
+    TnSbtcState st = base_state();
+    TnSbtcResult r;
+
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_ERRNOLONGPTR, 0, 0), 0x2000, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET);
+    TN_ASSERT_EQ_U(r.value, 0x00F00000u);
+
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_ERRNOWORDPTR, 0, 0), 0x2000, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET);
+    TN_ASSERT_EQ_U(r.value, 0x00F00000u);
+
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_ERRNOBYTEPTR, 0, 0), 0x2000, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET);
+    TN_ASSERT_EQ_U(r.value, 0x00F00000u);
+
+    TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_HERRNOLONGPTR, 0, 0), 0x2000, &st, &r), 1);
+    TN_ASSERT_TRUE(r.op == TN_SBTC_OP_GET);
+    TN_ASSERT_EQ_U(r.value, 0x00F10000u);
+}
+
 int main(void)
 {
     TN_TEST_RUN(getval_getref_matrix);
     TN_TEST_RUN(setval_setref_matrix);
     TN_TEST_RUN(return_counts_unknown_only);
     TN_TEST_RUN(errno_ptr_widths);
+    TN_TEST_RUN(errno_ptr_getref_tnet119);
     TN_TEST_RUN(capability_truthfulness);
     TN_TEST_RUN(error_string_tags);
     TN_TEST_RUN(full_tag_operations);

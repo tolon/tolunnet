@@ -127,6 +127,9 @@ typedef struct TnSbtcState {
     uint32_t sig_event;      /* SBTC_SIGEVENTMASK value */
     int32_t  errno_val;      /* SBTC_ERRNO value */
     int32_t  herrno_val;     /* SBTC_HERRNO value */
+    uint32_t errno_ptr;      /* TNET-119: current errno pointer (GET on SBTC_ERRNO*PTR) */
+    uint32_t errno_width;    /* TNET-119: 1/2/4 width of that pointer (GET context) */
+    uint32_t herrno_ptr;     /* TNET-120: current h_errno pointer (GET on SBTC_HERRNO*PTR) */
     uint32_t dtablesize;     /* SBTC_DTABLESIZE (GET) */
     uint32_t fd_callback;    /* SBTC_FDCALLBACK (GET/SET) */
     uint32_t log_stat;       /* SBTC_LOGSTAT */
