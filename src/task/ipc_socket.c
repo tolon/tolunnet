@@ -482,6 +482,18 @@ int tn_ipc_cmd_setsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             imsg->err_no = ENOPROTOOPT;
             return 0;
 
+        case SO_EVENTMASK:
+            /* TNET-122..127: per-fd event filter stored client-side. The
+             * setsockopt IPC carries the client fd in args[4] (marshalled by
+             * the LVO), so the daemon just validates and returns OK — the
+             * actual mask write happens in the LVO before the IPC call. */
+            if (optval == NULL || optlen_arg < (LONG)sizeof(ULONG)) {
+                imsg->result = -1;
+                imsg->err_no = EINVAL;
+                return 0;
+            }
+            break;
+
         default:
             imsg->result = -1;
             imsg->err_no = ENOPROTOOPT;

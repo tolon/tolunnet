@@ -373,8 +373,14 @@ void tn_record_socket_event(TnDaemon *d, TnSocketSlot *slot, ULONG event_mask)
 
         for (fd = 0; fd < base->dtablesize; fd++) {
             if (base->fd_map[fd] == slot_idx) {
-                base->events[fd] |= event_mask;
-                posted = TRUE;
+                /* TNET-122..127: only record events the SO_EVENTMASK
+                 * filter allows (mask 0 = accept all, Roadshow default) */
+                ULONG filter = (base->event_masks != NULL) ? base->event_masks[fd] : 0;
+                ULONG effective = (filter != 0) ? (event_mask & filter) : event_mask;
+                if (effective != 0) {
+                    base->events[fd] |= effective;
+                    posted = TRUE;
+                }
             }
         }
         if (posted && base->sig_event != 0 && slot->owner_task != NULL) {

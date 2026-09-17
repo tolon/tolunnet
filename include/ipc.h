@@ -293,6 +293,7 @@ typedef struct TnSocketBase {
     BYTE            sig_select_bit;         /* Private signal bit index (-1 if none allocated) */
     LONG            dtablesize;             /* Current descriptor table size (TN-bugtrack-2 item 4) */
     ULONG          *events;                 /* Per-fd pending events mask (C4) — dtablesize entries */
+    ULONG          *event_masks;            /* TNET-122..127: per-fd SO_EVENTMASK filter (0 = all) */
     LONG           *fd_map;                 /* Client fd -> Network task slot — dtablesize entries */
     APTR            fd_callback;            /* SBTC_FDCALLBACK hook function (C5) */
     LONG            log_stat;               /* SBTC_LOGSTAT (C5) */

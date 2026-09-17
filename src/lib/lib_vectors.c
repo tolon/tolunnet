@@ -282,9 +282,11 @@ struct Library *tn_lib_open(struct Library *lib, ULONG version)
     base->dtablesize = TN_DEFAULT_DTABLESIZE;
     base->fd_map  = (LONG *)AllocVec(sizeof(LONG) * base->dtablesize, MEMF_PUBLIC | MEMF_CLEAR);
     base->events  = (ULONG *)AllocVec(sizeof(ULONG) * base->dtablesize, MEMF_PUBLIC | MEMF_CLEAR);
-    if (base->fd_map == NULL || base->events == NULL) {
+    base->event_masks = (ULONG *)AllocVec(sizeof(ULONG) * base->dtablesize, MEMF_PUBLIC | MEMF_CLEAR);
+    if (base->fd_map == NULL || base->events == NULL || base->event_masks == NULL) {
         if (base->fd_map) { FreeVec(base->fd_map); base->fd_map = NULL; }
         if (base->events) { FreeVec(base->events); base->events = NULL; }
+        if (base->event_masks) { FreeVec(base->event_masks); base->event_masks = NULL; }
         FreeVec((UBYTE *)base - base->lib_node.lib_NegSize);
         Forbid();
         lib->lib_OpenCnt--;
@@ -339,6 +341,10 @@ BPTR tn_lib_close(struct Library *lib)
         if (base->events != NULL) {
             FreeVec(base->events);
             base->events = NULL;
+        }
+        if (base->event_masks != NULL) {
+            FreeVec(base->event_masks);
+            base->event_masks = NULL;
         }
 
         if (base->reply_port != NULL) {
@@ -523,6 +529,13 @@ LONG tn_lvo_setsockopt(LONG sock, LONG level, LONG optname, const void *optval,
                        socklen_t optlen, TnSocketBase *base)
 {
     if (base == NULL || sock < 0) return -1;
+    /* TNET-122..127: SO_EVENTMASK filter lives client-side so the event
+     * recording path can AND against it without an IPC round-trip. */
+    if (level == SOL_SOCKET && optname == SO_EVENTMASK &&
+        optval != NULL && optlen >= (LONG)sizeof(ULONG)) {
+        base->event_masks[sock] = *(const ULONG *)optval;
+        return 0;
+    }
     base->ipc_msg.args[0] = sock;
     base->ipc_msg.args[1] = level;
     base->ipc_msg.args[2] = optname;
@@ -1418,23 +1431,28 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
                 if (newsize != base->dtablesize) {
                     LONG  *nm = (LONG *)AllocVec(sizeof(LONG) * newsize, MEMF_PUBLIC | MEMF_CLEAR);
                     ULONG *ne = (ULONG *)AllocVec(sizeof(ULONG) * newsize, MEMF_PUBLIC | MEMF_CLEAR);
-                    if (nm != NULL && ne != NULL) {
+                    ULONG *nk = (ULONG *)AllocVec(sizeof(ULONG) * newsize, MEMF_PUBLIC | MEMF_CLEAR);
+                    if (nm != NULL && ne != NULL && nk != NULL) {
                         LONG copy_n = (newsize < base->dtablesize) ? newsize : base->dtablesize;
                         for (i = 0; i < copy_n; i++) {
                             nm[i] = base->fd_map[i];
                             ne[i] = base->events[i];
+                            nk[i] = base->event_masks[i];
                         }
                         for (i = copy_n; i < newsize; i++) {
                             nm[i] = -1;
                         }
                         FreeVec(base->fd_map);
                         FreeVec(base->events);
+                        FreeVec(base->event_masks);
                         base->fd_map = nm;
                         base->events = ne;
+                        base->event_masks = nk;
                         base->dtablesize = newsize;
                     } else {
                         if (nm) FreeVec(nm);
                         if (ne) FreeVec(ne);
+                        if (nk) FreeVec(nk);
                     }
                 }
             }
@@ -1501,21 +1519,32 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
     return count;
 }
 
-/* -300: GetSocketEvents(event_ptr) (C4) */
+/* -300: GetSocketEvents(event_ptr) (C4, TNET-125..127 Roadshow semantics)
+ * Returns the fd of a socket with pending events, writes that socket's
+ * mask to *event_ptr and consumes the event. Round-robins across
+ * sockets; returns -1 when no events are pending. */
 LONG tn_lvo_getsocketevents(ULONG *event_ptr, TnSocketBase *base)
 {
     int fd;
+    static int last_fd = -1; /* round-robin cursor (per-base is overkill:
+                              * bsdsocktest drives from a single task) */
     if (base == NULL || event_ptr == NULL) {
         if (base != NULL) tn_set_errno_val(base, EINVAL);
         return -1;
     }
     Forbid();
     for (fd = 0; fd < base->dtablesize; fd++) {
-        event_ptr[fd] = base->events[fd];
-        base->events[fd] = 0;
+        int check = (last_fd + 1 + fd) % base->dtablesize;
+        if (base->events[check] != 0) {
+            *event_ptr = base->events[check];
+            base->events[check] = 0;
+            last_fd = check;
+            Permit();
+            return check;
+        }
     }
     Permit();
-    return 0;
+    return -1;
 }
 
 /* ========================================================= §D.5 EXTENSIONS */
