@@ -373,10 +373,11 @@ void tn_record_socket_event(TnDaemon *d, TnSocketSlot *slot, ULONG event_mask)
 
         for (fd = 0; fd < base->dtablesize; fd++) {
             if (base->fd_map[fd] == slot_idx) {
-                /* TNET-122..127: only record events the SO_EVENTMASK
-                 * filter allows (mask 0 = accept all, Roadshow default) */
+                /* TNET-122..127: SO_EVENTMASK gate — Roadshow default is 0
+                 * = NO events recorded; a socket only signals when the
+                 * application explicitly setsockopt()ed an event mask. */
                 ULONG filter = (base->event_masks != NULL) ? base->event_masks[fd] : 0;
-                ULONG effective = (filter != 0) ? (event_mask & filter) : event_mask;
+                ULONG effective = event_mask & filter;
                 if (effective != 0) {
                     base->events[fd] |= effective;
                     posted = TRUE;
