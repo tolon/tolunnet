@@ -407,7 +407,9 @@ int tn_ipc_cmd_send(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
         if (slot->tcp_state != TN_TCP_STATE_ESTABLISHED) {
             imsg->result = -1;
-            imsg->err_no = (slot->tcp_state == TN_TCP_STATE_ERROR) ? ECONNRESET : ENOTCONN;
+            imsg->err_no = (slot->tcp_state == TN_TCP_STATE_ERROR) ? ECONNRESET
+                         : (slot->tcp_state == TN_TCP_STATE_PEER_CLOSED) ? EPIPE
+                         : ENOTCONN;
             return 0;
         }
 

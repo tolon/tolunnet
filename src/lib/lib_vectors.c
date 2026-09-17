@@ -1565,18 +1565,28 @@ VOID tn_lvo_endnetent(TnSocketBase *base)
 /* -222: getnetbyname(name) */
 struct netent *tn_lvo_getnetbyname(CONST_STRPTR name, TnSocketBase *base)
 {
+    static const struct { const char *name; LONG net_num; } nets[] = {
+        { "loopback",   127 },   /* 127.0.0.0/8 */
+        { "localnet",   127 },
+        { "arpanet",     10 },   /* 10.0.0.0/8 */
+        { "milnet",      26 },   /* 26.0.0.0/8 */
+    };
     if (base == NULL || name == NULL) return NULL;
-    if (tn_strcasecmp((const char *)name, "loopback") == 0 ||
-        tn_strcasecmp((const char *)name, "localnet") == 0) {
-        int i = 0;
-        while (name[i] && i < 31) { base->netent_name[i] = name[i]; i++; }
-        base->netent_name[i] = '\0';
-        base->netent_aliases[0] = NULL;
-        base->netent_data.n_name = (STRPTR)base->netent_name;
-        base->netent_data.n_aliases = base->netent_aliases;
-        base->netent_data.n_addrtype = AF_INET;
-        base->netent_data.n_net = 0x7F000000UL;
-        return &base->netent_data;
+    {
+        int i;
+        for (i = 0; i < (int)(sizeof(nets) / sizeof(nets[0])); i++) {
+            if (tn_strcasecmp((const char *)name, nets[i].name) == 0) {
+                int j = 0;
+                while (name[j] && j < 31) { base->netent_name[j] = name[j]; j++; }
+                base->netent_name[j] = '\0';
+                base->netent_aliases[0] = NULL;
+                base->netent_data.n_name = (STRPTR)base->netent_name;
+                base->netent_data.n_aliases = base->netent_aliases;
+                base->netent_data.n_addrtype = AF_INET;
+                base->netent_data.n_net = nets[i].net_num;
+                return &base->netent_data;
+            }
+        }
     }
     return NULL;
 }
@@ -1585,8 +1595,10 @@ struct netent *tn_lvo_getnetbyname(CONST_STRPTR name, TnSocketBase *base)
 struct netent *tn_lvo_getnetbyaddr(in_addr_t net, LONG type, TnSocketBase *base)
 {
     if (base == NULL || type != AF_INET) return NULL;
-    if ((net & 0xFF000000UL) == 0x7F000000UL || (net & 0xFF000000UL) == 0x0A000000UL) {
-        return tn_lvo_getnetbyname((CONST_STRPTR)"loopback", base);
+    if (net == 127 || net == 10 || net == 26) {
+        return tn_lvo_getnetbyname(
+            (CONST_STRPTR)((net == 127) ? "loopback" : (net == 10) ? "arpanet" : "milnet"),
+            base);
     }
     return NULL;
 }
