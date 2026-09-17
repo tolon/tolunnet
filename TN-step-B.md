@@ -1,0 +1,11 @@
+# tolunnet — step B: hermetic bench (TNET-111; closes TNET-109). One commit. STOP RULES: bench red twice in a row or 3 h without commit → STOP-REPORT.md.
+
+Rule: `core` tests depend on nothing beyond slirp. Tests needing the Internet are `external`: printed `ok N - name # SKIP external` unless `BENCH_EXTERNAL=1`.
+
+1. `tc_dns_a` → external. New core `tc_dns_local`: host runs `ci/mini_dns.py` on `0.0.0.0:53` (Windows needs no admin for port 53) answering `test.tolunnet.lan` A → `10.0.2.2` and its PTR; bench config `DNS=10.0.2.2`. `bench.sh`: if port 53 is busy (`netstat -ano | findstr :53`), do not start it and let the test print `# SKIP dns-port-busy`; otherwise start before WinUAE, verify with one host query, kill by PID at the end. No new config keys, no lwIP changes.
+2. `tc_nonblock_connect`: `bench.sh` picks `BENCH_HTTP_PORT` randomly in 18000–18999, kills any orphan on it (`netstat -ano` → `taskkill /PID`), starts `python -m http.server PORT --bind 0.0.0.0`, waits until LISTENING, passes the port to the guest via bench config key `TEST_HTTP_PORT=`, kills by PID after. The test retries 3× with 500 ms backoff before `not ok`.
+3. `tc_multicast_join`: slirp does not forward multicast. Hermetic version: join 224.0.0.251, set `IP_MULTICAST_LOOP=1` (lwIP: `LWIP_MULTICAST_TX_OPTIONS`, `UDP_FLAGS_MULTICAST_LOOP`, delivered via `netif_loop_output` — both already enabled), send one datagram to the group, `recvfrom` it back within 2 s. If loopback delivery cannot be made to work in ≤1 h, reduce the test to: join OK + `S2_ADDMULTICASTADDRESS` issued (visible in `GETSTATS` counter) + leave OK, and write why in ISSUES.
+4. Watchdog: every `tc_*` runs under a 5 s `timer.device` timeout in `SocketConformance` → `not ok N - name # TIMEOUT` instead of a hung run. Confirm `tn_rand_init` seeds from `GetSysTime` µs so a daemon restart cannot repeat ISN/ephemeral ports. If the cycle-2 freeze recurs after this, open a separate TNET row with WinUAE `il 8` + `daemon.log`; do not investigate host DNS/firewall.
+5. `README.txt` in each log dir gets `core: N ok / M not ok` and `external: …`. ISSUES: TNET-111 row; TNET-109 closed when core is 100 % on both configs.
+
+Report: commit hash, bench dir, core/external counts for both configs, verbatim `not ok` lines.

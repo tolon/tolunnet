@@ -1,0 +1,24 @@
+INVALID COMMAND: v3.0
+valid commands are:
+   bitmap
+   blkdev
+   block
+   boot
+   comment
+   create
+   delete
+   format
+   info
+   list
+   makedir
+   open
+   pack
+   protect
+   read
+   relabel
+   repack
+   root
+   time
+   type
+   unpack
+   write

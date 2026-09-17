@@ -2,6 +2,4 @@
 # (path relative to repo root, forward slashes; findings inside these
 # functions are reported as EXCUSED but still listed by the scanner)
 #
-# TNET-140 (ANX-03): diagnostic log while holding Forbid during library
 # teardown refcount check. Tracked in ISSUES.md; no fix per ANX-03 rule.
-src/lib/lib_init.c:tn_lib_destroy:ISSUES TNET-140 — tn_logf under Forbid (refcount check), fix deferred

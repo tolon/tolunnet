@@ -1,0 +1,13 @@
+; TNET-115 freeze repro - daemon + bsdsocktest only
+Stack 32768
+If EXISTS WORK:
+  Echo >WORK:bs-start "script reached"
+  Delete >NIL: WORK:bsdone QUIET
+  Delete >NIL: WORK:bsdsocktest.log QUIET
+  Run >WORK:daemon0.log C:tolunnet
+  Wait 15
+  C:bsdsocktest LOOPBACK NOPAGE LOG WORK:bsdsocktest.log
+  Echo >WORK:bsdone "after bsdsocktest"
+  Wait 2
+  Echo >WORK:bench-done "done"
+EndIf

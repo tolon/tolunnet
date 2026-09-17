@@ -1,0 +1,5 @@
+# ANX-18a — komut: `sntp`
+Kurallar (değişmez): (1) yalnız bu dosyadaki iş; başka dosyaya, başka TNET'e dokunma. (2) Tek commit; iş bitmeden ara commit yok, iş bittikten sonra bekleyen değişiklik yok. (3) Kanıt = `ci/bench.sh` log dizini + host test çıktısı; kendi ifaden kanıt değildir. (4) DUR kuralı: bench üst üste 2 kez kırmızı → dur; 4 saat içinde commit yoksa → dur; durunca `STOP-REPORT.md` yaz (ne yapıldı, ne kırmızı, son yeşil commit) ve bitir. (5) Yeşil kalması gereken taban: mevcut core testleri iki profilde (a1200, 68000) — biri düşerse bu iş kırmızıdır. Kaynak: AmiNetXDuo `src/tools/{sntp}.c` (`netstack_weak.c` bağımlılığı varsa stub). `ReadArgs` şablonlu, `-m68000`, `SYS:C/`.
+1. `sntp`: `SERVER/A,SET/S,OFFSET/S` — RFC 4330 tek UDP; `SET` ile `timer.device` `TR_SETSYSTIME` + `battclock.resource`; config anahtarı `NTP_SERVER=` (daemon başlangıçta `NTP=YES` ise bir kez sorar, ANX-09 Advanced… penceresine alan).
+2. `README.guide` bölümü + `docs/COMMANDS.md` satırı (komut | şablon | kaynak dosya); `ARCHIVE-MANIFEST` (ANX-13) satırı; `make package` LhA'da ikili.
+Kabul: bench yeşil, commit `tools: add sntp`.

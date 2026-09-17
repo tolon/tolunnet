@@ -49,9 +49,12 @@ void tn_lib_destroy(struct Library *lib)
 
     Forbid();
     if (lib->lib_OpenCnt > 0) {
-        tn_logf(TN_LOG_BASIC, "tolunnet: cannot destroy bsdsocket.library (OpenCnt=%d)\n",
-                lib->lib_OpenCnt);
+        LONG cnt = lib->lib_OpenCnt;
         Permit();
+        /* TNET-140: log AFTER Permit — tn_logf calls DOS which may
+         * schedule, which is forbidden under Forbid. */
+        tn_logf(TN_LOG_BASIC, "tolunnet: cannot destroy bsdsocket.library (OpenCnt=%d)\n",
+                (int)cnt);
         return;
     }
 

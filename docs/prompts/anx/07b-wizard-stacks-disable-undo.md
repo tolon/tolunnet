@@ -1,0 +1,7 @@
+# ANX-07b — wizard: Roadshow/Genesis dahil devre dışı bırak/bırak/iptal → geri al
+Kurallar (değişmez): (1) yalnız bu dosyadaki iş; başka dosyaya, başka TNET'e dokunma. (2) Tek commit; iş bitmeden ara commit yok, iş bittikten sonra bekleyen değişiklik yok. (3) Kanıt = `ci/bench.sh` log dizini + host test çıktısı; kendi ifaden kanıt değildir. (4) DUR kuralı: bench üst üste 2 kez kırmızı → dur; 4 saat içinde commit yoksa → dur; durunca `STOP-REPORT.md` yaz (ne yapıldı, ne kırmızı, son yeşil commit) ve bitir. (5) Yeşil kalması gereken taban: mevcut core testleri iki profilde (a1200, 68000) — biri düşerse bu iş kırmızıdır. Asla dosya silme; asla `AmiTCP:` assign'ına dokunma.
+ANX-07a önkoşul.
+1. Devre dışı bırakma = ilgili satırların başına `; tolunnet-disabled: ` yazmak; `.info`'ları `SYS:WBStartup/Disabled-by-tolunnet/` altına **taşımak**; önce `S:tolunnet-backup/<tarih>/` altına orijinal kopyalar + `manifest.txt`. `tn_stack_request_quit` (ARexx QUIT, `NetShutdown`, `stopnet`) sonra çağrılır. Hiçbir `DeleteFile` yok.
+2. Geri al: `TolunnetSetup RESTORE` ve wizard'da "Eski stack'i geri getir" düğmesi: manifest'ten kopyalar geri, taşınan `.info`lar geri.
+3. Bench `tc_wizard_stacks_disable`: sahte `S:User-Startup` içine AmiTCP+Roadshow satırları, `DEVS:NetInterfaces/eth0` dosyası; tespit listesi 2 satır, devre dışı → yorumlanmış satırlar + yedek; RESTORE → byte-eşit.
+Kabul: iki profilde bench yeşil (+1), commit `setup: detect AmiTCP/Miami/Genesis/Roadshow, disable-with-undo`.

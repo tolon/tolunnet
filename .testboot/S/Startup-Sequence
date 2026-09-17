@@ -1,0 +1,19 @@
+Echo "tolunnet testboot: assigning AmiKit environment"
+Assign DEVS: DH1:Devs
+Assign S: DH1:S
+Assign LIBS: DH1:Libs
+Assign L: DH1:L
+Assign FONTS: DH1:Fonts
+Assign ENVARC: DH1:ENVARC
+Assign C: DH1:C ADD
+Wait 60
+Echo >WORK:repro.log "daemon probe (no explicit device)"
+PACK:C/tolunnet >WORK:daemon-out.log
+Echo >>WORK:repro.log "daemon rc seen"
+Wait 5
+Echo >>WORK:repro.log "launching TolunnetSetup against AmiKit environment"
+Run <>NIL: >WORK:setup-out.log PACK:TolunnetSetup
+Wait 45
+Echo >>WORK:repro.log "survived 45s with wizard open"
+Wait 15
+EndCli >NIL:

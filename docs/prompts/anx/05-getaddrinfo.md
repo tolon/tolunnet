@@ -1,0 +1,8 @@
+# ANX-05 — `getaddrinfo / freeaddrinfo / getnameinfo / gai_strerror` (-804…-822)
+Kurallar (değişmez): (1) yalnız bu dosyadaki iş; başka dosyaya, başka TNET'e dokunma. (2) Tek commit; iş bitmeden ara commit yok, iş bittikten sonra bekleyen değişiklik yok. (3) Kanıt = `ci/bench.sh` log dizini + host test çıktısı; kendi ifaden kanıt değildir. (4) DUR kuralı: bench üst üste 2 kez kırmızı → dur; 4 saat içinde commit yoksa → dur; durunca `STOP-REPORT.md` yaz (ne yapıldı, ne kırmızı, son yeşil commit) ve bitir. (5) Yeşil kalması gereken taban: mevcut core testleri iki profilde (a1200, 68000) — biri düşerse bu iş kırmızıdır. Ek kanıt: `tc_getaddrinfo` bench + host test.
+1. `getaddrinfo`: `hints` NULL kabul; `AF_UNSPEC|AF_INET`; `servname` sayısal ya da `getservbyname` üzerinden; hostname sayısal ise DNS'e gitme (`AI_NUMERICHOST`); `AI_PASSIVE` → `INADDR_ANY`; `AI_CANONNAME` → `h_name`. Çözümleme mevcut `gethostbyname_r` yolunu kullanır (yeni IPC op yok). Sonuç listesi **per-opener** havuzdan (`TnSocketBase` içinde, `Inet_NtoA` tamponu gibi); `freeaddrinfo` aynı havuza iade. Dönüş kodları `EAI_*` SDK değerleri; `h_errno` ayrıca set.
+2. `getnameinfo`: `NI_NUMERICHOST|NI_NUMERICSERV|NI_NAMEREQD|NI_DGRAM`; ters çözüm `gethostbyaddr_r`.
+3. `gai_strerror`: SDK'daki metinler `src/common/errstr.c` tablosuna.
+4. Host testi `tests/host/test_addrinfo.c` (mock_lwip ile: sayısal, `AI_PASSIVE`, NULL hints, `EAI_NONAME`, per-opener izolasyon, free sonrası tekrar kullanım). Bench testi `tc_getaddrinfo`: `10.0.2.2:80` sayısal + `AI_CANONNAME` ile slirp DNS.
+5. `scripts/gen_lvo_table.py` çıktısında 4 satır STUB→BUILT olmalı (elle tablo düzenleme yok).
+Kabul: host test yeşil, iki profilde bench yeşil (+1 test), commit `lib: implement getaddrinfo family (LVO -804..-822)`.

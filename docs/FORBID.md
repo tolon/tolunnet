@@ -30,13 +30,14 @@ satırların tümü `Forbid()` bölgeleridir.
 |---|---|---|---|---|
 | `src/cmds/FreezeWatch.c:77-106` | forbid | `dump_tasks` | — | — |
 | `src/lib/lib_init.c:34-36` | forbid | `*tn_lib_create` | — | — |
-| `src/lib/lib_init.c:50-54` | forbid | `tn_lib_destroy` | tn_logf | EVET |
+| `src/lib/lib_init.c:50-53` | forbid | `tn_lib_destroy` | — | — |
 | `src/lib/lib_vectors.c:199-201` | forbid | `*tn_lib_open` | — | — |
 | `src/lib/lib_vectors.c:208-210` | forbid | `*tn_lib_open` | — | — |
 | `src/lib/lib_vectors.c:222-224` | forbid | `*tn_lib_open` | — | — |
 | `src/lib/lib_vectors.c:235-237` | forbid | `*tn_lib_open` | — | — |
-| `src/lib/lib_vectors.c:327-332` | forbid | `tn_lib_close` | — | — |
-| `src/lib/lib_vectors.c:1424-1429` | forbid | `tn_lvo_getsocketevents` | — | — |
+| `src/lib/lib_vectors.c:291-293` | forbid | `*tn_lib_open` | — | — |
+| `src/lib/lib_vectors.c:356-361` | forbid | `tn_lib_close` | — | — |
+| `src/lib/lib_vectors.c:1535-1542` | forbid | `tn_lvo_getsocketevents` | — | — |
 | `src/setup/hw_detect.c:86-88` | forbid | `probe_one_device` | — | — |
 | `src/setup/net_test.c:293-295` | forbid | `tn_run_network_tests` | — | — |
 | `src/setup/net_test.c:303-305` | forbid | `tn_run_network_tests` | — | — |
