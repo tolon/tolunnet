@@ -2291,7 +2291,6 @@ static void tc_socket_events(void)
     struct sockaddr_in srv_sin, cli_sin;
     socklen_t slen;
     ULONG events[64];
-    LONG count;
     int i;
 
     sig_bit = AllocSignal(-1);
@@ -2365,16 +2364,14 @@ static void tc_socket_events(void)
         return;
     }
 
+    /* Roadshow semantics: GetSocketEvents returns one fd at a time,
+     * writes that socket's mask to *ptr, consumes it; -1 when done. */
     for (i = 0; i < 64; i++) events[i] = 0;
-    count = call_getsocketevents(events);
-    if (count != 0) {
-        call_closesocket(s_listen);
-        call_closesocket(s_cli);
-        tags[0].ti_Data = 0;
-        call_socketbasetaglist(tags);
-        FreeSignal(sig_bit);
-        TAP_NOTOK("tc_socket_events", "GetSocketEvents returned error");
-        return;
+    for (;;) {
+        ULONG evmask = 0;
+        LONG evfd = call_getsocketevents(&evmask);
+        if (evfd == -1) break;
+        if (evfd >= 0 && evfd < 64) events[evfd] = evmask;
     }
 
     if (!(events[s_listen] & FD_ACCEPT)) {
@@ -2428,9 +2425,14 @@ static void tc_socket_events(void)
     }
 
     for (i = 0; i < 64; i++) events[i] = 0;
-    count = call_getsocketevents(events);
-    if (count != 0 || !(events[s_srv] & FD_CLOSE)) {
-        tapf("# s_srv events = 0x%lx (res = %ld)\n", events[s_srv], count);
+    for (;;) {
+        ULONG evmask = 0;
+        LONG evfd = call_getsocketevents(&evmask);
+        if (evfd == -1) break;
+        if (evfd >= 0 && evfd < 64) events[evfd] = evmask;
+    }
+    if (!(events[s_srv] & FD_CLOSE)) {
+        tapf("# s_srv events = 0x%lx\n", events[s_srv]);
         call_closesocket(s_srv);
         call_closesocket(s_listen);
         tags[0].ti_Data = 0;
@@ -2440,27 +2442,18 @@ static void tc_socket_events(void)
         return;
     }
 
-    /* Second call to GetSocketEvents must find all events cleared to 0 */
-    for (i = 0; i < 64; i++) events[i] = 0;
-    count = call_getsocketevents(events);
-    if (count != 0) {
-        call_closesocket(s_srv);
-        call_closesocket(s_listen);
-        tags[0].ti_Data = 0;
-        call_socketbasetaglist(tags);
-        FreeSignal(sig_bit);
-        TAP_NOTOK("tc_socket_events", "second GetSocketEvents returned error");
-        return;
-    }
-    for (i = 0; i < 64; i++) {
-        if (events[i] != 0) {
-            tapf("# uncleared event on fd %d = 0x%lx\n", i, events[i]);
+    /* Second round: GetSocketEvents must return -1 (all consumed) */
+    {
+        ULONG evmask = 0;
+        LONG evfd = call_getsocketevents(&evmask);
+        if (evfd != -1) {
+            tapf("# second GetSocketEvents returned fd=%ld (expected -1)\n", evfd);
             call_closesocket(s_srv);
             call_closesocket(s_listen);
             tags[0].ti_Data = 0;
             call_socketbasetaglist(tags);
             FreeSignal(sig_bit);
-            TAP_NOTOK("tc_socket_events", "GetSocketEvents did not clear events");
+            TAP_NOTOK("tc_socket_events", "second GetSocketEvents found uncleared events");
             return;
         }
     }
