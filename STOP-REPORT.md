@@ -147,3 +147,48 @@ restart request; no CPU exception fired - the freeze is not a daemon Guru).
 2. Owner retest with the DIAG build per `docs/OWNER-RETEST.md` - the crash
    log closes TNET-139 independently of bench state.
 3. Items 3-10 of TN-bugtrack-2 unchanged.
+
+---
+
+## 2026-09-17 STOP (TN-bugtrack-2 items 8-9): 68000 bench red twice (TNET-115 data half)
+
+**Stop rule fired:** bench red twice in a row (68000 only; a1200 green in the first run).
+**Last green bench:** `docs/bench-logs/20260917-155149-232e3c8/` (both profiles ALL-GREEN, item 6+7).
+**Commits this session:** `bfb538c` (item 8 TNET-140), `66b9bba` (item 9 TNET-113), tree clean.
+
+### Delivered (items 8-9)
+
+- TNET-140: tn_logf moved after Permit in tn_lib_destroy; check-forbid gate
+  zero findings without excuses; FORBID.md regenerated.
+- TNET-113: tc_multicast_join reduced to join/leave fallback per TN-step-B;
+  ISSUES closed.
+
+### The two red benches (verbatim)
+
+```
+20260917-225237-66b9bba / 68000: bsdsocktest 42 lines, last "not ok 32";
+    task log shows normal socket lifecycle (livelock fix works — daemon
+    responsive, no infinite checksum); test #32 prints its functional
+    failure then bsdsocktest hangs waiting for data that never arrives
+20260917-230740-66b9bba / 68000: identical (42 lines, not ok 32, hang)
+(a1200 in the first run: ALL-GREEN, 35/35 ×2, bsdsocktest 124/142)
+```
+
+This is **TNET-115 data half** — the livelock fix (740dfb3) prevents the
+machine freeze, but the underlying scatter-gather stream corruption makes
+the test wait forever for the corrupted/lost data. The hang is in the
+bsdsocktest process, not the daemon.
+
+### Session totals (TN-bugtrack-2 items 1-9)
+
+- bsdsocktest: **102 → 124/142** (26 rows closed or wontfix)
+- ISSUES: 119 RESOLVED + 2 APPROVED + 2 WONTFIX; remaining OPEN:
+  TNET-115 data half (#32), TNET-139 (owner DIAG retest pending)
+- Item 10 (perf) not started (time)
+
+### Next steps
+
+1. TNET-115 data half: the corruption happens before the tcp_output
+   cycle-guard engages. Next session: mock the 3-write-flush pattern
+   and trace where the stream diverges from the sent data.
+2. Owner retest with DIAG build (docs/OWNER-RETEST.md) — TNET-139.
