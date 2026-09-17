@@ -2322,6 +2322,14 @@ static void tc_socket_events(void)
         return;
     }
 
+    /* Roadshow semantics: SO_EVENTMASK must be explicitly set on each
+     * socket for events to be recorded (default 0 = no events). */
+    {
+        ULONG all_events = FD_READ | FD_WRITE | FD_ACCEPT | FD_CONNECT | FD_CLOSE;
+        call_setsockopt(s_listen, SOL_SOCKET, SO_EVENTMASK, &all_events, sizeof(all_events));
+        call_setsockopt(s_cli,    SOL_SOCKET, SO_EVENTMASK, &all_events, sizeof(all_events));
+    }
+
     for (i = 0; i < (int)sizeof(srv_sin); i++) ((char *)&srv_sin)[i] = 0;
     srv_sin.sin_len         = sizeof(srv_sin);
     srv_sin.sin_family      = AF_INET;
@@ -2407,6 +2415,10 @@ static void tc_socket_events(void)
         FreeSignal(sig_bit);
         TAP_NOTOK("tc_socket_events", "accept failed");
         return;
+    }
+    {
+        ULONG all_events = FD_READ | FD_WRITE | FD_ACCEPT | FD_CONNECT | FD_CLOSE;
+        call_setsockopt(s_srv, SOL_SOCKET, SO_EVENTMASK, &all_events, sizeof(all_events));
     }
 
     /* Clear signals and close client: server should receive FD_CLOSE */
