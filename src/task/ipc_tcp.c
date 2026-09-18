@@ -68,6 +68,11 @@ err_t tn_tcp_connected_cb(void *arg, struct tcp_pcb *pcb, err_t err)
     slot = &g_daemon.sockets[slot_idx];
     if (!slot->in_use || slot->tcp_pcb != pcb) return ERR_OK;
 
+    /* TNET-115: disable Nagle on all connections — our loopback delivery
+     * model (batch output + drain) interacts badly with Nagle's
+     * small-segment hold on the first data after handshake. */
+    tcp_nagle_disable(pcb);
+
     slot->tcp_state = TN_TCP_STATE_ESTABLISHED;
     tn_logf(TN_LOG_VERBOSE, "tolunnet: tcp_connected_cb slot=%d established\n", slot_idx);
     tn_signal_socket(&g_daemon, slot);
@@ -158,6 +163,9 @@ err_t tn_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
 
         new_slot->tcp_state = TN_TCP_STATE_ESTABLISHED;
         new_slot->tcp_pcb   = newpcb;
+
+        /* TNET-115: disable Nagle on accepted connections too */
+        tcp_nagle_disable(newpcb);
 
         tcp_arg(newpcb, (void *)(intptr_t)new_slot_idx);
         tcp_recv(newpcb, tn_tcp_recv_cb);
@@ -272,6 +280,9 @@ int tn_ipc_cmd_accept(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
         new_slot->tcp_state = TN_TCP_STATE_ESTABLISHED;
         new_slot->tcp_pcb   = new_pcb;
+
+        /* TNET-115: disable Nagle on accepted connections (accept queue path) */
+        tcp_nagle_disable(new_pcb);
 
         tcp_arg(new_pcb, (void *)(intptr_t)new_slot_idx);
         tcp_recv(new_pcb, tn_tcp_recv_cb);
