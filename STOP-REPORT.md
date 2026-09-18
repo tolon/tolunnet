@@ -192,3 +192,31 @@ bsdsocktest process, not the daemon.
    cycle-guard engages. Next session: mock the 3-write-flush pattern
    and trace where the stream diverges from the sent data.
 2. Owner retest with DIAG build (docs/OWNER-RETEST.md) — TNET-139.
+
+---
+
+## 2026-09-18 STOP (CMD suite): 68000 bench red twice (TNET-115 data half, known)
+
+**Stop rule fired:** bench red twice in a row (68000 only; a1200 ALL-GREEN).
+**Last green bench:** `docs/bench-logs/20260918-050227-7d106bc/` (both profiles).
+**Commits this session:** `7d106bc`..`ca360b3` (13 CLI commands + cmdlib + host test fixes).
+
+### Delivered
+
+13-command suite: hostname, nslookup, whois, traceroute, nc, arp,
+ShowNetStatus, sntp, telnet, tftp, TolunnetControl, GetNetStatus + cmdlib.
+Host tests 16/16 green. Package 26 items in C/.
+
+### The two red benches
+
+Both 68000 hangs at bsdsocktest #32 (scatter-gather) — the TNET-115 data
+half (livelock fixed, but the stream corruption makes the test wait forever).
+a1200 in the first run: ALL-GREEN (35/35 ×2, bsdsocktest 124/142).
+The 13 new commands are thin clients (link only cmdlib + bsdsocket.library);
+they do not touch TCP sendmsg/recvmsg paths.
+
+### Next steps
+
+1. TNET-115 data half is the sole bench blocker — mock the 3-write-flush
+   corruption and fix (next session).
+2. Owner retest with the 13-command package (DIAG=YES).
