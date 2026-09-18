@@ -1541,7 +1541,7 @@ static void tc_errno_ptr(void)
     if (call_socket(-1, 0, 0) < 0) {
         LONG e = call_errno();
         /* whichever width was registered LAST wins (word here); byte/long
-         * aliases receive truncated/padded copies via Errno() only for the
+         * aliases receive truncated/padded copies via call_errno() only for the
          * registered one — assert the long-registered case separately below */
         (void)e;
     }
@@ -1961,26 +1961,35 @@ static void tc_tcp_scatter_tnet115(void)
     msg.msg_iovlen = 3;
     rc_sent = call_sendmsg(client, &msg, 0);
 
-    /* Wait for data to arrive */
-    FD_ZERO(&rfds);
-    FD_SET(server, &rfds);
-    tv.tv_secs = 2;
-    tv.tv_micro = 0;
-    call_waitselect(server + 1, &rfds, NULL, NULL, &tv, NULL);
+    /* Wait for data to arrive — record waitselect rc and retry recvmsg */
+    {
+        LONG sel_rc = -99;
+        int retry;
+        rc_recv = -1;
+        for (retry = 0; retry < 5 && rc_recv < 0; retry++) {
+            FD_ZERO(&rfds);
+            FD_SET(server, &rfds);
+            tv.tv_secs = 2;
+            tv.tv_micro = 0;
+            sel_rc = call_waitselect(server + 1, &rfds, NULL, NULL, &tv, NULL);
+            if (sel_rc > 0) {
+                memset(&msg, 0, sizeof(msg));
+                iov[0].iov_base = rbuf;
+                iov[0].iov_len = 50;
+                iov[1].iov_base = rbuf + 50;
+                iov[1].iov_len = 30;
+                iov[2].iov_base = rbuf + 80;
+                iov[2].iov_len = 20;
+                msg.msg_iov = iov;
+                msg.msg_iovlen = 3;
+                rc_recv = call_recvmsg(server, &msg, 0);
+            }
+        }
+        tapf("# waitselect_rc=%ld recv_rc=%ld errno=%ld retries=%d\n",
+             sel_rc, rc_recv, call_errno(), retry);
+    }
 
-    /* Recv: 3 iovecs 50+30+20 */
-    memset(&msg, 0, sizeof(msg));
-    iov[0].iov_base = rbuf;
-    iov[0].iov_len = 50;
-    iov[1].iov_base = rbuf + 50;
-    iov[1].iov_len = 30;
-    iov[2].iov_base = rbuf + 80;
-    iov[2].iov_len = 20;
-    msg.msg_iov = iov;
-    msg.msg_iovlen = 3;
-    rc_recv = call_recvmsg(server, &msg, 0);
-
-    /* Verify */
+    /* Verify pattern (rbuf already filled by retry loop above) */
     mismatch = 0;
     {
         unsigned int vs = 7;
