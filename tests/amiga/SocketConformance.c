@@ -1949,6 +1949,26 @@ static void tc_tcp_scatter_tnet115(void)
     }
     memset(rbuf, 0, sizeof(rbuf));
 
+    /* Control: simple send/recv first — isolates loopback TCP delivery
+     * from the sendmsg scatter-gather path */
+    {
+        LONG sr = call_send(client, sbuf, 100, 0);
+        LONG sel;
+        FD_ZERO(&rfds);
+        FD_SET(server, &rfds);
+        tv.tv_secs = 2;
+        tv.tv_micro = 0;
+        sel = call_waitselect(server + 1, &rfds, NULL, NULL, &tv, NULL);
+        LONG rr = -1;
+        if (sel > 0) {
+            rr = call_recv(server, rbuf, sizeof(rbuf), 0);
+        }
+        tapf("# control: send=%ld waitselect=%ld recv=%ld\n", sr, sel, rr);
+        if (sr == 100 && rr == 100) {
+            /* drain the data; the scatter test below sends its own */
+        }
+    }
+
     /* Send: 3 iovecs 50+30+20 */
     memset(&msg, 0, sizeof(msg));
     iov[0].iov_base = sbuf;
