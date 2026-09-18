@@ -98,9 +98,13 @@ CONF_BIN     = $(BUILD)/SocketConformance
 BSDTEST_BIN  = $(BUILD)/bsdsocktest
 TOGGLE_BIN   = $(BUILD)/S2Toggle
 INSTALL_BIN  = $(BUILD)/Install_Tolunnet
+CMDLIB_OBJ   = $(BUILD)/src/cmds/cmdlib.o
+HOSTNAME_BIN = $(BUILD)/hostname
+NSLOOKUP_BIN = $(BUILD)/nslookup
+WHOIS_BIN    = $(BUILD)/whois
 
 .PHONY: all clean test-host package
-all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN) $(BSDTEST_BIN) $(FREEZEWATCH_BIN)
+all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN) $(BSDTEST_BIN) $(FREEZEWATCH_BIN) $(HOSTNAME_BIN) $(NSLOOKUP_BIN) $(WHOIS_BIN)
 
 # --- Host unit tests (Round 3 §B.1) -----------------------------------------
 # Every tests/host/test_*.c runs under native gcc with sanitizers + Werror;
@@ -177,6 +181,16 @@ $(STATUS_BIN): $(BUILD)/src/cmds/TolunnetStatus.o $(BUILD)/src/common/prefs.o $(
 
 # Target: TestSocket Client Binary (M3)
 $(TEST_BIN): $(BUILD)/src/cmds/TestSocket.o $(BUILD)/src/common/log.o
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+# Target: CLI commands (CMD-0/1/2)
+$(HOSTNAME_BIN): $(BUILD)/src/cmds/hostname.o $(CMDLIB_OBJ)
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+$(NSLOOKUP_BIN): $(BUILD)/src/cmds/nslookup.o $(CMDLIB_OBJ)
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+$(WHOIS_BIN): $(BUILD)/src/cmds/whois.o $(CMDLIB_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetPing CLI Binary (M4)
