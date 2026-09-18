@@ -4,7 +4,7 @@
 > Enforced fresh by `make python-checks` (regenerate + git-diff gate).
 > Sources: `sfd/bsdsocket_lib.sfd` (LVO offset + prototype) ·
 > `src/lib/lib_vectors.c` + `src/task/ipc_dispatch.c` (BUILT/BROKEN/STUB) ·
-> bench TAP `20260918-050227-7d106bc` (PASS column: green `tc_*` coverage).
+> bench TAP `20260918-171217-a70a1a6` (PASS column: green `tc_*` coverage).
 
 | Offset | Function | Signature | Status | Notes | PASS (bench) |
 |---|---|---|---|---|---|
@@ -137,10 +137,10 @@
 | `-786` | `ipf_log_data_waiting` | `LONG ipf_log_data_waiting(LONG channel)` | **STUB** | honest stub — exact Roadshow error semantics (ENOSYS / ENXIO / NULL / NO_RECOVERY / FALSE) | — |
 | `-792` | `ipf_set_notify_mask` | `LONG ipf_set_notify_mask(LONG channel,ULONG mask)` | **STUB** | honest stub — exact Roadshow error semantics (ENOSYS / ENXIO / NULL / NO_RECOVERY / FALSE) | — |
 | `-798` | `ipf_set_interrupt_mask` | `LONG ipf_set_interrupt_mask(LONG channel,ULONG mask)` | **STUB** | honest stub — exact Roadshow error semantics (ENOSYS / ENXIO / NULL / NO_RECOVERY / FALSE) | — |
-| `-804` | `freeaddrinfo` | `VOID freeaddrinfo(struct addrinfo *ai)` | **STUB** | honest stub — exact Roadshow error semantics (ENOSYS / ENXIO / NULL / NO_RECOVERY / FALSE) | — |
-| `-810` | `getaddrinfo` | `LONG getaddrinfo(STRPTR hostname, STRPTR servname, struct addrinfo *hints, struct addrinfo **res)` | **STUB** | honest stub — exact Roadshow error semantics (ENOSYS / ENXIO / NULL / NO_RECOVERY / FALSE) | — |
-| `-816` | `gai_strerror` | `STRPTR gai_strerror(LONG errnum)` | **STUB** | honest stub — exact Roadshow error semantics (ENOSYS / ENXIO / NULL / NO_RECOVERY / FALSE) | — |
-| `-822` | `getnameinfo` | `LONG getnameinfo(struct sockaddr *sa, ULONG salen, STRPTR host, ULONG hostlen, STRPTR serv, ULONG servlen, ULONG flags)` | **STUB** | honest stub — exact Roadshow error semantics (ENOSYS / ENXIO / NULL / NO_RECOVERY / FALSE) | — |
+| `-804` | `freeaddrinfo` | `VOID freeaddrinfo(struct addrinfo *ai)` | **BUILT** | handled entirely in-library (per-task socket base) | — |
+| `-810` | `getaddrinfo` | `LONG getaddrinfo(STRPTR hostname, STRPTR servname, struct addrinfo *hints, struct addrinfo **res)` | **BUILT** | handled entirely in-library (per-task socket base) | — |
+| `-816` | `gai_strerror` | `STRPTR gai_strerror(LONG errnum)` | **BUILT** | handled entirely in-library (per-task socket base) | — |
+| `-822` | `getnameinfo` | `LONG getnameinfo(struct sockaddr *sa, ULONG salen, STRPTR host, ULONG hostlen, STRPTR serv, ULONG servlen, ULONG flags)` | **BUILT** | handled entirely in-library (per-task socket base) | — |
 | `-828` | *(reserved)* | — | Reserved | Exec reserved slot | — |
 | `-834` | *(reserved)* | — | Reserved | Exec reserved slot | — |
 | `-840` | *(reserved)* | — | Reserved | Exec reserved slot | — |
@@ -148,4 +148,4 @@
 | `-852` | *(reserved)* | — | Reserved | Exec reserved slot | — |
 | `-858` | *(reserved)* | — | Reserved | Exec reserved slot | — |
 
-**Summary:** 139 LVO slots (121 SFD functions + 18 reserved) · 66 BUILT · 55 STUB · 0 BROKEN.
+**Summary:** 139 LVO slots (121 SFD functions + 18 reserved) · 70 BUILT · 51 STUB · 0 BROKEN.

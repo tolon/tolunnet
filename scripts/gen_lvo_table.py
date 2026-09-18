@@ -42,7 +42,9 @@ IMPLEMENTED_FUNCS = {
     "gethostbyname_r", "gethostbyaddr_r",
     "vsyslog",
     # Socket parking & Server API (Round 4 §C6)
-    "processisserver", "obtainserversocket"
+    "processisserver", "obtainserversocket",
+    # POSIX resolve API (ANX-05)
+    "getaddrinfo", "freeaddrinfo", "getnameinfo", "gai_strerror",
 }
 
 def parse_sfd(sfd_path):

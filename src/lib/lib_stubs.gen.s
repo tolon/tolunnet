@@ -1242,7 +1242,7 @@ _tn_stub_ipf_set_interrupt_mask:
 _tn_stub_freeaddrinfo:
     move.l  a6,-(sp)
     move.l  a0,-(sp)
-    jsr     _tn_unimpl_freeaddrinfo
+    jsr     _tn_lvo_freeaddrinfo
     addq.l  #8,sp
     rts
 
@@ -1254,7 +1254,7 @@ _tn_stub_getaddrinfo:
     move.l  a2,-(sp)
     move.l  a1,-(sp)
     move.l  a0,-(sp)
-    jsr     _tn_unimpl_getaddrinfo
+    jsr     _tn_lvo_getaddrinfo
     lea     20(sp),sp
     rts
 
@@ -1263,7 +1263,7 @@ _tn_stub_getaddrinfo:
 _tn_stub_gai_strerror:
     move.l  a6,-(sp)
     move.l  a0,-(sp)
-    jsr     _tn_unimpl_gai_strerror
+    jsr     _tn_lvo_gai_strerror
     addq.l  #8,sp
     move.l  d0,a0
     rts
@@ -1279,6 +1279,6 @@ _tn_stub_getnameinfo:
     move.l  a1,-(sp)
     move.l  d0,-(sp)
     move.l  a0,-(sp)
-    jsr     _tn_unimpl_getnameinfo
+    jsr     _tn_lvo_getnameinfo
     lea     32(sp),sp
     rts

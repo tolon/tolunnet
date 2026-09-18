@@ -494,38 +494,3 @@ LONG tn_unimpl_ipf_set_interrupt_mask(LONG channel, ULONG mask, TnSocketBase *ba
     tn_unimpl_set_errno(base, ENXIO);
     return -1;
 }
-
-/* -804: freeaddrinfo */
-VOID tn_unimpl_freeaddrinfo(struct addrinfo *ai, TnSocketBase *base)
-{
-    static int logged = 0; (void)ai; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "freeaddrinfo"); }
-    return;
-}
-
-/* -810: getaddrinfo */
-LONG tn_unimpl_getaddrinfo(STRPTR hostname, STRPTR servname, struct addrinfo *hints, struct addrinfo **res, TnSocketBase *base)
-{
-    static int logged = 0; (void)hostname; (void)servname; (void)hints; (void)res; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "getaddrinfo"); }
-    tn_unimpl_set_errno(base, ENOSYS);
-    return -1;
-}
-
-/* -816: gai_strerror */
-STRPTR tn_unimpl_gai_strerror(LONG errnum, TnSocketBase *base)
-{
-    static int logged = 0; (void)errnum; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "gai_strerror"); }
-    tn_unimpl_set_errno(base, ENOSYS);
-    return NULL;
-}
-
-/* -822: getnameinfo */
-LONG tn_unimpl_getnameinfo(struct sockaddr *sa, ULONG salen, STRPTR host, ULONG hostlen, STRPTR serv, ULONG servlen, ULONG flags, TnSocketBase *base)
-{
-    static int logged = 0; (void)sa; (void)salen; (void)host; (void)hostlen; (void)serv; (void)servlen; (void)flags; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "getnameinfo"); }
-    tn_unimpl_set_errno(base, ENOSYS);
-    return -1;
-}

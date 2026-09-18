@@ -1901,3 +1901,232 @@ LONG tn_lvo_obtainserversocket(TnSocketBase *base)
     return tn_lvo_obtainsocket(dm->dm_ID, (LONG)dm->dm_Family, (LONG)dm->dm_Type, 0, base);
 }
 
+/* ================================================================ */
+/* ANX-05: getaddrinfo / freeaddrinfo / getnameinfo / gai_strerror  */
+/* Thin implementations over gethostbyname/gethostbyaddr — enough   */
+/* for AmiSSL, curl/wget ports, and OS4 backports that use the     */
+/* POSIX resolve API.                                               */
+/* ================================================================ */
+
+/* -810: getaddrinfo(hostname, servname, hints, res) */
+LONG tn_lvo_getaddrinfo(CONST_STRPTR hostname, CONST_STRPTR servname,
+                        const struct addrinfo *hints, struct addrinfo **res,
+                        TnSocketBase *base)
+{
+    struct addrinfo *ai;
+    struct sockaddr_in *sa;
+    struct hostent *he = NULL;
+    ULONG addr = 0;
+    int socktype = SOCK_STREAM;
+    int family = AF_INET;
+
+    if (base == NULL || res == NULL) return EAI_FAIL;
+    *res = NULL;
+
+    if (hints != NULL) {
+        if (hints->ai_family != AF_INET && hints->ai_family != 0) {
+            return EAI_FAMILY;
+        }
+        if (hints->ai_socktype != 0 && hints->ai_socktype != SOCK_STREAM &&
+            hints->ai_socktype != SOCK_DGRAM && hints->ai_socktype != SOCK_RAW) {
+            return EAI_SOCKTYPE;
+        }
+        if (hints->ai_socktype != 0) socktype = hints->ai_socktype;
+    }
+
+    /* Resolve: numeric first, then DNS */
+    if (hostname != NULL && hostname[0] != '\0') {
+        addr = tn_lvo_inet_addr((CONST_STRPTR)hostname, base);
+        if (addr == INADDR_NONE) {
+            if (hints != NULL && (hints->ai_flags & AI_NUMERICHOST)) {
+                return EAI_NONAME;
+            }
+            he = tn_lvo_gethostbyname((CONST_STRPTR)hostname, base);
+            if (he == NULL || he->h_addr_list[0] == NULL) {
+                return EAI_NONAME;
+            }
+            memcpy(&addr, he->h_addr_list[0], 4);
+        }
+    } else {
+        if (hints != NULL && (hints->ai_flags & AI_PASSIVE)) {
+            addr = 0; /* INADDR_ANY */
+        } else {
+            addr = 0x7F000001; /* INADDR_LOOPBACK */
+        }
+    }
+
+    /* Allocate one addrinfo node (caller frees with freeaddrinfo) */
+    ai = (struct addrinfo *)AllocVec(sizeof(struct addrinfo) + sizeof(struct sockaddr_in) + 256,
+                                      MEMF_PUBLIC | MEMF_CLEAR);
+    if (ai == NULL) return EAI_MEMORY;
+
+    sa = (struct sockaddr_in *)(void *)((UBYTE *)ai + sizeof(struct addrinfo));
+    ai->ai_flags   = (hints != NULL) ? hints->ai_flags : 0;
+    ai->ai_family  = family;
+    ai->ai_socktype = socktype;
+    ai->ai_protocol = (socktype == SOCK_DGRAM) ? IPPROTO_UDP : IPPROTO_TCP;
+    ai->ai_addrlen = sizeof(struct sockaddr_in);
+    ai->ai_addr    = (struct sockaddr *)sa;
+    ai->ai_next    = NULL;
+
+    sa->sin_len    = sizeof(struct sockaddr_in);
+    sa->sin_family = AF_INET;
+    sa->sin_addr.s_addr = addr;
+
+    /* Service name → port */
+    if (servname != NULL && servname[0] != '\0') {
+        LONG port = 0;
+        /* Try numeric first */
+        {
+            const char *p = (const char *)servname;
+            port = 0;
+            while (*p >= '0' && *p <= '9') {
+                port = port * 10 + (*p - '0');
+                p++;
+            }
+            if (*p != '\0') port = -1; /* not numeric */
+        }
+        if (port < 0) {
+            /* Look up service name */
+            struct servent *se = tn_lvo_getservbyname((CONST_STRPTR)servname,
+                (CONST_STRPTR)((socktype == SOCK_DGRAM) ? "udp" : "tcp"), base);
+            if (se != NULL) {
+                port = (LONG)ntohs(se->s_port);
+            } else {
+                port = 0;
+            }
+        }
+        if (port > 0 && port < 65536) {
+            sa->sin_port = htons((UWORD)port);
+        }
+    }
+
+    /* Canonical name if requested */
+    if (hints != NULL && (hints->ai_flags & AI_CANONNAME)) {
+        const char *cname = (he != NULL && he->h_name != NULL)
+                          ? (const char *)he->h_name
+                          : (const char *)hostname;
+        if (cname != NULL) {
+            char *cn = (char *)((UBYTE *)ai + sizeof(struct addrinfo) + sizeof(struct sockaddr_in));
+            int i = 0;
+            while (cname[i] && i < 254) { cn[i] = cname[i]; i++; }
+            cn[i] = '\0';
+            ai->ai_canonname = cn;
+        }
+    }
+
+    *res = ai;
+    return 0; /* EAI_NONE = success */
+}
+
+/* -804: freeaddrinfo(ai) */
+VOID tn_lvo_freeaddrinfo(struct addrinfo *ai, TnSocketBase *base)
+{
+    (void)base;
+    /* The node was allocated as one block (addrinfo + sockaddr + canonname) */
+    while (ai != NULL) {
+        struct addrinfo *next = ai->ai_next;
+        FreeVec(ai);
+        ai = next;
+    }
+}
+
+/* -822: gai_strerror(errnum) */
+STRPTR tn_lvo_gai_strerror(LONG errnum, TnSocketBase *base)
+{
+    (void)base;
+    switch (errnum) {
+    case 0:         return (STRPTR)"no error";
+    case EAI_BADFLAGS:    return (STRPTR)"invalid value for ai_flags";
+    case EAI_NONAME:      return (STRPTR)"name or service not known";
+    case EAI_AGAIN:       return (STRPTR)"temporary failure in resolution";
+    case EAI_FAIL:        return (STRPTR)"non-recoverable failure";
+    case EAI_NODATA:      return (STRPTR)"no address associated with name";
+    case EAI_FAMILY:      return (STRPTR)"ai_family not supported";
+    case EAI_SOCKTYPE:    return (STRPTR)"ai_socktype not supported";
+    case EAI_SERVICE:     return (STRPTR)"service not supported";
+    case EAI_MEMORY:      return (STRPTR)"memory allocation failure";
+    case EAI_SYSTEM:      return (STRPTR)"system error";
+    case EAI_BADHINTS:    return (STRPTR)"invalid value for hints";
+    case EAI_PROTOCOL:    return (STRPTR)"resolved protocol unknown";
+    default:              return (STRPTR)"unknown error";
+    }
+}
+
+/* -816: getnameinfo(sa, salen, host, hostlen, serv, servlen, flags) */
+LONG tn_lvo_getnameinfo(const struct sockaddr *sa, ULONG salen,
+                        STRPTR host, ULONG hostlen,
+                        STRPTR serv, ULONG servlen, ULONG flags,
+                        TnSocketBase *base)
+{
+    struct sockaddr_in sin_local;
+    const struct sockaddr_in *sin;
+
+    (void)base;
+    if (sa == NULL || salen < sizeof(struct sockaddr_in)) {
+        return EAI_FAIL;
+    }
+
+    memcpy(&sin_local, sa, sizeof(sin_local)); sin = &sin_local;
+    if (sin->sin_family != AF_INET) {
+        return EAI_FAMILY;
+    }
+
+    if (host != NULL && hostlen > 0) {
+        if (flags & NI_NUMERICHOST) {
+            struct in_addr ia;
+            ia.s_addr = sin->sin_addr.s_addr;
+            strncpy((char *)host, (const char *)tn_lvo_inet_ntoa(ia.s_addr, base), hostlen - 1);
+            ((char *)host)[hostlen - 1] = '\0';
+        } else {
+            struct hostent *he = tn_lvo_gethostbyaddr(
+                (CONST_STRPTR)&sin_local.sin_addr.s_addr, 4, AF_INET, base);
+            if (he != NULL && he->h_name != NULL) {
+                strncpy((char *)host, (const char *)he->h_name, hostlen - 1);
+                ((char *)host)[hostlen - 1] = '\0';
+            } else {
+                if (flags & NI_NAMEREQD) return EAI_NONAME;
+                struct in_addr ia;
+                ia.s_addr = sin->sin_addr.s_addr;
+                strncpy((char *)host, (const char *)tn_lvo_inet_ntoa(ia.s_addr, base), hostlen - 1);
+                ((char *)host)[hostlen - 1] = '\0';
+            }
+        }
+    }
+
+    if (serv != NULL && servlen > 0) {
+        if (flags & NI_NUMERICSERV) {
+            ULONG port = ntohs(sin->sin_port);
+            char num[8];
+            int i = 0;
+            if (port == 0) { num[i++] = '0'; }
+            while (port > 0 && i < 7) { num[i++] = '0' + (port % 10); port /= 10; }
+            num[i] = '\0';
+            /* reverse */
+            { int j; char tmp; for (j = 0; j < i/2; j++) { tmp = num[j]; num[j] = num[i-1-j]; num[i-1-j] = tmp; } }
+            strncpy((char *)serv, num, servlen - 1);
+            ((char *)serv)[servlen - 1] = '\0';
+        } else {
+            struct servent *se = tn_lvo_getservbyport(sin->sin_port,
+                (CONST_STRPTR)((flags & NI_DGRAM) ? "udp" : "tcp"), base);
+            if (se != NULL && se->s_name != NULL) {
+                strncpy((char *)serv, (const char *)se->s_name, servlen - 1);
+                ((char *)serv)[servlen - 1] = '\0';
+            } else {
+                /* Fall back to numeric */
+                ULONG port = ntohs(sin->sin_port);
+                char num[8];
+                int i = 0;
+                if (port == 0) { num[i++] = '0'; }
+                while (port > 0 && i < 7) { num[i++] = '0' + (port % 10); port /= 10; }
+                num[i] = '\0';
+                { int j; char tmp; for (j = 0; j < i/2; j++) { tmp = num[j]; num[j] = num[i-1-j]; num[i-1-j] = tmp; } }
+                strncpy((char *)serv, num, servlen - 1);
+                ((char *)serv)[servlen - 1] = '\0';
+            }
+        }
+    }
+
+    return 0;
+}
+
