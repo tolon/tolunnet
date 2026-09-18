@@ -1890,6 +1890,126 @@ static void tc_icmp_raw(void)
     }
 }
 
+/* TNET-115 data half: replicate bsdsocktest #32 exactly — 3-iovec
+ * sendmsg/recvmsg on TCP loopback with a deterministic pattern, printing
+ * the first mismatch byte and the return codes for diagnosis. */
+static void tc_tcp_scatter_tnet115(void)
+{
+    LONG listener, client, server;
+    struct sockaddr_in sin;
+    socklen_t slen;
+    LONG rc_sent, rc_recv;
+    int i, mismatch;
+    static unsigned char sbuf[100], rbuf[100];
+    struct iovec iov[3];
+    struct msghdr msg;
+    unsigned int seed;
+    fd_set rfds;
+    struct timeval tv;
+
+    listener = call_socket(AF_INET, SOCK_STREAM, 0);
+    client = call_socket(AF_INET, SOCK_STREAM, 0);
+    if (listener < 0 || client < 0) {
+        if (listener >= 0) call_closesocket(listener);
+        if (client >= 0) call_closesocket(client);
+        TAP_NOTOK("tc_tcp_scatter_tnet115", "socket failed");
+        return;
+    }
+
+    memset(&sin, 0, sizeof(sin));
+    sin.sin_len = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(54399);
+    sin.sin_addr.s_addr = htonl(0x7F000001UL);
+
+    if (call_bind(listener, (struct sockaddr *)&sin, sizeof(sin)) != 0 ||
+        call_listen(listener, 1) != 0) {
+        call_closesocket(listener); call_closesocket(client);
+        TAP_NOTOK("tc_tcp_scatter_tnet115", "bind/listen failed");
+        return;
+    }
+    if (call_connect(client, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+        call_closesocket(listener); call_closesocket(client);
+        TAP_NOTOK("tc_tcp_scatter_tnet115", "connect failed");
+        return;
+    }
+    slen = sizeof(sin);
+    server = call_accept(listener, (struct sockaddr *)&sin, &slen);
+    if (server < 0) {
+        call_closesocket(listener); call_closesocket(client);
+        TAP_NOTOK("tc_tcp_scatter_tnet115", "accept failed");
+        return;
+    }
+
+    /* Pattern: same as bsdsocktest fill_test_pattern(buf, 100, 7) */
+    seed = 7;
+    for (i = 0; i < 100; i++) {
+        seed = seed * 1103515245 + 12345;
+        sbuf[i] = (unsigned char)(seed >> 16);
+    }
+    memset(rbuf, 0, sizeof(rbuf));
+
+    /* Send: 3 iovecs 50+30+20 */
+    memset(&msg, 0, sizeof(msg));
+    iov[0].iov_base = sbuf;
+    iov[0].iov_len = 50;
+    iov[1].iov_base = sbuf + 50;
+    iov[1].iov_len = 30;
+    iov[2].iov_base = sbuf + 80;
+    iov[2].iov_len = 20;
+    msg.msg_iov = iov;
+    msg.msg_iovlen = 3;
+    rc_sent = call_sendmsg(client, &msg, 0);
+
+    /* Wait for data to arrive */
+    FD_ZERO(&rfds);
+    FD_SET(server, &rfds);
+    tv.tv_secs = 2;
+    tv.tv_micro = 0;
+    call_waitselect(server + 1, &rfds, NULL, NULL, &tv, NULL);
+
+    /* Recv: 3 iovecs 50+30+20 */
+    memset(&msg, 0, sizeof(msg));
+    iov[0].iov_base = rbuf;
+    iov[0].iov_len = 50;
+    iov[1].iov_base = rbuf + 50;
+    iov[1].iov_len = 30;
+    iov[2].iov_base = rbuf + 80;
+    iov[2].iov_len = 20;
+    msg.msg_iov = iov;
+    msg.msg_iovlen = 3;
+    rc_recv = call_recvmsg(server, &msg, 0);
+
+    /* Verify */
+    mismatch = 0;
+    {
+        unsigned int vs = 7;
+        unsigned char expect;
+        for (i = 0; i < 100; i++) {
+            vs = vs * 1103515245 + 12345;
+            expect = (unsigned char)(vs >> 16);
+            if (rbuf[i] != expect) { mismatch = i + 1; break; }
+        }
+    }
+
+    if (rc_sent == 100 && rc_recv == 100 && mismatch == 0) {
+        TAP_OK("tc_tcp_scatter_tnet115");
+    } else {
+        char why[80];
+        mismatch = mismatch; /* keep for tapf */
+        tapf("# sent=%ld recv=%ld mismatch_at=%d\n", rc_sent, rc_recv, mismatch);
+        if (mismatch > 0 && mismatch <= 100) {
+            tapf("# expected=%02x got=%02x at offset %d\n",
+                 (int)(rbuf[mismatch-1]), 0, mismatch-1);
+        }
+        TAP_NOTOK("tc_tcp_scatter_tnet115", "data mismatch");
+    }
+
+    call_closesocket(server);
+    call_closesocket(client);
+    call_closesocket(listener);
+}
+
 static void tc_sendmsg_iov(void)
 {
     LONG s_rx, s_tx;
@@ -3833,6 +3953,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_sigio);
     TN_RUN(tc_icmp_raw);
     TN_RUN(tc_sendmsg_iov);
+    TN_RUN(tc_tcp_scatter_tnet115);
     TN_RUN(tc_recv_peek);
     TN_RUN(tc_socket_events);
     TN_RUN(tc_sbtc_full);
