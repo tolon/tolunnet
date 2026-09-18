@@ -305,6 +305,13 @@ package: all
 	cp $(GET_BIN) $(PACKAGE_DIR)/C/
 	cp $(GET_BIN) $(PACKAGE_DIR)/C/wget
 	cp $(GET_BIN) $(PACKAGE_DIR)/C/curl
+	cp $(HOSTNAME_BIN) $(PACKAGE_DIR)/C/
+	cp $(NSLOOKUP_BIN) $(PACKAGE_DIR)/C/
+	cp $(WHOIS_BIN) $(PACKAGE_DIR)/C/
+	cp $(TRACEROUTE_BIN) $(PACKAGE_DIR)/C/
+	cp $(NC_BIN) $(PACKAGE_DIR)/C/
+	cp $(ARP_BIN) $(PACKAGE_DIR)/C/
+	cp $(SHOWNETSTATUS_BIN) $(PACKAGE_DIR)/C/
 	cp $(SETUP_BIN) $(PACKAGE_DIR)/C/
 	if [ -f Installer ]; then cp Installer $(PACKAGE_DIR)/C/Installer; fi
 	$(STRIP) $(PACKAGE_DIR)/C/* || true

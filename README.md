@@ -43,6 +43,12 @@ Classic AmigaOS has lacked a modern, actively maintained, fully open-source TCP/
 | **`ifconfig`** | `SYS:C/ifconfig` | Network interface, hardware MAC, and IP address status viewer |
 | **`netstat`** | `SYS:C/netstat` | Active socket connections (live TCP/UDP/RAW rows), routing table, and protocol statistics |
 | **`wget` / `curl`** | `SYS:C/wget`, `SYS:C/curl` | HTTP/1.1 client (`TolunnetGet`) supporting 301/302 redirect following, chunked transfer, Range resume, and progress display |
+| **`hostname`** | `SYS:C/hostname` | Show system hostname (read via bsdsocket.library LVO) |
+| **`nslookup`** | `SYS:C/nslookup` | Forward (A) and reverse (PTR) DNS lookup tool |
+| **`whois`** | `SYS:C/whois` | TCP-43 WHOIS query with configurable server |
+| **`traceroute`** | `SYS:C/traceroute` | ICMP TTL probe with hop-by-hop display, MAXHOPS/QUERIES/WAIT/NUMERIC |
+| **`nc`** | `SYS:C/nc` | TCP/UDP pipe (netcat): connect or listen, stdin↔socket |
+| **`ShowNetStatus`** | `SYS:C/ShowNetStatus` | Human-readable network status (INTERFACES/ROUTES/DNS/SOCKETS/FULL) |
 
 ---
 

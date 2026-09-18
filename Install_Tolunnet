@@ -112,6 +112,27 @@ a2065.device, cnet.device, ariadne.device)")
 )
 
 (copyfiles
+  (prompt "Copying hostname, nslookup, whois to SYS:C/")
+  (help "Copies DNS and hostname tools to SYS:C/.")
+  (source "C/hostname")
+  (dest "SYS:C/hostname")
+)
+
+(copyfiles
+  (prompt "Copying traceroute, nc to SYS:C/")
+  (help "Copies network probe tools to SYS:C/.")
+  (source "C/traceroute")
+  (dest "SYS:C/traceroute")
+)
+
+(copyfiles
+  (prompt "Copying arp, ShowNetStatus to SYS:C/")
+  (help "Copies ARP and status tools to SYS:C/.")
+  (source "C/ShowNetStatus")
+  (dest "SYS:C/ShowNetStatus")
+)
+
+(copyfiles
   (prompt "Copying TolunnetStatus, ifconfig and netstat to SYS:C/")
   (help "Copies the ifconfig network status diagnostic tool to SYS:C/.")
   (source "C/TolunnetStatus")
