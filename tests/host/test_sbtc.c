@@ -21,9 +21,10 @@ static TnSbtcState base_state(void)
     st.sig_event = 0x8000;
     st.errno_val = 35;
     st.herrno_val = 1;
-    st.errno_ptr = 0x00F00000;   /* TNET-119/120: registered errno pointer */
+    st.errno_ptr = 0x00F00000;
     st.errno_width = 4;
     st.herrno_ptr = 0x00F10000;
+    st.dtablesize = 64;
     st.dtablesize = 32;
     st.fd_callback = 0x12345678;
     st.log_stat = 0x01;

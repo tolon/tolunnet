@@ -10,6 +10,10 @@
  */
 
 #include "tn_test.h"
+
+/* Host-test TnSocketBase setup: allocates static arrays for the pointer
+ * fields (production code allocates these in tn_lib_open on the Amiga). */
+#define TN_TEST_BASE_INIT(b) do {     static LONG _fm[TN_DEFAULT_DTABLESIZE];     static ULONG _ev[TN_DEFAULT_DTABLESIZE];     static ULONG _em[TN_DEFAULT_DTABLESIZE];     int _i;     memset(&(b), 0, sizeof(b));     (b).fd_map = _fm; (b).events = _ev; (b).event_masks = _em;     (b).dtablesize = TN_DEFAULT_DTABLESIZE;     for (_i = 0; _i < TN_DEFAULT_DTABLESIZE; _i++) (b).fd_map[_i] = -1; } while(0)
 #include "mock_lwip.h"
 #include "task/slot_table.h"
 #include "sys/socket.h"
@@ -86,6 +90,7 @@ TN_TEST(rx_pbuf_chain_partial_reads)
     /* Test slot queue integration: push chain to a socket slot */
     TnDaemon d;
     TnSocketBase base;
+    TN_TEST_BASE_INIT(base);
     int slot_idx = -1;
     tn_slot_table_init(&d);
     memset(&base, 0, sizeof(base));
@@ -145,6 +150,7 @@ TN_TEST(rx_queue_limit_and_ordering)
 
     TnDaemon d;
     TnSocketBase base;
+    TN_TEST_BASE_INIT(base);
     int slot_idx = -1;
     tn_slot_table_init(&d);
     memset(&base, 0, sizeof(base));
@@ -201,6 +207,7 @@ TN_TEST(accept_queue_abort_on_drain)
 
     TnDaemon d;
     TnSocketBase base;
+    TN_TEST_BASE_INIT(base);
     int slot_idx = -1;
     tn_slot_table_init(&d);
     memset(&base, 0, sizeof(base));
@@ -236,15 +243,12 @@ TN_TEST(event_queue_coalescing_per_bsdsocket_doc)
 
     TnDaemon d;
     TnSocketBase base;
+    TN_TEST_BASE_INIT(base);
     int slot_idx = -1;
     tn_slot_table_init(&d);
-    memset(&base, 0, sizeof(base));
 
     base.sig_event = 0x80000000;
-    for (int i = 0; i < TN_MAX_FDS_PER_TASK; i++) {
-        base.fd_map[i] = -1;
-        base.events[i] = 0;
-    }
+    base.event_masks[3] = 0xFFFFFFFF;
 
     struct Task *mock_task = (struct Task *)0xDEADC0DE;
     TnSocketSlot *slot = tn_slot_alloc(&d, &base, mock_task, AF_INET, SOCK_STREAM, IPPROTO_TCP, &slot_idx);
@@ -252,6 +256,7 @@ TN_TEST(event_queue_coalescing_per_bsdsocket_doc)
 
     int fd = 3;
     base.fd_map[fd] = slot_idx;
+    base.event_masks[fd] = 0xFFFFFFFF;
 
     /* Initial FD_READ event */
     tn_record_socket_event(&d, slot, 0x01);
@@ -296,6 +301,7 @@ TN_TEST(sendmsg_recvmsg_scatter_tnet115)
 
     TnDaemon d;
     TnSocketBase base;
+    TN_TEST_BASE_INIT(base);
     int slot_idx = -1;
     tn_slot_table_init(&d);
     memset(&base, 0, sizeof(base));
@@ -402,6 +408,7 @@ TN_TEST(sendmsg_recvmsg_edge_cases_tnet115)
 
     TnDaemon d;
     TnSocketBase base;
+    TN_TEST_BASE_INIT(base);
     int slot_idx = -1;
     tn_slot_table_init(&d);
     memset(&base, 0, sizeof(base));

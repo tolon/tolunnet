@@ -126,7 +126,9 @@ TN_TEST(needs_fd_validation)
 
     tn_slot_table_init(&d);
     memset(&base, 0, sizeof(base));
-    for (int i = 0; i < TN_MAX_FDS_PER_TASK; i++) base.fd_map[i] = -1;
+    { static LONG _fm[TN_DEFAULT_DTABLESIZE]; static ULONG _ev[TN_DEFAULT_DTABLESIZE]; static ULONG _em[TN_DEFAULT_DTABLESIZE];
+      base.fd_map = _fm; base.events = _ev; base.event_masks = _em; base.dtablesize = TN_DEFAULT_DTABLESIZE;
+      for (int i = 0; i < TN_DEFAULT_DTABLESIZE; i++) base.fd_map[i] = -1; }
 
     memset(&msg, 0, sizeof(msg));
     msg.cmd = TN_IPC_CMD_SEND;
@@ -159,7 +161,9 @@ TN_TEST(dispatch_routing_success)
 
     tn_slot_table_init(&d);
     memset(&base, 0, sizeof(base));
-    for (int i = 0; i < TN_MAX_FDS_PER_TASK; i++) base.fd_map[i] = -1;
+    { static LONG _fm[TN_DEFAULT_DTABLESIZE]; static ULONG _ev[TN_DEFAULT_DTABLESIZE]; static ULONG _em[TN_DEFAULT_DTABLESIZE];
+      base.fd_map = _fm; base.events = _ev; base.event_masks = _em; base.dtablesize = TN_DEFAULT_DTABLESIZE;
+      for (int i = 0; i < TN_DEFAULT_DTABLESIZE; i++) base.fd_map[i] = -1; }
 
     TnSocketSlot *slot = tn_slot_alloc(&d, &base, NULL, 2, 1, 6, &slot_idx);
     base.fd_map[2] = slot_idx;

@@ -25,12 +25,20 @@ TN_TEST(slot_allocation_and_lookup)
 {
     TnDaemon d;
     TnSocketBase base;
+    static LONG test_fd_map[TN_DEFAULT_DTABLESIZE];
+    static ULONG test_events[TN_DEFAULT_DTABLESIZE];
+    static ULONG test_event_masks[TN_DEFAULT_DTABLESIZE];
+    int _i;
+    memset(&base, 0, sizeof(base));
+    base.fd_map = test_fd_map;
+    base.events = test_events;
+    base.event_masks = test_event_masks;
+    base.dtablesize = TN_DEFAULT_DTABLESIZE;
+    for (_i = 0; _i < TN_DEFAULT_DTABLESIZE; _i++) base.fd_map[_i] = -1;
     int slot_idx = -1;
     TnSocketSlot *slot;
 
     tn_slot_table_init(&d);
-    memset(&base, 0, sizeof(base));
-    for (int i = 0; i < TN_MAX_FDS_PER_TASK; i++) base.fd_map[i] = -1;
 
     slot = tn_slot_alloc(&d, &base, NULL, 2 /* AF_INET */, 1 /* SOCK_STREAM */, 6 /* IPPROTO_TCP */, &slot_idx);
     TN_ASSERT_TRUE(slot != NULL);
@@ -107,6 +115,16 @@ TN_TEST(refcounting_semantics)
 {
     TnDaemon d;
     TnSocketBase base;
+    static LONG test_fd_map[TN_DEFAULT_DTABLESIZE];
+    static ULONG test_events[TN_DEFAULT_DTABLESIZE];
+    static ULONG test_event_masks[TN_DEFAULT_DTABLESIZE];
+    int _i;
+    memset(&base, 0, sizeof(base));
+    base.fd_map = test_fd_map;
+    base.events = test_events;
+    base.event_masks = test_event_masks;
+    base.dtablesize = TN_DEFAULT_DTABLESIZE;
+    for (_i = 0; _i < TN_DEFAULT_DTABLESIZE; _i++) base.fd_map[_i] = -1;
     int slot_idx = -1;
 
     tn_slot_table_init(&d);
@@ -136,6 +154,16 @@ TN_TEST(rx_queue_operations)
 {
     TnDaemon d;
     TnSocketBase base;
+    static LONG test_fd_map[TN_DEFAULT_DTABLESIZE];
+    static ULONG test_events[TN_DEFAULT_DTABLESIZE];
+    static ULONG test_event_masks[TN_DEFAULT_DTABLESIZE];
+    int _i;
+    memset(&base, 0, sizeof(base));
+    base.fd_map = test_fd_map;
+    base.events = test_events;
+    base.event_masks = test_event_masks;
+    base.dtablesize = TN_DEFAULT_DTABLESIZE;
+    for (_i = 0; _i < TN_DEFAULT_DTABLESIZE; _i++) base.fd_map[_i] = -1;
     int slot_idx = -1;
     ip_addr_t src;
     src.addr = 0x01020304;
@@ -179,6 +207,16 @@ TN_TEST(rx_queue_limit_32)
 {
     TnDaemon d;
     TnSocketBase base;
+    static LONG test_fd_map[TN_DEFAULT_DTABLESIZE];
+    static ULONG test_events[TN_DEFAULT_DTABLESIZE];
+    static ULONG test_event_masks[TN_DEFAULT_DTABLESIZE];
+    int _i;
+    memset(&base, 0, sizeof(base));
+    base.fd_map = test_fd_map;
+    base.events = test_events;
+    base.event_masks = test_event_masks;
+    base.dtablesize = TN_DEFAULT_DTABLESIZE;
+    for (_i = 0; _i < TN_DEFAULT_DTABLESIZE; _i++) base.fd_map[_i] = -1;
     int slot_idx = -1;
     ip_addr_t src;
     src.addr = 0;
@@ -210,6 +248,16 @@ TN_TEST(accept_queue_operations)
 {
     TnDaemon d;
     TnSocketBase base;
+    static LONG test_fd_map[TN_DEFAULT_DTABLESIZE];
+    static ULONG test_events[TN_DEFAULT_DTABLESIZE];
+    static ULONG test_event_masks[TN_DEFAULT_DTABLESIZE];
+    int _i;
+    memset(&base, 0, sizeof(base));
+    base.fd_map = test_fd_map;
+    base.events = test_events;
+    base.event_masks = test_event_masks;
+    base.dtablesize = TN_DEFAULT_DTABLESIZE;
+    for (_i = 0; _i < TN_DEFAULT_DTABLESIZE; _i++) base.fd_map[_i] = -1;
     int slot_idx = -1;
 
     mock_lwip_reset();
@@ -242,16 +290,28 @@ TN_TEST(event_signaling)
 {
     TnDaemon d;
     TnSocketBase base;
+    static LONG test_fd_map[TN_DEFAULT_DTABLESIZE];
+    static ULONG test_events[TN_DEFAULT_DTABLESIZE];
+    static ULONG test_event_masks[TN_DEFAULT_DTABLESIZE];
+    int _i;
+    memset(&base, 0, sizeof(base));
+    base.fd_map = test_fd_map;
+    base.events = test_events;
+    base.event_masks = test_event_masks;
+    base.dtablesize = TN_DEFAULT_DTABLESIZE;
+    for (_i = 0; _i < TN_DEFAULT_DTABLESIZE; _i++) base.fd_map[_i] = -1;
     int slot_idx = -1;
 
     mock_lwip_reset();
     tn_slot_table_init(&d);
-    memset(&base, 0, sizeof(base));
+    { static LONG _fm[TN_DEFAULT_DTABLESIZE]; static ULONG _ev[TN_DEFAULT_DTABLESIZE]; static ULONG _em[TN_DEFAULT_DTABLESIZE];
+      base.fd_map = _fm; base.events = _ev; base.event_masks = _em; base.dtablesize = TN_DEFAULT_DTABLESIZE;
+      { int i; for (i = 0; i < TN_DEFAULT_DTABLESIZE; i++) base.fd_map[i] = -1; } }
     base.sig_event = 0x80000000;
-    for (int i = 0; i < TN_MAX_FDS_PER_TASK; i++) base.fd_map[i] = -1;
 
     TnSocketSlot *slot = tn_slot_alloc(&d, &base, (struct Task *)0x12345678, 2, 1, 6, &slot_idx);
     base.fd_map[3] = slot_idx;
+    base.event_masks[3] = 0xFFFFFFFF;
 
     /* Signal read event */
     tn_record_socket_event(&d, slot, 0x01 /* FD_READ */);
