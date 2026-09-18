@@ -93,10 +93,6 @@ int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                     }
                     break;
                 }
-                /* TNET-115: flush per chunk — a single-segment tcp_output
-                 * walk cannot chain the unacked-tail append into a
-                 * self-cycle the way the batched multi-segment walk did. */
-                tcp_output(slot->tcp_pcb);
                 sent_bytes += chunk;
                 remaining -= chunk;
             }
