@@ -98,14 +98,17 @@ int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             }
         }
 
-        tcp_output(slot->tcp_pcb);
-        tn_drain_loopback();
-        /* TNET-115 data half: Nagle may have blocked the first tcp_output
-         * (unacked data from connection setup). The drain above processes
-         * the peer's ACK which clears the block — a second tcp_output now
-         * sends the data that was held in the unsent queue. */
-        tcp_output(slot->tcp_pcb);
-        tn_drain_loopback();
+        /* TNET-115 data half: a fresh connection has pending handshake
+         * packets in the loopback queue that must be processed before the
+         * data can flow. Multiple output+drain rounds ensure the full
+         * exchange (data → server recv → ACK → client) completes. */
+        {
+            int flush_i;
+            for (flush_i = 0; flush_i < 4; flush_i++) {
+                tcp_output(slot->tcp_pcb);
+                tn_drain_loopback();
+            }
+        }
         imsg->result = (LONG)sent_bytes;
         imsg->err_no = 0;
         return 0;
