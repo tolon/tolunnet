@@ -102,9 +102,13 @@ CMDLIB_OBJ   = $(BUILD)/src/cmds/cmdlib.o
 HOSTNAME_BIN = $(BUILD)/hostname
 NSLOOKUP_BIN = $(BUILD)/nslookup
 WHOIS_BIN    = $(BUILD)/whois
+TRACEROUTE_BIN = $(BUILD)/traceroute
+NC_BIN       = $(BUILD)/nc
+ARP_BIN      = $(BUILD)/arp
+SHOWNETSTATUS_BIN = $(BUILD)/ShowNetStatus
 
 .PHONY: all clean test-host package
-all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN) $(BSDTEST_BIN) $(FREEZEWATCH_BIN) $(HOSTNAME_BIN) $(NSLOOKUP_BIN) $(WHOIS_BIN)
+all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN) $(BSDTEST_BIN) $(FREEZEWATCH_BIN) $(HOSTNAME_BIN) $(NSLOOKUP_BIN) $(WHOIS_BIN) $(TRACEROUTE_BIN) $(NC_BIN) $(ARP_BIN) $(SHOWNETSTATUS_BIN)
 
 # --- Host unit tests (Round 3 §B.1) -----------------------------------------
 # Every tests/host/test_*.c runs under native gcc with sanitizers + Werror;
@@ -191,6 +195,18 @@ $(NSLOOKUP_BIN): $(BUILD)/src/cmds/nslookup.o $(CMDLIB_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(WHOIS_BIN): $(BUILD)/src/cmds/whois.o $(CMDLIB_OBJ)
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+$(TRACEROUTE_BIN): $(BUILD)/src/cmds/traceroute.o $(CMDLIB_OBJ)
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+$(NC_BIN): $(BUILD)/src/cmds/nc.o $(CMDLIB_OBJ)
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+$(ARP_BIN): $(BUILD)/src/cmds/arp.o $(CMDLIB_OBJ)
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+$(SHOWNETSTATUS_BIN): $(BUILD)/src/cmds/ShowNetStatus.o $(CMDLIB_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetPing CLI Binary (M4)
