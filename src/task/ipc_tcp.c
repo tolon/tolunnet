@@ -432,6 +432,9 @@ int tn_ipc_cmd_send(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
         tcp_output(slot->tcp_pcb);
         tn_drain_loopback();
+        /* TNET-115: second output after drain clears Nagle blocks */
+        tcp_output(slot->tcp_pcb);
+        tn_drain_loopback();
         imsg->result = (LONG)send_len;
         imsg->err_no = 0;
         return 0;
