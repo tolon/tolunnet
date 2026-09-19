@@ -29,12 +29,20 @@ If EXISTS WORK:
   ; SocketConformance signals the daemon to stop on exit (TNET-059 guard:
   ; refuses while clients are open — the conformance suite closes them all)
   Wait 4
+  ; TN_DIAG crash capture (TNET-139): preserve any trap log before restart
+  If EXISTS RAM:tolunnet-crash.log
+    Copy RAM:tolunnet-crash.log WORK:tolunnet-crash.log CLONE
+  EndIf
+
 
   ; ---- cycle 2: restart without reboot (TNET-059/060 proof) -------------
   Run >WORK:daemon2.log C:tolunnet
   Wait 15
   C:SocketConformance >WORK:conformance2.log
   Wait 4
+  If EXISTS RAM:tolunnet-crash.log
+    Copy RAM:tolunnet-crash.log WORK:tolunnet-crash2.log CLONE
+  EndIf
 
   Echo >WORK:bench-done "bench complete"
 EndIf

@@ -45,6 +45,10 @@ struct hostent *tn_call_gethostbyname(const char *name);
 struct hostent *tn_call_gethostbyaddr(const char *addr, LONG len, LONG type);
 LONG tn_call_waitselect(LONG nfds, fd_set *r, fd_set *w, fd_set *e, struct timeval *tv, ULONG *sigmask);
 LONG tn_call_ioctl(LONG fd, ULONG req, APTR argp);
+LONG tn_call_bind(LONG fd, const struct sockaddr *a, LONG len);
+LONG tn_call_listen(LONG fd, LONG backlog);
+LONG tn_call_accept(LONG fd, struct sockaddr *a, LONG *len);
+LONG tn_call_shutdown(LONG fd, LONG how);
 
 /* --- Helpers --- */
 int  tn_cmd_init(void);

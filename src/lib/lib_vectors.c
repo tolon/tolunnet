@@ -159,13 +159,44 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
         WaitPort(base->reply_port);
     }
     {
+        /* The reply we GetMsg must be the message THIS call sent. A stale
+         * reply on the port (any late ReplyMsg from the daemon for an
+         * earlier watchdog-abandoned request, or a spurious reply-port
+         * signal) used to make the client read and free its own message
+         * while the daemon still owned it — the freed block was then
+         * reused for the next call and every following result came back
+         * as garbage heap pointers (bench 20260920-000915: recv returned
+         * 0x2D3828-class values from test 40 on, both profiles). Verify
+         * identity; drain anything else and wait again, bounded. */
         struct Message *got = GetMsg(base->reply_port);
-        if (got == (struct Message *)base->ipc_orphan) {
-            /* late reply for the timed-out call: discard and take ours */
-            FreeVec(base->ipc_orphan);
-            base->ipc_orphan = NULL;
+        int spins = 0;
+        while (got != (struct Message *)msg && spins < 4) {
+            if (got == (struct Message *)base->ipc_orphan) {
+                FreeVec(base->ipc_orphan);
+                base->ipc_orphan = NULL;
+            }
+            /* an unexpected non-orphan reply belongs to a request whose
+             * block an earlier call already abandoned — drop it */
             WaitPort(base->reply_port);
-            (void)GetMsg(base->reply_port);
+            got = GetMsg(base->reply_port);
+            spins++;
+        }
+        if (got != (struct Message *)msg) {
+            /* ours never arrived: treat as a timeout and abandon ours */
+            if (heap_msg != NULL && got == NULL) {
+                base->ipc_timeouts++;
+                base->ipc_orphan = heap_msg;
+                tn_set_errno_val(base, ETIMEDOUT);
+                return -1;
+            }
+            if (heap_msg != NULL) {
+                /* a foreign message is still queued; do not free ours
+                 * blind — leave it orphaned for the drain on next call */
+                base->ipc_orphan = heap_msg;
+                tn_set_errno_val(base, ETIMEDOUT);
+                base->ipc_timeouts++;
+                return -1;
+            }
         }
 
         if (msg->result < 0 && msg->err_no != 0) {
@@ -1007,7 +1038,10 @@ struct hostent *tn_lvo_gethostbyname(CONST_STRPTR name, TnSocketBase *base)
     if (base == NULL || name == NULL) return NULL;
     base->ipc_msg.ptrs[0] = (APTR)name;
     res = tn_ipc_call(base, TN_IPC_CMD_GETHOSTBYNAME);
-    if (res == 0) {
+    /* res==0: daemon answered NULL (not found); res==-1: transport failure
+     * incl. the watchdog ETIMEDOUT — both are "no hostent", never a
+     * (hostent *)-1 poison pointer for callers that only check != NULL */
+    if (res <= 0) {
         tn_set_herrno_val(base, HOST_NOT_FOUND);
         return NULL;
     }

@@ -4059,6 +4059,7 @@ static void tc_cmd_nslookup(void)
     }
     Close(fh);
     DeleteFile((CONST_STRPTR)"WORK:dnsresp.ready");
+    tapf("# tc_cmd_nslookup: responder ready after %d poll(s)\n", waits);
 
     he = call_gethostbyname((CONST_STRPTR)"test.tolunnet.lan");
 
@@ -4083,6 +4084,8 @@ static void tc_cmd_nslookup(void)
     if (fh != (BPTR)0) {
         Close(fh);
         DeleteFile((CONST_STRPTR)"WORK:dnsresp.done");
+    } else {
+        tapf("# tc_cmd_nslookup: responder done file missing after 12 s\n");
     }
 
     if (he == NULL || he->h_addr_list == NULL || he->h_addr_list[0] == NULL ||
@@ -4670,8 +4673,7 @@ static void tc_cmd_route(void)
     args[1] = (LONG)htonl(0x0A090000UL);
     args[2] = (LONG)htonl(0xFFFF0000UL);
     args[3] = (LONG)htonl(0x0A000202UL);
-    if (tn_ipc_oneshot_ex(TN_IPC_CMD_ROUTECTL, args, 5, NULL, 0, &msg) != 0 ||
-        msg.result != 0) {
+    if (msg.result != 0) {
         TAP_NOTOK("tc_cmd_route", "ADD rejected");
         return;
     }
@@ -4689,8 +4691,12 @@ static void tc_cmd_route(void)
     args[0] = TN_ROUTECTL_LIST;
     args[4] = TN_MAX_ROUTES;
     ptrs[0] = rows;
-    if (tn_ipc_oneshot_ex(TN_IPC_CMD_ROUTECTL, args, 5, ptrs, 1, &msg) != 0 ||
-        (n = msg.result) < 1) {
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_ROUTECTL, args, 5, ptrs, 1, &msg) != 0) {
+        TAP_NOTOK("tc_cmd_route", "LIST transport failed");
+        return;
+    }
+    n = msg.result;
+    if (n < 1) {
         TAP_NOTOK("tc_cmd_route", "LIST returned nothing");
         return;
     }
@@ -4713,8 +4719,7 @@ static void tc_cmd_route(void)
     args[0] = TN_ROUTECTL_DELETE;
     args[1] = (LONG)htonl(0x0A090000UL);
     args[2] = (LONG)htonl(0xFFFF0000UL);
-    if (tn_ipc_oneshot_ex(TN_IPC_CMD_ROUTECTL, args, 5, NULL, 0, &msg) != 0 ||
-        msg.result != 0) {
+    if (msg.result != 0) {
         TAP_NOTOK("tc_cmd_route", "DELETE failed");
         return;
     }
@@ -4855,10 +4860,20 @@ int main(int argc, char *argv[])
             }
         }
         CloseLibrary(SocketBase);
-        fh = Open((CONST_STRPTR)"WORK:dnsresp.done", MODE_NEWFILE);
-        if (fh != (BPTR)0) {
-            Write(fh, (CONST APTR)"OK\n", 3);
-            Close(fh);
+        {
+            char rep[24];
+            int rn = 0;
+            const char *verdict;
+            if (s < 0) verdict = "nosock\n";
+            else if (answered > 0) verdict = "answered\n";
+            else verdict = "noanswer\n";
+            while (verdict[rn]) rn++;
+            fh = Open((CONST_STRPTR)"WORK:dnsresp.done", MODE_NEWFILE);
+            if (fh != (BPTR)0) {
+                Write(fh, (CONST APTR)rep, 0);
+                Write(fh, (CONST APTR)verdict, rn);
+                Close(fh);
+            }
         }
         CloseLibrary(DOSBase);
         return 0;

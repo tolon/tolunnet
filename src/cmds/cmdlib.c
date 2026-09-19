@@ -81,6 +81,44 @@ LONG tn_call_ioctl(LONG fd, ULONG req, APTR argp)
     return d0;
 }
 
+LONG tn_call_bind(LONG fd, const struct sockaddr *a, LONG len)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = fd;
+    register const struct sockaddr *a0 __asm__("a0") = a;
+    register LONG d1 __asm__("d1") = len;
+    __asm__ __volatile__("jsr -36(%%a6)" : "+r"(d0) : "r"(a6), "r"(d0), "r"(a0), "r"(d1) : "d1","a0","a1","memory");
+    return d0;
+}
+
+LONG tn_call_listen(LONG fd, LONG backlog)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = fd;
+    register LONG d1 __asm__("d1") = backlog;
+    __asm__ __volatile__("jsr -42(%%a6)" : "+r"(d0) : "r"(a6), "r"(d0), "r"(d1) : "d1","a0","a1","memory");
+    return d0;
+}
+
+LONG tn_call_accept(LONG fd, struct sockaddr *a, LONG *len)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = fd;
+    register struct sockaddr *a0 __asm__("a0") = a;
+    register LONG *a1 __asm__("a1") = len;
+    __asm__ __volatile__("jsr -48(%%a6)" : "+r"(d0) : "r"(a6), "r"(d0), "r"(a0), "r"(a1) : "a0","a1","memory");
+    return d0;
+}
+
+LONG tn_call_shutdown(LONG fd, LONG how)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = fd;
+    register LONG d1 __asm__("d1") = how;
+    __asm__ __volatile__("jsr -84(%%a6)" : "+r"(d0) : "r"(a6), "r"(d0), "r"(d1) : "d1","a0","a1","memory");
+    return d0;
+}
+
 LONG tn_call_errno(void)
 {
     register struct Library *a6 __asm__("a6") = SocketBase;

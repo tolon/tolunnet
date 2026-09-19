@@ -180,6 +180,9 @@ for cfg in $CONFIGS; do
     cp "$WORK_DIR/daemon.log"        "$OUT/" 2>/dev/null || true
     cp "$WORK_DIR/daemon2.log"       "$OUT/" 2>/dev/null || true
     cp "$WORK_DIR/tolunnet-task.log" "$OUT/" 2>/dev/null || true
+    # TN_DIAG trap capture (TNET-139): copied from RAM: by the boot script
+    cp "$WORK_DIR/tolunnet-crash.log"  "$OUT/" 2>/dev/null || true
+    cp "$WORK_DIR/tolunnet-crash2.log" "$OUT/" 2>/dev/null || true
     # TNET-110: wizard page screenshots (PAL + NTSC) from tc_wizard_ntsc
     cp "$WORK_DIR"/wizard-*.iff "$OUT/" 2>/dev/null || true
     # ANX-01: third-party bsdsocktest log (does not gate the bench)
