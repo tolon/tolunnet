@@ -665,8 +665,15 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
         if (received_sigs != 0) {
             SetSignal(0, received_sigs);
             if (signals != NULL) *signals = received_sigs;
+            /* AmiTCP WaitSelect: signal interrupt returns 0 with fd_sets
+             * zeroed, but errno is set to EINTR (Roadshow autodocs: 'returns
+             * 0 and sets errno to EINTR') — bsdsocktest #66 checks rc==0,
+             * our tc_waitselect_eintr checks errno==EINTR. */
+            if (read_fds)   read_fds->fds_bits[0] = 0;
+            if (write_fds)  write_fds->fds_bits[0] = 0;
+            if (except_fds) except_fds->fds_bits[0] = 0;
             tn_set_errno_val(base, EINTR);
-            return -1;
+            return 0;
         }
     }
 
@@ -765,8 +772,15 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
             received_sigs = fired & sig_mask;
             SetSignal(0, received_sigs);
             if (signals != NULL) *signals = received_sigs;
+            /* AmiTCP WaitSelect: signal interrupt returns 0 with fd_sets
+             * zeroed, but errno is set to EINTR (Roadshow autodocs: 'returns
+             * 0 and sets errno to EINTR') — bsdsocktest #66 checks rc==0,
+             * our tc_waitselect_eintr checks errno==EINTR. */
+            if (read_fds)   read_fds->fds_bits[0] = 0;
+            if (write_fds)  write_fds->fds_bits[0] = 0;
+            if (except_fds) except_fds->fds_bits[0] = 0;
             tn_set_errno_val(base, EINTR);
-            return -1;
+            return 0;
         }
 
         /* If timed out without socket activity */

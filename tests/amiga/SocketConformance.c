@@ -1661,11 +1661,12 @@ static void tc_waitselect_eintr(void)
     sigs = sig_mask;
 
     res = call_waitselect(0, NULL, NULL, NULL, &tv, &sigs);
-    if (res != -1 || call_errno() != EINTR || (sigs & sig_mask) == 0) {
-        tapf("# res=%ld errno=%ld sigs=0x%lx (expected -1, EINTR, 0x%lx)\n",
+    /* Roadshow: signal interrupt returns 0 with errno=EINTR, fd_sets zeroed */
+    if (res != 0 || call_errno() != EINTR || (sigs & sig_mask) == 0) {
+        tapf("# res=%ld errno=%ld sigs=0x%lx (expected 0, EINTR, 0x%lx)\n",
              res, call_errno(), sigs, sig_mask);
         FreeSignal(sig_bit);
-        TAP_NOTOK("tc_waitselect_eintr", "WaitSelect did not return -1/EINTR on pending signal");
+        TAP_NOTOK("tc_waitselect_eintr", "WaitSelect did not return 0/EINTR on pending signal");
         return;
     }
 
@@ -1675,10 +1676,10 @@ static void tc_waitselect_eintr(void)
     res = call_waitselect(0, NULL, NULL, NULL, &tv, NULL);
     call_setsocketsignals(0, 0, 0);
 
-    if (res != -1 || call_errno() != EINTR) {
-        tapf("# sig_int res=%ld errno=%ld (expected -1, EINTR)\n", res, call_errno());
+    if (res != 0 || call_errno() != EINTR) {
+        tapf("# sig_int res=%ld errno=%ld (expected 0, EINTR)\n", res, call_errno());
         FreeSignal(sig_bit);
-        TAP_NOTOK("tc_waitselect_eintr", "WaitSelect did not return -1/EINTR on sig_int");
+        TAP_NOTOK("tc_waitselect_eintr", "WaitSelect did not return 0/EINTR on sig_int");
         return;
     }
 
