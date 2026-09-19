@@ -15,11 +15,14 @@ All commands install to `SYS:C/` (except Prefs tools). Every command is a thin c
 
 | Command | ReadArgs Template | RC | Description | Conformance |
 |---------|------------------|-----|-------------|-------------|
-| `tolunnet` | `[DEVICE] [UNIT] [IP NETMASK GW]` or `START/STOP/STATUS/RECONFIG` | 0/20 | TCP/IP daemon, bsdsocket.library v4.1 provider |
+| `tolunnet` | `[DEVICE] [UNIT] [IP NETMASK GW]` or `START/STOP/STATUS/RECONFIG` | 0/20 | TCP/IP daemon, bsdsocket.library v4.1 provider | (daemon) |
 | `TolunnetControl` | `COMMAND/A` | 0 running / 5 not / 20 usage | Control front-end (START STOP RESTART STATUS RECONFIG VERSION) | `tc_cmd_tolunnetcontrol` |
-| `ping` | `HOST/A,COUNT/N,SIZE/N,INTERVAL/N,TTL/N,TIMEOUT/N,QUIET/S,UDP/S` | 0/10 | ICMP Echo with µs RTT, min/avg/max/mdev |
-| `ifconfig` | — | 0 | Interface, MAC, IP status |
-| `netstat` | — | 0 | Active sockets, routes, protocol statistics |
+| `ping` | `HOST/A,COUNT/N,SIZE/N,INTERVAL/N,TTL/N,TIMEOUT/N,QUIET/S,UDP/S` | 0/10 | ICMP Echo with µs RTT, min/avg/max/mdev | `tc_cmd_traceroute` (ICMP raw) |
+| `ifconfig` | — | 0 | Interface, MAC, IP status | `tc_ioctl_ifconf`, `tc_cmd_shownetstatus` |
+| `netstat` | — | 0 | Active sockets, routes, protocol statistics | `tc_cmd_route` (route rows), `tc_stats_counters` |
+| `route` | `SHOW/S,ADD/S,DEST/K,NETMASK/K,GATEWAY/K,DELETE/S,DEFAULT/S` | 0/10/20 | Static routing table via ROUTECTL (lwIP route hooks) | `tc_cmd_route` |
+| `AddNetRoute` | `DEST/A,MASK/K,GATEWAY/K` | 0/10 | Roadshow-style route add wrapper | `tc_cmd_route` |
+| `DeleteNetRoute` | `DEST/A,MASK/K` | 0/10 | Roadshow-style route delete wrapper | `tc_cmd_route` |
 
 ## File Transfer
 

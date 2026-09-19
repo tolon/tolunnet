@@ -102,8 +102,25 @@ typedef enum TnIpcCmd {
     TN_IPC_CMD_OBTAINSOCKET,    /* ObtainSocket(id, domain, type, protocol, pref_fd) */
     TN_IPC_CMD_SELECT_ARM,      /* WaitSelect: arm selector for event-driven wake (§D) */
     TN_IPC_CMD_SELECT_DISARM,   /* WaitSelect: disarm selector (§D) */
-    TN_IPC_CMD_GETSTATS         /* Query stack telemetry and statistics (§F) */
+    TN_IPC_CMD_GETSTATS,        /* Query stack telemetry and statistics (§F) */
+    TN_IPC_CMD_ROUTECTL         /* CLOSE §B.5: static route SHOW/ADD/DELETE (route) */
 } TnIpcCmd;
+
+/* Route row for TN_IPC_CMD_ROUTECTL LIST replies (CLOSE §B.5).
+ * addresses in network byte order; gw 0 = interface route. */
+typedef struct TnRouteInfo {
+    uint16_t struct_size;   /* sizeof(TnRouteInfo) */
+    uint8_t  in_use;
+    uint8_t  pad;
+    uint32_t dest;
+    uint32_t mask;
+    uint32_t gw;
+} TnRouteInfo;
+
+/* ROUTECTL ops (args[0]) */
+#define TN_ROUTECTL_LIST   0  /* ptrs[0]=TnRouteInfo* out, args[4]=capacity; result=count */
+#define TN_ROUTECTL_ADD    1  /* args[1]=dest args[2]=mask args[3]=gw; result 0/-1+errno */
+#define TN_ROUTECTL_DELETE 2  /* args[1]=dest args[2]=mask; result 0/-1+errno */
 
 /* Sub-structure for protocol statistics (fixed width for client/daemon portability) */
 typedef struct TnProtoStats {

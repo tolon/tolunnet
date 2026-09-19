@@ -111,4 +111,14 @@
 /* --- Byte order: 68k is big-endian = network order. --- */
 #define BYTE_ORDER           BIG_ENDIAN
 
+/* --- CLOSE §B.5: static routing hooks (src/task/route_hook.c) ---
+ * With an empty route table both hooks return NULL and lwIP behaves
+ * exactly as without them. */
+struct netif;
+struct ip4_addr;
+struct netif *tn_route_hook_src(const struct ip4_addr *src, const struct ip4_addr *dest);
+const struct ip4_addr *tn_route_gw_get(struct netif *netif, const struct ip4_addr *ipaddr);
+#define LWIP_HOOK_IP4_ROUTE_SRC(src, dest) tn_route_hook_src((src), (dest))
+#define LWIP_HOOK_ETHARP_GET_GW(netif, ipaddr) tn_route_gw_get((netif), (ipaddr))
+
 #endif /* LWIP_LWIPOPTS_H */

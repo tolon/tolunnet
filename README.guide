@@ -239,6 +239,15 @@ DEVS: file directly.
 * @{b}TolunnetStatus [DEVICE] [UNIT]:@{ub}
   Detailed SANA-II interface diagnostics.
 
+* @{b}route [SHOW] | ADD DEST [NETMASK] GATEWAY | DELETE DEST [NETMASK] | DEFAULT GATEWAY:@{ub}
+  Static routing table. ADD installs a route (default netmask /32 without
+  NETMASK); DELETE removes it; DEFAULT sets the default gateway route.
+  Routes live in the daemon and feed lwIP's routing hooks (longest prefix
+  wins; on-link traffic is never rerouted).
+
+* @{b}AddNetRoute DEST [MASK] [GATEWAY]:@{ub} / @{b}DeleteNetRoute DEST [MASK]:@{ub}
+  Roadshow-style wrappers for route ADD / route DELETE.
+
 @endnode
 
 @node Compatibility "API Compatibility"

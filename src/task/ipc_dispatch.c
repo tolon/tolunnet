@@ -22,6 +22,7 @@
 #include "ipc_select.h"
 #include "ipc_netdb.h"
 #include "ipc_status.h"
+#include "ipc_route.h"
 #include "slot_table.h"
 
 static const char * const g_ipc_cmd_names[] = {
@@ -56,7 +57,8 @@ static const char * const g_ipc_cmd_names[] = {
     [TN_IPC_CMD_OBTAINSOCKET]  = "OBTAINSOCKET",
     [TN_IPC_CMD_SELECT_ARM]    = "SELECT_ARM",
     [TN_IPC_CMD_SELECT_DISARM] = "SELECT_DISARM",
-    [TN_IPC_CMD_GETSTATS]      = "GETSTATS"
+    [TN_IPC_CMD_GETSTATS]      = "GETSTATS",
+    [TN_IPC_CMD_ROUTECTL]      = "ROUTECTL"
 };
 
 const char *tn_ipc_cmd_name(TnIpcCmd cmd)
@@ -99,7 +101,8 @@ static const TnIpcHandler g_ipc_table[] = {
     [TN_IPC_CMD_OBTAINSOCKET]  = { TN_IPC_CMD_OBTAINSOCKET,  tn_ipc_cmd_obtainsocket,  TRUE,  FALSE, 0 },
     [TN_IPC_CMD_SELECT_ARM]    = { TN_IPC_CMD_SELECT_ARM,    tn_ipc_cmd_select_arm,    TRUE,  FALSE, 0 },
     [TN_IPC_CMD_SELECT_DISARM] = { TN_IPC_CMD_SELECT_DISARM, tn_ipc_cmd_select_disarm, TRUE,  FALSE, 0 },
-    [TN_IPC_CMD_GETSTATS]      = { TN_IPC_CMD_GETSTATS,      tn_ipc_cmd_getstats,      FALSE, FALSE, 0 }
+    [TN_IPC_CMD_GETSTATS]      = { TN_IPC_CMD_GETSTATS,      tn_ipc_cmd_getstats,      FALSE, FALSE, 0 },
+    [TN_IPC_CMD_ROUTECTL]      = { TN_IPC_CMD_ROUTECTL,      tn_ipc_cmd_routectl,      FALSE, FALSE, 0 }
 };
 
 BOOL tn_handle_ipc(TnDaemon *d, TnIpcMsg *imsg)

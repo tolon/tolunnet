@@ -22,6 +22,7 @@
 #include <lwip/timeouts.h>
 #include <lwip/ip4_addr.h>
 #include <lwip/etharp.h>
+#include "route.h"
 #include <netif/ethernet.h>
 
 #include "task_ctx.h"
@@ -188,6 +189,7 @@ static int tn_task_real_main(int argc, char *argv[])
 
     /* 2. Initialize lwIP stack core */
     lwip_init();
+    tn_route_init(); /* CLOSE §B.5: static route table (empty = lwIP default behaviour) */
     tn_log(TN_LOG_BASIC, "tolunnet: lwIP 2.2.0 initialized (NO_SYS=1)\n");
 
     /* 3. Open SANA-II network device */

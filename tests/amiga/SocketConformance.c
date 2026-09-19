@@ -34,6 +34,7 @@
 #include "../../include/ipc.h"
 #include "../../src/common/ipc_client.h"
 #include "../../src/common/tn_arp.h"
+#include "../../src/task/route.h"
 #include "../../src/setup/wifi_mgr.h"
 #include <net/if_arp.h>
 
@@ -4019,6 +4020,13 @@ static void tc_cmd_nslookup(void)
     /* nslookup: the forward path is gethostbyname through the LIVE daemon
      * resolver (config DNS=127.0.0.1 DNS_PORT=<port>). A child process
      * plays the responder while this task blocks inside gethostbyname.
+     * Bench-lesson 20260919-234035: the child's lifecycle must be fully
+     * deterministic — (a) gethostbyname is ONLY called after the child
+     * proved it is listening (ready file, up to 5 s), otherwise the 5 s
+     * IPC watchdog aborts the deferred DNS request client-side while the
+     * daemon later replies it (double-ReplyMsg, exec corruption); (b) the
+     * parent waits for the child's done file so the child (and its
+     * CloseLibrary IPC) can never land inside a later test's TCP exchange.
      * Reverse (gethostbyaddr) is a documented STUB — not asserted here. */
     char cmd[96];
     LONG dns_port = tc_cfg_long("DNS_PORT", 15353);
@@ -4030,6 +4038,7 @@ static void tc_cmd_nslookup(void)
 
     snprintf_safe(cmd, sizeof(cmd), "C:SocketConformance dns_resp %ld", dns_port);
     DeleteFile((CONST_STRPTR)"WORK:dnsresp.ready");
+    DeleteFile((CONST_STRPTR)"WORK:dnsresp.done");
     if (SystemTags((CONST_STRPTR)cmd,
                    SYS_Asynch, TRUE,
                    SYS_Input, (BPTR)0,
@@ -4039,10 +4048,12 @@ static void tc_cmd_nslookup(void)
         return;
     }
     for (waits = 0; waits < 50 && fh == (BPTR)0; waits++) {
-        Delay(10); /* 0.5 s total max */
+        Delay(5); /* 100 ms units: up to 5 s total */
         fh = Open((CONST_STRPTR)"WORK:dnsresp.ready", MODE_OLDFILE);
     }
     if (fh == (BPTR)0) {
+        /* responder never came up: do NOT call gethostbyname — an
+         * unanswered query is exactly the abort/double-reply trap */
         TAP_NOTOK("tc_cmd_nslookup", "responder child never became ready");
         return;
     }
@@ -4051,7 +4062,8 @@ static void tc_cmd_nslookup(void)
 
     he = call_gethostbyname((CONST_STRPTR)"test.tolunnet.lan");
 
-    /* Tell the responder to exit (any non-DNS packet). */
+    /* deterministic shutdown: STOP packet, then wait for the done file so
+     * the child cannot die inside a later test */
     stop_fd = call_socket(AF_INET, SOCK_DGRAM, 0);
     if (stop_fd >= 0) {
         int i;
@@ -4062,6 +4074,15 @@ static void tc_cmd_nslookup(void)
         dst.sin_addr.s_addr = htonl(0x7F000001UL);
         call_sendto(stop_fd, "STOP", 4, 0, (struct sockaddr *)&dst, sizeof(dst));
         call_closesocket(stop_fd);
+    }
+    fh = (BPTR)0;
+    for (waits = 0; waits < 240 && fh == (BPTR)0; waits++) {
+        Delay(5); /* up to 12 s */
+        fh = Open((CONST_STRPTR)"WORK:dnsresp.done", MODE_OLDFILE);
+    }
+    if (fh != (BPTR)0) {
+        Close(fh);
+        DeleteFile((CONST_STRPTR)"WORK:dnsresp.done");
     }
 
     if (he == NULL || he->h_addr_list == NULL || he->h_addr_list[0] == NULL ||
@@ -4088,11 +4109,17 @@ static void tc_cmd_whois(void)
         TAP_NOTOK("tc_cmd_whois", "no loopback pair");
         return;
     }
-    if (call_send(cli, "example.com\r\n", 13, 0) != 13 ||
-        !tc_cmd_wait_readable(conn) ||
-        (got = call_recv(conn, buf, sizeof(buf) - 1, 0)) <= 0) {
+    if (call_send(cli, "example.com\r\n", 13, 0) != 13) {
+        tapf("# tc_cmd_whois: send errno=%ld\n", call_errno());
         call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
-        TAP_NOTOK("tc_cmd_whois", "query send/receive failed");
+        TAP_NOTOK("tc_cmd_whois", "query send failed");
+        return;
+    }
+    if (!tc_cmd_wait_readable(conn) ||
+        (got = call_recv(conn, buf, sizeof(buf) - 1, 0)) <= 0) {
+        tapf("# tc_cmd_whois: wait/recv got=%ld errno=%ld\n", got, call_errno());
+        call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+        TAP_NOTOK("tc_cmd_whois", "query receive failed");
         return;
     }
     /* reply with the server side, read it on the client (whois direction) */
@@ -4165,6 +4192,7 @@ static void tc_cmd_nc(void)
         !tc_cmd_wait_readable(conn) ||
         (got = call_recv(conn, buf, sizeof(buf), 0)) != 9 ||
         memcmp(buf, "netcat-up", 9) != 0) {
+        tapf("# tc_cmd_nc: send/recv got=%ld errno=%ld\n", got, call_errno());
         call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
         TAP_NOTOK("tc_cmd_nc", "client->server pipe failed");
         return;
@@ -4270,6 +4298,10 @@ static void tc_cmd_telnet(void)
         (got = call_recv(cli, buf, sizeof(buf), 0)) != 8 ||
         (unsigned char)buf[0] != 0xFF || (unsigned char)buf[1] != 0xFB ||
         (unsigned char)buf[2] != 0x01 || memcmp(buf + 3, "hello", 5) != 0) {
+        tapf("# tc_cmd_telnet: got=%ld b0=%02x b1=%02x b2=%02x errno=%ld\n",
+             got, (unsigned)(unsigned char)buf[0],
+             (unsigned)(unsigned char)buf[1],
+             (unsigned)(unsigned char)buf[2], call_errno());
         call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
         TAP_NOTOK("tc_cmd_telnet", "IAC+data stream corrupted");
         return;
@@ -4460,6 +4492,7 @@ static void tc_cmd_ftp(void)
     TAP_OK("tc_cmd_ftp");
     return;
 ctl_fail_greet:
+    tapf("# tc_cmd_ftp: stage errno=%ld\n", call_errno());
     call_closesocket(conn);
     call_closesocket(cli);
     call_closesocket(lst);
@@ -4485,18 +4518,15 @@ static void tc_arp_set_pa(struct arpreq *ar, ULONG a_net)
 static void tc_cmd_arp(void)
 {
     /* arp SHOW: SIOCGARP miss on an absent IP is ENXIO; the slirp gateway
-     * 10.0.2.2 resolves after a refused connect (SYN forces ARP) and its
+     * 10.0.2.2 resolves after UDP probes (each sendto forces ARP) and its
      * completed MAC comes back with ATF_COM. */
     LONG fd = call_socket(AF_INET, SOCK_DGRAM, 0);
-    LONG syn = call_socket(AF_INET, SOCK_STREAM, 0);
     struct arpreq ar;
     struct sockaddr_in sin;
     int i;
 
-    if (fd < 0 || syn < 0) {
-        TAP_NOTOK("tc_cmd_arp", "sockets failed");
-        if (fd >= 0) call_closesocket(fd);
-        if (syn >= 0) call_closesocket(syn);
+    if (fd < 0) {
+        TAP_NOTOK("tc_cmd_arp", "socket failed");
         return;
     }
 
@@ -4504,19 +4534,34 @@ static void tc_cmd_arp(void)
     memset(&ar, 0, sizeof(ar));
     tc_arp_set_pa(&ar, htonl(0x0A000263UL));
     if (call_ioctl(fd, TN_SIOCGARP, &ar) == 0) {
-        call_closesocket(fd); call_closesocket(syn);
+        call_closesocket(fd);
         TAP_NOTOK("tc_cmd_arp", "absent IP returned an entry");
         return;
     }
 
-    /* warm the gateway entry: a refused TCP connect still forces ARP */
-    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
-    sin.sin_len = sizeof(sin);
-    sin.sin_family = AF_INET;
-    sin.sin_port = htons(9);
-    sin.sin_addr.s_addr = htonl(0x0A000202UL);
-    call_connect(syn, (struct sockaddr *)&sin, sizeof(sin)); /* ECONNREFUSED expected */
-    call_closesocket(syn);
+    /* warm the gateway entry with UDP probes: sendto never blocks, so the
+     * 5 s IPC watchdog cannot abort an in-flight request here (bench
+     * 20260919-234035 showed the blocking-connect warm probe tripping it
+     * on slow profiles — that abort path is the TNET-142 hazard) */
+    {
+        LONG u = call_socket(AF_INET, SOCK_DGRAM, 0);
+        if (u >= 0) {
+            int probe;
+            for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+            sin.sin_len = sizeof(sin);
+            sin.sin_family = AF_INET;
+            sin.sin_port = htons(9);
+            sin.sin_addr.s_addr = htonl(0x0A000202UL);
+            for (probe = 0; probe < 3; probe++) {
+                call_sendto(u, "\x70", 1, 0, (struct sockaddr *)&sin, sizeof(sin));
+                Delay(20); /* ~1 s: ARP resolves asynchronously */
+                memset(&ar, 0, sizeof(ar));
+                tc_arp_set_pa(&ar, htonl(0x0A000202UL));
+                if (call_ioctl(fd, TN_SIOCGARP, &ar) == 0) break;
+            }
+            call_closesocket(u);
+        }
+    }
 
     memset(&ar, 0, sizeof(ar));
     tc_arp_set_pa(&ar, htonl(0x0A000202UL));
@@ -4605,6 +4650,94 @@ static void tc_cmd_getnetstatus(void)
     TAP_OK("tc_cmd_getnetstatus");
 }
 
+static void tc_cmd_route(void)
+{
+    /* route / AddNetRoute / DeleteNetRoute (CLOSE §B.5): the exact ROUTECTL
+     * IPC the commands send — ADD a /16 via a gateway, LIST sees it,
+     * duplicate is rejected, longest-prefix lookup semantics live in the
+     * host tests; DELETE removes it and LIST reflects the change. */
+    static TnRouteInfo rows[TN_MAX_ROUTES];
+    TnIpcMsg msg;
+    LONG args[6];
+    APTR ptrs[1];
+    LONG n, i;
+    BOOL seen = FALSE;
+
+    /* ADD 10.9.0.0/255.255.0.0 gw 10.0.2.2 */
+    memset(&msg, 0, sizeof(msg));
+    memset(args, 0, sizeof(args));
+    args[0] = TN_ROUTECTL_ADD;
+    args[1] = (LONG)htonl(0x0A090000UL);
+    args[2] = (LONG)htonl(0xFFFF0000UL);
+    args[3] = (LONG)htonl(0x0A000202UL);
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_ROUTECTL, args, 5, NULL, 0, &msg) != 0 ||
+        msg.result != 0) {
+        TAP_NOTOK("tc_cmd_route", "ADD rejected");
+        return;
+    }
+
+    /* duplicate ADD must fail (EEXIST) */
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_ROUTECTL, args, 5, NULL, 0, &msg) != 0 ||
+        msg.result == 0) {
+        TAP_NOTOK("tc_cmd_route", "duplicate ADD accepted");
+        return;
+    }
+
+    /* LIST contains it with the right fields */
+    memset(&msg, 0, sizeof(msg));
+    memset(args, 0, sizeof(args));
+    args[0] = TN_ROUTECTL_LIST;
+    args[4] = TN_MAX_ROUTES;
+    ptrs[0] = rows;
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_ROUTECTL, args, 5, ptrs, 1, &msg) != 0 ||
+        (n = msg.result) < 1) {
+        TAP_NOTOK("tc_cmd_route", "LIST returned nothing");
+        return;
+    }
+    for (i = 0; i < n; i++) {
+        if (rows[i].dest == htonl(0x0A090000UL) &&
+            rows[i].mask == htonl(0xFFFF0000UL) &&
+            rows[i].gw == htonl(0x0A000202UL)) {
+            seen = TRUE;
+            break;
+        }
+    }
+    if (!seen) {
+        TAP_NOTOK("tc_cmd_route", "LIST row fields wrong");
+        return;
+    }
+
+    /* DELETE it, then LIST must not contain it */
+    memset(&msg, 0, sizeof(msg));
+    memset(args, 0, sizeof(args));
+    args[0] = TN_ROUTECTL_DELETE;
+    args[1] = (LONG)htonl(0x0A090000UL);
+    args[2] = (LONG)htonl(0xFFFF0000UL);
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_ROUTECTL, args, 5, NULL, 0, &msg) != 0 ||
+        msg.result != 0) {
+        TAP_NOTOK("tc_cmd_route", "DELETE failed");
+        return;
+    }
+    memset(&msg, 0, sizeof(msg));
+    memset(args, 0, sizeof(args));
+    args[0] = TN_ROUTECTL_LIST;
+    args[4] = TN_MAX_ROUTES;
+    ptrs[0] = rows;
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_ROUTECTL, args, 5, ptrs, 1, &msg) != 0) {
+        TAP_NOTOK("tc_cmd_route", "LIST after delete failed");
+        return;
+    }
+    n = msg.result;
+    for (i = 0; i < n; i++) {
+        if (rows[i].dest == htonl(0x0A090000UL) &&
+            rows[i].mask == htonl(0xFFFF0000UL)) {
+            TAP_NOTOK("tc_cmd_route", "deleted route still listed");
+            return;
+        }
+    }
+    TAP_OK("tc_cmd_route");
+}
+
 /* Bench plumbing (not a TAP case): ask the daemon to exit so the bench can
  * prove the TNET-059/060 restart cycle. Mirrors TolunnetPrefs' Stop logic. */
 static void request_daemon_stop(void)
@@ -4624,8 +4757,10 @@ int main(int argc, char *argv[])
 
     /* Child mode for tc_cmd_nslookup: hermetic DNS responder. Binds
      * 127.0.0.1:<port>, writes WORK:dnsresp.ready, answers A/PTR queries
-     * for test.tolunnet.lan, and exits after 8 idle seconds, 4 answers or
-     * the parent's STOP packet — whichever comes first. */
+     * for test.tolunnet.lan, and exits after 4 idle seconds, 4 answers or
+     * the parent's STOP packet — then writes WORK:dnsresp.done so the
+     * parent can prove the child (and its CloseLibrary IPC) is fully gone
+     * before the next test starts. */
     if (argc >= 3 && strcmp(argv[1], "dns_resp") == 0) {
         LONG port = parse_long(argv[2]);
         LONG s = -1;
@@ -4653,7 +4788,7 @@ int main(int argc, char *argv[])
                     Write(fh, (CONST APTR)"OK\n", 3);
                     Close(fh);
                 }
-                for (rounds = 0; rounds < 8 && answered < 4; rounds++) {
+                for (rounds = 0; rounds < 4 && answered < 4; rounds++) {
                     FD_ZERO(&rfds);
                     FD_SET(s, &rfds);
                     tv.tv_secs = 1;
@@ -4664,6 +4799,7 @@ int main(int argc, char *argv[])
                     for (i = 0; i < (int)sizeof(from); i++) ((char *)&from)[i] = 0;
                     n = call_recvfrom(s, pkt, sizeof(pkt), 0,
                                       (struct sockaddr *)&from, &fromlen);
+                    if (n > 0 && n <= 12) break; /* STOP/junk: parent is done */
                     if (n <= 12 || (pkt[2] & 0x80) != 0) continue; /* not a query */
                     {
                         /* find end of qname, read qtype */
@@ -4719,6 +4855,11 @@ int main(int argc, char *argv[])
             }
         }
         CloseLibrary(SocketBase);
+        fh = Open((CONST_STRPTR)"WORK:dnsresp.done", MODE_NEWFILE);
+        if (fh != (BPTR)0) {
+            Write(fh, (CONST APTR)"OK\n", 3);
+            Close(fh);
+        }
         CloseLibrary(DOSBase);
         return 0;
     }
@@ -4818,6 +4959,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_cmd_shownetstatus);
     TN_RUN(tc_cmd_tolunnetcontrol);
     TN_RUN(tc_cmd_getnetstatus);
+    TN_RUN(tc_cmd_route);
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
 
