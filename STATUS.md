@@ -26,7 +26,7 @@
 
 ## Working Tree Build Artifacts
 
-- 📦 **LhA Release Archive:** [`build/tolunnet-1.2.0-rc1.lha`](file:///d:/Projeler/tolunnet/build/tolunnet-1.2.0-rc1.lha) — **2026-09-18 CMD suite build (commit with 7 new CLI commands: hostname, nslookup, whois, traceroute, nc, arp, ShowNetStatus): SHA256 `a4d5efd65aa8eef560b70cd69afc917e5d17917b56d6f4230d01d5c5b422123e`**; stripped package C:tolunnet smoke-proven on the 68ec020+FastRAM PiStorm profile ("network task running")
+- 📦 **LhA Release Archive:** [`build/tolunnet-1.2.0-rc1.lha`](file:///d:/Projeler/tolunnet/build/tolunnet-1.2.0-rc1.lha) — **2026-09-18 CMD suite build (commit with 7 new CLI commands: hostname, nslookup, whois, traceroute, nc, arp, ShowNetStatus): SHA256 `1b910561cf42e8adbdcdea48889d9e1e2d06d4bdc492f315eb5e497735ad9f4c`**; stripped package C:tolunnet smoke-proven on the 68ec020+FastRAM PiStorm profile ("network task running")
 - 💾 **ADF Floppy Image:** [`build/tolunnet.adf`](file:///d:/Projeler/tolunnet/build/tolunnet.adf) — 901,120 bytes, SHA256 `3e5926692503f92411be458852ebfd780ca2a6f5a6405fef622303aaef087b39` (2026-09-19 126/142)
 - 🖥️ **Owner target:** A500 + PiStorm + WiFiPi — install steps and expectations: [`docs/PISTORM-INSTALL.md`](file:///d:/Projeler/tolunnet/docs/PISTORM-INSTALL.md)
 
