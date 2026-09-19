@@ -5,6 +5,49 @@
  */
 #include "slot_table.h"
 #include <string.h>
+#include <proto/exec.h>
+
+/* TNET-107: single-threaded LIFO freelist for TnRxPacket. The daemon is
+ * the only producer and consumer, so no locking is needed. Bounded to
+ * TN_RXFREELIST_MAX entries; excess frees go back to AllocVec. */
+#define TN_RXFREELIST_MAX 128
+static TnRxPacket *g_rxfreelist = NULL;
+static int g_rxfreelist_count = 0;
+
+TnRxPacket *tn_rxpkt_get(void)
+{
+    TnRxPacket *pkt;
+    if (g_rxfreelist != NULL) {
+        pkt = g_rxfreelist;
+        g_rxfreelist = pkt->next;
+        g_rxfreelist_count--;
+        memset(pkt, 0, sizeof(TnRxPacket));
+        return pkt;
+    }
+    return (TnRxPacket *)AllocVec(sizeof(TnRxPacket), MEMF_PUBLIC | MEMF_CLEAR);
+}
+
+void tn_rxpkt_put(TnRxPacket *pkt)
+{
+    if (pkt == NULL) return;
+    if (g_rxfreelist_count < TN_RXFREELIST_MAX) {
+        pkt->next = g_rxfreelist;
+        g_rxfreelist = pkt;
+        g_rxfreelist_count++;
+        return;
+    }
+    FreeVec(pkt);
+}
+
+void tn_rxpkt_fini(void)
+{
+    while (g_rxfreelist != NULL) {
+        TnRxPacket *next = g_rxfreelist->next;
+        FreeVec(g_rxfreelist);
+        g_rxfreelist = next;
+    }
+    g_rxfreelist_count = 0;
+}
 
 void tn_slot_table_init(TnDaemon *d)
 {
@@ -256,7 +299,7 @@ int tn_rx_queue_push(TnSocketSlot *slot, struct pbuf *p, const ip_addr_t *src_ip
         return -1;
     }
 
-    pkt = (TnRxPacket *)AllocVec(sizeof(TnRxPacket), MEMF_PUBLIC | MEMF_CLEAR);
+    pkt = tn_rxpkt_get();
     if (pkt == NULL) return -1;
 
     pkt->p = p;
@@ -305,7 +348,7 @@ void tn_rx_queue_drain(TnSocketSlot *slot)
         if (pkt->p != NULL) {
             pbuf_free(pkt->p);
         }
-        FreeVec(pkt);
+        tn_rxpkt_put(pkt);
     }
     slot->rx_tail = NULL;
     slot->rx_count = 0;

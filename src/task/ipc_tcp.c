@@ -533,7 +533,7 @@ int tn_ipc_cmd_recv(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                         slot->rx_tail = NULL;
                     }
                     pbuf_free(pkt->p);
-                    FreeVec(pkt);
+                    tn_rxpkt_put(pkt);
                     if (slot->rx_count > 0) {
                         slot->rx_count--;
                     }
@@ -570,7 +570,7 @@ int tn_ipc_cmd_recv(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                     slot->rx_tail = NULL;
                 }
                 pbuf_free(pkt->p);
-                FreeVec(pkt);
+                tn_rxpkt_put(pkt);
                 if (slot->rx_count > 0) {
                     slot->rx_count--;
                 }

@@ -94,6 +94,7 @@ TnS2Result tn_s2_open(TnSana2If *nif, CONST_STRPTR device_name, ULONG unit)
     nif->event_armed = FALSE;
     nif->event_supported = FALSE;
     nif->link_down = FALSE;
+    nif->tx_pending = FALSE;
     nif->mtu = 0;
     nif->addr_bits = 0;
     nif->addr_bytes = 0;
@@ -305,6 +306,24 @@ LONG tn_s2_send(TnSana2If *nif, const void *buf, LONG len,
     if (nif == NULL || !nif->online || nif->io == NULL) return -1;
 
     io = nif->io;
+
+    /* TNET-106: drain any previous async write before reusing the single
+     * IORequest. SendIO lets the driver start DMA while we build the next
+     * packet; we only block when the pipeline is full (depth=1 here, the
+     * shared io slot). This halves effective TX latency on drivers that
+     * overlap bus transfer with command processing. */
+    if (nif->tx_pending) {
+        while (!CheckIO((struct IORequest *)io)) {
+            Wait(1UL << nif->tx_port->mp_SigBit);
+        }
+        WaitIO((struct IORequest *)io);
+        nif->tx_pending = FALSE;
+        if (io->ios2_Req.io_Error != 0) {
+            tn_log_s2err("tn_s2_send(prev)", io->ios2_Req.io_Error, io->ios2_WireError);
+            return -1;
+        }
+    }
+
     io->ios2_Req.io_Command = broadcast ? S2_BROADCAST : CMD_WRITE;
     io->ios2_PacketType     = packet_type;
     io->ios2_DataLength     = (ULONG)len;
@@ -315,11 +334,23 @@ LONG tn_s2_send(TnSana2If *nif, const void *buf, LONG len,
         CopyMem((CONST APTR)dst_addr, (APTR)io->ios2_DstAddr, nif->addr_bytes);
     }
 
-    DoIO((struct IORequest *)io);
-    if (io->ios2_Req.io_Error != 0) {
-        tn_log_s2err("tn_s2_send", io->ios2_Req.io_Error, io->ios2_WireError);
-        return -1;
+    SendIO((struct IORequest *)io);
+    nif->tx_pending = TRUE;
+
+    /* For small frames, wait immediately (avoids the race where the next
+     * call's io field setup overlaps the driver's read of the same struct) */
+    if (len < 64) {
+        while (!CheckIO((struct IORequest *)io)) {
+            Wait(1UL << nif->tx_port->mp_SigBit);
+        }
+        WaitIO((struct IORequest *)io);
+        nif->tx_pending = FALSE;
+        if (io->ios2_Req.io_Error != 0) {
+            tn_log_s2err("tn_s2_send", io->ios2_Req.io_Error, io->ios2_WireError);
+            return -1;
+        }
     }
+
     return len;
 }
 
@@ -520,6 +551,7 @@ static void tn_s2_handle_event_bits(TnSana2If *nif, struct netif *netif, ULONG b
     if (bits & S2EVENT_ONLINE) {
         if (nif->link_down) {
             nif->link_down = FALSE;
+    nif->tx_pending = FALSE;
             netif_set_link_up(netif);
             tn_s2_rearm_reads(nif);
             if (g_daemon.prefs.use_dhcp) {

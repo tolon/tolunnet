@@ -23,6 +23,11 @@ int tn_fd_alloc(TnSocketBase *base, int slot_idx);
 void tn_slot_ref(TnSocketSlot *slot);
 void tn_slot_unref(TnDaemon *d, int slot_idx);
 
+/* TNET-107: TnRxPacket freelist — avoids per-packet AllocVec/FreeVec churn. */
+TnRxPacket *tn_rxpkt_get(void);
+void tn_rxpkt_put(TnRxPacket *pkt);
+void tn_rxpkt_fini(void);
+
 int tn_rx_queue_push(TnSocketSlot *slot, struct pbuf *p, const ip_addr_t *src_ip, u16_t src_port);
 TnRxPacket *tn_rx_queue_pop(TnSocketSlot *slot);
 void tn_rx_queue_drain(TnSocketSlot *slot);

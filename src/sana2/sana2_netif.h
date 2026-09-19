@@ -40,7 +40,8 @@ typedef enum {
 typedef struct TnSana2If {
     STRPTR             device_name;     /* e.g. "ethernet.device"         */
     ULONG              unit;            /* e.g. 0                         */
-    struct MsgPort    *tx_port;         /* dedicated port for DoIO TX     */
+    struct MsgPort    *tx_port;         /* dedicated port for TX completion (TNET-106) */
+    BOOL               tx_pending;      /* TRUE when a SendIO write is in flight */
     struct MsgPort    *rx_port;         /* dedicated port for async RX    */
     struct IOSana2Req *io;              /* primary request (query/online) */
     struct IOSana2Req **read_ios;       /* >=4 outstanding CMD_READ reqs  */
