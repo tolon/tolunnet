@@ -161,22 +161,82 @@ DEVS: file directly.
 @node Commands "Included Command Tools"
 @{b}5. Included Command Tools@{ub}
 
+@{b}Core Network Tools@{ub}
+
 * @{b}tolunnet [DEVICE] [UNIT] [IP NETMASK GATEWAY]:@{ub}
   The primary TCP/IP stack network task. Starts bsdsocket.library v4.1.
+  Supports START, STOP, STATUS, RECONFIG subcommands.
 
-* @{b}TolunnetPing <HOST> [COUNT]:@{ub}
-  Diagnostic tool that sends network probes and measures Round-Trip Time (RTT)
-  with microsecond precision using timer.device.
-  Example: @{i}TolunnetPing 10.0.2.2 4@{ui}
+* @{b}ping <HOST> [COUNT/SIZE/INTERVAL/TTL/TIMEOUT/QUIET/UDP]:@{ub}
+  ICMP Echo with microsecond RTT, min/avg/max/mdev stats.
+  Example: @{i}ping 10.0.2.2 COUNT=4@{ui}
 
-* @{b}TolunnetGet <HOST> [PORT] [PATH]:@{ub}
-  Diagnostic HTTP 1.0 client that performs a full TCP connect, transmits an
-  HTTP GET request, and streams the server response to the console.
-  Example: @{i}TolunnetGet amiga.org 80 /@{ui}
+* @{b}wget / curl <URL> [PORT] [PATH] [TO] [QUIET]:@{ub}
+  HTTP/1.1 client with 301/302 redirects, chunked transfer, Range resume.
+  Example: @{i}wget http://amiga.org/@{ui}
+
+* @{b}ifconfig / netstat:@{ub}
+  Interface status (MAC, IP, MTU) and active socket/route/statistics display.
+
+@{b}DNS and Lookup Tools@{ub}
+
+* @{b}hostname [NAME] [SAVE]:@{ub}
+  Shows or sets the system hostname.
+
+* @{b}nslookup <NAME> [SERVER]:@{ub}
+  Forward (A) and reverse (PTR) DNS lookup.
+  Example: @{i}nslookup amiga.org@{ui}
+
+* @{b}whois <QUERY> [SERVER]:@{ub}
+  TCP-43 WHOIS query with configurable server.
+  Example: @{i}whois example.com@{ui}
+
+@{b}Network Probe Tools@{ub}
+
+* @{b}traceroute <HOST> [MAXHOPS/QUERIES/WAIT/NUMERIC]:@{ub}
+  ICMP TTL-based route tracing with hop-by-hop reverse DNS.
+  Example: @{i}traceroute 10.0.2.2@{ui}
+
+* @{b}nc <HOST> <PORT> [UDP/LISTEN/TIMEOUT]:@{ub}
+  TCP/UDP pipe tool (netcat): connect or listen, stdin to socket.
+  Example: @{i}nc amiga.org 80@{ui}
+
+@{b}Time and Remote Access@{ub}
+
+* @{b}sntp [HOST] [SET] [OFFSET]:@{ub}
+  NTP time query with UTC date display.
+  Example: @{i}sntp pool.ntp.org@{ui}
+
+* @{b}telnet <HOST> [PORT]:@{ub}
+  TCP terminal with minimal NVT negotiation.
+  Example: @{i}telnet amiga.org 23@{ui}
+
+* @{b}tftp <HOST> GET|PUT <FILE> [LOCAL]:@{ub}
+  TFTP file transfer (RFC 1350 octet mode).
+  Example: @{i}tftp 10.0.2.2 GET readme.txt@{ui}
+
+* @{b}ftp [HOST] [PORT] [USER] [PASS] [SCRIPT]:@{ub}
+  Interactive FTP client with passive mode.
+  Commands: open close pwd cd ls get put bin asc hash quit.
+  Example: @{i}ftp ftp.example.com USER=anonymous@{ui}
+
+@{b}Status and Control@{ub}
+
+* @{b}TolunnetControl <COMMAND>@{ub}
+  Control front-end: START STOP RESTART STATUS RECONFIG VERSION.
+  STATUS returns RC 0 (running) or 5 (not running) for scripts.
+
+* @{b}GetNetStatus [ONLINE/ADDRESS/GATEWAY/DNS]:@{ub}
+  Single-value output for scripts; RC 0 = online, 5 = offline.
+
+* @{b}ShowNetStatus [INTERFACES/ROUTES/DNS/SOCKETS/FULL]:@{ub}
+  Human-readable network status report.
+
+* @{b}arp [SHOW] [FLUSH]:@{ub}
+  ARP table information.
 
 * @{b}TolunnetStatus [DEVICE] [UNIT]:@{ub}
-  Queries and displays SANA-II interface status, hardware MAC address, MTU,
-  and packet statistics.
+  Detailed SANA-II interface diagnostics.
 
 @endnode
 
