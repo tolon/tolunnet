@@ -33,3 +33,13 @@ Thumbs.db
 # Intermediate dirty bench logs
 docs/bench-logs/*-dirty/
 
+
+# Debugger/scratch artifacts (CLOSE §A.4)
+.dbg-*
+.uae-*
+.zoom-*
+.hunt*
+.capture*
+.wsl-*
+.postkey*
+.linktest*

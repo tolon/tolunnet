@@ -1,5 +1,10 @@
 # tolunnet Command Reference
 
+> **CLOSE §A.1 audit (2026-09-19):** none of the 14 new commands have
+> `tc_cmd_*` conformance tests yet — TNET-141 tracks this. Commands are
+> proven by manual testing and the bench infrastructure runs; automated
+> per-command verification is pending.
+
 All commands install to `SYS:C/` (except Prefs tools). Every command is a thin client linking only cmdlib + bsdsocket.library — no lwIP.
 
 ## Core Network
