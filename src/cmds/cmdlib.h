@@ -44,6 +44,7 @@ STRPTR tn_call_inet_ntoa(struct in_addr in);
 struct hostent *tn_call_gethostbyname(const char *name);
 struct hostent *tn_call_gethostbyaddr(const char *addr, LONG len, LONG type);
 LONG tn_call_waitselect(LONG nfds, fd_set *r, fd_set *w, fd_set *e, struct timeval *tv, ULONG *sigmask);
+LONG tn_call_ioctl(LONG fd, ULONG req, APTR argp);
 
 /* --- Helpers --- */
 int  tn_cmd_init(void);

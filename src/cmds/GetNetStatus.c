@@ -28,16 +28,19 @@ int main(int argc, char **argv)
         return TN_CMD_USAGE;
     }
 
-    /* Test online status: try to resolve a known-good hostname */
+    /* ONLINE: daemon liveness, not DNS — a resolver round trip would call
+     * every DNS-less site "offline" (TNET-141). The library answering
+     * gethostname plus a UDP socket round trip is the honest check. */
     if (opts[0]) {
-        struct hostent *he = tn_call_gethostbyname("localhost");
-        if (he != NULL) {
+        LONG fd = tn_call_socket(AF_INET, SOCK_DGRAM, 0);
+        if (fd >= 0 && tn_call_gethostname((STRPTR)name, (LONG)sizeof(name) - 1) == 0) {
             tn_cmd_printf("online\n");
             rc = TN_CMD_OK;
         } else {
             tn_cmd_printf("offline\n");
             rc = TN_CMD_WARN;
         }
+        if (fd >= 0) tn_call_closesocket(fd);
     } else if (opts[1]) {
         /* ADDRESS: not directly available via thin client */
         tn_cmd_printf("(use ifconfig for address)\n");

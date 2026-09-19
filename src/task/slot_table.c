@@ -5,7 +5,11 @@
  */
 #include "slot_table.h"
 #include <string.h>
+/* Same Amiga/host split as task_ctx.h — on the host the mock_lwip.h
+ * AllocVec/FreeVec macros come in via slot_table.h. */
+#if defined(__AMIGA__) || defined(__amigaos__) || defined(TN_AMIGA_BUILD)
 #include <proto/exec.h>
+#endif
 
 /* TNET-107: single-threaded LIFO freelist for TnRxPacket. The daemon is
  * the only producer and consumer, so no locking is needed. Bounded to

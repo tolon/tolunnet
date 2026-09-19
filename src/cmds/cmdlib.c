@@ -61,10 +61,23 @@ LONG tn_call_closesocket(LONG fd)
 
 LONG tn_call_gethostname(STRPTR name, LONG len)
 {
+    /* TNET-141: -282 is gethostname; -240 (used here before) is
+     * getservbyport, which never writes the buffer — hostname,
+     * ShowNetStatus and GetNetStatus printed stack garbage. */
     register struct Library *a6 __asm__("a6") = SocketBase;
     register LONG d0 __asm__("d0") = len;
     register STRPTR a0 __asm__("a0") = name;
-    __asm__ __volatile__("jsr -240(%%a6)" : "+r"(d0) : "r"(a6), "r"(d0), "r"(a0) : "a0","a1","memory");
+    __asm__ __volatile__("jsr -282(%%a6)" : "+r"(d0) : "r"(a6), "r"(d0), "r"(a0) : "a0","a1","memory");
+    return d0;
+}
+
+LONG tn_call_ioctl(LONG fd, ULONG req, APTR argp)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = fd;
+    register ULONG d1 __asm__("d1") = req;
+    register APTR a0 __asm__("a0") = argp;
+    __asm__ __volatile__("jsr -114(%%a6)" : "+r"(d0) : "r"(a6), "r"(d0), "r"(d1), "r"(a0) : "d1","a0","a1","memory");
     return d0;
 }
 
@@ -96,21 +109,23 @@ STRPTR tn_call_inet_ntoa(struct in_addr in)
 
 struct hostent *tn_call_gethostbyname(const char *name)
 {
+    /* TNET-141: -210 is gethostbyname (-156 is ReleaseCopyOfSocket). */
     register struct Library *a6 __asm__("a6") = SocketBase;
     register struct hostent *d0 __asm__("d0");
     register const char *a0 __asm__("a0") = name;
-    __asm__ __volatile__("jsr -156(%%a6)" : "=r"(d0) : "r"(a6), "r"(a0) : "a0","a1","memory");
+    __asm__ __volatile__("jsr -210(%%a6)" : "=r"(d0) : "r"(a6), "r"(a0) : "a0","a1","memory");
     return d0;
 }
 
 struct hostent *tn_call_gethostbyaddr(const char *addr, LONG len, LONG type)
 {
+    /* TNET-141: -216 is gethostbyaddr (-150 is ReleaseSocket). */
     register struct Library *a6 __asm__("a6") = SocketBase;
     register struct hostent *d0 __asm__("d0");
     register const char *a0 __asm__("a0") = addr;
     register LONG d0_len __asm__("d0") = len;
     register LONG d1 __asm__("d1") = type;
-    __asm__ __volatile__("jsr -150(%%a6)" : "=r"(d0) : "r"(a6), "r"(a0), "r"(d0_len), "r"(d1) : "d1","a0","a1","memory");
+    __asm__ __volatile__("jsr -216(%%a6)" : "=r"(d0) : "r"(a6), "r"(a0), "r"(d0_len), "r"(d1) : "d1","a0","a1","memory");
     return d0;
 }
 

@@ -33,7 +33,9 @@
 #include "../../src/common/log.h"
 #include "../../include/ipc.h"
 #include "../../src/common/ipc_client.h"
+#include "../../src/common/tn_arp.h"
 #include "../../src/setup/wifi_mgr.h"
+#include <net/if_arp.h>
 
 static struct Library *SocketBase = NULL;
 struct GfxBase *GfxBase = NULL;
@@ -550,6 +552,43 @@ static LONG call_getsocketevents(ULONG *event_ptr)
     register LONG d0 __asm__("d0");
     __asm__ __volatile__ ("jsr -300(%%a6)" : "=r"(d0), "+r"(a0)
         : "r"(a6) : "d1", "d2", "a1", "memory");
+    return d0;
+}
+
+static LONG call_gethostname(STRPTR name, LONG len)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = len;
+    register STRPTR a0 __asm__("a0") = name;
+    __asm__ __volatile__ ("jsr -282(%%a6)" : "+r"(d0)
+        : "r"(a6), "r"(d0), "r"(a0) : "a0", "a1", "memory");
+    return d0;
+}
+
+static struct hostent *call_gethostbyaddr(const char *addr, LONG len, LONG type)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register struct hostent *res __asm__("d0");
+    register const char *a0 __asm__("a0") = addr;
+    register LONG d0_len __asm__("d0") = len;
+    register LONG d1 __asm__("d1") = type;
+    __asm__ __volatile__ ("jsr -216(%%a6)" : "=r"(res)
+        : "r"(a6), "r"(a0), "r"(d0_len), "r"(d1) : "d1", "a0", "a1", "memory");
+    return res;
+}
+
+static LONG call_recvfrom(LONG s, void *b, LONG l, LONG fl, struct sockaddr *from, socklen_t *flen)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = s;
+    register void *a0 __asm__("a0") = b;
+    register LONG d1 __asm__("d1") = l;
+    register LONG d2 __asm__("d2") = fl;
+    register struct sockaddr *a1 __asm__("a1") = from;
+    register socklen_t *a2 __asm__("a2") = flen;
+    __asm__ __volatile__ ("jsr -72(%%a6)" : "+r"(d0)
+        : "r"(a6), "r"(d0), "r"(a0), "r"(d1), "r"(d2), "r"(a1), "r"(a2)
+        : "d1", "d2", "a0", "a1", "a2", "memory");
     return d0;
 }
 
@@ -3895,6 +3934,677 @@ static void tc_link_events(void)
     TAP_OK("tc_link_events");
 }
 
+/* ===================== TNET-141: per-command API-surface tests =========
+ * CLOSE §A.1: none of the 14 shipped commands had a tc_cmd_* row. Each
+ * test below drives the exact library calls its command makes, hermetically
+ * on lwIP loopback — no host services, no external network. The audit that
+ * wrote these found three wrong LVOs in cmdlib (gethostname -240→-282,
+ * gethostbyname -156→-210, gethostbyaddr -150→-216): hostname and
+ * nslookup were calling ReleaseCopyOfSocket/getservbyport and printing
+ * garbage. */
+
+/* Loopback TCP pair helper: bind(port) -> listen -> connect -> accept.
+ * On FALSE every created socket is closed by the helper. */
+static BOOL tc_cmd_tcp_pair(USHORT port, LONG *lst_out, LONG *cli_out, LONG *conn_out)
+{
+    struct sockaddr_in sin, from;
+    socklen_t fromlen = sizeof(from);
+    LONG lst, cli, conn;
+    int i;
+
+    lst = call_socket(AF_INET, SOCK_STREAM, 0);
+    cli = -1;
+    conn = -1;
+    if (lst < 0) goto fail;
+
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len         = sizeof(sin);
+    sin.sin_family      = AF_INET;
+    sin.sin_port        = htons(port);
+    sin.sin_addr.s_addr = htonl(0x7F000001UL);
+    if (call_bind(lst, (struct sockaddr *)&sin, sizeof(sin)) != 0) goto fail;
+    if (call_listen(lst, 1) != 0) goto fail;
+
+    cli = call_socket(AF_INET, SOCK_STREAM, 0);
+    if (cli < 0) goto fail;
+    if (call_connect(cli, (struct sockaddr *)&sin, sizeof(sin)) != 0) goto fail;
+
+    for (i = 0; i < (int)sizeof(from); i++) ((char *)&from)[i] = 0;
+    conn = call_accept(lst, (struct sockaddr *)&from, &fromlen);
+    if (conn < 0) goto fail;
+
+    *lst_out = lst;
+    *cli_out = cli;
+    *conn_out = conn;
+    return TRUE;
+fail:
+    if (lst >= 0) call_closesocket(lst);
+    if (cli >= 0) call_closesocket(cli);
+    if (conn >= 0) call_closesocket(conn);
+    return FALSE;
+}
+
+/* One waitselect-readability round with a 3 s cap. */
+static BOOL tc_cmd_wait_readable(LONG s)
+{
+    fd_set rfds;
+    struct timeval tv;
+    FD_ZERO(&rfds);
+    FD_SET(s, &rfds);
+    tv.tv_secs = 3;
+    tv.tv_micro = 0;
+    return call_waitselect(s + 1, &rfds, NULL, NULL, &tv, NULL) > 0;
+}
+
+static void tc_cmd_hostname(void)
+{
+    /* hostname: gethostname() — rc 0 and a non-empty printable name. */
+    char name[64];
+    int i;
+    if (call_gethostname((STRPTR)name, (LONG)sizeof(name)) != 0 || name[0] == '\0') {
+        TAP_NOTOK("tc_cmd_hostname", "gethostname failed or empty");
+        return;
+    }
+    for (i = 0; name[i]; i++) {
+        if (name[i] < 32 || name[i] > 126) {
+            TAP_NOTOK("tc_cmd_hostname", "non-printable byte in hostname");
+            return;
+        }
+    }
+    TAP_OK("tc_cmd_hostname");
+}
+
+static void tc_cmd_nslookup(void)
+{
+    /* nslookup: the forward path is gethostbyname through the LIVE daemon
+     * resolver (config DNS=127.0.0.1 DNS_PORT=<port>). A child process
+     * plays the responder while this task blocks inside gethostbyname.
+     * Reverse (gethostbyaddr) is a documented STUB — not asserted here. */
+    char cmd[96];
+    LONG dns_port = tc_cfg_long("DNS_PORT", 15353);
+    LONG stop_fd = -1;
+    struct sockaddr_in dst;
+    struct hostent *he;
+    BPTR fh = (BPTR)0;
+    int waits;
+
+    snprintf_safe(cmd, sizeof(cmd), "C:SocketConformance dns_resp %ld", dns_port);
+    DeleteFile((CONST_STRPTR)"WORK:dnsresp.ready");
+    if (SystemTags((CONST_STRPTR)cmd,
+                   SYS_Asynch, TRUE,
+                   SYS_Input, (BPTR)0,
+                   SYS_Output, (BPTR)0,
+                   TAG_END) != 0) {
+        TAP_NOTOK("tc_cmd_nslookup", "cannot spawn responder child");
+        return;
+    }
+    for (waits = 0; waits < 50 && fh == (BPTR)0; waits++) {
+        Delay(10); /* 0.5 s total max */
+        fh = Open((CONST_STRPTR)"WORK:dnsresp.ready", MODE_OLDFILE);
+    }
+    if (fh == (BPTR)0) {
+        TAP_NOTOK("tc_cmd_nslookup", "responder child never became ready");
+        return;
+    }
+    Close(fh);
+    DeleteFile((CONST_STRPTR)"WORK:dnsresp.ready");
+
+    he = call_gethostbyname((CONST_STRPTR)"test.tolunnet.lan");
+
+    /* Tell the responder to exit (any non-DNS packet). */
+    stop_fd = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (stop_fd >= 0) {
+        int i;
+        for (i = 0; i < (int)sizeof(dst); i++) ((char *)&dst)[i] = 0;
+        dst.sin_len = sizeof(dst);
+        dst.sin_family = AF_INET;
+        dst.sin_port = htons((unsigned short)dns_port);
+        dst.sin_addr.s_addr = htonl(0x7F000001UL);
+        call_sendto(stop_fd, "STOP", 4, 0, (struct sockaddr *)&dst, sizeof(dst));
+        call_closesocket(stop_fd);
+    }
+
+    if (he == NULL || he->h_addr_list == NULL || he->h_addr_list[0] == NULL ||
+        he->h_length != 4) {
+        tapf("# tc_cmd_nslookup: he=%p errno=%ld\n", he, call_errno());
+        TAP_NOTOK("tc_cmd_nslookup", "gethostbyname(test.tolunnet.lan) failed");
+        return;
+    }
+    if (memcmp(he->h_addr_list[0], "\x0a\x00\x02\x02", 4) != 0) {
+        TAP_NOTOK("tc_cmd_nslookup", "resolved address is not 10.0.2.2");
+        return;
+    }
+    TAP_OK("tc_cmd_nslookup");
+}
+
+static void tc_cmd_whois(void)
+{
+    /* whois: TCP connect, "query\r\n", receive the response. */
+    LONG lst, cli, conn;
+    char buf[64];
+    LONG got;
+
+    if (!tc_cmd_tcp_pair(23430, &lst, &cli, &conn)) {
+        TAP_NOTOK("tc_cmd_whois", "no loopback pair");
+        return;
+    }
+    if (call_send(cli, "example.com\r\n", 13, 0) != 13 ||
+        !tc_cmd_wait_readable(conn) ||
+        (got = call_recv(conn, buf, sizeof(buf) - 1, 0)) <= 0) {
+        call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+        TAP_NOTOK("tc_cmd_whois", "query send/receive failed");
+        return;
+    }
+    /* reply with the server side, read it on the client (whois direction) */
+    if (call_send(conn, "TOLUNNET WHOIS REPLY", 20, 0) != 20 ||
+        !tc_cmd_wait_readable(cli) ||
+        (got = call_recv(cli, buf, sizeof(buf) - 1, 0)) != 20 ||
+        memcmp(buf, "TOLUNNET WHOIS REPLY", 20) != 0) {
+        call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+        TAP_NOTOK("tc_cmd_whois", "whois reply exchange failed");
+        return;
+    }
+    call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+    TAP_OK("tc_cmd_whois");
+}
+
+static void tc_cmd_traceroute(void)
+{
+    /* traceroute: raw ICMP receive socket + UDP probe socket with a
+     * per-probe IP_TTL. The sockopt must stick and the probe must leave. */
+    LONG icmp_fd = call_socket(AF_INET, SOCK_RAW, 1);
+    LONG udp_fd = call_socket(AF_INET, SOCK_DGRAM, 0);
+    LONG ttl = 1, got_ttl = 0;
+    socklen_t len = sizeof(got_ttl);
+    struct sockaddr_in dst;
+    LONG probe[1];
+    int i;
+
+    if (icmp_fd < 0 || udp_fd < 0) {
+        if (icmp_fd >= 0) call_closesocket(icmp_fd);
+        if (udp_fd >= 0) call_closesocket(udp_fd);
+        TAP_NOTOK("tc_cmd_traceroute", "raw/udp socket failed");
+        return;
+    }
+    if (call_setsockopt(udp_fd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl)) != 0 ||
+        call_getsockopt(udp_fd, IPPROTO_IP, IP_TTL, &got_ttl, &len) != 0 ||
+        got_ttl != 1) {
+        call_closesocket(icmp_fd); call_closesocket(udp_fd);
+        TAP_NOTOK("tc_cmd_traceroute", "IP_TTL set/get did not stick");
+        return;
+    }
+    for (i = 0; i < (int)sizeof(dst); i++) ((char *)&dst)[i] = 0;
+    dst.sin_len = sizeof(dst);
+    dst.sin_family = AF_INET;
+    dst.sin_port = htons(23443);
+    dst.sin_addr.s_addr = htonl(0x7F000001UL);
+    probe[0] = 0x11223344;
+    if (call_sendto(udp_fd, probe, 4, 0, (struct sockaddr *)&dst, sizeof(dst)) != 4) {
+        call_closesocket(icmp_fd); call_closesocket(udp_fd);
+        TAP_NOTOK("tc_cmd_traceroute", "UDP probe sendto failed");
+        return;
+    }
+    call_closesocket(icmp_fd);
+    call_closesocket(udp_fd);
+    TAP_OK("tc_cmd_traceroute");
+}
+
+static void tc_cmd_nc(void)
+{
+    /* nc TCP mode: bidirectional pipe. Client pushes, server echoes, client
+     * reads the echo back. */
+    LONG lst, cli, conn;
+    char buf[32];
+    LONG got;
+
+    if (!tc_cmd_tcp_pair(23431, &lst, &cli, &conn)) {
+        TAP_NOTOK("tc_cmd_nc", "no loopback pair");
+        return;
+    }
+    if (call_send(cli, "netcat-up", 9, 0) != 9 ||
+        !tc_cmd_wait_readable(conn) ||
+        (got = call_recv(conn, buf, sizeof(buf), 0)) != 9 ||
+        memcmp(buf, "netcat-up", 9) != 0) {
+        call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+        TAP_NOTOK("tc_cmd_nc", "client->server pipe failed");
+        return;
+    }
+    if (call_send(conn, buf, got, 0) != got ||
+        !tc_cmd_wait_readable(cli) ||
+        call_recv(cli, buf, sizeof(buf), 0) != 9 ||
+        memcmp(buf, "netcat-up", 9) != 0) {
+        call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+        TAP_NOTOK("tc_cmd_nc", "server->client pipe failed");
+        return;
+    }
+    call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+    TAP_OK("tc_cmd_nc");
+}
+
+static void tc_cmd_sntp(void)
+{
+    /* sntp: 48-byte NTPv3 datagram out, 48-byte server reply in, unix
+     * conversion verified against a fixed transmit timestamp. */
+    LONG srv = call_socket(AF_INET, SOCK_DGRAM, 0);
+    LONG cli = call_socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in sin, from;
+    socklen_t fromlen = sizeof(from);
+    unsigned char pkt[48], reply[48];
+    ULONG xmit_sec_host = 2208988800UL + 1700000000UL;
+    LONG i;
+
+    if (srv < 0 || cli < 0) {
+        TAP_NOTOK("tc_cmd_sntp", "udp sockets failed");
+        if (srv >= 0) call_closesocket(srv);
+        if (cli >= 0) call_closesocket(cli);
+        return;
+    }
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(23441);
+    sin.sin_addr.s_addr = htonl(0x7F000001UL);
+    if (call_bind(srv, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+        call_closesocket(srv); call_closesocket(cli);
+        TAP_NOTOK("tc_cmd_sntp", "server bind failed");
+        return;
+    }
+    for (i = 0; i < 48; i++) pkt[i] = 0;
+    pkt[0] = 0x1B; /* LI=0 VN=3 Mode=3(client) */
+    if (call_sendto(cli, pkt, 48, 0, (struct sockaddr *)&sin, sizeof(sin)) != 48 ||
+        !tc_cmd_wait_readable(srv) ||
+        call_recvfrom(srv, pkt, 48, 0, (struct sockaddr *)&from, &fromlen) != 48 ||
+        pkt[0] != 0x1B) {
+        call_closesocket(srv); call_closesocket(cli);
+        TAP_NOTOK("tc_cmd_sntp", "request exchange failed");
+        return;
+    }
+    /* server reply: VN=3 Mode=4, transmit timestamp in bytes 40..47 */
+    for (i = 0; i < 48; i++) reply[i] = 0;
+    reply[0] = 0x1C;
+    reply[40] = (unsigned char)(xmit_sec_host >> 24);
+    reply[41] = (unsigned char)(xmit_sec_host >> 16);
+    reply[42] = (unsigned char)(xmit_sec_host >> 8);
+    reply[43] = (unsigned char)(xmit_sec_host);
+    if (call_sendto(srv, reply, 48, 0, (struct sockaddr *)&from, sizeof(from)) != 48 ||
+        !tc_cmd_wait_readable(cli) ||
+        call_recv(cli, reply, 48, 0) != 48) {
+        call_closesocket(srv); call_closesocket(cli);
+        TAP_NOTOK("tc_cmd_sntp", "reply exchange failed");
+        return;
+    }
+    if (reply[0] != 0x1C) {
+        call_closesocket(srv); call_closesocket(cli);
+        TAP_NOTOK("tc_cmd_sntp", "reply is not a server response");
+        return;
+    }
+    {
+        ULONG ntp_secs = ((ULONG)reply[40] << 24) | ((ULONG)reply[41] << 16) |
+                         ((ULONG)reply[42] << 8) | (ULONG)reply[43];
+        if (ntp_secs - 2208988800UL != 1700000000UL) {
+            call_closesocket(srv); call_closesocket(cli);
+            TAP_NOTOK("tc_cmd_sntp", "unix conversion wrong");
+            return;
+        }
+    }
+    call_closesocket(srv);
+    call_closesocket(cli);
+    TAP_OK("tc_cmd_sntp");
+}
+
+static void tc_cmd_telnet(void)
+{
+    /* telnet: TCP stream with IAC negotiation bytes inline — the stream
+     * must deliver 0xFF sequences transparently and the keystroke must
+     * flow back. */
+    LONG lst, cli, conn;
+    char buf[32];
+    LONG got;
+
+    if (!tc_cmd_tcp_pair(23432, &lst, &cli, &conn)) {
+        TAP_NOTOK("tc_cmd_telnet", "no loopback pair");
+        return;
+    }
+    if (call_send(conn, "\xff\xfb\x01" "hello", 8, 0) != 8 ||
+        !tc_cmd_wait_readable(cli) ||
+        (got = call_recv(cli, buf, sizeof(buf), 0)) != 8 ||
+        (unsigned char)buf[0] != 0xFF || (unsigned char)buf[1] != 0xFB ||
+        (unsigned char)buf[2] != 0x01 || memcmp(buf + 3, "hello", 5) != 0) {
+        call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+        TAP_NOTOK("tc_cmd_telnet", "IAC+data stream corrupted");
+        return;
+    }
+    if (call_send(cli, "a\r", 2, 0) != 2 ||
+        !tc_cmd_wait_readable(conn) ||
+        call_recv(conn, buf, sizeof(buf), 0) != 2 || buf[0] != 'a') {
+        call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+        TAP_NOTOK("tc_cmd_telnet", "keystroke path failed");
+        return;
+    }
+    call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+    TAP_OK("tc_cmd_telnet");
+}
+
+static void tc_cmd_tftp(void)
+{
+    /* tftp GET (RFC 1350): RRQ "test.bin"/octet -> DATA blk1 -> ACK blk1. */
+    LONG srv = call_socket(AF_INET, SOCK_DGRAM, 0);
+    LONG cli = call_socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in sin, from;
+    socklen_t fromlen = sizeof(from);
+    unsigned char pkt[64];
+    LONG n;
+
+    if (srv < 0 || cli < 0) {
+        TAP_NOTOK("tc_cmd_tftp", "udp sockets failed");
+        if (srv >= 0) call_closesocket(srv);
+        if (cli >= 0) call_closesocket(cli);
+        return;
+    }
+    for (n = 0; n < (LONG)sizeof(sin); n++) ((char *)&sin)[n] = 0;
+    sin.sin_len = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(23442);
+    sin.sin_addr.s_addr = htonl(0x7F000001UL);
+    if (call_bind(srv, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+        call_closesocket(srv); call_closesocket(cli);
+        TAP_NOTOK("tc_cmd_tftp", "server bind failed");
+        return;
+    }
+    /* RRQ: 00 01 "test.bin" 00 "octet" 00 */
+    {
+        static const unsigned char rrq[] =
+            { 0, 1, 't','e','s','t','.','b','i','n', 0, 'o','c','t','e','t', 0 };
+        if (call_sendto(cli, rrq, (LONG)sizeof(rrq), 0,
+                        (struct sockaddr *)&sin, sizeof(sin)) != (LONG)sizeof(rrq) ||
+            !tc_cmd_wait_readable(srv) ||
+            call_recvfrom(srv, pkt, sizeof(pkt), 0,
+                          (struct sockaddr *)&from, &fromlen) != (LONG)sizeof(rrq) ||
+            pkt[0] != 0 || pkt[1] != 1 || strcmp((const char *)pkt + 2, "test.bin") != 0 ||
+            strcmp((const char *)pkt + 11, "octet") != 0) {
+            call_closesocket(srv); call_closesocket(cli);
+            TAP_NOTOK("tc_cmd_tftp", "RRQ exchange/parse failed");
+            return;
+        }
+    }
+    /* DATA blk 1 with 4-byte payload */
+    {
+        static const unsigned char data[] = { 0, 3, 0, 1, 'D','A','T','A' };
+        if (call_sendto(srv, data, (LONG)sizeof(data), 0,
+                        (struct sockaddr *)&from, sizeof(from)) != (LONG)sizeof(data) ||
+            !tc_cmd_wait_readable(cli) ||
+            call_recv(cli, pkt, sizeof(pkt), 0) != (LONG)sizeof(data) ||
+            pkt[0] != 0 || pkt[1] != 3 || pkt[2] != 0 || pkt[3] != 1 ||
+            memcmp(pkt + 4, "DATA", 4) != 0) {
+            call_closesocket(srv); call_closesocket(cli);
+            TAP_NOTOK("tc_cmd_tftp", "DATA exchange failed");
+            return;
+        }
+    }
+    /* ACK blk 1 */
+    {
+        static const unsigned char ack[] = { 0, 4, 0, 1 };
+        if (call_sendto(cli, ack, 4, 0, (struct sockaddr *)&sin, sizeof(sin)) != 4 ||
+            !tc_cmd_wait_readable(srv) ||
+            call_recvfrom(srv, pkt, sizeof(pkt), 0,
+                          (struct sockaddr *)&from, &fromlen) != 4 ||
+            pkt[0] != 0 || pkt[1] != 4 || pkt[2] != 0 || pkt[3] != 1) {
+            call_closesocket(srv); call_closesocket(cli);
+            TAP_NOTOK("tc_cmd_tftp", "ACK exchange failed");
+            return;
+        }
+    }
+    call_closesocket(srv);
+    call_closesocket(cli);
+    TAP_OK("tc_cmd_tftp");
+}
+
+static void tc_cmd_ftp(void)
+{
+    /* ftp: control channel greeting/USER/PASV, PASV tuple parse (91,168 ->
+     * port 23464), data connection carries the payload. */
+    LONG lst = -1, cli = -1, conn = -1;
+    LONG dlst = -1, dconn = -1;
+    struct sockaddr_in dsin, dfrom;
+    socklen_t dfromlen = sizeof(dfrom);
+    char buf[64];
+    LONG got;
+    int i;
+
+    /* data listener on the port the PASV tuple names: 91*256+168 = 23464 */
+    dlst = call_socket(AF_INET, SOCK_STREAM, 0);
+    if (dlst < 0) { TAP_NOTOK("tc_cmd_ftp", "no data socket"); return; }
+    for (i = 0; i < (int)sizeof(dsin); i++) ((char *)&dsin)[i] = 0;
+    dsin.sin_len = sizeof(dsin);
+    dsin.sin_family = AF_INET;
+    dsin.sin_port = htons(23464);
+    dsin.sin_addr.s_addr = htonl(0x7F000001UL);
+    if (call_bind(dlst, (struct sockaddr *)&dsin, sizeof(dsin)) != 0 ||
+        call_listen(dlst, 1) != 0) {
+        call_closesocket(dlst);
+        TAP_NOTOK("tc_cmd_ftp", "data listen failed");
+        return;
+    }
+
+    if (!tc_cmd_tcp_pair(23433, &lst, &cli, &conn)) {
+        call_closesocket(dlst);
+        TAP_NOTOK("tc_cmd_ftp", "no control pair");
+        return;
+    }
+    if (call_send(conn, "220 tolunnet\r\n", 14, 0) != 14 ||
+        !tc_cmd_wait_readable(cli) ||
+        call_recv(cli, buf, sizeof(buf), 0) != 14 || memcmp(buf, "220", 3) != 0) {
+        goto ctl_fail_greet;
+    }
+    if (call_send(cli, "USER test\r\n", 11, 0) != 11 ||
+        !tc_cmd_wait_readable(conn) ||
+        (got = call_recv(conn, buf, sizeof(buf), 0)) != 11 ||
+        memcmp(buf, "USER test\r\n", 11) != 0) {
+        goto ctl_fail_greet;
+    }
+    if (call_send(conn, "230 ok\r\n", 8, 0) != 8) {
+        goto ctl_fail_greet;
+    }
+    if (call_send(cli, "PASV\r\n", 6, 0) != 6 ||
+        !tc_cmd_wait_readable(conn) ||
+        (got = call_recv(conn, buf, sizeof(buf), 0)) != 6 ||
+        memcmp(buf, "PASV\r\n", 6) != 0) {
+        goto ctl_fail_greet;
+    }
+    if (call_send(conn, "227 (127,0,0,1,91,168)\r\n", 24, 0) != 24 ||
+        !tc_cmd_wait_readable(cli) ||
+        (got = call_recv(cli, buf, sizeof(buf) - 1, 0)) != 24 ||
+        memcmp(buf, "227", 3) != 0) {
+        goto ctl_fail_greet;
+    }
+    buf[got] = '\0';
+    /* client parses the tuple and dials the data port */
+    {
+        const char *p = buf;
+        long nums[6];
+        int num_idx = 0;
+        while (*p && *p != '(') p++;
+        if (*p) p++;
+        while (*p && num_idx < 6) {
+            if (*p >= '0' && *p <= '9') {
+                long v = 0;
+                while (*p >= '0' && *p <= '9') { v = v * 10 + (*p - '0'); p++; }
+                nums[num_idx++] = v;
+            } else {
+                p++;
+            }
+        }
+        if (num_idx != 6 ||
+            nums[0] != 127 || nums[1] != 0 || nums[2] != 0 || nums[3] != 1 ||
+            nums[4] * 256 + nums[5] != 23464) {
+            goto ctl_fail_greet;
+        }
+    }
+    if (call_connect(cli, (struct sockaddr *)&dsin, sizeof(dsin)) != 0 ||
+        !tc_cmd_wait_readable(dlst) ||
+        (dconn = call_accept(dlst, (struct sockaddr *)&dfrom, &dfromlen)) < 0) {
+        goto ctl_fail_greet;
+    }
+    if (call_send(dconn, "PAYLOAD", 7, 0) != 7 ||
+        !tc_cmd_wait_readable(cli) ||
+        call_recv(cli, buf, sizeof(buf), 0) != 7 ||
+        memcmp(buf, "PAYLOAD", 7) != 0) {
+        call_closesocket(dconn);
+        goto ctl_fail_greet;
+    }
+    call_closesocket(dconn);
+    call_closesocket(conn);
+    call_closesocket(cli);
+    call_closesocket(lst);
+    call_closesocket(dlst);
+    TAP_OK("tc_cmd_ftp");
+    return;
+ctl_fail_greet:
+    call_closesocket(conn);
+    call_closesocket(cli);
+    call_closesocket(lst);
+    call_closesocket(dlst);
+    TAP_NOTOK("tc_cmd_ftp", "control/data exchange failed");
+}
+
+static void tc_arp_set_pa(struct arpreq *ar, ULONG a_net)
+{
+    /* sockaddr_in inside arpreq, written byte-wise: sa_len, sa_family,
+     * sin_addr at offset 4 — no struct cast on a short-aligned field. */
+    UBYTE *p = (UBYTE *)&ar->arp_pa;
+    int i;
+    for (i = 0; i < 16; i++) p[i] = 0;
+    p[0] = 16;
+    p[1] = (UBYTE)AF_INET;
+    p[4] = (UBYTE)(a_net >> 24);
+    p[5] = (UBYTE)(a_net >> 16);
+    p[6] = (UBYTE)(a_net >> 8);
+    p[7] = (UBYTE)a_net;
+}
+
+static void tc_cmd_arp(void)
+{
+    /* arp SHOW: SIOCGARP miss on an absent IP is ENXIO; the slirp gateway
+     * 10.0.2.2 resolves after a refused connect (SYN forces ARP) and its
+     * completed MAC comes back with ATF_COM. */
+    LONG fd = call_socket(AF_INET, SOCK_DGRAM, 0);
+    LONG syn = call_socket(AF_INET, SOCK_STREAM, 0);
+    struct arpreq ar;
+    struct sockaddr_in sin;
+    int i;
+
+    if (fd < 0 || syn < 0) {
+        TAP_NOTOK("tc_cmd_arp", "sockets failed");
+        if (fd >= 0) call_closesocket(fd);
+        if (syn >= 0) call_closesocket(syn);
+        return;
+    }
+
+    /* miss first: 10.0.2.99 */
+    memset(&ar, 0, sizeof(ar));
+    tc_arp_set_pa(&ar, htonl(0x0A000263UL));
+    if (call_ioctl(fd, TN_SIOCGARP, &ar) == 0) {
+        call_closesocket(fd); call_closesocket(syn);
+        TAP_NOTOK("tc_cmd_arp", "absent IP returned an entry");
+        return;
+    }
+
+    /* warm the gateway entry: a refused TCP connect still forces ARP */
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(9);
+    sin.sin_addr.s_addr = htonl(0x0A000202UL);
+    call_connect(syn, (struct sockaddr *)&sin, sizeof(sin)); /* ECONNREFUSED expected */
+    call_closesocket(syn);
+
+    memset(&ar, 0, sizeof(ar));
+    tc_arp_set_pa(&ar, htonl(0x0A000202UL));
+    if (call_ioctl(fd, TN_SIOCGARP, &ar) != 0) {
+        tapf("# tc_cmd_arp: gw lookup errno=%ld\n", call_errno());
+        call_closesocket(fd);
+        TAP_NOTOK("tc_cmd_arp", "gateway ARP entry missing after warm probe");
+        return;
+    }
+    if ((ar.arp_ha.sa_data[0] | ar.arp_ha.sa_data[1] | ar.arp_ha.sa_data[2] |
+         ar.arp_ha.sa_data[3] | ar.arp_ha.sa_data[4] | ar.arp_ha.sa_data[5]) == 0 ||
+        (ar.arp_flags & ATF_COM) == 0) {
+        call_closesocket(fd);
+        TAP_NOTOK("tc_cmd_arp", "gateway entry without MAC/ATF_COM");
+        return;
+    }
+    call_closesocket(fd);
+    TAP_OK("tc_cmd_arp");
+}
+
+static void tc_cmd_shownetstatus(void)
+{
+    /* ShowNetStatus data sources: SIOCGIFCONF lists the primary interface
+     * and gethostname answers — the report's Hostname/Interfaces blocks. */
+    static char ifbuf[sizeof(struct ifreq) * 4];
+    struct ifconf ifc;
+    char name[64];
+    LONG fd = call_socket(AF_INET, SOCK_DGRAM, 0);
+
+    if (fd < 0) {
+        TAP_NOTOK("tc_cmd_shownetstatus", "no socket");
+        return;
+    }
+    ifc.ifc_len = (LONG)sizeof(ifbuf);
+    ifc.ifc_buf = ifbuf;
+    if (call_ioctl(fd, SIOCGIFCONF, &ifc) != 0 ||
+        ifc.ifc_len < (LONG)sizeof(struct ifreq)) {
+        call_closesocket(fd);
+        TAP_NOTOK("tc_cmd_shownetstatus", "SIOCGIFCONF empty");
+        return;
+    }
+    call_closesocket(fd);
+    if (call_gethostname((STRPTR)name, (LONG)sizeof(name)) != 0 || name[0] == '\0') {
+        TAP_NOTOK("tc_cmd_shownetstatus", "gethostname failed");
+        return;
+    }
+    TAP_OK("tc_cmd_shownetstatus");
+}
+
+static void tc_cmd_tolunnetcontrol(void)
+{
+    /* TolunnetControl STATUS: bsdsocket.library v4 opens (daemon alive)
+     * and a socket round trip works. */
+    struct Library *lib = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
+    LONG s;
+    if (lib == NULL) {
+        TAP_NOTOK("tc_cmd_tolunnetcontrol", "v4 open failed (not running)");
+        return;
+    }
+    CloseLibrary(lib);
+    s = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (s < 0) {
+        TAP_NOTOK("tc_cmd_tolunnetcontrol", "socket round trip failed");
+        return;
+    }
+    call_closesocket(s);
+    TAP_OK("tc_cmd_tolunnetcontrol");
+}
+
+static void tc_cmd_getnetstatus(void)
+{
+    /* GetNetStatus ONLINE (TNET-141 revision): daemon liveness = UDP socket
+     * round trip + gethostname, no DNS dependency. Default mode prints the
+     * hostname — same calls. */
+    char name[64];
+    LONG fd = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) {
+        TAP_NOTOK("tc_cmd_getnetstatus", "udp socket failed (offline)");
+        return;
+    }
+    call_closesocket(fd);
+    if (call_gethostname((STRPTR)name, (LONG)sizeof(name)) != 0 || name[0] == '\0') {
+        TAP_NOTOK("tc_cmd_getnetstatus", "hostname unavailable");
+        return;
+    }
+    TAP_OK("tc_cmd_getnetstatus");
+}
+
 /* Bench plumbing (not a TAP case): ask the daemon to exit so the bench can
  * prove the TNET-059/060 restart cycle. Mirrors TolunnetPrefs' Stop logic. */
 static void request_daemon_stop(void)
@@ -3912,9 +4622,109 @@ int main(int argc, char *argv[])
 
     if (DOSBase == NULL) return 20;
 
+    /* Child mode for tc_cmd_nslookup: hermetic DNS responder. Binds
+     * 127.0.0.1:<port>, writes WORK:dnsresp.ready, answers A/PTR queries
+     * for test.tolunnet.lan, and exits after 8 idle seconds, 4 answers or
+     * the parent's STOP packet — whichever comes first. */
+    if (argc >= 3 && strcmp(argv[1], "dns_resp") == 0) {
+        LONG port = parse_long(argv[2]);
+        LONG s = -1;
+        struct sockaddr_in sin, from;
+        socklen_t fromlen;
+        unsigned char pkt[512];
+        LONG n, rounds, answered = 0;
+        BPTR fh;
+        fd_set rfds;
+        struct timeval tv;
+        int i;
+
+        SocketBase = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
+        if (SocketBase == NULL) { CloseLibrary(DOSBase); return 10; }
+        s = call_socket(AF_INET, SOCK_DGRAM, 0);
+        if (s >= 0) {
+            for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+            sin.sin_len = sizeof(sin);
+            sin.sin_family = AF_INET;
+            sin.sin_port = htons((unsigned short)port);
+            sin.sin_addr.s_addr = htonl(0x7F000001UL);
+            if (call_bind(s, (struct sockaddr *)&sin, sizeof(sin)) == 0) {
+                fh = Open((CONST_STRPTR)"WORK:dnsresp.ready", MODE_NEWFILE);
+                if (fh != (BPTR)0) {
+                    Write(fh, (CONST APTR)"OK\n", 3);
+                    Close(fh);
+                }
+                for (rounds = 0; rounds < 8 && answered < 4; rounds++) {
+                    FD_ZERO(&rfds);
+                    FD_SET(s, &rfds);
+                    tv.tv_secs = 1;
+                    tv.tv_micro = 0;
+                    if (call_waitselect(s + 1, &rfds, NULL, NULL, &tv, NULL) <= 0)
+                        continue;
+                    fromlen = sizeof(from);
+                    for (i = 0; i < (int)sizeof(from); i++) ((char *)&from)[i] = 0;
+                    n = call_recvfrom(s, pkt, sizeof(pkt), 0,
+                                      (struct sockaddr *)&from, &fromlen);
+                    if (n <= 12 || (pkt[2] & 0x80) != 0) continue; /* not a query */
+                    {
+                        /* find end of qname, read qtype */
+                        LONG off = 12;
+                        UWORD qtype;
+                        while (off < n && pkt[off] != 0) off += pkt[off] + 1;
+                        if (off + 5 > n) continue;
+                        qtype = (UWORD)((pkt[off + 1] << 8) | pkt[off + 2]);
+                        /* reply: echo question, one answer with a name
+                         * pointer to offset 12 */
+                        pkt[2] = (unsigned char)(0x80 | (pkt[2] & 0x0F)); /* QR=1 */
+                        pkt[3] = 0x80; /* RA=1, rcode 0 */
+                        pkt[6] = 0; pkt[7] = 1; /* ANCOUNT=1 */
+                        pkt[8] = 0; pkt[9] = 0; /* NSCOUNT */
+                        pkt[10] = 0; pkt[11] = 0; /* ARCOUNT */
+                        {
+                            LONG rl = off + 5; /* past qname + qtype + qclass */
+                            if (qtype == 12 && rl + 4 + 17 <= (LONG)sizeof(pkt)) {
+                                /* PTR: test.tolunnet.lan */
+                                static const unsigned char ptrr[] = {
+                                    4,'t','e','s','t',8,'t','o','l','u','n','n','e','t',
+                                    3,'l','a','n',0
+                                };
+                                pkt[rl++] = 0xC0; pkt[rl++] = 0x0C;
+                                pkt[rl++] = 0; pkt[rl++] = 12;
+                                pkt[rl++] = 0; pkt[rl++] = 1;
+                                pkt[rl++] = 0; pkt[rl++] = 0; pkt[rl++] = 0; pkt[rl++] = 0;
+                                pkt[rl++] = 0; pkt[rl++] = 17;
+                                for (i = 0; i < (int)sizeof(ptrr); i++)
+                                    pkt[rl++] = ptrr[i];
+                                call_sendto(s, pkt, rl, 0,
+                                            (struct sockaddr *)&from, sizeof(from));
+                                answered++;
+                            } else if (rl + 4 + 16 <= (LONG)sizeof(pkt)) {
+                                /* A: 10.0.2.2 */
+                                pkt[rl++] = 0xC0; pkt[rl++] = 0x0C;
+                                pkt[rl++] = 0; pkt[rl++] = 1;
+                                pkt[rl++] = 0; pkt[rl++] = 1;
+                                pkt[rl++] = 0; pkt[rl++] = 0; pkt[rl++] = 0; pkt[rl++] = 0;
+                                pkt[rl++] = 0; pkt[rl++] = 4;
+                                pkt[rl++] = 10; pkt[rl++] = 0;
+                                pkt[rl++] = 2; pkt[rl++] = 2;
+                                call_sendto(s, pkt, rl, 0,
+                                            (struct sockaddr *)&from, sizeof(from));
+                                answered++;
+                            }
+                        }
+                    }
+                }
+                call_closesocket(s);
+            } else {
+                call_closesocket(s);
+            }
+        }
+        CloseLibrary(SocketBase);
+        CloseLibrary(DOSBase);
+        return 0;
+    }
+
     /* Child mode for cross-process obtain test */
-    if (argc >= 3 && strcmp(argv[1], "child_obtain") == 0) {
-        LONG target_id = parse_long(argv[2]);
+    if (argc >= 3 && strcmp(argv[1], "child_obtain") == 0) {        LONG target_id = parse_long(argv[2]);
         BPTR out_fh;
         LONG s;
         SocketBase = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
@@ -3995,6 +4805,19 @@ int main(int argc, char *argv[])
     TN_RUN(tc_wifi_scan_parse);
     TN_RUN(tc_reconfig_rc);
     TN_RUN(tc_link_events);
+    TN_RUN(tc_cmd_hostname);
+    TN_RUN(tc_cmd_nslookup);
+    TN_RUN(tc_cmd_whois);
+    TN_RUN(tc_cmd_traceroute);
+    TN_RUN(tc_cmd_nc);
+    TN_RUN(tc_cmd_sntp);
+    TN_RUN(tc_cmd_telnet);
+    TN_RUN(tc_cmd_tftp);
+    TN_RUN(tc_cmd_ftp);
+    TN_RUN(tc_cmd_arp);
+    TN_RUN(tc_cmd_shownetstatus);
+    TN_RUN(tc_cmd_tolunnetcontrol);
+    TN_RUN(tc_cmd_getnetstatus);
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
 

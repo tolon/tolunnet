@@ -9,6 +9,9 @@
 #include "ipc_select.h"
 #include "slot_table.h"
 #include "../common/sockaddr_util.h"
+#include "../common/tn_arp.h"
+#include <lwip/etharp.h>
+#include <net/if_arp.h>
 #include <string.h>
 
 int tn_ipc_cmd_open(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
@@ -913,6 +916,43 @@ int tn_ipc_cmd_ioctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         *(int *)argp = 0;
         imsg->result = 0;
         imsg->err_no = 0;
+    } else if (req == TN_SIOCGARP) {
+        /* TNET-141: ARP entry query (arp SHOW). The IPv4 address is read
+         * from arp_pa byte-wise (client struct, no alignment guarantee),
+         * looked up in the lwIP ARP table of the default netif, and the
+         * completed MAC is stored into arp_ha with ATF_COM. A pending-only
+         * or absent entry is ENXIO (BSD semantics). */
+        struct arpreq *ar = (struct arpreq *)argp;
+        uint16_t pa_family = 0, pa_port = 0;
+        uint32_t pa_addr = 0;
+
+        tn_sockin_load_bytes(&ar->arp_pa, &pa_family, &pa_port, &pa_addr);
+        if (pa_family != AF_INET || pa_addr == 0) {
+            imsg->result = -1;
+            imsg->err_no = EINVAL;
+        } else {
+            struct eth_addr *mac = NULL;
+            const ip4_addr_t *ip_found = NULL;
+            if (netif_default != NULL &&
+                etharp_find_addr(netif_default, (const ip4_addr_t *)&pa_addr,
+                                 &mac, &ip_found) >= 0 &&
+                mac != NULL &&
+                (mac->addr[0] | mac->addr[1] | mac->addr[2] |
+                 mac->addr[3] | mac->addr[4] | mac->addr[5]) != 0) {
+                int b;
+                for (b = 0; b < (int)sizeof(ar->arp_ha); b++) {
+                    ((char *)&ar->arp_ha)[b] = 0;
+                }
+                ar->arp_ha.sa_family = AF_UNSPEC;
+                for (b = 0; b < 6; b++) ar->arp_ha.sa_data[b] = mac->addr[b];
+                ar->arp_flags = ATF_COM;
+                imsg->result = 0;
+                imsg->err_no = 0;
+            } else {
+                imsg->result = -1;
+                imsg->err_no = ENXIO;
+            }
+        }
     } else if (req == SIOCADDRT || req == SIOCDELRT) {
         imsg->result = -1;
         imsg->err_no = ENOSYS;

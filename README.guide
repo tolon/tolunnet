@@ -233,7 +233,8 @@ DEVS: file directly.
   Human-readable network status report.
 
 * @{b}arp [SHOW] [FLUSH]:@{ub}
-  ARP table information.
+  ARP table. SHOW scans the local /24 via SIOCGARP and prints every
+  completed entry (IP + MAC). FLUSH is not implemented yet (RC 5).
 
 * @{b}TolunnetStatus [DEVICE] [UNIT]:@{ub}
   Detailed SANA-II interface diagnostics.
