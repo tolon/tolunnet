@@ -248,6 +248,10 @@ DEVS: file directly.
 * @{b}AddNetRoute DEST [MASK] [GATEWAY]:@{ub} / @{b}DeleteNetRoute DEST [MASK]:@{ub}
   Roadshow-style wrappers for route ADD / route DELETE.
 
+* @{b}iperf SERVER | iperf CLIENT <host> [PORT] [SECONDS]:@{ub}
+  TCP throughput tool (defaults: port 5201, 10 s). SERVER accepts and
+  counts; CLIENT blasts a pattern and reports MB and KB/s.
+
 @endnode
 
 @node Compatibility "API Compatibility"

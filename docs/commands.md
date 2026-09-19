@@ -29,6 +29,7 @@ All commands install to `SYS:C/` (except Prefs tools). Every command is a thin c
 | Command | ReadArgs Template | RC | Description | Conformance |
 |---------|------------------|-----|-------------|-------------|
 | `wget` / `curl` | `URL/A,PORT/N,PATH,TO/K,QUIET/S` | 0/10/20 | HTTP/1.1 client (redirects, chunked, Range) |
+| `iperf` | `CLIENT/K,SERVER/S,PORT/N,SECONDS/N` | 0/10/20 | TCP throughput tool (client blast / server sink; loopback number via tc_iperf_loopback) | `tc_iperf_loopback` |
 | `tftp` | `HOST/A,GET/S,PUT/S,FILE/A,LOCAL` | 0/5/10 | TFTP (RFC 1350 octet, 5-retry timeout) | `tc_cmd_tftp` |
 | `ftp` | `HOST,PORT/N,USER,PASS,SCRIPT,QUIET/S` | 0/10 | Interactive FTP (PASV, cd/ls/get/put/bin/quit) | `tc_cmd_ftp` |
 

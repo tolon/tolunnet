@@ -1,0 +1,2 @@
+1..1
+not ok 1 - lib_open # bsdsocket.library not found (daemon not running?)

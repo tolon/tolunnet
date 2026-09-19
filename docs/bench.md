@@ -73,7 +73,23 @@ Before and after the dual-cycle test, memory availability is tracked via `AvailM
 
 ---
 
-## 4. Manual Verification Commands (Workbench CLI)
+## 4. Throughput Numbers (`tc_iperf_loopback`)
+
+CLOSE §B.6 / ANX-18g: `tc_iperf_loopback` (SocketConformance) moves a
+nonblocking 4 KB blast between both ends of a TCP loopback pair for ~2 s
+(send path + RX-freelist drain end to end). The per-profile number is
+printed in the TAP stream and collected into the bench `SUMMARY.txt`.
+
+| Profile | Loopback throughput | Evidence |
+|---------|--------------------|----------|
+| a1200 (68EC020) | pending green bench | — |
+| 68000 (A600-class) | pending green bench | — |
+
+The RX-freelist (TNET-107, commit 639c903) predates this measurement
+tool, so no "before freelist" baseline exists; these numbers are the
+baseline for the §C TX IORequest-pool work (before/after pool).
+
+## 5. Manual Verification Commands (Workbench CLI)
 
 ### Step 1: Control tolunnet Daemon
 ```amiga

@@ -118,9 +118,10 @@ FTP_BIN       = $(BUILD)/ftp
 ROUTE_BIN     = $(BUILD)/route
 ADDNETROUTE_BIN = $(BUILD)/AddNetRoute
 DELETENETROUTE_BIN = $(BUILD)/DeleteNetRoute
+IPERF_BIN     = $(BUILD)/iperf
 
 .PHONY: all clean test-host package
-all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN) $(BSDTEST_BIN) $(FREEZEWATCH_BIN) $(HOSTNAME_BIN) $(NSLOOKUP_BIN) $(WHOIS_BIN) $(TRACEROUTE_BIN) $(NC_BIN) $(ARP_BIN) $(SHOWNETSTATUS_BIN) $(SNTP_BIN) $(TELNET_BIN) $(TFTP_BIN) $(CONTROL_BIN) $(GETNETSTATUS_BIN) $(FTP_BIN) $(ROUTE_BIN) $(ADDNETROUTE_BIN) $(DELETENETROUTE_BIN)
+all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN) $(BSDTEST_BIN) $(FREEZEWATCH_BIN) $(HOSTNAME_BIN) $(NSLOOKUP_BIN) $(WHOIS_BIN) $(TRACEROUTE_BIN) $(NC_BIN) $(ARP_BIN) $(SHOWNETSTATUS_BIN) $(SNTP_BIN) $(TELNET_BIN) $(TFTP_BIN) $(CONTROL_BIN) $(GETNETSTATUS_BIN) $(FTP_BIN) $(ROUTE_BIN) $(ADDNETROUTE_BIN) $(DELETENETROUTE_BIN) $(IPERF_BIN)
 
 # --- Host unit tests (Round 3 §B.1) -----------------------------------------
 # Every tests/host/test_*.c runs under native gcc with sanitizers + Werror;
@@ -249,6 +250,9 @@ $(ADDNETROUTE_BIN): $(BUILD)/src/cmds/AddNetRoute.o $(CMDLIB_OBJ) $(BUILD)/src/c
 $(DELETENETROUTE_BIN): $(BUILD)/src/cmds/DeleteNetRoute.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
+$(IPERF_BIN): $(BUILD)/src/cmds/iperf.o $(CMDLIB_OBJ)
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
 # Target: TolunnetPing CLI Binary (M4)
 $(PING_BIN): $(BUILD)/src/cmds/TolunnetPing.o $(BUILD)/src/common/log.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
@@ -361,6 +365,7 @@ package: all
 	cp $(ROUTE_BIN) $(PACKAGE_DIR)/C/
 	cp $(ADDNETROUTE_BIN) $(PACKAGE_DIR)/C/
 	cp $(DELETENETROUTE_BIN) $(PACKAGE_DIR)/C/
+	cp $(IPERF_BIN) $(PACKAGE_DIR)/C/
 	cp $(SETUP_BIN) $(PACKAGE_DIR)/C/
 	if [ -f Installer ]; then cp Installer $(PACKAGE_DIR)/C/Installer; fi
 	$(STRIP) $(PACKAGE_DIR)/C/* || true

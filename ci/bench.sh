@@ -202,6 +202,12 @@ for cfg in $CONFIGS; do
             echo "$cfg: bsdsocktest: NO-RESULT (log incomplete or crashed) — $LOG_ROOT/$cfg/bsdsocktest.log"
         fi
     } >> "$LOG_ROOT/SUMMARY.txt"
+
+    # CLOSE §B.6 / ANX-18g: tc_iperf_loopback throughput number -> SUMMARY.txt
+    ip_line=$(grep '^# iperf loopback:' "$OUT/conformance.log" 2>/dev/null | tail -1)
+    if [ -n "$ip_line" ]; then
+        echo "$cfg: $ip_line — $LOG_ROOT/$cfg/conformance.log" >> "$LOG_ROOT/SUMMARY.txt"
+    fi
     {
         echo "$cfg: $(date)"
         for lg in conformance.log conformance2.log; do

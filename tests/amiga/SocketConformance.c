@@ -4653,6 +4653,75 @@ static void tc_cmd_getnetstatus(void)
     TAP_OK("tc_cmd_getnetstatus");
 }
 
+/* ANX-18g / CLOSE §B.6: in-process loopback throughput. One task plays
+ * both ends: nonblocking client blasts until EWOULDBLOCK, server side is
+ * drained, repeat for ~2 s of DateStamp ticks. Exercises the send path +
+ * RX freelist drain end to end; the number (not the pass bar) is the
+ * deliverable — bench SUMMARY greps the bytes/s line. */
+static void tc_iperf_loopback(void)
+{
+    LONG lst, cli, conn;
+    static char blk[4096];
+    LONG nbio = 1;
+    LONG total = 0;
+    ULONG t0, t1;
+    ULONG rate;
+    struct DateStamp ds;
+    int i;
+
+    if (!tc_cmd_tcp_pair(23521, &lst, &cli, &conn)) {
+        TAP_NOTOK("tc_iperf_loopback", "no loopback pair");
+        return;
+    }
+    for (i = 0; i < 4096; i++) blk[i] = (char)(i * 11 + 5);
+    if (call_ioctl(cli, FIONBIO, &nbio) != 0 ||
+        call_ioctl(conn, FIONBIO, &nbio) != 0) {
+        call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+        TAP_NOTOK("tc_iperf_loopback", "FIONBIO failed");
+        return;
+    }
+
+    DateStamp(&ds);
+    t0 = (ULONG)ds.ds_Days * 86400UL * 50UL + (ULONG)ds.ds_Minute * 60UL * 50UL +
+         (ULONG)ds.ds_Tick;
+    for (;;) {
+        LONG r = call_send(cli, blk, 4096, 0);
+        if (r > 0) {
+            total += r;
+        } else {
+            /* window full: drain the server side */
+            LONG g;
+            do {
+                g = call_recv(conn, blk, sizeof(blk), 0);
+            } while (g == (LONG)sizeof(blk));
+        }
+        DateStamp(&ds);
+        t1 = (ULONG)ds.ds_Days * 86400UL * 50UL + (ULONG)ds.ds_Minute * 60UL * 50UL +
+             (ULONG)ds.ds_Tick;
+        if ((t1 - t0) >= 100UL) break; /* ~2 s */
+    }
+
+    /* final drain so the connection is clean before close */
+    {
+        LONG g;
+        do {
+            g = call_recv(conn, blk, sizeof(blk), 0);
+        } while (g == (LONG)sizeof(blk));
+    }
+
+    rate = (total / 100UL) + 1UL; /* ~KB/s: bytes / 2s / 1024, kept simple */
+    tapf("# iperf loopback: %lu bytes in ~2s = %lu KB/s%s", total, rate,
+         (total > 65536UL) ? "" : " (LOW)");
+    call_closesocket(conn);
+    call_closesocket(cli);
+    call_closesocket(lst);
+    if (total > 65536UL) {
+        TAP_OK("tc_iperf_loopback");
+    } else {
+        TAP_NOTOK("tc_iperf_loopback", "loopback moved too little data");
+    }
+}
+
 static void tc_cmd_route(void)
 {
     /* route / AddNetRoute / DeleteNetRoute (CLOSE §B.5): the exact ROUTECTL
@@ -4666,21 +4735,23 @@ static void tc_cmd_route(void)
     LONG n, i;
     BOOL seen = FALSE;
 
-    /* ADD 10.9.0.0/255.255.0.0 gw 10.0.2.2 */
+    /* ADD 10.9.0.0/255.255.0.0 gw 10.0.2.2 (tn_ipc_oneshot_ex returns
+     * msg.result, so success is judged on the copied-out result alone) */
     memset(&msg, 0, sizeof(msg));
     memset(args, 0, sizeof(args));
     args[0] = TN_ROUTECTL_ADD;
     args[1] = (LONG)htonl(0x0A090000UL);
     args[2] = (LONG)htonl(0xFFFF0000UL);
     args[3] = (LONG)htonl(0x0A000202UL);
-    if (msg.result != 0) {
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_ROUTECTL, args, 5, NULL, 0, &msg) != 0 ||
+        msg.result != 0) {
         TAP_NOTOK("tc_cmd_route", "ADD rejected");
         return;
     }
 
-    /* duplicate ADD must fail (EEXIST) */
-    if (tn_ipc_oneshot_ex(TN_IPC_CMD_ROUTECTL, args, 5, NULL, 0, &msg) != 0 ||
-        msg.result == 0) {
+    /* duplicate ADD must fail (EEXIST — also surfaces as return -1) */
+    tn_ipc_oneshot_ex(TN_IPC_CMD_ROUTECTL, args, 5, NULL, 0, &msg);
+    if (msg.result == 0) {
         TAP_NOTOK("tc_cmd_route", "duplicate ADD accepted");
         return;
     }
@@ -4719,7 +4790,8 @@ static void tc_cmd_route(void)
     args[0] = TN_ROUTECTL_DELETE;
     args[1] = (LONG)htonl(0x0A090000UL);
     args[2] = (LONG)htonl(0xFFFF0000UL);
-    if (msg.result != 0) {
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_ROUTECTL, args, 5, NULL, 0, &msg) != 0 ||
+        msg.result != 0) {
         TAP_NOTOK("tc_cmd_route", "DELETE failed");
         return;
     }
@@ -4974,6 +5046,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_cmd_shownetstatus);
     TN_RUN(tc_cmd_tolunnetcontrol);
     TN_RUN(tc_cmd_getnetstatus);
+    TN_RUN(tc_iperf_loopback);
     TN_RUN(tc_cmd_route);
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
