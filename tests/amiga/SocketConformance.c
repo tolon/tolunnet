@@ -4635,7 +4635,7 @@ static void tc_probe_loop_impl(const char *label, USHORT port)
         DateStamp(&ds);
         t1 = (ULONG)ds.ds_Days * 86400UL * 50UL + (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
         got = call_recv(conn, buf, sizeof(buf), 0);
-        tapf("# %s: wait failed after %ld ticks; direct recv got=%ld; Wait mask fired=0x%08lx\n",
+        tapf("# %s: wait failed after %ld ticks; direct recv got=%ld; Wait mask fired=0x%x\n",
              label, (LONG)(t1 - t0), got,
              ((TnSocketBase *)SocketBase)->dbg_wait_fired);
         if (got == 5 && memcmp(buf, "probe", 5) == 0) {
