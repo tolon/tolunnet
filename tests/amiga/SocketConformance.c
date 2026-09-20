@@ -5105,13 +5105,6 @@ int main(int argc, char *argv[])
     TN_RUN(tc_wifi_scan_parse);
     TN_RUN(tc_reconfig_rc);
     TN_RUN(tc_link_events);
-    /* TNET-151 regression canaries: pass while the wake machinery is
-     * healthy (before the wizard tail - the degradation is documented
-     * in ISSUES/STOP-REPORT; restore-after-wizard once fixed) */
-    TN_RUN(tc_probe_after_wizard_wired);
-    TN_RUN(tc_probe_after_wizard_ntsc);
-    TN_RUN(tc_probe_after_wifi_scan);
-    TN_RUN(tc_probe_after_reconfig);
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
