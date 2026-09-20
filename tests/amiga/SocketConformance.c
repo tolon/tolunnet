@@ -4638,6 +4638,15 @@ static void tc_probe_loop_impl(const char *label, USHORT port)
         tapf("# %s: wait failed after %ld ticks; direct recv got=%ld; Wait mask fired=0x%x\n",
              label, (LONG)(t1 - t0), got,
              ((TnSocketBase *)SocketBase)->dbg_wait_fired);
+        {
+            /* TNET-151: name the bits - timer, sig_select, reply */
+            TnSocketBase *tb = (TnSocketBase *)SocketBase;
+            LONG tbit = (tb->timer_port != NULL) ? tb->timer_port->mp_SigBit : -1;
+            tapf("# %s: bits: timer=%ld sig_select=0x%x reply=%ld dbg_fired=0x%x\n",
+                 label, tbit, (unsigned)tb->sig_select,
+                 (LONG)((tb->reply_port != NULL) ? tb->reply_port->mp_SigBit : -1),
+                 (unsigned)tb->dbg_wait_fired);
+        }
         if (got == 5 && memcmp(buf, "probe", 5) == 0) {
             call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
             TAP_NOTOK(label, "PROBE: data flows but selector wake is dead");
@@ -5105,6 +5114,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_wifi_scan_parse);
     TN_RUN(tc_reconfig_rc);
     TN_RUN(tc_link_events);
+    TN_RUN(tc_probe_after_wizard_ntsc); /* TNET-151: ONE diagnostic probe */
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
