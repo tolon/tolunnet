@@ -226,6 +226,28 @@ int tn_ipc_cmd_reconfig(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     return 0; /* TN_IPC_REPLY_NOW */
 }
 
+/* TNET-152 (RC3): robust stop. Signal(SIGBREAKF_CTRL_C) never reaches the
+ * daemon task in the bench environment (alive-but-deaf, evidence
+ * 20260920-194631) while IPC provably works — so the stop travels the
+ * proven channel. The handler only clears d->running; the main loop
+ * performs the shutdown sequence after replying. */
+int tn_ipc_cmd_stop(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
+{
+    (void)slot;
+    if (d == NULL || imsg == NULL) return 0;
+    imsg->result = 0;
+    imsg->err_no = 0;
+    if (d->bsd_lib != NULL && d->bsd_lib->lib_OpenCnt > 0) {
+        /* TNET-059 semantics preserved: refuse while clients are open.
+         * The refusal is reported so callers can reap/close first. */
+        imsg->result = -1;
+        imsg->err_no = EBUSY;
+        return 0;
+    }
+    d->running = FALSE;
+    return 0;
+}
+
 int tn_ipc_cmd_enumsockets(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
     LONG max_entries = imsg->args[0];

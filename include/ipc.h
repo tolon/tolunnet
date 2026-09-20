@@ -104,7 +104,8 @@ typedef enum TnIpcCmd {
     TN_IPC_CMD_SELECT_DISARM,   /* WaitSelect: disarm selector (§D) */
     TN_IPC_CMD_GETSTATS,        /* Query stack telemetry and statistics (§F) */
     TN_IPC_CMD_ROUTECTL,        /* CLOSE §B.5: static route SHOW/ADD/DELETE (route) */
-    TN_IPC_CMD_IFCTL            /* CLOSE §B.7: interface LIST/UP/DOWN/SET (AddNetInterface/Online/Offline) */
+    TN_IPC_CMD_IFCTL,           /* CLOSE §B.7: interface LIST/UP/DOWN/SET (AddNetInterface/Online/Offline) */
+    TN_IPC_CMD_STOP             /* RC3/TNET-152: robust daemon stop (signal path is unreliable in exec) */
 } TnIpcCmd;
 
 /* Interface row for TN_IPC_CMD_IFCTL LIST replies (CLOSE §B.7).

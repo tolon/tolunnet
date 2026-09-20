@@ -4630,6 +4630,7 @@ static void tc_cmd_stop_start(void)
 {
     struct MsgPort *port;
     struct Library *gone;
+    TnIpcMsg msg;
     int waits;
 
     port = (struct MsgPort *)FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
@@ -4637,32 +4638,45 @@ static void tc_cmd_stop_start(void)
         TAP_NOTOK("tc_cmd_stop_start", "daemon port not found");
         return;
     }
+    /* legacy signal path (TNET-152 evidence: alive-but-deaf) */
     Signal((struct Task *)port->mp_SigTask, SIGBREAKF_CTRL_C);
-
-    /* 2 s: alive-but-deaf, or gone? (IPC probe) + second signal */
-    Delay(100);
+    Delay(100); /* 2 s */
     {
         char nm[16];
         LONG alive = (call_gethostname((STRPTR)nm, (LONG)sizeof(nm)) == 0);
-        tapf("# tc_cmd_stop_start: after 2 s daemon alive=%ld port=%ld\n",
-             alive, (LONG)(FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL));
-        port = (struct MsgPort *)FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
-        if (port != NULL && port->mp_SigTask != NULL) {
-            Signal((struct Task *)port->mp_SigTask, SIGBREAKF_CTRL_C);
-        }
+        tapf("# tc_cmd_stop_start: after signal, daemon alive=%ld\n", alive);
     }
 
-    /* wait for the daemon to exit: the port must disappear */
-    for (waits = 0; waits < 100; waits++) {
-        Delay(5); /* ~10 s total */
-        if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) break;
+    /* robust stop: IPC (TNET-152). Expect EBUSY while our base is open */
+    memset(&msg, 0, sizeof(msg));
+    if (tn_ipc_oneshot(TN_IPC_CMD_STOP, NULL, 0, &msg) != 0 || msg.result == 0) {
+        tapf("# tc_cmd_stop_start: STOP without clients?? rc=%ld err=%ld\n",
+             msg.result, msg.err_no);
     }
-    if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
-        TAP_NOTOK("tc_cmd_stop_start", "daemon still running 10 s after stop signal");
+    if (msg.err_no != EBUSY) {
+        TAP_NOTOK("tc_cmd_stop_start", "STOP did not refuse with EBUSY while base open");
         return;
     }
 
-    /* STATUS-semantics: bsdsocket.library must refuse to open now */
+    /* close our base (nothing runs after this row), then STOP again */
+    CloseLibrary(SocketBase);
+    SocketBase = NULL;
+    memset(&msg, 0, sizeof(msg));
+    if (tn_ipc_oneshot(TN_IPC_CMD_STOP, NULL, 0, &msg) != 0 || msg.result != 0) {
+        TAP_NOTOK("tc_cmd_stop_start", "IPC STOP failed after close");
+        return;
+    }
+
+    for (waits = 0; waits < 100; waits++) {
+        Delay(5);
+        if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) break;
+    }
+    if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
+        TAP_NOTOK("tc_cmd_stop_start", "daemon still running 10 s after IPC STOP");
+        return;
+    }
+
+    /* TolunnetControl STATUS semantics: library must refuse to open */
     gone = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
     if (gone != NULL) {
         CloseLibrary(gone);
@@ -5075,8 +5089,8 @@ int main(int argc, char *argv[])
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
 
-    CloseLibrary(SocketBase);
-    /* after CloseLibrary (no other open bases), Ctrl-C can end the daemon */
+    if (SocketBase != NULL) CloseLibrary(SocketBase);
+    /* daemon already stopped by tc_cmd_stop_start (IPC); harmless if gone */
     request_daemon_stop();
 
     if (g_log_fh) Close(g_log_fh);

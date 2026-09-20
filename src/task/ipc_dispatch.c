@@ -60,7 +60,8 @@ static const char * const g_ipc_cmd_names[] = {
     [TN_IPC_CMD_SELECT_DISARM] = "SELECT_DISARM",
     [TN_IPC_CMD_GETSTATS]      = "GETSTATS",
     [TN_IPC_CMD_ROUTECTL]      = "ROUTECTL",
-    [TN_IPC_CMD_IFCTL]         = "IFCTL"
+    [TN_IPC_CMD_IFCTL]         = "IFCTL",
+    [TN_IPC_CMD_STOP]          = "STOP"
 };
 
 const char *tn_ipc_cmd_name(TnIpcCmd cmd)
@@ -105,7 +106,8 @@ static const TnIpcHandler g_ipc_table[] = {
     [TN_IPC_CMD_SELECT_DISARM] = { TN_IPC_CMD_SELECT_DISARM, tn_ipc_cmd_select_disarm, TRUE,  FALSE, 0 },
     [TN_IPC_CMD_GETSTATS]      = { TN_IPC_CMD_GETSTATS,      tn_ipc_cmd_getstats,      FALSE, FALSE, 0 },
     [TN_IPC_CMD_ROUTECTL]      = { TN_IPC_CMD_ROUTECTL,      tn_ipc_cmd_routectl,      FALSE, FALSE, 0 },
-    [TN_IPC_CMD_IFCTL]         = { TN_IPC_CMD_IFCTL,         tn_ipc_cmd_ifctl,         FALSE, FALSE, 0 }
+    [TN_IPC_CMD_IFCTL]         = { TN_IPC_CMD_IFCTL,         tn_ipc_cmd_ifctl,         FALSE, FALSE, 0 },
+    [TN_IPC_CMD_STOP]          = { TN_IPC_CMD_STOP,          tn_ipc_cmd_stop,          FALSE, FALSE, 0 }
 };
 
 BOOL tn_handle_ipc(TnDaemon *d, TnIpcMsg *imsg)
