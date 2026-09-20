@@ -4622,8 +4622,7 @@ static void tc_probe_loop_impl(const char *label, USHORT port)
         return;
     }
     if (call_send(cli, "probe", 5, 0) != 5) {
-        tapf("# %s: send failed errno=%ld
-", label, call_errno());
+        tapf("# %s: send failed errno=%ld\n", label, call_errno());
         call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
         TAP_NOTOK(label, "PROBE: send failed");
         return;
@@ -4632,8 +4631,7 @@ static void tc_probe_loop_impl(const char *label, USHORT port)
         /* separator: is the DATA there (selector wake dead) or not
          * (lwIP loopback path dead)? A direct blocking recv decides. */
         got = call_recv(conn, buf, sizeof(buf), 0);
-        tapf("# %s: wait_readable TIMEOUT; direct recv got=%ld errno=%ld
-",
+        tapf("# %s: wait_readable TIMEOUT; direct recv got=%ld errno=%ld\n",
              label, got, call_errno());
         if (got == 5 && memcmp(buf, "probe", 5) == 0) {
             call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
@@ -4646,8 +4644,7 @@ static void tc_probe_loop_impl(const char *label, USHORT port)
     }
     got = call_recv(conn, buf, sizeof(buf), 0);
     if (got != 5 || memcmp(buf, "probe", 5) != 0) {
-        tapf("# %s: recv got=%ld errno=%ld
-", label, got, call_errno());
+        tapf("# %s: recv got=%ld errno=%ld\n", label, got, call_errno());
         call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
         TAP_NOTOK(label, "PROBE: recv mismatch");
         return;
