@@ -1,0 +1,4 @@
+a1200: bsdsocktest: 125/142 (failed 3) — docs/bench-logs/20260920-204131-6180f2a/a1200/bsdsocktest.log
+a1200: # iperf loopback: 545472 bytes in ~2s = 5455 KB/s — docs/bench-logs/20260920-204131-6180f2a/a1200/conformance.log
+68000: bsdsocktest: 126/142 (failed 2) — docs/bench-logs/20260920-204131-6180f2a/68000/bsdsocktest.log
+68000: # iperf loopback: 116232 bytes in ~2s = 1163 KB/s — docs/bench-logs/20260920-204131-6180f2a/68000/conformance.log
