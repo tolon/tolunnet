@@ -747,6 +747,14 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
 
         res = tn_ipc_call(base, TN_IPC_CMD_SELECT_ARM);
         if (res < 0) {
+            /* TNET-151: the ARM request may still complete daemon-side
+             * (watchdog abort = client gave up, not daemon refused) and
+             * leave an ARMED selector for this live base with no client
+             * wait pending - every later data arrival then signals us
+             * spurious wakes that turn every Wait() into an instant
+             * bogus timeout (0-tick evidence 20260921-012936). Fire a
+             * best-effort DISARM so the slot cannot stay armed. */
+            tn_ipc_call(base, TN_IPC_CMD_SELECT_DISARM);
             return -1;
         }
         if (res > 0) {
