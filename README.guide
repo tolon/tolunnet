@@ -290,6 +290,22 @@ YAM, SimpleMail, Wget, Lynx) work transparently using standard BSD socket calls:
 
 @endnode
 
+@node NotYet "Not Yet Implemented"
+@{b}Not Yet Implemented (planned for 1.3)@{ub}
+
+- NetTrace — network tracing tool. No stub binary ships; the 1.2.0
+  toolset covers tracing needs via LOG=VERBOSE and SYSLOG= forwarding.
+
+@{b}Deferred to real-hardware validation@{ub}
+
+- TX_QUEUE= pipelined TX pool defaults to 0 (synchronous) in this
+  release; the owner live test on wifipi.device decides whether 4
+  becomes the default (see docs/bench.md M-C5/TX Pool section).
+- 1 h / 24 h wire soak and real-wire iperf numbers: the emulated bench
+  has no live gateway by design.
+
+@endnode
+
 @node License "License & Credits"
 @{b}7. License & Credits@{ub}
 

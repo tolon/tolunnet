@@ -4,6 +4,7 @@
  * STATUS returns RC 0 (running) / 5 (not running) — scriptable.
  */
 #include "cmdlib.h"
+#include "../../include/version.h"
 #include <string.h>
 
 #define TEMPLATE "COMMAND/A"
@@ -31,7 +32,7 @@ int main(int argc, char **argv)
     }
 
     if (strcmp(cmd, "VERSION") == 0) {
-        tn_cmd_printf("tolunnet 1.2.0-rc1 (bsdsocket.library v4.1)\n");
+        tn_cmd_printf("tolunnet " TOLUNNET_VERSION " (bsdsocket.library v4.1)\n");
     } else if (strcmp(cmd, "START") == 0) {
         BPTR seg = LoadSeg((CONST_STRPTR)"C:tolunnet");
         if (seg != (BPTR)0) {

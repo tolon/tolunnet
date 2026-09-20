@@ -354,7 +354,9 @@ $(BSDTEST_BIN): $(BSDTEST_OBJS)
 	$(CC) $(BSDTEST_CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Release Packaging Target (M7)
-VERSION ?= 1.2.0-rc1
+# single source: include/version.h (CLOSE S-D.14)
+VERSION := $(shell sed -n 's/.*TOLUNNET_VERSION "\(.*\)".*/\1/p' include/version.h)
+VERSION ?= 1.2.0-rc2
 PACKAGE_DIR = $(BUILD)/release/tolunnet
 LHA_ARCHIVE = $(BUILD)/tolunnet-$(VERSION).lha
 ADF_IMAGE = $(BUILD)/tolunnet.adf
@@ -424,8 +426,15 @@ package: all
 
 .PHONY: adf
 adf:
-	@echo "--- Building ADF Floppy Image ---"
-	$(XDFTOOL) -f $(ADF_IMAGE) pack $(PACKAGE_DIR) tolunnet
+	@echo "--- Building ADF Floppy Image (stripped binaries) ---"
+	@rm -rf $(BUILD)/adf-pkg
+	@mkdir -p $(BUILD)/adf-pkg/tolunnet/C
+	@for f in $(PACKAGE_DIR)/C/*; do \
+		$(STRIP) -o $(BUILD)/adf-pkg/tolunnet/C/$$(basename $$f) $$f 2>/dev/null \
+		|| cp $$f $(BUILD)/adf-pkg/tolunnet/C/; \
+	done
+	@cp LICENSE $(BUILD)/adf-pkg/tolunnet/
+	$(XDFTOOL) -f $(ADF_IMAGE) pack $(BUILD)/adf-pkg/tolunnet tolunnet
 	@echo "ADF successfully created: $(ADF_IMAGE)"
 
 clean:

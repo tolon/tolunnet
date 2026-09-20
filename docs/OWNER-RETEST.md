@@ -34,3 +34,32 @@ seviyesinde teşhis.
   hangi S2 adımının takıldığını gösterir.
 - Bench tarafında aynı mod `TN_DIAG=1 ./ci/bench.sh` ile
   `pistorm-68000` profiliyle koşulabilir (a2065, wifipi yerine vekil).
+
+---
+
+# rc2 yeniden test listesi (1.2.0-rc2, CLOSE §D.14)
+
+Yukarıdaki DIAG prosedürü aynen geçerli (DIAG=YES). Ek olarak bu sürümde
+şunları sıralı dene ve sonuçları (çıktı metni / crash-diag logları) gönder:
+
+1. `TolunnetControl VERSION` → `tolunnet 1.2.0-rc2` basmalı.
+2. Temel trafik: `ping aminet.net 5`, `wget http://aminet.net/recent.txt`,
+   `nslookup aminet.net`, `traceroute aminet.net 10`.
+3. Yeni komutlar: `route` (boş tablo + `route DEFAULT GATEWAY 10.0.2.1`
+   gibi bir ekleme + `route` göster), `arp` (tablo dolmalı),
+   `CheckNetConfig DEVS:tolunnet.config` (satır numaralı rapor),
+   `Online` / `Offline` (link düşüp kalkmalı).
+4. **TX havuzu (önemli — varsayılan kapalı):** config'e `TX_QUEUE=4`
+   ekle ve yeniden başlat; logda `s2: TX pool: 4 slot(s)` görünecek.
+   Sonra: ping/wget 5 dk sorunsuz mu? Link DOWN/UP fırtınası var mı?
+   (Emüle sürücüde vardı; wifipi.device'da olup olmadığı bu testle
+   belli olur ve varsayılan kararı verilir.) Sorun görürsen TX_QUEUE=0
+   yapıp devam et ve bana logu gönder.
+5. **iperf (gerçek kablo sayıları):** Amiga'da `iperf SERVER PORT 5001`,
+   ev bilgisayarında `iperf -c <amiga-ip> -p 5001 -t 10` ve tersi
+   (Amiga client). Her iki yönün KB/s değerini gönder — TX havuzunun
+   gerçek kazancı bu sayıyla ölçülecek.
+6. 1 saat dayanıklılık: `ping <gateway> INTERVAL=0 COUNT=2000` +
+   30 sn'de bir `wget` döngüsü; başta ve sonda `AvailMem` değerleri
+   (fark ≤ 8 KB olmalı).
+7. Çökme olursa: `RAM:tolunnet-crash.log` + `RAM:tolunnet-diag.log`.

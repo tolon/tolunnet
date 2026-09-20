@@ -2,7 +2,7 @@ Short:        Lightweight high-performance TCP/IP stack & bsdsocket.library
 Author:       Tolon
 Uploader:     tolon
 Type:         comm/tcp
-Version:      1.2.0-rc1
+Version:      1.2.0-rc2
 Architecture: m68k-amigaos >= 3.0.0
 
 ==============================================================================
@@ -16,21 +16,30 @@ running AmigaOS 3.0 or later (68000, 68010, 68020, 68030, 68040, 68060).
 Features:
 - Single-task cooperative architecture (lwIP 2.2.0 NO_SYS=1)
 - Zero-allocation Exec IPC messaging over "tolunnet.port"
-- Standard bsdsocket.library v4.1 (139 SFD vectors, 61 implemented, 72 honest stubs)
+- Standard bsdsocket.library v4.1 (139 SFD vectors, 70 implemented, 51 honest stubs)
 - Complete IPv4, ARP, raw ICMP sockets, UDP (SOCK_DGRAM), TCP (SOCK_STREAM), DNS client
+- getaddrinfo/freeaddrinfo/getnameinfo/gai_strerror built in-library
 - Built-in DHCP client with automatic lease configuration
+- Static routing (longest-prefix table, default routes, AddNetRoute/DeleteNetRoute)
+- Interface control: AddNetInterface, ConfigureNetInterface, Online/Offline (IFCTL)
+- Optional pipelined TX pool (TX_QUEUE=) with per-slot requests and buffers
 - Hardware-seeded entropy PRNG (GetSysTime, MAC, memory pools)
 - Fast 68k assembly register trampolines for SANA-II Rev 7 buffer management
+- 22 CLI tools: ping, ifconfig, netstat, wget, curl, hostname, nslookup,
+  whois, traceroute, nc, sntp, telnet, tftp, ftp, arp, iperf, route,
+  ShowNetStatus, GetNetStatus, TolunnetControl, CheckNetConfig, NetShutdown
 - Native 3D beveled GadTools preferences panel (SYS:Prefs/TolunnetPrefs)
-- Diagnostic tools: ping (ICMP), ifconfig, netstat, wget (HTTP/1.1), curl, TestSocket
+- First-run GUI wizard (SYS:Prefs/TolunnetSetup): hardware, WiFi, address, test
+- Optional crash diagnostics (DIAG=YES writes RAM:tolunnet-crash.log)
 - Standard Commodore Installer script & AmigaGuide documentation
 
 Requirements:
 - Commodore Amiga (A500/A600/A1200/A2000/A3000/A4000) or WinUAE / FS-UAE
 - Motorola 68000 CPU or higher (68010, 68020, 68030, 68040, 68060, PiStorm, Vampire)
 - AmigaOS 3.0 or later
-- Standard SANA-II network device driver
+- Standard SANA-II network driver (ethernet.device, wifipi.device on PiStorm)
 
 Installation:
 Double-click on the "Install_Tolunnet" icon or copy binaries in C/ to SYS:C/.
-See README.guide for complete details.
+See README.guide for complete details; A500+PiStorm+WiFiPi owners see
+docs/PISTORM-INSTALL.md and the owner test procedure in docs/OWNER-RETEST.md.
