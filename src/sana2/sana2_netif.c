@@ -451,6 +451,19 @@ LONG tn_s2_send(TnSana2If *nif, const void *buf, LONG len,
         nif->tx_busy[slot] = TRUE;
         nif->tx_pending = TRUE;
         SendIO((struct IORequest *)tio);
+        /* PROBE (do not keep): complete synchronously to isolate the
+         * async-write question */
+        if (!CheckIO((struct IORequest *)tio)) {
+            AbortIO((struct IORequest *)tio);
+        }
+        WaitIO((struct IORequest *)tio);
+        while (GetMsg(nif->tx_port) != (struct Message *)tio && GetMsg(nif->tx_port) != NULL) {}
+        nif->tx_busy[slot] = FALSE;
+        nif->tx_pending = FALSE;
+        if (tio->ios2_Req.io_Error != 0) {
+            tn_log_s2err("tn_s2_send(pool)", tio->ios2_Req.io_Error, tio->ios2_WireError);
+            return -1;
+        }
         return len;
     }
 
