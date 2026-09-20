@@ -4639,6 +4639,19 @@ static void tc_cmd_stop_start(void)
     }
     Signal((struct Task *)port->mp_SigTask, SIGBREAKF_CTRL_C);
 
+    /* 2 s: alive-but-deaf, or gone? (IPC probe) + second signal */
+    Delay(100);
+    {
+        char nm[16];
+        LONG alive = (call_gethostname((STRPTR)nm, (LONG)sizeof(nm)) == 0);
+        tapf("# tc_cmd_stop_start: after 2 s daemon alive=%ld port=%ld\n",
+             alive, (LONG)(FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL));
+        port = (struct MsgPort *)FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
+        if (port != NULL && port->mp_SigTask != NULL) {
+            Signal((struct Task *)port->mp_SigTask, SIGBREAKF_CTRL_C);
+        }
+    }
+
     /* wait for the daemon to exit: the port must disappear */
     for (waits = 0; waits < 100; waits++) {
         Delay(5); /* ~10 s total */
