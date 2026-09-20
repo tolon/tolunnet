@@ -327,6 +327,11 @@ TnS2Result tn_s2_tx_init(TnSana2If *nif, ULONG count)
         struct IOSana2Req *tio = (struct IOSana2Req *)tn_create_extio(
             nif->tx_port, sizeof(struct IOSana2Req));
         if (tio == NULL) goto unwind;
+        /* a request without the device/unit is a NULL jump on first use —
+         * the read pool and event request both copy these (the emulated
+         * a2065 hung exactly here) */
+        tio->ios2_Req.io_Device = nif->io->ios2_Req.io_Device;
+        tio->ios2_Req.io_Unit   = nif->io->ios2_Req.io_Unit;
         nif->tx_ios[i] = tio;
         nif->tx_bufs[i] = (UBYTE *)AllocVec(buf_size, MEMF_CLEAR | MEMF_PUBLIC);
         if (nif->tx_bufs[i] == NULL) {
@@ -451,19 +456,6 @@ LONG tn_s2_send(TnSana2If *nif, const void *buf, LONG len,
         nif->tx_busy[slot] = TRUE;
         nif->tx_pending = TRUE;
         SendIO((struct IORequest *)tio);
-        /* PROBE (do not keep): complete synchronously to isolate the
-         * async-write question */
-        if (!CheckIO((struct IORequest *)tio)) {
-            AbortIO((struct IORequest *)tio);
-        }
-        WaitIO((struct IORequest *)tio);
-        while (GetMsg(nif->tx_port) != (struct Message *)tio && GetMsg(nif->tx_port) != NULL) {}
-        nif->tx_busy[slot] = FALSE;
-        nif->tx_pending = FALSE;
-        if (tio->ios2_Req.io_Error != 0) {
-            tn_log_s2err("tn_s2_send(pool)", tio->ios2_Req.io_Error, tio->ios2_WireError);
-            return -1;
-        }
         return len;
     }
 
