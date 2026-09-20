@@ -4652,7 +4652,6 @@ static void tc_probe_loop_impl(const char *label, USHORT port)
     call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
     TAP_OK(label);
 }
-}
 
 static void tc_probe_after_wizard_wired(void)  { tc_probe_loop_impl("tc_probe_after_wizard_wired", 23531); }
 static void tc_probe_after_wizard_ntsc(void)   { tc_probe_loop_impl("tc_probe_after_wizard_ntsc", 23532); }
