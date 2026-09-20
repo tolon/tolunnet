@@ -725,7 +725,17 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
         }
     }
 
-    /* Fast path: arm selector with atomic readiness poll (§D) */
+    /* Fast path: arm selector with atomic readiness poll (§D).
+     * TNET-151: clear any stale wake bits FIRST — a wake signal that
+     * arrived while we were not in Wait() (e.g. while blocked inside a
+     * synchronous SystemTags child) stays pending forever and makes every
+     * later Wait() return instantly, reporting a bogus "timeout" while
+     * the data is in fact there (bench 20260921-010932: wait failed after
+     * 0 ticks). Clearing before the authoritative ARM poll cannot lose a
+     * wake: ARM reads the real readiness state at this instant. */
+    if (base->sig_select != 0) SetSignal(0, base->sig_select);
+    if (base->sig_io != 0)     SetSignal(0, base->sig_io);
+
     if (nfds > 0) {
         base->ipc_msg.args[0] = nfds;
         base->ipc_msg.args[1] = orig_r;
