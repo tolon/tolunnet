@@ -30,6 +30,7 @@
 #include "netif_mgr.h"
 #include "crash_log.h"
 #include "ipc_dispatch.h"
+#include "ipc_socket.h" /* tn_ipc_cmd_close for the TNET-150 reap path */
 #include "sana2/sana2_netif.h"
 #include "timers.h"
 #include "lib/lib_init.h"
@@ -50,6 +51,69 @@ static const char *g_cli_ip = NULL;
 static const char *g_cli_netmask = NULL;
 static const char *g_cli_gateway = NULL;
 static const UWORD  g_raw_putch[] = { 0x16c0, 0x4e75 }; /* move.b d0,(a3)+ ; rts (aligned) */
+
+/* TNET-150 item 6: is this task still alive? Walks Exec's task lists under
+ * Forbid; a client that died without CloseLibrary leaves its base counted
+ * and would block the Ctrl-C stop forever. */
+static BOOL tn_task_alive(struct Task *t)
+{
+    struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+    struct Task *scan;
+    BOOL found = FALSE;
+
+    if (t == NULL) return FALSE;
+    if (t == (struct Task *)SysBase->ThisTask) return TRUE;
+
+    Forbid();
+    for (scan = (struct Task *)SysBase->TaskReady.lh_Head;
+         ((struct Node *)scan)->ln_Succ != NULL;
+         scan = (struct Task *)((struct Node *)scan)->ln_Succ) {
+        if (scan == t) { found = TRUE; break; }
+    }
+    if (!found) {
+        for (scan = (struct Task *)SysBase->TaskWait.lh_Head;
+             ((struct Node *)scan)->ln_Succ != NULL;
+             scan = (struct Task *)((struct Node *)scan)->ln_Succ) {
+            if (scan == t) { found = TRUE; break; }
+        }
+    }
+    Permit();
+    return found;
+}
+
+/* TNET-150 item 6: name every live holder; run the CLOSE path (cancel
+ * pending DNS, unref fds, disarm selectors) for bases whose task is gone
+ * and decrement the root open count. Returns the number reaped. */
+static int tn_reap_dead_clients(TnDaemon *d)
+{
+    int b, reaped = 0;
+
+    for (b = 0; b < TN_CLIENT_BASES_MAX; b++) {
+        TnSocketBase *base = d->open_bases[b];
+        if (base == NULL) continue;
+        if (tn_task_alive(base->owner_task)) {
+            const char *nm = ((struct Task *)base->owner_task)->tc_Node.ln_Name;
+            tn_logf(TN_LOG_BASIC,
+                    "tolunnet: stop: '%s' (task 0x%p) still has bsdsocket.library open\n",
+                    (nm != NULL) ? nm : "(unnamed)", base->owner_task);
+        } else {
+            TnIpcMsg fake;
+            tn_logf(TN_LOG_BASIC,
+                    "tolunnet: stop: task 0x%p is gone — reaping its bsdsocket base\n",
+                    base->owner_task);
+            memset(&fake, 0, sizeof(fake));
+            fake.socket_base = (APTR)base;
+            tn_ipc_cmd_close(d, &fake, NULL); /* cancels DNS, unrefs, disarms, unregisters */
+            Forbid();
+            if (d->bsd_lib != NULL && d->bsd_lib->lib_OpenCnt > 0) {
+                d->bsd_lib->lib_OpenCnt--;
+            }
+            Permit();
+            reaped++;
+        }
+    }
+    return reaped;
+}
 
 static int tn_task_real_main(int argc, char *argv[])
 {
@@ -312,8 +376,7 @@ static int tn_task_real_main(int argc, char *argv[])
     /* 9. Arm 100 ms timer tick */
     tn_timer_arm(&g_daemon.timer, 100000);
 
-    s2_sig     = 1UL << prim->s2if.rx_port->mp_SigBit;
-    event_sig  = tn_s2_event_sig(&prim->s2if);
+    s2_sig     = 1UL << prim->s2if.rx_port->mp_SigBit;    event_sig  = tn_s2_event_sig(&prim->s2if);
     timer_sig  = g_daemon.timer.sig_mask;
     ipc_sig    = 1UL << g_daemon.ipc_port->mp_SigBit;
     ctrl_c_sig = SIGBREAKF_CTRL_C;
@@ -333,6 +396,14 @@ static int tn_task_real_main(int argc, char *argv[])
          * and keep servicing IPC until every opener has closed. */
         if (sigs & ctrl_c_sig) {
             if (g_daemon.bsd_lib != NULL && g_daemon.bsd_lib->lib_OpenCnt > 0) {
+                /* TNET-150 item 6: name the holders, reap dead tasks */
+                int reaped = tn_reap_dead_clients(&g_daemon);
+                if (reaped > 0 && g_daemon.bsd_lib->lib_OpenCnt == 0) {
+                    tn_log(TN_LOG_BASIC,
+                           "\ntolunnet: Ctrl-C: all clients reaped, shutting down...\n");
+                    g_daemon.running = FALSE;
+                    break;
+                }
                 tn_logf(TN_LOG_BASIC,
                         "\ntolunnet: Ctrl-C: %lu client(s) still have bsdsocket.library open;\n"
                         "tolunnet: not exiting - close them (or their apps) and press Ctrl-C again\n",

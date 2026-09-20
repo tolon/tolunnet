@@ -190,6 +190,19 @@ void tn_config_parse_line(TnPrefs *prefs, const char *key, const char *val)
     } else if (tn_str_equal_nocase(clean_key, "SELECTORS")) {
         LONG n = 0;
         if (tn_str_to_long(clean_val, &n) && n >= 1 && n <= 128) prefs->selectors = (ULONG)n;
+    } else if (tn_str_equal_nocase(clean_key, "DNS_PENDING")) {
+        /* TNET-150: deferred gethostbyname tracking slots */
+        LONG n = 0;
+        if (tn_str_to_long(clean_val, &n) && n >= 1 && n <= TN_DNS_PENDING_MAX) {
+            prefs->dns_pending_max = (ULONG)n;
+        }
+    } else if (tn_str_equal_nocase(clean_key, "DNS_RETRIES")) {
+        /* TNET-150: informational — must match the compiled lwIP
+         * DNS_MAX_RETRIES; sizes the client watchdog ordering guard */
+        LONG n = 0;
+        if (tn_str_to_long(clean_val, &n) && n >= 1 && n <= 16) {
+            prefs->dns_retries = (ULONG)n;
+        }
     } else if (tn_str_equal_nocase(clean_key, "STATS")) {
         if (tn_str_equal_nocase(clean_val, "NO") || tn_str_equal_nocase(clean_val, "0") ||
             tn_str_equal_nocase(clean_val, "FALSE") || tn_str_equal_nocase(clean_val, "OFF")) {
@@ -368,6 +381,8 @@ int tn_config_format(const TnPrefs *prefs, char *buf, int buf_size)
     }
     tn_cfg_put_kv_long(&o, "LOGLEVEL=", prefs->log_level);
     tn_cfg_put_kv_int(&o, "SELECTORS=", prefs->selectors);
+    if (prefs->dns_pending_max != 0) tn_cfg_put_kv_int(&o, "DNS_PENDING=", prefs->dns_pending_max);
+    if (prefs->dns_retries != 0) tn_cfg_put_kv_int(&o, "DNS_RETRIES=", prefs->dns_retries);
     tn_cfg_put(&o, "STATS=");
     tn_cfg_put(&o, prefs->stats ? "YES\n" : "NO\n");
     if (prefs->database_order[0] != '\0') {

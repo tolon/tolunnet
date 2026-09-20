@@ -7,6 +7,7 @@
 #include "ipc_tcp.h"
 #include "ipc_dgram.h"
 #include "ipc_select.h"
+#include "ipc_netdb.h" /* tn_dns_cancel_for_base (TNET-150) */
 #include "slot_table.h"
 #include "../common/sockaddr_util.h"
 #include "../common/tn_arp.h"
@@ -33,6 +34,24 @@ int tn_ipc_cmd_open(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         base->hostname[j] = '\0';
     }
 
+    /* TNET-150 item 6: registry for the Ctrl-C reap path */
+    if (base != NULL) {
+        int b;
+        BOOL known = FALSE;
+        for (b = 0; b < TN_CLIENT_BASES_MAX; b++) {
+            if (d->open_bases[b] == base) { known = TRUE; break; }
+        }
+        if (!known) {
+            for (b = 0; b < TN_CLIENT_BASES_MAX; b++) {
+                if (d->open_bases[b] == NULL) {
+                    d->open_bases[b] = base;
+                    if (d->open_base_count < TN_CLIENT_BASES_MAX) d->open_base_count++;
+                    break;
+                }
+            }
+        }
+    }
+
     imsg->result = 0;
     imsg->err_no = 0;
     return 0; /* TN_IPC_REPLY_NOW */
@@ -46,6 +65,25 @@ int tn_ipc_cmd_close(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
     tn_logf(TN_LOG_BASIC, "tolunnet: client task 0x%p closing bsdsocket.library\n",
             imsg->client_task);
+
+    /* TNET-150: cancel deferred DNS requests of this base BEFORE anything
+     * else — after this reply the client frees its message storage, so
+     * no late dns_found_cb may ever touch these imsgs again. */
+    if (base != NULL) {
+        tn_dns_cancel_for_base(d, base);
+    }
+
+    /* TNET-150 item 6: leaving the open-bases registry */
+    {
+        int b;
+        for (b = 0; b < TN_CLIENT_BASES_MAX; b++) {
+            if (d->open_bases[b] == base) {
+                d->open_bases[b] = NULL;
+                if (d->open_base_count > 0) d->open_base_count--;
+                break;
+            }
+        }
+    }
 
     if (base != NULL) {
         for (i = 0; i < base->dtablesize; i++) {

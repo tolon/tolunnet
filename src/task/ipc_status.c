@@ -494,6 +494,7 @@ int tn_ipc_cmd_getstats(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         out->daemon.sigio_sent       = d->sigio_sent;
         out->daemon.selector_wakeups = d->selector_wakeups;
         out->daemon.mainloop_ticks   = d->mainloop_ticks;
+        out->daemon.dns_late_replies = d->dns_late_replies;
         out->daemon.s2_rx_frames     = d->s2_rx_frames;
         out->daemon.s2_rx_bytes      = d->s2_rx_bytes;
         out->daemon.s2_rx_drops      = d->s2_rx_drops;

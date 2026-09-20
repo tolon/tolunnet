@@ -4992,8 +4992,12 @@ int main(int argc, char *argv[])
     }
 
     /* TNET-111: per-test watchdog — a daemon that stops replying fails the
-     * blocked IPC call with ETIMEDOUT after 5 s instead of hanging the run. */
-    ((TnSocketBase *)SocketBase)->ipc_timeout_ms = 5000;
+     * blocked IPC call with ETIMEDOUT instead of hanging the run.
+     * TNET-150 ordering guard: the watchdog must OUTLIVE the daemon's
+     * whole DNS attempt (DNS_RETRIES x 1 s retransmit window) so deferred
+     * lookups resolve inside the wait, not after abandonment. */
+    ((TnSocketBase *)SocketBase)->ipc_timeout_ms =
+        (uint32_t)(tc_cfg_long("DNS_RETRIES", 4) * 1000 + 2000);
 
     tapf("# tolunnet SocketConformance (Round 3 §B.2)\n");
     TN_RUN(tc_lib_open_close);

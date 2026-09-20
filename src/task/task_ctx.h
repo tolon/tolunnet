@@ -197,6 +197,18 @@ typedef struct TnSelector {
 } TnSelector;
 
 /* Daemon Singleton State */
+/* TNET-150: a DEFERRED DNS request parks the client's TnIpcMsg with lwIP
+ * (callback_arg); the daemon keeps its own record so CLOSE can cancel it
+ * and a late callback can never touch an abandoned/freed message.
+ * TN_DNS_PENDING_MAX lives in prefs.h (shared with the config parser). */
+typedef struct TnDnsPending {
+    TnIpcMsg       *imsg;   /* client message parked with lwIP */
+    TnSocketBase   *base;   /* recorded base (survives imsg lifetime checks) */
+    char            name[64];
+    uint32_t        tick;   /* registered at (diagnostics) */
+    uint8_t         in_use;
+} TnDnsPending;
+
 typedef struct TnDaemon {
     TnNetif         ifs[TN_MAX_NETIF];
     uint8_t         if_count;
@@ -228,7 +240,19 @@ typedef struct TnDaemon {
     uint32_t        s2_tx_drops;
     uint32_t        s2_link_errors;  /* S2EVENT_ERROR-class events (TNET-109) */
     uint32_t        rx_high_water;
+    uint32_t        dns_late_replies;   /* TNET-150: found_cb with no pending record */
     ULONG           start_sec;
+
+    /* TNET-150: deferred gethostbyname tracking (TnDnsPending array) */
+    TnDnsPending    dns_pending[TN_DNS_PENDING_MAX];
+    uint8_t         dns_pending_count;
+
+    /* TNET-150 item 6: registry of open client bases so the Ctrl-C path
+     * can name every holder and reap bases whose task died without
+     * CloseLibrary (crashed client => stop would refuse forever). */
+#define TN_CLIENT_BASES_MAX 16
+    TnSocketBase   *open_bases[TN_CLIENT_BASES_MAX];
+    uint8_t         open_base_count;
 } TnDaemon;
 
 static inline TnNetif *tn_netif_primary(TnDaemon *d)

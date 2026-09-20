@@ -10,6 +10,10 @@
 #ifndef TOLUNNET_PREFS_H
 #define TOLUNNET_PREFS_H
 
+/* TNET-150: deferred gethostbyname tracking slots (daemon-side table;
+ * defined here so the config parser and the daemon share one cap). */
+#define TN_DNS_PENDING_MAX 8
+
 #if defined(__AMIGA__) || defined(__amigaos__) || defined(TN_AMIGA_BUILD)
 #include <exec/types.h>
 #else
@@ -51,6 +55,10 @@ typedef struct TnPrefs {
     char  syslog_host[48];    /* RFC3164 UDP-514 forward target (§D3); empty = off */
     ULONG s2events;           /* S2EVENTS= mask (TNET-109); 0 = ONLINE|OFFLINE|ERROR */
     ULONG dns_port;           /* DNS_PORT= resolver port (TNET-111); 0 = 53 */
+    ULONG dns_pending_max;    /* TNET-150: DNS_PENDING= deferred lookup slots; 0 = 8 */
+    ULONG dns_retries;        /* TNET-150: DNS_RETRIES= (must match compiled
+                               * DNS_MAX_RETRIES); 0 = 4. Client watchdogs use
+                               * this to outlive the daemon's DNS attempt. */
     char  font[24];           /* FONT=name/size for TolunnetSetup; empty = screen font */
     ULONG diag;              /* DIAG=YES: trap handler + crash log + step logging (TNET-139) */
 } TnPrefs;

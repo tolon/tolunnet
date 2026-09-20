@@ -84,16 +84,21 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
         /* TNET-111: timeout mode uses a heap message per call. A timed-out
          * request may STILL be replied by the daemon at any time; reusing
          * the embedded ipc_msg would let that late reply alias (and corrupt)
-         * the next request — the bench froze exactly there. The orphan is
-         * drained and freed by the next call. */
+         * the next request. TNET-150 hard rule: an abandoned heap message
+         * is NEVER freed mid-session — a deferred daemon handler (DNS)
+         * may still hold it. Late replies are drained off the port; the
+         * chain (ipc_orphan) is freed in tn_lib_close after the CLOSE IPC
+         * reply guarantees the daemon is done with it. */
         if (base->ipc_orphan != NULL) {
             struct Message *m;
             while ((m = GetMsg(base->reply_port)) != NULL) {
-                if ((void *)m == base->ipc_orphan) {
-                    FreeVec(base->ipc_orphan);
-                    base->ipc_orphan = NULL;
-                    break;
+                TnIpcMsg *o = (TnIpcMsg *)m;
+                TnIpcMsg *c;
+                int is_orphan = 0;
+                for (c = (TnIpcMsg *)base->ipc_orphan; c != NULL; c = (TnIpcMsg *)c->orphan_next) {
+                    if (c == o) { is_orphan = 1; break; }
                 }
+                if (is_orphan) break; /* drained; stays allocated in the chain */
             }
         }
         heap_msg = (TnIpcMsg *)AllocVec(sizeof(TnIpcMsg), MEMF_CLEAR | MEMF_PUBLIC);
@@ -151,7 +156,9 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
 
         if (!(fired & reply_sig)) {
             base->ipc_timeouts++;
-            base->ipc_orphan = heap_msg; /* keep alive for the late reply */
+            /* TNET-150: chain onto any earlier orphan; freed at close */
+            heap_msg->orphan_next = base->ipc_orphan;
+            base->ipc_orphan = heap_msg;
             tn_set_errno_val(base, ETIMEDOUT);
             return -1;
         }
@@ -171,30 +178,20 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
         struct Message *got = GetMsg(base->reply_port);
         int spins = 0;
         while (got != (struct Message *)msg && spins < 4) {
-            if (got == (struct Message *)base->ipc_orphan) {
-                FreeVec(base->ipc_orphan);
-                base->ipc_orphan = NULL;
-            }
-            /* an unexpected non-orphan reply belongs to a request whose
-             * block an earlier call already abandoned — drop it */
+            /* a foreign reply belongs to an abandoned request — it stays
+             * allocated in the orphan chain (TNET-150: never freed
+             * mid-session); it is off the port now, which is what matters */
             WaitPort(base->reply_port);
             got = GetMsg(base->reply_port);
             spins++;
         }
         if (got != (struct Message *)msg) {
             /* ours never arrived: treat as a timeout and abandon ours */
-            if (heap_msg != NULL && got == NULL) {
-                base->ipc_timeouts++;
-                base->ipc_orphan = heap_msg;
-                tn_set_errno_val(base, ETIMEDOUT);
-                return -1;
-            }
             if (heap_msg != NULL) {
-                /* a foreign message is still queued; do not free ours
-                 * blind — leave it orphaned for the drain on next call */
+                base->ipc_timeouts++;
+                heap_msg->orphan_next = base->ipc_orphan;
                 base->ipc_orphan = heap_msg;
                 tn_set_errno_val(base, ETIMEDOUT);
-                base->ipc_timeouts++;
                 return -1;
             }
         }
@@ -344,6 +341,25 @@ BPTR tn_lib_close(struct Library *lib)
     if (base != NULL) {
         /* Close all remaining open sockets for this task */
         tn_ipc_call(base, TN_IPC_CMD_CLOSE);
+
+        /* TNET-150: the CLOSE reply guarantees the daemon no longer holds
+         * any deferred message of this base (pending DNS was cancelled) —
+         * NOW the watchdog-abandoned chain is safe to free. Drain any late
+         * replies still parked on the port first so ReplyMsg nodes are not
+         * left queued. */
+        {
+            struct Message *m;
+            while ((m = GetMsg(base->reply_port)) != NULL) {}
+            {
+                TnIpcMsg *o = (TnIpcMsg *)base->ipc_orphan;
+                while (o != NULL) {
+                    TnIpcMsg *next = (TnIpcMsg *)o->orphan_next;
+                    FreeVec(o);
+                    o = next;
+                }
+                base->ipc_orphan = NULL;
+            }
+        }
 
         if (base->sig_select_bit != -1) {
             FreeSignal(base->sig_select_bit);

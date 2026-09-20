@@ -163,6 +163,7 @@ typedef struct TnDaemonStats {
     uint32_t s2_tx_bytes;         /* SANA-II bytes transmitted */
     uint32_t s2_tx_drops;         /* SANA-II transmit errors/drops */
     uint32_t rx_high_water;       /* Peak RX queue depth across all slots */
+    uint32_t dns_late_replies;    /* TNET-150: DNS completions with no pending record */
     uint32_t uptime_secs;         /* Uptime in seconds */
     uint32_t lease_remaining;     /* DHCP lease remaining seconds (0 if static/infinite) */
     uint32_t lease_t1;            /* DHCP renewal time (t1) remaining seconds */
@@ -282,6 +283,9 @@ typedef struct TnIpcMsg {
     APTR           ptrs[4];     /* Generic pointer arguments */
     LONG           result;      /* Return code from operation */
     LONG           err_no;      /* Posix errno code on error */
+    APTR           orphan_next; /* TNET-150: client-side chain of watchdog-
+                                * abandoned heap messages (daemon never
+                                * touches this field); freed at CloseLibrary */
 } TnIpcMsg;
 
 /*
@@ -326,7 +330,12 @@ typedef struct TnSocketBase {
      * the next call). Used by the conformance suite's per-test watchdog. */
     uint32_t        ipc_timeout_ms;
     uint32_t        ipc_timeouts;
-    APTR            ipc_orphan;             /* timed-out call awaiting its late reply (drained next call) */
+    /* TNET-150: timed-out calls are NEVER freed mid-session — a deferred
+     * daemon handler (DNS) may still hold the message. Abandoned heap
+     * messages form a chain (ipc_orphan head, TnIpcMsg.orphan_next links),
+     * drained from the reply port but freed only in tn_lib_close AFTER
+     * the CLOSE IPC reply guarantees no further daemon access. */
+    APTR            ipc_orphan;
     char            inet_ntoa_buf[16];      /* Per-task static buffer for Inet_NtoA */
     char            hostname[32];           /* Per-task hostname */
 
