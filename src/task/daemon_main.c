@@ -133,6 +133,7 @@ static int tn_task_real_main(int argc, char *argv[])
 
     DOSBase = OpenLibrary((CONST_STRPTR)"dos.library", 0);
     if (DOSBase == NULL) return 20;
+    g_log_dos = DOSBase; /* TNET-152 diag: enable console log from line one */
 
     g_log_dos = DOSBase;
     g_log_level = TN_LOG_VERBOSE;
@@ -364,7 +365,22 @@ static int tn_task_real_main(int argc, char *argv[])
     g_daemon.ipc_port->mp_Node.ln_Name = (char *)TOLUNNET_PORT_NAME;
     g_daemon.ipc_port->mp_Node.ln_Pri  = 0;
     g_daemon.ipc_port->mp_Node.ln_Type = NT_MSGPORT;
+    /* TNET-152: duplicate port name = a previous daemon still alive */
+    if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
+        tn_log(TN_LOG_BASIC,
+               "tolunnet: REFUSING start - tolunnet.port exists (previous daemon alive)\n");
+        netif_set_down(&prim->lwip_if);
+        netif_remove(&prim->lwip_if);
+        tn_s2_offline_close(&prim->s2if);
+        tn_timer_fini(&g_daemon.timer);
+        CloseLibrary(DOSBase);
+        return 21;
+    }
     AddPort(g_daemon.ipc_port);
+    tn_logf(TN_LOG_BASIC,
+            "tolunnet: port online: sig_task=0x%p self=0x%p match=%ld (TNET-152)\n",
+            g_daemon.ipc_port->mp_SigTask, FindTask(NULL),
+            (LONG)(g_daemon.ipc_port->mp_SigTask == (APTR)FindTask(NULL)));
 
     /* 8. Instantiate and register bsdsocket.library */
     g_daemon.bsd_lib = tn_lib_create();
