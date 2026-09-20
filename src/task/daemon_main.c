@@ -415,15 +415,6 @@ static int tn_task_real_main(int argc, char *argv[])
 
     /* 10. Main Task Loop */
     while (g_daemon.running) {
-        ULONG pend = SetSignal(0, 0);
-        if (pend & ~wait_mask) {
-            tn_logf(TN_LOG_BASIC,
-                    "tolunnet: pre-Wait pending 0x%08lx outside mask 0x%08lx (TNET-152)\n",
-                    pend, wait_mask);
-        }
-        if (pend & ctrl_c_sig) {
-            tn_log(TN_LOG_BASIC, "tolunnet: CTRL-C pending BEFORE Wait (TNET-152)\n");
-        }
         ULONG sigs = Wait(wait_mask);
 
         /* Ctrl-C Signal -> Shutdown.

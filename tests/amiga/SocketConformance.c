@@ -4516,7 +4516,7 @@ static void tc_cmd_arp(void)
             sin.sin_family = AF_INET;
             sin.sin_port = htons(9);
             sin.sin_addr.s_addr = htonl(0x0A000202UL);
-            for (probe = 0; probe < 6; probe++) {
+            for (probe = 0; probe < 10; probe++) {
                 call_sendto(u, "\x70", 1, 0, (struct sockaddr *)&sin, sizeof(sin));
                 Delay(20); /* ~1 s: ARP resolves asynchronously */
                 memset(&ar, 0, sizeof(ar));
