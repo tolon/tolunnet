@@ -57,8 +57,10 @@ typedef struct TnPrefs {
     ULONG dns_port;           /* DNS_PORT= resolver port (TNET-111); 0 = 53 */
     ULONG dns_pending_max;    /* TNET-150: DNS_PENDING= deferred lookup slots; 0 = 8 */
     ULONG dns_retries;
-    ULONG tx_queue;           /* TNET-106 §C: TX pool slots; 0 = sync DoIO,
-                               * absent = 4 (TX_QUEUE=) */        /* TNET-150: DNS_RETRIES= (must match compiled
+    ULONG tx_queue;           /* TNET-106 §C: TX pool slots (TX_QUEUE=);
+                               * 0/absent = synchronous DoIO (safe default —
+                               * the emulated a2065 interleaves spurious link
+                               * events with async TX completions) */        /* TNET-150: DNS_RETRIES= (must match compiled
                                * DNS_MAX_RETRIES); 0 = 4. Client watchdogs use
                                * this to outlive the daemon's DNS attempt. */
     char  font[24];           /* FONT=name/size for TolunnetSetup; empty = screen font */

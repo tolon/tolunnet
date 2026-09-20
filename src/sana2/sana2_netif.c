@@ -332,6 +332,10 @@ TnS2Result tn_s2_tx_init(TnSana2If *nif, ULONG count)
          * a2065 hung exactly here) */
         tio->ios2_Req.io_Device = nif->io->ios2_Req.io_Device;
         tio->ios2_Req.io_Unit   = nif->io->ios2_Req.io_Unit;
+        /* the driver finds its CopyTo/FromBuffer hooks through this
+         * pointer — without it a CMD_WRITE is undeliverable (the read
+         * pool and event request both copy it) */
+        tio->ios2_BufferManagement = nif->io->ios2_BufferManagement;
         nif->tx_ios[i] = tio;
         nif->tx_bufs[i] = (UBYTE *)AllocVec(buf_size, MEMF_CLEAR | MEMF_PUBLIC);
         if (nif->tx_bufs[i] == NULL) {
@@ -606,6 +610,16 @@ TnS2Result tn_s2_arm_events(TnSana2If *nif, ULONG mask)
     if (nif == NULL || nif->io == NULL || !nif->online) return TN_S2_INTERNAL;
     if (mask == 0) mask = TN_S2EV_DEFAULT;
     if (nif->event_io != NULL) return TN_S2_OK; /* already armed */
+    /* TNET-106 M-C: the emulated a2065/uaenet interleaves spurious
+     * ONLINE/OFFLINE event completions with async TX completions (the
+     * 556ea30 storm, re-triggered by pipelined writes). With the TX
+     * pool active, link events stay off; link state is driven by the
+     * S2_ONLINE path at startup instead. */
+    if (nif->tx_ios != NULL) {
+        tn_log(TN_LOG_BASIC,
+               "tolunnet: S2_ONEVENT disabled while TX pool is active (driver interplay)\n");
+        return TN_S2_OK;
+    }
 
     nif->event_port = CreateMsgPort();
     if (nif->event_port == NULL) return TN_S2_NO_MEM;

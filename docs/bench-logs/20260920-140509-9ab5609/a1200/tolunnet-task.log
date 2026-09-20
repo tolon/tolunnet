@@ -1,0 +1,15 @@
+tolunnet: lwIP 2.2.0 initialized (NO_SYS=1)
+tolunnet: S2_ONLINE: already online (ok)
+tolunnet: ethernet.device:0 online (MAC 00:80:10:32:33:34, MTU 1500)
+s2: TX pool: 4 slot(s), pipelined SendIO
+tolunnet: starting DHCP client...
+tolunnet: bsdsocket.library v4.1 registered into Exec LibList
+tolunnet: bsdsocket.library v4.1 registered with Exec
+tolunnet: network task running (Press Ctrl-C to stop)
+tolunnet: S2 link DOWN (offline event)
+tolunnet: link up: DHCP renew requested
+tolunnet: S2 link DOWN (offline event)
+tolunnet: link up: DHCP renew requested
+tolunnet: S2 link DOWN (offline event)
+tolunnet: link up: DHCP renew requested
+tolunnet: S2 link DOWN (offline event)

@@ -569,7 +569,7 @@ TN_TEST(checknetconfig_vocabulary)
     {
         TnPrefs p;
         tn_prefs_default(&p);
-        TN_ASSERT_EQ((int)p.tx_queue, 4);          /* absent = 4 */
+        TN_ASSERT_EQ((int)p.tx_queue, 0);          /* absent = sync */
         tn_config_parse_line(&p, "TX_QUEUE", "0");
         TN_ASSERT_EQ((int)p.tx_queue, 0);          /* explicit sync */
         tn_prefs_default(&p);
@@ -577,7 +577,7 @@ TN_TEST(checknetconfig_vocabulary)
         TN_ASSERT_EQ((int)p.tx_queue, 8);
         tn_prefs_default(&p);
         tn_config_parse_line(&p, "TX_QUEUE", "9"); /* out of range: ignored */
-        TN_ASSERT_EQ((int)p.tx_queue, 4);
+        TN_ASSERT_EQ((int)p.tx_queue, 0);
     }
 
     /* value classes */

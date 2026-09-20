@@ -37,7 +37,7 @@ void tn_prefs_default(TnPrefs *prefs)
     prefs->s2events = 0;        /* 0 = ONLINE|OFFLINE|ERROR (TNET-109) */
     prefs->dns_port = 0;        /* 0 = default 53 (TNET-111) */
     prefs->diag = FALSE;       /* TNET-139: crash diagnostics off by default */
-    prefs->tx_queue = 4;        /* TNET-106: TX pool slots (0 = sync) */
+    prefs->tx_queue = 0;        /* TNET-106: absent = synchronous DoIO */
     prefs->font[0] = '\0';      /* empty = TolunnetSetup uses the screen font */
 }
 
