@@ -4609,6 +4609,36 @@ static void tc_cmd_getnetstatus(void)
  * drained, repeat for ~2 s of DateStamp ticks. Exercises the send path +
  * RX freelist drain end to end; the number (not the pass bar) is the
  * deliverable — bench SUMMARY greps the bytes/s line. */
+/* TNET-151 / RC3-2: loopback probes after each wizard-area row. The
+ * first failing probe names the suite-tail degradation suspect. */
+static void tc_probe_loop_impl(const char *label, USHORT port)
+{
+    LONG lst, cli, conn;
+    char buf[16];
+    LONG got;
+
+    if (!tc_cmd_tcp_pair(port, &lst, &cli, &conn)) {
+        TAP_NOTOK(label, "PROBE: no loopback pair");
+        return;
+    }
+    if (call_send(cli, "probe", 5, 0) != 5 ||
+        !tc_cmd_wait_readable(conn) ||
+        (got = call_recv(conn, buf, sizeof(buf), 0)) != 5 ||
+        memcmp(buf, "probe", 5) != 0) {
+        tapf("# %s: send/recv got=%ld errno=%ld\n", label, got, call_errno());
+        call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+        TAP_NOTOK(label, "PROBE: loopback data dead");
+        return;
+    }
+    call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+    TAP_OK(label);
+}
+
+static void tc_probe_after_wizard_wired(void)  { tc_probe_loop_impl("tc_probe_after_wizard_wired", 23531); }
+static void tc_probe_after_wizard_ntsc(void)   { tc_probe_loop_impl("tc_probe_after_wizard_ntsc", 23532); }
+static void tc_probe_after_wifi_scan(void)     { tc_probe_loop_impl("tc_probe_after_wifi_scan", 23533); }
+static void tc_probe_after_reconfig(void)      { tc_probe_loop_impl("tc_probe_after_reconfig", 23534); }
+
 /* TNET-152 / RC3 item 1: the user-facing stop path. Same mechanism as
  * NetShutdown / TolunnetControl STOP: Signal(port->mp_SigTask,
  * SIGBREAKF_CTRL_C). Proves the daemon actually EXITS (port disappears)
@@ -5047,9 +5077,13 @@ int main(int argc, char *argv[])
     TN_RUN(tc_every_vector_callable);
     TN_RUN(tc_stats_counters);
     TN_RUN(tc_wizard_wired);
+    TN_RUN(tc_probe_after_wizard_wired);
     TN_RUN(tc_wizard_ntsc);
+    TN_RUN(tc_probe_after_wizard_ntsc);
     TN_RUN(tc_wifi_scan_parse);
+    TN_RUN(tc_probe_after_wifi_scan);
     TN_RUN(tc_reconfig_rc);
+    TN_RUN(tc_probe_after_reconfig);
     TN_RUN(tc_link_events);
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
     tapf("1..%d\n", g_count);
