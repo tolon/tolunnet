@@ -10,6 +10,34 @@
 #include "../common/fdset_util.h"
 
 /* Deliver SIGIO to socket owner task and notify active selectors (TNET-067, §D) */
+/* TNET-151: a selector entry survives its owning client process only if
+ * that process died without CloseLibrary (the wizard child does). Its
+ * base pointer is then FREED memory - dereferencing fd_map/dtablesize is
+ * undefined and the bookkeeping desyncs. Validation is pointer-only: the
+ * base must be in the open-bases registry (TNET-150). Stale entries are
+ * disarmed on sight (self-healing scan). */
+static BOOL tn_selector_base_alive(const TnDaemon *d, const void *base)
+{
+    int b;
+    if (base == NULL) return FALSE;
+    for (b = 0; b < TN_CLIENT_BASES_MAX; b++) {
+        if (d->open_bases[b] == base) return TRUE;
+    }
+    return FALSE;
+}
+
+/* TNET-151: keep selector_count true - recompute from the table instead
+ * of trusting increment/decrement pairs across grow/disarm/arm churn. */
+static void tn_selector_count_resync(TnDaemon *d)
+{
+    int i, n = 0;
+    if (d == NULL || d->selectors == NULL) return;
+    for (i = 0; i < (int)d->max_selectors; i++) {
+        if (d->selectors[i].in_use) n++;
+    }
+    d->selector_count = (uint8_t)n;
+}
+
 void tn_signal_socket(TnDaemon *d, TnSocketSlot *slot)
 {
     int s_idx;
@@ -34,6 +62,15 @@ void tn_signal_socket(TnDaemon *d, TnSocketSlot *slot)
     for (sel_i = 0; sel_i < (int)d->max_selectors; sel_i++) {
         TnSelector *sel = &d->selectors[sel_i];
         if (!sel->in_use || sel->base == NULL || sel->task == NULL || sel->sig_select == 0) continue;
+        if (!tn_selector_base_alive(d, sel->base)) {
+            /* TNET-151: owner died without CloseLibrary - drop the stale
+             * entry instead of dereferencing freed memory */
+            sel->in_use = FALSE;
+            sel->base   = NULL;
+            sel->task   = NULL;
+            tn_selector_count_resync(d);
+            continue;
+        }
 
         BOOL match = FALSE;
         int fd;
@@ -193,6 +230,7 @@ int tn_ipc_cmd_select_arm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     if (!d->selectors[sel_slot].in_use) {
         d->selector_count++;
     }
+    tn_selector_count_resync(d);
 
     d->selectors[sel_slot].in_use      = TRUE;
     d->selectors[sel_slot].base        = base;
@@ -227,7 +265,8 @@ int tn_ipc_cmd_select_disarm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                 d->selectors[i].task   = NULL;
                 if (d->selector_count > 0) d->selector_count--;
                 tn_logf(TN_LOG_VERBOSE, "tolunnet: select_disarm slot=%d\n", i);
-            }
+                    tn_selector_count_resync(d);
+}
         }
     }
 
