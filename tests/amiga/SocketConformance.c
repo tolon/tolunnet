@@ -4387,7 +4387,10 @@ static void tc_cmd_ftp(void)
         memcmp(buf, "USER test\r\n", 11) != 0) {
         goto ctl_fail_greet;
     }
-    if (call_send(conn, "230 ok\r\n", 8, 0) != 8) {
+    if (call_send(conn, "230 ok\r\n", 8, 0) != 8 ||
+        !tc_cmd_wait_readable(cli) ||
+        call_recv(cli, buf, sizeof(buf), 0) != 8 ||
+        memcmp(buf, "230 ok\r\n", 8) != 0) {
         goto ctl_fail_greet;
     }
     if (call_send(cli, "PASV\r\n", 6, 0) != 6 ||
