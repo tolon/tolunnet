@@ -4832,7 +4832,6 @@ int main(int argc, char *argv[])
 
     tapf("# tolunnet SocketConformance (Round 3 §B.2)\n");
     TN_RUN(tc_lib_open_close);
-    TN_RUN(tc_cmd_whois); /* TNET-150 debug: early position (normally after nslookup) */
     TN_RUN(tc_socket_types);
     TN_RUN(tc_bind_udp);
     TN_RUN(tc_bind_reuse);
@@ -4862,6 +4861,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_socket_events);
     TN_RUN(tc_sbtc_full);
     TN_RUN(tc_release_obtain);
+    TN_RUN(tc_cmd_whois); /* TNET-150 debug: post-release_obtain, pre-wizard */
     TN_RUN(tc_every_vector_callable);
     TN_RUN(tc_stats_counters);
     TN_RUN(tc_wizard_wired);
