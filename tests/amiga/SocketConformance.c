@@ -4062,9 +4062,15 @@ static void tc_cmd_whois(void)
         TAP_NOTOK("tc_cmd_whois", "query send failed");
         return;
     }
-    if (!tc_cmd_wait_readable(conn) ||
-        (got = call_recv(conn, buf, sizeof(buf) - 1, 0)) <= 0) {
-        tapf("# tc_cmd_whois: wait/recv got=%ld errno=%ld\n", got, call_errno());
+    if (!tc_cmd_wait_readable(conn)) {
+        tapf("# tc_cmd_whois: wait_readable TIMEOUT (no data in 3s)\n");
+        call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+        TAP_NOTOK("tc_cmd_whois", "query wait failed");
+        return;
+    }
+    got = call_recv(conn, buf, sizeof(buf) - 1, 0);
+    if (got <= 0) {
+        tapf("# tc_cmd_whois: recv=%ld errno=%ld (0 = closed by peer)\n", got, call_errno());
         call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
         TAP_NOTOK("tc_cmd_whois", "query receive failed");
         return;
@@ -4826,6 +4832,7 @@ int main(int argc, char *argv[])
 
     tapf("# tolunnet SocketConformance (Round 3 §B.2)\n");
     TN_RUN(tc_lib_open_close);
+    TN_RUN(tc_cmd_whois); /* TNET-150 debug: early position (normally after nslookup) */
     TN_RUN(tc_socket_types);
     TN_RUN(tc_bind_udp);
     TN_RUN(tc_bind_reuse);
@@ -4864,7 +4871,6 @@ int main(int argc, char *argv[])
     TN_RUN(tc_link_events);
     TN_RUN(tc_cmd_hostname);
     TN_RUN(tc_cmd_nslookup);
-    TN_RUN(tc_cmd_whois);
     TN_RUN(tc_cmd_traceroute);
     TN_RUN(tc_cmd_nc);
     TN_RUN(tc_cmd_sntp);
