@@ -4062,7 +4062,27 @@ static void tc_cmd_whois(void)
         TAP_NOTOK("tc_cmd_whois", "query send failed");
         return;
     }
-    if (!tc_cmd_wait_readable(conn)) {
+    {
+        /* TNET-151 separator v2: was the wait a LIE (stale client-side
+         * signal -> instant return) or a real 3 s with no wake? And did
+         * the daemon send any selector wake in that window? */
+        TnStats st;
+        struct DateStamp ds0, ds1;
+        ULONG t0, t1;
+        LONG wu0 = -1, wu1 = -1;
+        TnIpcMsg sm;
+        if (tn_ipc_oneshot(TN_IPC_CMD_GETSTATS, NULL, 0, &sm) == 0) {
+            /* full stats struct copied into our stack via ptrs is complex;
+             * use the documented single LONG path: none — fall back to
+             * reading via a second call after. Keep simple: skip on fail. */
+        }
+        (void)wu0; (void)wu1; (void)st; (void)sm;
+        DateStamp(&ds0);
+        t0 = (ULONG)ds0.ds_Days * 86400UL * 50UL + (ULONG)ds0.ds_Minute * 60UL * 50UL + (ULONG)ds0.ds_Tick;
+        if (!tc_cmd_wait_readable(conn)) {
+            DateStamp(&ds1);
+            t1 = (ULONG)ds1.ds_Days * 86400UL * 50UL + (ULONG)ds1.ds_Minute * 60UL * 50UL + (ULONG)ds1.ds_Tick;
+            tapf("# %s: wait returned after %ld ticks (150 = real 3s timeout, ~0 = stale-signal instant)" + "\n", label, (LONG)(t1 - t0));
         tapf("# tc_cmd_whois: wait_readable TIMEOUT (no data in 3s)\n");
         call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
         TAP_NOTOK("tc_cmd_whois", "query wait failed");
@@ -4616,6 +4636,8 @@ static void tc_probe_loop_impl(const char *label, USHORT port)
     LONG lst, cli, conn;
     char buf[16];
     LONG got;
+    struct DateStamp ds;
+    ULONG t0, t1;
 
     if (!tc_cmd_tcp_pair(port, &lst, &cli, &conn)) {
         TAP_NOTOK(label, "PROBE: no loopback pair");
@@ -4627,12 +4649,14 @@ static void tc_probe_loop_impl(const char *label, USHORT port)
         TAP_NOTOK(label, "PROBE: send failed");
         return;
     }
+    DateStamp(&ds);
+    t0 = (ULONG)ds.ds_Days * 86400UL * 50UL + (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
     if (!tc_cmd_wait_readable(conn)) {
-        /* separator: is the DATA there (selector wake dead) or not
-         * (lwIP loopback path dead)? A direct blocking recv decides. */
+        DateStamp(&ds);
+        t1 = (ULONG)ds.ds_Days * 86400UL * 50UL + (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
         got = call_recv(conn, buf, sizeof(buf), 0);
-        tapf("# %s: wait_readable TIMEOUT; direct recv got=%ld errno=%ld\n",
-             label, got, call_errno());
+        tapf("# %s: wait failed after %ld ticks (150=real timeout, ~0=stale-signal lie); direct recv got=%ld\n",
+             label, (LONG)(t1 - t0), got);
         if (got == 5 && memcmp(buf, "probe", 5) == 0) {
             call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
             TAP_NOTOK(label, "PROBE: data flows but selector wake is dead");
