@@ -354,6 +354,7 @@ typedef struct TnSocketBase {
      * client process. ipc_timeouts counts the expired replies (drained on
      * the next call). Used by the conformance suite's per-test watchdog. */
     uint32_t        ipc_timeout_ms;
+    uint32_t        dbg_wait_fired;  /* TNET-151 diag: last WaitSelect Wait() return mask */
     uint32_t        ipc_timeouts;
     /* TNET-150: timed-out calls are NEVER freed mid-session — a deferred
      * daemon handler (DNS) may still hold the message. Abandoned heap

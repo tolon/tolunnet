@@ -817,6 +817,7 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
         }
 
         ULONG fired = Wait(wait_mask);
+        base->dbg_wait_fired = fired; /* TNET-151 diag */
 
         if (timer_active) {
             if (!CheckIO((struct IORequest *)tm)) {
