@@ -390,6 +390,10 @@ static int tn_task_real_main(int argc, char *argv[])
     ctrl_c_sig = SIGBREAKF_CTRL_C;
     wait_mask  = s2_sig | event_sig | timer_sig | ipc_sig | ctrl_c_sig;
 
+    tn_logf(TN_LOG_BASIC,
+    "tolunnet: wait mask 0x%08lx, ctrl_c 0x%08lx in mask: %ld (TNET-152 diag)\n",
+            wait_mask, ctrl_c_sig, (LONG)((wait_mask & ctrl_c_sig) != 0));
+
     tn_log(TN_LOG_BASIC, "tolunnet: network task running (Press Ctrl-C to stop)\n");
     g_daemon.running = TRUE;
 
@@ -403,6 +407,7 @@ static int tn_task_real_main(int argc, char *argv[])
          * code under live clients → Guru on their next call. Refuse to exit
          * and keep servicing IPC until every opener has closed. */
         if (sigs & ctrl_c_sig) {
+            tn_log(TN_LOG_BASIC, "tolunnet: CTRL-C signal received\n");
             if (g_daemon.bsd_lib != NULL && g_daemon.bsd_lib->lib_OpenCnt > 0) {
                 /* TNET-150 item 6: name the holders, reap dead tasks */
                 int reaped = tn_reap_dead_clients(&g_daemon);

@@ -4619,6 +4619,46 @@ static void tc_cmd_getnetstatus(void)
  * drained, repeat for ~2 s of DateStamp ticks. Exercises the send path +
  * RX freelist drain end to end; the number (not the pass bar) is the
  * deliverable — bench SUMMARY greps the bytes/s line. */
+/* TNET-152 / RC3 item 1: the user-facing stop path. Same mechanism as
+ * NetShutdown / TolunnetControl STOP: Signal(port->mp_SigTask,
+ * SIGBREAKF_CTRL_C). Proves the daemon actually EXITS (port disappears)
+ * and afterwards bsdsocket.library cannot be opened (= TolunnetControl
+ * STATUS RC 5 semantics). MUST be the last row - the daemon is gone
+ * when it passes, and the bench restarts it for cycle 2 (two-banner
+ * proof). */
+static void tc_cmd_stop_start(void)
+{
+    struct MsgPort *port;
+    struct Library *gone;
+    int waits;
+
+    port = (struct MsgPort *)FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
+    if (port == NULL || port->mp_SigTask == NULL) {
+        TAP_NOTOK("tc_cmd_stop_start", "daemon port not found");
+        return;
+    }
+    Signal((struct Task *)port->mp_SigTask, SIGBREAKF_CTRL_C);
+
+    /* wait for the daemon to exit: the port must disappear */
+    for (waits = 0; waits < 100; waits++) {
+        Delay(5); /* ~10 s total */
+        if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) break;
+    }
+    if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
+        TAP_NOTOK("tc_cmd_stop_start", "daemon still running 10 s after stop signal");
+        return;
+    }
+
+    /* STATUS-semantics: bsdsocket.library must refuse to open now */
+    gone = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
+    if (gone != NULL) {
+        CloseLibrary(gone);
+        TAP_NOTOK("tc_cmd_stop_start", "bsdsocket.library still opens after daemon exit");
+        return;
+    }
+    TAP_OK("tc_cmd_stop_start");
+}
+
 static void tc_iperf_loopback(void)
 {
     LONG lst, cli, conn;
@@ -4710,7 +4750,7 @@ static void tc_cmd_ifctl(void)
         TAP_NOTOK("tc_cmd_ifctl", "LIST returned nothing");
         return;
     }
-    if (!rows[0].in_use || rows[0].name[0] == ' ') {
+    if (!rows[0].in_use || rows[0].name[0] == '\0') {
         TAP_NOTOK("tc_cmd_ifctl", "primary row missing name/in_use");
         return;
     }
@@ -5018,6 +5058,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_wifi_scan_parse);
     TN_RUN(tc_reconfig_rc);
     TN_RUN(tc_link_events);
+    TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
 
