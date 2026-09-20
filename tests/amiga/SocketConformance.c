@@ -4861,13 +4861,13 @@ int main(int argc, char *argv[])
     TN_RUN(tc_socket_events);
     TN_RUN(tc_sbtc_full);
     TN_RUN(tc_release_obtain);
-    TN_RUN(tc_cmd_whois); /* TNET-150 debug: post-release_obtain, pre-wizard */
     TN_RUN(tc_every_vector_callable);
     TN_RUN(tc_stats_counters);
     TN_RUN(tc_wizard_wired);
     TN_RUN(tc_wizard_ntsc);
     TN_RUN(tc_wifi_scan_parse);
     TN_RUN(tc_reconfig_rc);
+    TN_RUN(tc_cmd_whois); /* TNET-150 debug: post-reconfig, pre-link_events */
     TN_RUN(tc_link_events);
     TN_RUN(tc_cmd_hostname);
     TN_RUN(tc_cmd_nslookup);
