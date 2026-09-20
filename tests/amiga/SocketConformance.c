@@ -4858,19 +4858,12 @@ int main(int argc, char *argv[])
     TN_RUN(tc_sendmsg_iov);
     TN_RUN(tc_tcp_scatter_tnet115);
     TN_RUN(tc_recv_peek);
-    TN_RUN(tc_socket_events);
-    TN_RUN(tc_sbtc_full);
-    TN_RUN(tc_release_obtain);
-    TN_RUN(tc_every_vector_callable);
-    TN_RUN(tc_stats_counters);
-    TN_RUN(tc_wizard_wired);
-    TN_RUN(tc_wizard_ntsc);
-    TN_RUN(tc_wifi_scan_parse);
-    /* TNET-150 bisection: reconfig skipped — whois@37 failed with it on 68000 */
-    TN_RUN(tc_cmd_whois); /* TNET-150 debug: post-reconfig, pre-link_events */
-    TN_RUN(tc_link_events);
+    /* CLOSE §B/TNET-150: command-surface rows run BEFORE the heavyweight
+     * wizard/reconfig tail — TNET-151 (suite-tail loopback degradation
+     * after the wizard tests) must not colour the command proofs. */
     TN_RUN(tc_cmd_hostname);
     TN_RUN(tc_cmd_nslookup);
+    TN_RUN(tc_cmd_whois);
     TN_RUN(tc_cmd_traceroute);
     TN_RUN(tc_cmd_nc);
     TN_RUN(tc_cmd_sntp);
@@ -4883,6 +4876,16 @@ int main(int argc, char *argv[])
     TN_RUN(tc_cmd_getnetstatus);
     TN_RUN(tc_iperf_loopback);
     TN_RUN(tc_cmd_route);
+    TN_RUN(tc_socket_events);
+    TN_RUN(tc_sbtc_full);
+    TN_RUN(tc_release_obtain);
+    TN_RUN(tc_every_vector_callable);
+    TN_RUN(tc_stats_counters);
+    TN_RUN(tc_wizard_wired);
+    TN_RUN(tc_wizard_ntsc);
+    TN_RUN(tc_wifi_scan_parse);
+    TN_RUN(tc_reconfig_rc);
+    TN_RUN(tc_link_events);
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
 
