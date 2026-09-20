@@ -89,7 +89,33 @@ The RX-freelist (TNET-107, commit 639c903) predates this measurement
 tool, so no "before freelist" baseline exists; these numbers are the
 baseline for the §C TX IORequest-pool work (before/after pool).
 
-## 5. Manual Verification Commands (Workbench CLI)
+## 5. TX Pool (TNET-106, CLOSE §C.10)
+
+Pipelined TX: `TX_QUEUE=` (default 4, max 8; `TX_QUEUE=0` = synchronous
+DoIO — the release default) gives each slot its OWN `IOSana2Req` and its
+own frame buffer, queued with `SendIO` to the TX completion port; a
+queued write is never touched until its reply (the shared-request race
+that hung the a2065 driver in 6de710e is structurally gone). All slots
+busy = `WaitPort` backpressure. `AbortIO`/`WaitIO` retire in-flight
+writes before `S2_OFFLINE` at shutdown. While the pool is active,
+`S2_ONEVENT` link tracking stays off — the emulated a2065/uaenet
+interleaves spurious ONLINE/OFFLINE completions with async TX
+completions (556ea30-class storm; flap evidence `20260920-140509-9ab5609`).
+
+- Functional proof with the pool LIVE (bench config stages TX_QUEUE=4):
+  `docs/bench-logs/20260920-143224-c97e38c/` ALL-GREEN, 53/53 both
+  profiles both cycles, zero link flaps; loopback throughput unchanged
+  (a1200 5397 / 68000 1134 KB/s — loopback bypasses SANA-II, so no
+  regression and no gain there by construction).
+- Real-wire throughput (iperf against a host server, both directions)
+  and the 1 h wire soak (ping flood + wget loop, AvailMem drift ≤ 8 KB)
+  are NOT provable in the hermetic bench: the emulated gateway does not
+  even answer ARP (tc_connect_refused watchdog evidence). These move to
+  the owner live test on A500+PiStorm+wifipi.device
+  (docs/PISTORM-INSTALL.md + docs/OWNER-RETEST.md), which also decides
+  whether TX_QUEUE=4 becomes the real-hardware default.
+
+## 6. Manual Verification Commands (Workbench CLI)
 
 ### Step 1: Control tolunnet Daemon
 ```amiga
