@@ -49,8 +49,22 @@ int tn_ipc_cmd_ifctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                 ent->is_dhcp = n->is_dhcp ? 1 : 0;
                 ent->link_up = n->link_up ? 1 : 0;
                 {
+                    /* TnNetif.name is not populated at startup — derive
+                     * the display name exactly like SIOCGIFCONF does */
+                    char nm[8];
                     int j;
-                    for (j = 0; j < 15 && n->name[j]; j++) ent->name[j] = n->name[j];
+                    ULONG if_unit = n->unit;
+                    if (n->lwip_if.name[0] == 'e' && n->lwip_if.name[1] == 't') {
+                        nm[0] = 'e'; nm[1] = 't'; nm[2] = 'h';
+                        nm[3] = (char)('0' + (if_unit % 10));
+                        nm[4] = '\0';
+                    } else {
+                        nm[0] = n->lwip_if.name[0];
+                        nm[1] = n->lwip_if.name[1];
+                        nm[2] = '0';
+                        nm[3] = '\0';
+                    }
+                    for (j = 0; j < 15 && nm[j]; j++) ent->name[j] = nm[j];
                     ent->name[j] = '\0';
                 }
                 {
