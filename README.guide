@@ -248,6 +248,18 @@ DEVS: file directly.
 * @{b}AddNetRoute DEST [MASK] [GATEWAY]:@{ub} / @{b}DeleteNetRoute DEST [MASK]:@{ub}
   Roadshow-style wrappers for route ADD / route DELETE.
 
+* @{b}AddNetInterface [FILE]:@{ub}
+  Reads a Roadshow-format interfaces file (default
+  DEVS:Internet/interfaces; "name KEY=VALUE" blocks with indented
+  continuation lines, ADDRESS may be CIDR a.b.c.d/n) and applies each
+  entry to the running interface.
+
+* @{b}ConfigureNetInterface NAME ADDRESS=x NETMASK=y GATEWAY=z:@{ub}
+  Live address change via the daemon (DHCP changes need a restart).
+
+* @{b}Online [NAME]:@{ub} / @{b}Offline [NAME]:@{ub}
+  Bring the interface up / take it down.
+
 * @{b}iperf SERVER | iperf CLIENT <host> [PORT] [SECONDS]:@{ub}
   TCP throughput tool (defaults: port 5201, 10 s). SERVER accepts and
   counts; CLIENT blasts a pattern and reports MB and KB/s.

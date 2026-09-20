@@ -4683,6 +4683,111 @@ static void tc_iperf_loopback(void)
     }
 }
 
+/* CLOSE §B.7: IFCTL — the IPC behind AddNetInterface /
+ * ConfigureNetInterface / Online / Offline. LIST fields sane, UP
+ * idempotent, SET writes-back the SAME address (non-destructive),
+ * DOWN/UP round-trip visible in LIST. */
+static void tc_cmd_ifctl(void)
+{
+    static TnIfInfo rows[4];
+    TnIpcMsg msg;
+    LONG args[6];
+    APTR ptrs[1];
+    LONG n;
+
+    /* LIST: at least the primary interface, sane fields */
+    memset(&msg, 0, sizeof(msg));
+    memset(args, 0, sizeof(args));
+    args[0] = TN_IFCTL_LIST;
+    args[4] = 4;
+    ptrs[0] = rows;
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, ptrs, 1, &msg) < 0) {
+        TAP_NOTOK("tc_cmd_ifctl", "LIST transport failed");
+        return;
+    }
+    n = msg.result;
+    if (n < 1) {
+        TAP_NOTOK("tc_cmd_ifctl", "LIST returned nothing");
+        return;
+    }
+    if (!rows[0].in_use || rows[0].name[0] == ' ') {
+        TAP_NOTOK("tc_cmd_ifctl", "primary row missing name/in_use");
+        return;
+    }
+
+    /* SET the SAME address/mask/gw back (non-destructive write) */
+    memset(&msg, 0, sizeof(msg));
+    memset(args, 0, sizeof(args));
+    args[0] = TN_IFCTL_SET;
+    args[1] = -1;
+    args[2] = (LONG)rows[0].addr;
+    args[3] = (LONG)rows[0].mask;
+    args[4] = (LONG)rows[0].gw;
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, NULL, 0, &msg) != 0 ||
+        msg.result != 0) {
+        TAP_NOTOK("tc_cmd_ifctl", "SET same-values failed");
+        return;
+    }
+
+    /* UP is idempotent */
+    memset(&msg, 0, sizeof(msg));
+    memset(args, 0, sizeof(args));
+    args[0] = TN_IFCTL_UP;
+    args[1] = -1;
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, NULL, 0, &msg) != 0 ||
+        msg.result != 0) {
+        TAP_NOTOK("tc_cmd_ifctl", "UP failed");
+        return;
+    }
+
+    /* LIST again: fields unchanged by the same-value SET */
+    memset(&msg, 0, sizeof(msg));
+    memset(args, 0, sizeof(args));
+    args[0] = TN_IFCTL_LIST;
+    args[4] = 4;
+    ptrs[0] = rows;
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, ptrs, 1, &msg) < 0 ||
+        msg.result < 1) {
+        TAP_NOTOK("tc_cmd_ifctl", "re-LIST failed");
+        return;
+    }
+    if (!rows[0].is_up) {
+        TAP_NOTOK("tc_cmd_ifctl", "interface not up after UP");
+        return;
+    }
+
+    /* DOWN/UP round-trip */
+    memset(&msg, 0, sizeof(msg));
+    memset(args, 0, sizeof(args));
+    args[0] = TN_IFCTL_DOWN;
+    args[1] = -1;
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, NULL, 0, &msg) != 0 ||
+        msg.result != 0) {
+        TAP_NOTOK("tc_cmd_ifctl", "DOWN failed");
+        return;
+    }
+    memset(&msg, 0, sizeof(msg));
+    memset(args, 0, sizeof(args));
+    args[0] = TN_IFCTL_LIST;
+    args[4] = 4;
+    ptrs[0] = rows;
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, ptrs, 1, &msg) < 0 ||
+        msg.result < 1 || rows[0].is_up) {
+        TAP_NOTOK("tc_cmd_ifctl", "still up after DOWN");
+        return;
+    }
+    memset(&msg, 0, sizeof(msg));
+    memset(args, 0, sizeof(args));
+    args[0] = TN_IFCTL_UP;
+    args[1] = -1;
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, NULL, 0, &msg) != 0 ||
+        msg.result != 0) {
+        TAP_NOTOK("tc_cmd_ifctl", "UP after DOWN failed");
+        return;
+    }
+    TAP_OK("tc_cmd_ifctl");
+}
+
 static void tc_cmd_route(void)
 {
     /* route / AddNetRoute / DeleteNetRoute (CLOSE §B.5): the exact ROUTECTL
@@ -4886,6 +4991,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_cmd_tolunnetcontrol);
     TN_RUN(tc_cmd_getnetstatus);
     TN_RUN(tc_iperf_loopback);
+    TN_RUN(tc_cmd_ifctl);
     TN_RUN(tc_cmd_route);
     TN_RUN(tc_socket_events);
     TN_RUN(tc_sbtc_full);

@@ -85,6 +85,7 @@ TASK_OBJS   = $(BUILD)/src/task/daemon_main.o \
               $(BUILD)/src/task/ipc_netdb.o \
               $(BUILD)/src/task/ipc_status.o \
               $(BUILD)/src/task/ipc_route.o \
+              $(BUILD)/src/task/ipc_ifctl.o \
               $(BUILD)/src/task/route.o \
               $(BUILD)/src/task/route_hook.o \
               $(BUILD)/src/task/syslog.o
@@ -119,9 +120,13 @@ ROUTE_BIN     = $(BUILD)/route
 ADDNETROUTE_BIN = $(BUILD)/AddNetRoute
 DELETENETROUTE_BIN = $(BUILD)/DeleteNetRoute
 IPERF_BIN     = $(BUILD)/iperf
+ADDNETIF_BIN  = $(BUILD)/AddNetInterface
+CONFNETIF_BIN = $(BUILD)/ConfigureNetInterface
+ONLINE_BIN    = $(BUILD)/Online
+OFFLINE_BIN   = $(BUILD)/Offline
 
 .PHONY: all clean test-host package
-all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN) $(BSDTEST_BIN) $(FREEZEWATCH_BIN) $(HOSTNAME_BIN) $(NSLOOKUP_BIN) $(WHOIS_BIN) $(TRACEROUTE_BIN) $(NC_BIN) $(ARP_BIN) $(SHOWNETSTATUS_BIN) $(SNTP_BIN) $(TELNET_BIN) $(TFTP_BIN) $(CONTROL_BIN) $(GETNETSTATUS_BIN) $(FTP_BIN) $(ROUTE_BIN) $(ADDNETROUTE_BIN) $(DELETENETROUTE_BIN) $(IPERF_BIN)
+all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN) $(BSDTEST_BIN) $(FREEZEWATCH_BIN) $(HOSTNAME_BIN) $(NSLOOKUP_BIN) $(WHOIS_BIN) $(TRACEROUTE_BIN) $(NC_BIN) $(ARP_BIN) $(SHOWNETSTATUS_BIN) $(SNTP_BIN) $(TELNET_BIN) $(TFTP_BIN) $(CONTROL_BIN) $(GETNETSTATUS_BIN) $(FTP_BIN) $(ROUTE_BIN) $(ADDNETROUTE_BIN) $(DELETENETROUTE_BIN) $(IPERF_BIN) $(ADDNETIF_BIN) $(CONFNETIF_BIN) $(ONLINE_BIN) $(OFFLINE_BIN)
 
 # --- Host unit tests (Round 3 §B.1) -----------------------------------------
 # Every tests/host/test_*.c runs under native gcc with sanitizers + Werror;
@@ -136,7 +141,7 @@ HOST_UNITS   = src/common/inet_parse.c src/common/config_text.c \
                src/setup/stack_detect.c src/setup/wifi_mgr.c \
                src/setup/net_test.c src/setup/hw_detect.c \
                tests/host/mock_lwip.c src/task/slot_table.c \
-               src/task/route.c
+               src/task/route.c src/common/ifreader.c
 HOST_TESTS   = $(wildcard tests/host/test_*.c)
 HOST_BINS    = $(patsubst tests/host/%.c,$(BUILD)/host/%,$(HOST_TESTS))
 
@@ -253,6 +258,18 @@ $(DELETENETROUTE_BIN): $(BUILD)/src/cmds/DeleteNetRoute.o $(CMDLIB_OBJ) $(BUILD)
 $(IPERF_BIN): $(BUILD)/src/cmds/iperf.o $(CMDLIB_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
+$(ADDNETIF_BIN): $(BUILD)/src/cmds/AddNetInterface.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o $(BUILD)/src/common/ifreader.o
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+$(CONFNETIF_BIN): $(BUILD)/src/cmds/ConfigureNetInterface.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+$(ONLINE_BIN): $(BUILD)/src/cmds/Online.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+$(OFFLINE_BIN): $(BUILD)/src/cmds/Offline.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
 # Target: TolunnetPing CLI Binary (M4)
 $(PING_BIN): $(BUILD)/src/cmds/TolunnetPing.o $(BUILD)/src/common/log.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
@@ -366,6 +383,10 @@ package: all
 	cp $(ADDNETROUTE_BIN) $(PACKAGE_DIR)/C/
 	cp $(DELETENETROUTE_BIN) $(PACKAGE_DIR)/C/
 	cp $(IPERF_BIN) $(PACKAGE_DIR)/C/
+	cp $(ADDNETIF_BIN) $(PACKAGE_DIR)/C/
+	cp $(CONFNETIF_BIN) $(PACKAGE_DIR)/C/
+	cp $(ONLINE_BIN) $(PACKAGE_DIR)/C/
+	cp $(OFFLINE_BIN) $(PACKAGE_DIR)/C/
 	cp $(SETUP_BIN) $(PACKAGE_DIR)/C/
 	if [ -f Installer ]; then cp Installer $(PACKAGE_DIR)/C/Installer; fi
 	$(STRIP) $(PACKAGE_DIR)/C/* || true

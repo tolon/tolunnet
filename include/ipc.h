@@ -103,8 +103,32 @@ typedef enum TnIpcCmd {
     TN_IPC_CMD_SELECT_ARM,      /* WaitSelect: arm selector for event-driven wake (§D) */
     TN_IPC_CMD_SELECT_DISARM,   /* WaitSelect: disarm selector (§D) */
     TN_IPC_CMD_GETSTATS,        /* Query stack telemetry and statistics (§F) */
-    TN_IPC_CMD_ROUTECTL         /* CLOSE §B.5: static route SHOW/ADD/DELETE (route) */
+    TN_IPC_CMD_ROUTECTL,        /* CLOSE §B.5: static route SHOW/ADD/DELETE (route) */
+    TN_IPC_CMD_IFCTL            /* CLOSE §B.7: interface LIST/UP/DOWN/SET (AddNetInterface/Online/Offline) */
 } TnIpcCmd;
+
+/* Interface row for TN_IPC_CMD_IFCTL LIST replies (CLOSE §B.7).
+ * addresses in network byte order. */
+typedef struct TnIfInfo {
+    uint16_t struct_size;   /* sizeof(TnIfInfo) */
+    uint8_t  in_use;
+    uint8_t  is_up;         /* lwIP netif up flag */
+    uint8_t  is_dhcp;
+    uint8_t  link_up;
+    char     name[16];
+    char     device[40];
+    uint32_t unit;
+    uint32_t addr;
+    uint32_t mask;
+    uint32_t gw;
+} TnIfInfo;
+
+/* IFCTL ops (args[0]) */
+#define TN_IFCTL_LIST 0  /* ptrs[0]=TnIfInfo* out, args[4]=capacity; result=count */
+#define TN_IFCTL_UP   1  /* args[1]=iface index (-1 = primary); result 0/-1 */
+#define TN_IFCTL_DOWN 2  /* args[1]=iface index (-1 = primary); result 0/-1 */
+#define TN_IFCTL_SET  3  /* args[1]=idx, args[2]=addr, args[3]=mask, args[4]=gw
+                          * (network order; 0 fields left unchanged); 0/-1 */
 
 /* Route row for TN_IPC_CMD_ROUTECTL LIST replies (CLOSE §B.5).
  * addresses in network byte order; gw 0 = interface route. */

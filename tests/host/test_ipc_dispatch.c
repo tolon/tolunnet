@@ -54,6 +54,7 @@ DEFINE_MOCK_HANDLER(tn_ipc_cmd_select_arm, TN_IPC_CMD_SELECT_ARM)
 DEFINE_MOCK_HANDLER(tn_ipc_cmd_select_disarm, TN_IPC_CMD_SELECT_DISARM)
 DEFINE_MOCK_HANDLER(tn_ipc_cmd_getstats, TN_IPC_CMD_GETSTATS)
 DEFINE_MOCK_HANDLER(tn_ipc_cmd_routectl, TN_IPC_CMD_ROUTECTL)
+DEFINE_MOCK_HANDLER(tn_ipc_cmd_ifctl, TN_IPC_CMD_IFCTL)
 
 #include "../../src/task/ipc_dispatch.c"
 
@@ -68,6 +69,7 @@ TN_TEST(cmd_name_resolution)
     TN_ASSERT_STREQ(tn_ipc_cmd_name(TN_IPC_CMD_SELECT_DISARM), "SELECT_DISARM");
     TN_ASSERT_STREQ(tn_ipc_cmd_name(TN_IPC_CMD_GETSTATS), "GETSTATS");
     TN_ASSERT_STREQ(tn_ipc_cmd_name(TN_IPC_CMD_ROUTECTL), "ROUTECTL");
+    TN_ASSERT_STREQ(tn_ipc_cmd_name(TN_IPC_CMD_IFCTL), "IFCTL");
 
     /* Out of bounds */
     TN_ASSERT_STREQ(tn_ipc_cmd_name((TnIpcCmd)-1), "UNKNOWN");

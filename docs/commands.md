@@ -23,6 +23,10 @@ All commands install to `SYS:C/` (except Prefs tools). Every command is a thin c
 | `route` | `SHOW/S,ADD/S,DEST/K,NETMASK/K,GATEWAY/K,DELETE/S,DEFAULT/S` | 0/10/20 | Static routing table via ROUTECTL (lwIP route hooks) | `tc_cmd_route` |
 | `AddNetRoute` | `DEST/A,MASK/K,GATEWAY/K` | 0/10 | Roadshow-style route add wrapper | `tc_cmd_route` |
 | `DeleteNetRoute` | `DEST/A,MASK/K` | 0/10 | Roadshow-style route delete wrapper | `tc_cmd_route` |
+| `AddNetInterface` | `FILE` | 0/5/10/20 | Apply a Roadshow-format interfaces file (default `DEVS:Internet/interfaces`) to the primary interface | `tc_cmd_ifctl` |
+| `ConfigureNetInterface` | `NAME/M,ADDRESS/K,NETMASK/K,GATEWAY/K,DHCP/K` | 0/5/20 | Live address/netmask/gateway apply (DHCP: needs restart) | `tc_cmd_ifctl` |
+| `Online` | `NAME` | 0/10 | Bring the interface up | `tc_cmd_ifctl` |
+| `Offline` | `NAME` | 0/10 | Take the interface down | `tc_cmd_ifctl` |
 
 ## File Transfer
 
