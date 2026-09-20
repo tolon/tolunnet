@@ -124,9 +124,11 @@ ADDNETIF_BIN  = $(BUILD)/AddNetInterface
 CONFNETIF_BIN = $(BUILD)/ConfigureNetInterface
 ONLINE_BIN    = $(BUILD)/Online
 OFFLINE_BIN   = $(BUILD)/Offline
+CHECKNETCONFIG_BIN = $(BUILD)/CheckNetConfig
+NETSHUTDOWN_BIN    = $(BUILD)/NetShutdown
 
 .PHONY: all clean test-host package
-all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN) $(BSDTEST_BIN) $(FREEZEWATCH_BIN) $(HOSTNAME_BIN) $(NSLOOKUP_BIN) $(WHOIS_BIN) $(TRACEROUTE_BIN) $(NC_BIN) $(ARP_BIN) $(SHOWNETSTATUS_BIN) $(SNTP_BIN) $(TELNET_BIN) $(TFTP_BIN) $(CONTROL_BIN) $(GETNETSTATUS_BIN) $(FTP_BIN) $(ROUTE_BIN) $(ADDNETROUTE_BIN) $(DELETENETROUTE_BIN) $(IPERF_BIN) $(ADDNETIF_BIN) $(CONFNETIF_BIN) $(ONLINE_BIN) $(OFFLINE_BIN)
+all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN) $(BSDTEST_BIN) $(FREEZEWATCH_BIN) $(HOSTNAME_BIN) $(NSLOOKUP_BIN) $(WHOIS_BIN) $(TRACEROUTE_BIN) $(NC_BIN) $(ARP_BIN) $(SHOWNETSTATUS_BIN) $(SNTP_BIN) $(TELNET_BIN) $(TFTP_BIN) $(CONTROL_BIN) $(GETNETSTATUS_BIN) $(FTP_BIN) $(ROUTE_BIN) $(ADDNETROUTE_BIN) $(DELETENETROUTE_BIN) $(IPERF_BIN) $(ADDNETIF_BIN) $(CONFNETIF_BIN) $(ONLINE_BIN) $(OFFLINE_BIN) $(CHECKNETCONFIG_BIN) $(NETSHUTDOWN_BIN)
 
 # --- Host unit tests (Round 3 §B.1) -----------------------------------------
 # Every tests/host/test_*.c runs under native gcc with sanitizers + Werror;
@@ -270,6 +272,12 @@ $(ONLINE_BIN): $(BUILD)/src/cmds/Online.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_
 $(OFFLINE_BIN): $(BUILD)/src/cmds/Offline.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
+$(CHECKNETCONFIG_BIN): $(BUILD)/src/cmds/CheckNetConfig.o $(CMDLIB_OBJ) $(BUILD)/src/common/config_text.o
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+$(NETSHUTDOWN_BIN): $(BUILD)/src/cmds/NetShutdown.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
 # Target: TolunnetPing CLI Binary (M4)
 $(PING_BIN): $(BUILD)/src/cmds/TolunnetPing.o $(BUILD)/src/common/log.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
@@ -387,6 +395,8 @@ package: all
 	cp $(CONFNETIF_BIN) $(PACKAGE_DIR)/C/
 	cp $(ONLINE_BIN) $(PACKAGE_DIR)/C/
 	cp $(OFFLINE_BIN) $(PACKAGE_DIR)/C/
+	cp $(CHECKNETCONFIG_BIN) $(PACKAGE_DIR)/C/
+	cp $(NETSHUTDOWN_BIN) $(PACKAGE_DIR)/C/
 	cp $(SETUP_BIN) $(PACKAGE_DIR)/C/
 	if [ -f Installer ]; then cp Installer $(PACKAGE_DIR)/C/Installer; fi
 	$(STRIP) $(PACKAGE_DIR)/C/* || true

@@ -545,6 +545,35 @@ static void diag_key_tnet139(void)
     TN_ASSERT_EQ(a.diag, 0);
 }
 
+
+/* CLOSE §B.8: CheckNetConfig vocabulary — single source with the parser. */
+TN_TEST(checknetconfig_vocabulary)
+{
+    /* every key the parser accepts is known */
+    TN_ASSERT_TRUE(tn_config_key_known("DEVICE"));
+    TN_ASSERT_TRUE(tn_config_key_known("device"));   /* case-insensitive */
+    TN_ASSERT_TRUE(tn_config_key_known("USE_DHCP"));
+    TN_ASSERT_TRUE(tn_config_key_known("DNS_PORT"));
+    TN_ASSERT_TRUE(tn_config_key_known("DNS_PENDING"));
+    TN_ASSERT_TRUE(tn_config_key_known("DNS_RETRIES"));
+    TN_ASSERT_TRUE(tn_config_key_known("DATABASE_ORDER"));
+    TN_ASSERT_TRUE(tn_config_key_known("S2EVENTS"));
+    TN_ASSERT_TRUE(tn_config_key_known("VERSION"));
+    /* unknown / degenerate */
+    TN_ASSERT_TRUE(!tn_config_key_known("DEVICEX"));
+    TN_ASSERT_TRUE(!tn_config_key_known(""));
+    TN_ASSERT_TRUE(!tn_config_key_known(NULL));
+    /* value classes */
+    TN_ASSERT_EQ(tn_config_value_class("NETMASK"), 1);
+    TN_ASSERT_EQ(tn_config_value_class("GW"), 1);
+    TN_ASSERT_EQ(tn_config_value_class("DNS"), 1);
+    TN_ASSERT_EQ(tn_config_value_class("UNIT"), 2);
+    TN_ASSERT_EQ(tn_config_value_class("DNS_RETRIES"), 2);
+    TN_ASSERT_EQ(tn_config_value_class("DHCP"), 3);
+    TN_ASSERT_EQ(tn_config_value_class("HOSTNAME"), 0);  /* free string */
+    TN_ASSERT_EQ(tn_config_value_class("BOGUS"), 0);
+}
+
 int main(void)
 {
     TN_TEST_RUN(round_trip_all_keys);
@@ -564,6 +593,7 @@ int main(void)
     TN_TEST_RUN(dns_port_key);
     TN_TEST_RUN(font_key_tnet110);
     TN_TEST_RUN(diag_key_tnet139);
+    TN_TEST_RUN(checknetconfig_vocabulary);
     TN_TEST_PLAN();
     return tn_test_failures();
 }

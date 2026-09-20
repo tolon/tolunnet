@@ -60,4 +60,8 @@ void tn_recfg_diff(const TnPrefs *oldp, const TnPrefs *newp,
 /* Printable name of one TN_RECFG_* bit, or NULL. */
 const char *tn_recfg_key_name(uint32_t bit);
 
+/* CLOSE §B.8: CheckNetConfig vocabulary. */
+int tn_config_key_known(const char *key);
+int tn_config_value_class(const char *key);
+
 #endif /* TOLUNNET_CONFIG_TEXT_H */

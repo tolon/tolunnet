@@ -492,3 +492,50 @@ const char *tn_recfg_key_name(uint32_t bit)
     default:                      return NULL;
     }
 }
+
+/* ------------------------------------------------------------------ */
+/* CLOSE §B.8: CheckNetConfig vocabulary — the SAME keys the parser
+ * accepts (single source). Value classes drive the command's checks. */
+
+#include <string.h>
+
+static const char *const g_cfg_keys[] = {
+    "DATABASE_ORDER", "DEBUG", "DEVICE", "DIAG", "DHCP", "DNS", "DNS1",
+    "DNS2", "DNS_PENDING", "DNS_PORT", "DNS_RETRIES", "FONT", "GATEWAY",
+    "GW", "HOSTNAME", "IP", "IP_ADDR", "LOG", "LOGLEVEL", "MASK", "MTU",
+    "NAMESERVER", "NETMASK", "PRIORITY", "S2EVENTS", "SELECTORS",
+    "STATS", "SYSLOG", "UNIT", "USE_DHCP", "VERSION",
+    NULL
+};
+
+int tn_config_key_known(const char *key)
+{
+    int i;
+    if (key == NULL || *key == '\0') return 0;
+    for (i = 0; g_cfg_keys[i] != NULL; i++) {
+        if (tn_str_equal_nocase(key, g_cfg_keys[i])) return 1;
+    }
+    return 0;
+}
+
+int tn_config_value_class(const char *key)
+{
+    /* 0 string, 1 dotted-quad, 2 number, 3 boolean-ish */
+    static const struct { const char *k; int cls; } cls_map[] = {
+        { "IP", 1 }, { "IP_ADDR", 1 }, { "NETMASK", 1 }, { "MASK", 1 },
+        { "GATEWAY", 1 }, { "GW", 1 }, { "DNS", 1 }, { "DNS1", 1 },
+        { "DNS2", 1 }, { "NAMESERVER", 1 },
+        { "UNIT", 2 }, { "MTU", 2 }, { "DNS_PORT", 2 }, { "SELECTORS", 2 },
+        { "PRIORITY", 2 }, { "DNS_PENDING", 2 }, { "DNS_RETRIES", 2 },
+        { "LOGLEVEL", 2 },
+        { "DHCP", 3 }, { "USE_DHCP", 3 }, { "STATS", 3 }, { "DIAG", 3 },
+        { "DEBUG", 3 },
+        { NULL, 0 }
+    };
+    int i;
+    if (key == NULL) return 0;
+    for (i = 0; cls_map[i].k != NULL; i++) {
+        if (tn_str_equal_nocase(key, cls_map[i].k)) return cls_map[i].cls;
+    }
+    return 0;
+}

@@ -260,6 +260,15 @@ DEVS: file directly.
 * @{b}Online [NAME]:@{ub} / @{b}Offline [NAME]:@{ub}
   Bring the interface up / take it down.
 
+* @{b}CheckNetConfig [FILE]:@{ub}
+  Validates DEVS:tolunnet.config (or FILE): KEY=VALUE shape, unknown
+  keys, wrong value classes — problems reported with line numbers.
+  RC 0 clean, 10 problems.
+
+* @{b}NetShutdown [FORCE]:@{ub}
+  Takes the interface down and asks the daemon to stop. The daemon
+  refuses while clients still hold bsdsocket.library open (TNET-059).
+
 * @{b}iperf SERVER | iperf CLIENT <host> [PORT] [SECONDS]:@{ub}
   TCP throughput tool (defaults: port 5201, 10 s). SERVER accepts and
   counts; CLIENT blasts a pattern and reports MB and KB/s.

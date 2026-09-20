@@ -27,6 +27,8 @@ All commands install to `SYS:C/` (except Prefs tools). Every command is a thin c
 | `ConfigureNetInterface` | `NAME/M,ADDRESS/K,NETMASK/K,GATEWAY/K,DHCP/K` | 0/5/20 | Live address/netmask/gateway apply (DHCP: needs restart) | `tc_cmd_ifctl` |
 | `Online` | `NAME` | 0/10 | Bring the interface up | `tc_cmd_ifctl` |
 | `Offline` | `NAME` | 0/10 | Take the interface down | `tc_cmd_ifctl` |
+| `CheckNetConfig` | `FILE` | 0 clean / 5 unreadable / 10 problems | Config validator: KEY=VALUE, unknown keys, value classes, LINE numbers | host `checknetconfig_vocabulary` |
+| `NetShutdown` | `FORCE/S` | 0/5/20 | Interface down + daemon stop signal (TNET-059 guard applies) | `tc_cmd_netshutdown` |
 
 ## File Transfer
 

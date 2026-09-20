@@ -4788,6 +4788,20 @@ static void tc_cmd_ifctl(void)
     TAP_OK("tc_cmd_ifctl");
 }
 
+/* CLOSE §B.8: NetShutdown's stop mechanism WITHOUT sending it (killing
+ * the bench daemon would end the run): the IPC port exists and its
+ * SigTask is a live task. CheckNetConfig's core is host-proven
+ * (checknetconfig_vocabulary). */
+static void tc_cmd_netshutdown(void)
+{
+    struct MsgPort *port = (struct MsgPort *)FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
+    if (port == NULL || port->mp_SigTask == NULL) {
+        TAP_NOTOK("tc_cmd_netshutdown", "daemon port not found");
+        return;
+    }
+    TAP_OK("tc_cmd_netshutdown");
+}
+
 static void tc_cmd_route(void)
 {
     /* route / AddNetRoute / DeleteNetRoute (CLOSE §B.5): the exact ROUTECTL
@@ -4992,6 +5006,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_cmd_getnetstatus);
     TN_RUN(tc_iperf_loopback);
     TN_RUN(tc_cmd_ifctl);
+    TN_RUN(tc_cmd_netshutdown);
     TN_RUN(tc_cmd_route);
     TN_RUN(tc_socket_events);
     TN_RUN(tc_sbtc_full);
