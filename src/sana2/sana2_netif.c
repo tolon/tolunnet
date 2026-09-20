@@ -299,18 +299,163 @@ TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac)
     return TN_S2_OK;
 }
 
+/* ---------------------------- TNET-106 §C: TX pool ------------------- */
+
+TnS2Result tn_s2_tx_init(TnSana2If *nif, ULONG count)
+{
+    ULONG i, k;
+    ULONG buf_size;
+
+    if (nif == NULL) return TN_S2_INTERNAL;
+    if (count == 0 || count > TN_S2_TXPOOL_MAX) count = 4;
+    if (nif->tx_ios != NULL) return TN_S2_OK; /* already up */
+
+    buf_size = nif->mtu + 32;
+    if (buf_size < 1600) buf_size = 1600;
+
+    nif->tx_ios = (struct IOSana2Req **)AllocVec(
+        sizeof(struct IOSana2Req *) * count, MEMF_CLEAR | MEMF_PUBLIC);
+    nif->tx_busy = (BOOL *)AllocVec(sizeof(BOOL) * count, MEMF_CLEAR | MEMF_PUBLIC);
+    if (nif->tx_ios == NULL || nif->tx_busy == NULL) {
+        FreeVec(nif->tx_ios); FreeVec(nif->tx_busy);
+        nif->tx_ios = NULL; nif->tx_busy = NULL;
+        return TN_S2_NO_MEM;
+    }
+    nif->n_tx_ios = count;
+
+    for (i = 0; i < count; i++) {
+        struct IOSana2Req *tio = (struct IOSana2Req *)tn_create_extio(
+            nif->tx_port, sizeof(struct IOSana2Req));
+        if (tio == NULL) goto unwind;
+        nif->tx_ios[i] = tio;
+        nif->tx_bufs[i] = (UBYTE *)AllocVec(buf_size, MEMF_CLEAR | MEMF_PUBLIC);
+        if (nif->tx_bufs[i] == NULL) {
+            goto unwind; /* zero-filled array ends the unwind loop here */
+        }
+    }
+    tn_logf(TN_LOG_BASIC, "s2: TX pool: %lu slot(s), pipelined SendIO\n", count);
+    return TN_S2_OK;
+
+unwind:
+    for (k = 0; k <= i && k < count; k++) {
+        if (nif->tx_ios[k] != NULL) {
+            tn_delete_extio((struct IORequest *)nif->tx_ios[k]);
+            nif->tx_ios[k] = NULL;
+        }
+        if (nif->tx_bufs[k] != NULL) {
+            FreeVec(nif->tx_bufs[k]);
+            nif->tx_bufs[k] = NULL;
+        }
+    }
+    FreeVec(nif->tx_ios);
+    FreeVec(nif->tx_busy);
+    nif->tx_ios = NULL;
+    nif->tx_busy = NULL;
+    nif->n_tx_ios = 0;
+    tn_log(TN_LOG_BASIC, "s2: TX pool alloc failed - synchronous TX\n");
+    return TN_S2_NO_MEM;
+}
+
+void tn_s2_tx_drain(TnSana2If *nif)
+{
+    struct Message *m;
+    if (nif == NULL || nif->tx_ios == NULL) return;
+    while ((m = GetMsg(nif->tx_port)) != NULL) {
+        ULONG i;
+        for (i = 0; i < nif->n_tx_ios; i++) {
+            if ((struct Message *)nif->tx_ios[i] == m) {
+                if (nif->tx_ios[i]->ios2_Req.io_Error != 0) {
+                    tn_log_s2err("tx_complete", nif->tx_ios[i]->ios2_Req.io_Error,
+                                 nif->tx_ios[i]->ios2_WireError);
+                }
+                nif->tx_busy[i] = FALSE;
+                nif->tx_pending = FALSE;
+                break;
+            }
+        }
+    }
+}
+
+void tn_s2_tx_abort_all(TnSana2If *nif)
+{
+    ULONG i;
+    if (nif == NULL) return;
+    if (nif->tx_ios == NULL) return;
+    for (i = 0; i < nif->n_tx_ios; i++) {
+        if (nif->tx_ios[i] != NULL && nif->tx_busy[i]) {
+            if (!CheckIO((struct IORequest *)nif->tx_ios[i])) {
+                AbortIO((struct IORequest *)nif->tx_ios[i]);
+            }
+            WaitIO((struct IORequest *)nif->tx_ios[i]);
+            nif->tx_busy[i] = FALSE;
+        }
+    }
+    tn_s2_tx_drain(nif);
+    for (i = 0; i < nif->n_tx_ios; i++) {
+        if (nif->tx_ios[i] != NULL) {
+            tn_delete_extio((struct IORequest *)nif->tx_ios[i]);
+            nif->tx_ios[i] = NULL;
+        }
+        if (nif->tx_bufs[i] != NULL) {
+            FreeVec(nif->tx_bufs[i]);
+            nif->tx_bufs[i] = NULL;
+        }
+    }
+    FreeVec(nif->tx_ios);
+    FreeVec(nif->tx_busy);
+    nif->tx_ios = NULL;
+    nif->tx_busy = NULL;
+    nif->n_tx_ios = 0;
+    nif->tx_pending = FALSE;
+}
+
 LONG tn_s2_send(TnSana2If *nif, const void *buf, LONG len,
                 BOOL broadcast, ULONG packet_type, const UBYTE *dst_addr)
 {
     struct IOSana2Req *io;
     if (nif == NULL || !nif->online || nif->io == NULL) return -1;
 
-    io = nif->io;
+    /* TNET-106 §C: pipelined path — a pool of separate requests means a
+     * queued write is never re-touched until its reply (the shared-request
+     * race that hung the a2065 driver is structurally gone). The frame is
+     * copied into the slot's own buffer so the caller's storage is free
+     * the moment we return. */
+    if (nif->tx_ios != NULL) {
+        ULONG slot = 0;
+        struct IOSana2Req *tio;
+        UBYTE *dst;
 
-    /* TNET-106 note: SendIO pipelining attempted but the shared IORequest
-     * struct can be read by the driver while we set up the next frame —
-     * the emulated a2065 driver hangs. DoIO (synchronous) is safe; the
-     * RxPacket freelist (TNET-107) provides the measurable win. */
+        tn_s2_tx_drain(nif);
+        for (;;) {
+            for (slot = 0; slot < nif->n_tx_ios; slot++) {
+                if (!nif->tx_busy[slot]) break;
+            }
+            if (slot < nif->n_tx_ios) break;
+            /* every slot in flight: wait for the oldest completion — the
+             * driver replies independently, so this is plain backpressure */
+            WaitPort(nif->tx_port);
+            tn_s2_tx_drain(nif);
+        }
+
+        tio = nif->tx_ios[slot];
+        dst = nif->tx_bufs[slot];
+        CopyMem((CONST APTR)buf, (APTR)dst, (ULONG)len);
+        tio->ios2_Req.io_Command = broadcast ? S2_BROADCAST : CMD_WRITE;
+        tio->ios2_PacketType     = packet_type;
+        tio->ios2_DataLength     = (ULONG)len;
+        tio->ios2_Data           = (APTR)dst;
+        tio->ios2_Req.io_Error   = 0;
+        if (!broadcast && dst_addr != NULL) {
+            CopyMem((CONST APTR)dst_addr, (APTR)tio->ios2_DstAddr, nif->addr_bytes);
+        }
+        nif->tx_busy[slot] = TRUE;
+        nif->tx_pending = TRUE;
+        SendIO((struct IORequest *)tio);
+        return len;
+    }
+
+    /* synchronous fallback (pool alloc failed or TX_QUEUE=0) */
+    io = nif->io;
     io->ios2_Req.io_Command = broadcast ? S2_BROADCAST : CMD_WRITE;
     io->ios2_PacketType     = packet_type;
     io->ios2_DataLength     = (ULONG)len;
@@ -642,6 +787,10 @@ void tn_s2_offline_close(TnSana2If *nif)
         DeleteMsgPort(nif->event_port);
         nif->event_port = NULL;
     }
+
+    /* TNET-106 §C: retire pipelined TX writes before S2_OFFLINE so the
+     * driver never sees the unit torn down under a queued CMD_WRITE */
+    tn_s2_tx_abort_all(nif);
 
     if (nif->io != NULL && nif->online) {
         nif->io->ios2_Req.io_Command = S2_UNTRACKTYPE;

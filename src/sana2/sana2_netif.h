@@ -42,6 +42,14 @@ typedef struct TnSana2If {
     ULONG              unit;            /* e.g. 0                         */
     struct MsgPort    *tx_port;         /* dedicated port for TX completion (TNET-106) */
     BOOL               tx_pending;      /* TRUE when a SendIO write is in flight */
+    /* TNET-106 §C: TX pool — separate IOSana2Req + buffer per slot so a
+     * queued write is never touched until its reply (the shared-request
+     * race that hung the a2065 driver). NULL pool = synchronous DoIO. */
+#define TN_S2_TXPOOL_MAX 8
+    struct IOSana2Req **tx_ios;         /* pool requests (tx_port replies) */
+    UBYTE             *tx_bufs[TN_S2_TXPOOL_MAX]; /* per-slot frame buffers */
+    BOOL              *tx_busy;         /* slot in flight until reply      */
+    ULONG              n_tx_ios;        /* slots allocated (0 = sync path) */
     struct MsgPort    *rx_port;         /* dedicated port for async RX    */
     struct IOSana2Req *io;              /* primary request (query/online) */
     struct IOSana2Req **read_ios;       /* >=4 outstanding CMD_READ reqs  */
@@ -67,6 +75,10 @@ typedef struct TnSana2If {
 /* Lifecycle. */
 TnS2Result tn_s2_open(TnSana2If *nif, CONST_STRPTR device_name, ULONG unit);
 TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac /* nullable */);
+/* TNET-106 §C: TX pool lifecycle */
+TnS2Result tn_s2_tx_init(TnSana2If *nif, ULONG count);
+void       tn_s2_tx_drain(TnSana2If *nif);
+void       tn_s2_tx_abort_all(TnSana2If *nif);
 void       tn_s2_offline_close(TnSana2If *nif);
 
 /* Arm >=4 outstanding async CMD_READ requests (the receive pump). */

@@ -36,7 +36,8 @@ void tn_prefs_default(TnPrefs *prefs)
     prefs->syslog_host[0] = '\0';
     prefs->s2events = 0;        /* 0 = ONLINE|OFFLINE|ERROR (TNET-109) */
     prefs->dns_port = 0;        /* 0 = default 53 (TNET-111) */
-    prefs->diag = FALSE;        /* TNET-139: crash diagnostics off by default */
+    prefs->diag = FALSE;       /* TNET-139: crash diagnostics off by default */
+    prefs->tx_queue = 4;        /* TNET-106: TX pool slots (0 = sync) */
     prefs->font[0] = '\0';      /* empty = TolunnetSetup uses the screen font */
 }
 
@@ -190,6 +191,12 @@ void tn_config_parse_line(TnPrefs *prefs, const char *key, const char *val)
     } else if (tn_str_equal_nocase(clean_key, "SELECTORS")) {
         LONG n = 0;
         if (tn_str_to_long(clean_val, &n) && n >= 1 && n <= 128) prefs->selectors = (ULONG)n;
+    } else if (tn_str_equal_nocase(clean_key, "TX_QUEUE")) {
+        /* TNET-106 CLOSE S-C: TX pool slots (0 = synchronous DoIO) */
+        LONG n = 0;
+        if (tn_str_to_long(clean_val, &n) && n >= 0 && n <= 8) {
+            prefs->tx_queue = (ULONG)n;
+        }
     } else if (tn_str_equal_nocase(clean_key, "DNS_PENDING")) {
         /* TNET-150: deferred gethostbyname tracking slots */
         LONG n = 0;
@@ -383,6 +390,7 @@ int tn_config_format(const TnPrefs *prefs, char *buf, int buf_size)
     tn_cfg_put_kv_int(&o, "SELECTORS=", prefs->selectors);
     if (prefs->dns_pending_max != 0) tn_cfg_put_kv_int(&o, "DNS_PENDING=", prefs->dns_pending_max);
     if (prefs->dns_retries != 0) tn_cfg_put_kv_int(&o, "DNS_RETRIES=", prefs->dns_retries);
+    if (prefs->tx_queue != 0) tn_cfg_put_kv_int(&o, "TX_QUEUE=", prefs->tx_queue);
     tn_cfg_put(&o, "STATS=");
     tn_cfg_put(&o, prefs->stats ? "YES\n" : "NO\n");
     if (prefs->database_order[0] != '\0') {
@@ -504,7 +512,7 @@ static const char *const g_cfg_keys[] = {
     "DNS2", "DNS_PENDING", "DNS_PORT", "DNS_RETRIES", "FONT", "GATEWAY",
     "GW", "HOSTNAME", "IP", "IP_ADDR", "LOG", "LOGLEVEL", "MASK", "MTU",
     "NAMESERVER", "NETMASK", "PRIORITY", "S2EVENTS", "SELECTORS",
-    "STATS", "SYSLOG", "UNIT", "USE_DHCP", "VERSION",
+    "STATS", "SYSLOG", "TX_QUEUE", "UNIT", "USE_DHCP", "VERSION",
     NULL
 };
 
@@ -526,6 +534,7 @@ int tn_config_value_class(const char *key)
         { "GATEWAY", 1 }, { "GW", 1 }, { "DNS", 1 }, { "DNS1", 1 },
         { "DNS2", 1 }, { "NAMESERVER", 1 },
         { "UNIT", 2 }, { "MTU", 2 }, { "DNS_PORT", 2 }, { "SELECTORS", 2 },
+        { "TX_QUEUE", 2 },
         { "PRIORITY", 2 }, { "DNS_PENDING", 2 }, { "DNS_RETRIES", 2 },
         { "LOGLEVEL", 2 },
         { "DHCP", 3 }, { "USE_DHCP", 3 }, { "STATS", 3 }, { "DIAG", 3 },

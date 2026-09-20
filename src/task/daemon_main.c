@@ -298,6 +298,14 @@ static int tn_task_real_main(int argc, char *argv[])
     netif_set_up(&prim->lwip_if);
 
     /* 6. Arm async SANA-II receive pump */
+    /* TNET-106 §C: TX pool — separate requests, pipelined SendIO.
+     * TX_QUEUE=0 keeps the synchronous path; alloc failure also falls
+     * back (tn_s2_send checks tx_ios). */
+    if (g_daemon.prefs.tx_queue != 0) {
+        if (tn_s2_tx_init(&prim->s2if, g_daemon.prefs.tx_queue) != TN_S2_OK) {
+            tn_log(TN_LOG_BASIC, "tolunnet: TX pool unavailable - synchronous TX\n");
+        }
+    }
     if (tn_s2_arm_reads(&prim->s2if) != TN_S2_OK) {
         tn_log(TN_LOG_BASIC, "tolunnet: tn_s2_arm_reads failed\n");
         netif_set_down(&prim->lwip_if);
@@ -450,6 +458,7 @@ static int tn_task_real_main(int argc, char *argv[])
 
             /* TNET-109: bounded re-arm of error-completed CMD_READ slots */
             tn_s2_rearm_reads(&prim->s2if);
+            tn_s2_tx_drain(&prim->s2if); /* TNET-106: reap TX completions */
 
             /* Check DHCP lease progress */
             if (use_dhcp && !dhcp_logged && dhcp_supplied_address(&prim->lwip_if)) {
