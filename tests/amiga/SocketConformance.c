@@ -4349,7 +4349,7 @@ static void tc_cmd_ftp(void)
     /* ftp: control channel greeting/USER/PASV, PASV tuple parse (91,168 ->
      * port 23464), data connection carries the payload. */
     LONG lst = -1, cli = -1, conn = -1;
-    LONG dlst = -1, dconn = -1;
+    LONG dlst = -1, dconn = -1, dcli = -1;
     struct sockaddr_in dsin, dfrom;
     socklen_t dfromlen = sizeof(dfrom);
     char buf[64];
@@ -4425,19 +4425,27 @@ static void tc_cmd_ftp(void)
             goto ctl_fail_greet;
         }
     }
-    if (call_connect(cli, (struct sockaddr *)&dsin, sizeof(dsin)) != 0 ||
+    /* the data channel is a NEW socket — the control socket is already
+     * connected (real ftp clients dial PASV ports on fresh sockets; errno
+     * 45 = EOPNOTSUPP was tcp_connect on an established pcb) */
+    dcli = call_socket(AF_INET, SOCK_STREAM, 0);
+    if (dcli < 0 ||
+        call_connect(dcli, (struct sockaddr *)&dsin, sizeof(dsin)) != 0 ||
         !tc_cmd_wait_readable(dlst) ||
         (dconn = call_accept(dlst, (struct sockaddr *)&dfrom, &dfromlen)) < 0) {
+        if (dcli >= 0) call_closesocket(dcli);
         goto ctl_fail_greet;
     }
     if (call_send(dconn, "PAYLOAD", 7, 0) != 7 ||
-        !tc_cmd_wait_readable(cli) ||
-        call_recv(cli, buf, sizeof(buf), 0) != 7 ||
+        !tc_cmd_wait_readable(dcli) ||
+        call_recv(dcli, buf, sizeof(buf), 0) != 7 ||
         memcmp(buf, "PAYLOAD", 7) != 0) {
         call_closesocket(dconn);
+        call_closesocket(dcli);
         goto ctl_fail_greet;
     }
     call_closesocket(dconn);
+    call_closesocket(dcli);
     call_closesocket(conn);
     call_closesocket(cli);
     call_closesocket(lst);
