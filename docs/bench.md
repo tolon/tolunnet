@@ -82,8 +82,8 @@ printed in the TAP stream and collected into the bench `SUMMARY.txt`.
 
 | Profile | Loopback throughput | Evidence |
 |---------|--------------------|----------|
-| a1200 (68EC020) | pending green bench | — |
-| 68000 (A600-class) | pending green bench | — |
+| a1200 (68EC020) | 5426 KB/s (542552 B / ~2 s) | `docs/bench-logs/20260920-043824-8f81fd2/` |
+| 68000 (A600-class) | 1134 KB/s (113312 B / ~2 s) | `docs/bench-logs/20260920-043824-8f81fd2/` |
 
 The RX-freelist (TNET-107, commit 639c903) predates this measurement
 tool, so no "before freelist" baseline exists; these numbers are the
