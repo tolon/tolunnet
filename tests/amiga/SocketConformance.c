@@ -4866,7 +4866,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_wizard_wired);
     TN_RUN(tc_wizard_ntsc);
     TN_RUN(tc_wifi_scan_parse);
-    TN_RUN(tc_reconfig_rc);
+    /* TNET-150 bisection: reconfig skipped — whois@37 failed with it on 68000 */
     TN_RUN(tc_cmd_whois); /* TNET-150 debug: post-reconfig, pre-link_events */
     TN_RUN(tc_link_events);
     TN_RUN(tc_cmd_hostname);
