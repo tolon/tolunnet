@@ -4616,6 +4616,8 @@ static void tc_probe_loop_impl(const char *label, USHORT port)
     LONG lst, cli, conn;
     char buf[16];
     LONG got;
+    struct DateStamp ds;
+    ULONG t0, t1;
 
     if (!tc_cmd_tcp_pair(port, &lst, &cli, &conn)) {
         TAP_NOTOK(label, "PROBE: no loopback pair");
@@ -4627,12 +4629,14 @@ static void tc_probe_loop_impl(const char *label, USHORT port)
         TAP_NOTOK(label, "PROBE: send failed");
         return;
     }
+    DateStamp(&ds);
+    t0 = (ULONG)ds.ds_Days * 86400UL * 50UL + (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
     if (!tc_cmd_wait_readable(conn)) {
-        /* separator: is the DATA there (selector wake dead) or not
-         * (lwIP loopback path dead)? A direct blocking recv decides. */
+        DateStamp(&ds);
+        t1 = (ULONG)ds.ds_Days * 86400UL * 50UL + (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
         got = call_recv(conn, buf, sizeof(buf), 0);
-        tapf("# %s: wait_readable TIMEOUT; direct recv got=%ld errno=%ld\n",
-             label, got, call_errno());
+        tapf("# %s: wait failed after %ld ticks (150=real timeout, ~0=stale-signal lie); direct recv got=%ld\n",
+             label, (LONG)(t1 - t0), got);
         if (got == 5 && memcmp(buf, "probe", 5) == 0) {
             call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
             TAP_NOTOK(label, "PROBE: data flows but selector wake is dead");
