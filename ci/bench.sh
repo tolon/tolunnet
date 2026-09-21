@@ -50,7 +50,8 @@ command -v wsl >/dev/null || die "wsl not available (xdftool runs in WSL)"
 # TX_QUEUE=4 staged config, pass = bench-done + no Guru + RAM drift <= 8 KB.
 if [ "${1:-}" = "soak" ]; then
     say "soak mode: a1200, 24 h (SOAK_HOURS=${SOAK_HOURS:-24}), TX_QUEUE=4"
-    SOAK_DIR="$LOG_ROOT-soak"
+    SOAK_LOG_ROOT="docs/bench-logs/$(date +%Y%m%d-%H%M%S)-soak-$(git rev-parse --short HEAD 2>/dev/null || echo dirty)"
+    SOAK_DIR="$SOAK_LOG_ROOT"
     mkdir -p "$SOAK_DIR"
     WSL_STAMP="ci/.soak-tolunnet.config"
     sed -e "s/__DNS_PORT__/$BENCH_DNS_PORT/" ci/tolunnet.config | sed '/^TX_QUEUE=/d' > "$WSL_STAMP"
