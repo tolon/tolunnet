@@ -15,10 +15,21 @@
 #define DO 253
 #define WONT 252
 #define WILL 251
+#define SB 250
+#define SE 240
 #define OPT_ECHO 1
 #define OPT_SGA 3
 #define OPT_TTYPE 24
 #define OPT_NAWS 31
+
+/* Telnet protocol parser states (SEC item 8) */
+enum {
+    TN_STATE_DATA = 0,
+    TN_STATE_IAC,
+    TN_STATE_OPT,
+    TN_STATE_SB,
+    TN_STATE_SB_IAC
+};
 
 int main(int argc, char **argv)
 {
@@ -86,6 +97,8 @@ int main(int argc, char **argv)
         struct timeval tv;
         LONG sel;
         LONG running = 1;
+        int tn_state = TN_STATE_DATA;
+        UBYTE pending_cmd = 0;
 
         while (running && !tn_cmd_check_ctrlc()) {
             FD_ZERO(&rfds);
@@ -101,24 +114,60 @@ int main(int argc, char **argv)
                     running = 0;
                     break;
                 }
-                /* Filter out IAC sequences */
+                /* Filter out IAC sequences and skip subnegotiation (SEC item 8) */
                 {
                     LONG i, w = 0;
                     for (i = 0; i < got; i++) {
-                        if ((UBYTE)rxbuf[i] == IAC && i + 2 < got) {
-                            UBYTE cmd = (UBYTE)rxbuf[i + 1];
-                            UBYTE opt = (UBYTE)rxbuf[i + 2];
-                            /* Send refusal for any DO/WILL */
-                            if (cmd == DO) {
-                                UBYTE r[] = { IAC, WONT, opt };
+                        UBYTE c = (UBYTE)rxbuf[i];
+                        switch (tn_state) {
+                        case TN_STATE_DATA:
+                            if (c == IAC) {
+                                tn_state = TN_STATE_IAC;
+                            } else {
+                                rxbuf[w++] = (char)c;
+                            }
+                            break;
+
+                        case TN_STATE_IAC:
+                            if (c == IAC) {
+                                rxbuf[w++] = (char)IAC;
+                                tn_state = TN_STATE_DATA;
+                            } else if (c == SB) {
+                                tn_state = TN_STATE_SB;
+                            } else if (c == DO || c == DONT || c == WILL || c == WONT) {
+                                pending_cmd = c;
+                                tn_state = TN_STATE_OPT;
+                            } else {
+                                tn_state = TN_STATE_DATA;
+                            }
+                            break;
+
+                        case TN_STATE_OPT:
+                            if (pending_cmd == DO) {
+                                UBYTE r[] = { IAC, WONT, c };
                                 tn_call_send(fd, r, 3, 0);
-                            } else if (cmd == WILL) {
-                                UBYTE r[] = { IAC, DONT, opt };
+                            } else if (pending_cmd == WILL) {
+                                UBYTE r[] = { IAC, DONT, c };
                                 tn_call_send(fd, r, 3, 0);
                             }
-                            i += 2; /* skip the IAC sequence */
-                        } else {
-                            rxbuf[w++] = rxbuf[i];
+                            tn_state = TN_STATE_DATA;
+                            break;
+
+                        case TN_STATE_SB:
+                            if (c == IAC) {
+                                tn_state = TN_STATE_SB_IAC;
+                            }
+                            break;
+
+                        case TN_STATE_SB_IAC:
+                            if (c == SE) {
+                                tn_state = TN_STATE_DATA;
+                            } else if (c == IAC) {
+                                tn_state = TN_STATE_SB;
+                            } else {
+                                tn_state = TN_STATE_SB;
+                            }
+                            break;
                         }
                     }
                     got = w;
