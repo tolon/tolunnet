@@ -2871,6 +2871,14 @@ static void tc_every_vector_callable(void)
 {
     int i;
     int tested = 0;
+    /* TNET-151 ROOT CAUSE: calling EVERY LVO with arg -1 includes
+     * SetSocketSignals(-132) with int_mask = 0xFFFFFFFF - the base's
+     * sig_int then matches ANY pending signal and every later WaitSelect
+     * insta-returns EINTR (the entire suite-tail degradation; probes
+     * proved path=0x1 sig_int=0xffffffff, bench 20260921-131740). Save
+     * the signal-state fields and restore them after the sweep. */
+    TnSocketBase *tb = (TnSocketBase *)SocketBase;
+    ULONG save_int = tb->sig_int, save_io = tb->sig_io, save_urg = tb->sig_urg;
 
     /* Loop through all 139 SFD vector slots from -30 to -858 */
     for (i = 0; i < 139; i++) {
@@ -2878,6 +2886,10 @@ static void tc_every_vector_callable(void)
         (void)call_lvo_generic(lvo, -1);
         tested++;
     }
+
+    tb->sig_int = save_int;
+    tb->sig_io  = save_io;
+    tb->sig_urg = save_urg;
 
     if (tested == 139) {
         TAP_OK("tc_every_vector_callable");
