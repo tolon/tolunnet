@@ -969,21 +969,25 @@ static void write_layout_geom(void)
     if (!g_win || !g_win->WScreen) return;
 
     LONG max_bottom = 0;
+    LONG page_bottom = 0;
     const struct Gadget *g;
     for (g = g_nav_glist; g; g = g->NextGadget) {
         if (g->TopEdge + g->Height > max_bottom) max_bottom = g->TopEdge + g->Height;
     }
     for (g = g_page_glist; g; g = g->NextGadget) {
         if (g->TopEdge + g->Height > max_bottom) max_bottom = g->TopEdge + g->Height;
+        if (g->TopEdge + g->Height > page_bottom) page_bottom = g->TopEdge + g->Height;
     }
 
-    char line[96];
+    char line[160];
     snprintf(line, sizeof(line),
-             "page=%d winw=%ld winh=%ld wintop=%ld scrw=%ld scrh=%ld maxbottom=%ld compact=%d\n",
+             "page=%d winw=%ld winh=%ld wintop=%ld scrw=%ld scrh=%ld maxbottom=%ld compact=%d pane_l=%ld pane_t=%ld pane_w=%ld pane_h=%ld pagebottom=%ld pen_bg=%ld\n",
              g_ws.current_page,
              (long)g_win->Width, (long)g_win->Height, (long)g_win->TopEdge,
              (long)g_win->WScreen->Width, (long)g_win->WScreen->Height,
-             (long)max_bottom, g_m.compact ? 1 : 0);
+             (long)max_bottom, g_m.compact ? 1 : 0,
+             (long)g_m.pane_l, (long)g_m.pane_t, (long)g_m.pane_w, (long)g_m.pane_h,
+             (long)page_bottom, (long)g_m.pen_bg);
     BPTR fh = Open((CONST_STRPTR)"ENV:TolunnetSetup.geom", MODE_NEWFILE);
     if (fh) {
         Write(fh, (CONST_APTR)line, strlen(line));

@@ -3277,6 +3277,22 @@ static struct Screen *find_wizard_screen(BOOL *from_publock)
     return s;
 }
 
+static struct Window *find_wizard_window(struct Screen *scr)
+{
+    struct Window *w;
+    if (!scr) return NULL;
+    Forbid();
+    for (w = scr->FirstWindow; w; w = w->NextWindow) {
+        if (w->Title != NULL &&
+            strstr((const char *)w->Title, "Network Setup") != NULL) {
+            Permit();
+            return w;
+        }
+    }
+    Permit();
+    return NULL;
+}
+
 /* IFF ILBM dumper: the wizard's screen, uncompressed planar.
  * Best-effort artifact for the bench log (PAL + NTSC page shots). */
 #define IFF_PUT32(b, o, v) do { ULONG _v = (ULONG)(v); memcpy((b) + (o), &_v, 4); (o) += 4; } while (0)
@@ -3290,7 +3306,7 @@ static BOOL write_iff_screen(const char *path)
     ULONG *rgb = NULL;
     BPTR fh;
     LONG ncolors, cmap_size, body_size, total, off;
-    UWORD w, h, bpr, row;
+    UWORD w, h, bpr, row, row_bytes;
     UBYTE depth, plane;
     BOOL ok = FALSE;
     BOOL locked = FALSE;
@@ -3310,9 +3326,10 @@ static BOOL write_iff_screen(const char *path)
     h = (UWORD)scr->Height;
     depth = (UBYTE)bm->Depth;
     bpr = bm->BytesPerRow;
+    row_bytes = ((w + 15) / 16) * 2;
     ncolors = 1L << depth;
     cmap_size = ncolors * 3;
-    body_size = (LONG)bpr * (LONG)h * (LONG)depth;
+    body_size = (LONG)row_bytes * (LONG)h * (LONG)depth;
     total = 12 + (8 + 20) + (8 + cmap_size) + (8 + body_size);
 
     buf = (UBYTE *)AllocVec((ULONG)total, MEMF_CLEAR);
@@ -3359,9 +3376,9 @@ static BOOL write_iff_screen(const char *path)
                 ? (const UBYTE *)bm->Planes[plane] + (LONG)row * bpr
                 : NULL;
             if (src) {
-                memcpy(buf + off, src, bpr);
+                memcpy(buf + off, src, row_bytes);
             }
-            off += bpr;
+            off += row_bytes;
         }
     }
 
@@ -3380,7 +3397,9 @@ out:
 
 /* The wizard writes its layout self-report after every page rebuild */
 static BOOL wizard_geom_read(int *page, LONG *winw, LONG *winh, LONG *wintop,
-                             LONG *scrw, LONG *scrh, LONG *maxbottom, int *compact)
+                             LONG *scrw, LONG *scrh, LONG *maxbottom, int *compact,
+                             LONG *pane_l, LONG *pane_t, LONG *pane_w, LONG *pane_h,
+                             LONG *pagebottom, LONG *pen_bg)
 {
     char buf[160];
     LONG n;
@@ -3391,8 +3410,9 @@ static BOOL wizard_geom_read(int *page, LONG *winw, LONG *winh, LONG *wintop,
     if (n <= 0) return FALSE;
     buf[n] = '\0';
     return sscanf(buf,
-                  "page=%d winw=%d winh=%d wintop=%d scrw=%d scrh=%d maxbottom=%d compact=%d",
-                  page, winw, winh, wintop, scrw, scrh, maxbottom, compact) == 8;
+                  "page=%d winw=%d winh=%d wintop=%d scrw=%d scrh=%d maxbottom=%d compact=%d pane_l=%d pane_t=%d pane_w=%d pane_h=%d pagebottom=%d pen_bg=%d",
+                  page, winw, winh, wintop, scrw, scrh, maxbottom, compact,
+                  pane_l, pane_t, pane_w, pane_h, pagebottom, pen_bg) == 14;
 }
 
 /* Send one command with a bounded reply wait (5 s) */
@@ -3481,8 +3501,11 @@ static void tc_wizard_ntsc(void)
             fail = "no reply to PAGE";
             break;
         }
+        LONG pane_l = 0, pane_t = 0, pane_w = 0, pane_h = 0, pagebottom = 0, pen_bg = 0;
         if (!wizard_geom_read(&page, &winw, &winh, &wintop,
-                              &scrw, &scrh, &maxbottom, &compact)) {
+                              &scrw, &scrh, &maxbottom, &compact,
+                              &pane_l, &pane_t, &pane_w, &pane_h,
+                              &pagebottom, &pen_bg)) {
             fail = "geometry report missing";
             break;
         }
@@ -3506,6 +3529,37 @@ static void tc_wizard_ntsc(void)
             fail = "compact flag wrong for screen height";
             break;
         }
+
+        /* SEC item 4: assert per page that the pane region outside gadgets is pen_bg */
+        {
+            BOOL publock = FALSE;
+            struct Screen *scr = find_wizard_screen(&publock);
+            if (scr) {
+                struct Window *win = find_wizard_window(scr);
+                if (win && win->RPort) {
+                    LONG y_start = pagebottom + 4;
+                    LONG y_end   = pane_t + pane_h - 2;
+                    LONG x_start = pane_l + 4;
+                    LONG x_end   = pane_l + pane_w - 4;
+                    if (y_end > y_start && x_end > x_start) {
+                        LONG y, x;
+                        LONG non_bg = 0;
+                        for (y = y_start; y <= y_end; y++) {
+                            for (x = x_start; x <= x_end; x++) {
+                                if (ReadPixel(win->RPort, x, y) != (ULONG)pen_bg) {
+                                    non_bg++;
+                                }
+                            }
+                        }
+                        if (non_bg > 0) {
+                            fail = "pane region outside gadgets is not pen_bg";
+                        }
+                    }
+                }
+                if (publock) UnlockPubScreen(NULL, scr);
+            }
+        }
+        if (fail) break;
 
         snprintf(shot, sizeof(shot), "WORK:wizard-%d-%s.iff",
                  i, (scrh == 200) ? "ntsc" : "pal");
