@@ -51,8 +51,14 @@ command -v wsl >/dev/null || die "wsl not available (xdftool runs in WSL)"
 # no Guru lines + RAM drift <= 8 KB between the Avail snapshots in soak.log.
 if [ "${1:-}" = "soak" ]; then
     BENCH_DNS_PORT="${BENCH_DNS_PORT:-15353}"
-    say "soak mode: a1200, ${SOAK_HOURS:-24} h, TX_QUEUE=4"
-    SOAK_STAMP="$(date +%Y%m%d-%H%M%S)-soak-$(git rev-parse --short HEAD 2>/dev/null || echo dirty)"
+    SOAK_HRS="${SOAK_HOURS:-24}"
+    say "soak mode: a1200, ${SOAK_HRS} h, TX_QUEUE=4"
+    if [ "$SOAK_HRS" -lt 24 ]; then
+        SOAK_PREFIX="soakquick"
+    else
+        SOAK_PREFIX="soak"
+    fi
+    SOAK_STAMP="$(date +%Y%m%d-%H%M%S)-$SOAK_PREFIX-$(git rev-parse --short HEAD 2>/dev/null || echo dirty)"
     SOAK_DIR="docs/bench-logs/$SOAK_STAMP"
     mkdir -p "$SOAK_DIR"
 

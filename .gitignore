@@ -32,7 +32,7 @@ Thumbs.db
 
 # Intermediate dirty bench logs
 docs/bench-logs/*-dirty/
-docs/bench-logs/*-soak-*/
+docs/bench-logs/*-soakquick-*/
 
 # Debugger/scratch artifacts (CLOSE §A.4)
 .dbg-*
