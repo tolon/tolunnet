@@ -82,17 +82,22 @@ static LONG ftp_read_line(LONG fd, char *buf, LONG maxlen)
     return i;
 }
 
-/* Send command and read response; returns response code, -1 on error */
-static LONG ftp_cmd(LONG fd, const char *cmd)
+/* Send command (verb + optional arg) and read response; returns response code, -1 on error.
+ * SEC item 6: bounded copy into buf[CTRL_BUF] prevents buffer overflow from long argv. */
+static LONG ftp_cmd_arg(LONG fd, const char *verb, const char *arg)
 {
     char line[CTRL_BUF];
     LONG code = -1;
     LONG len;
 
-    if (cmd != NULL) {
+    if (verb != NULL) {
         char buf[CTRL_BUF];
         int n = 0;
-        while (cmd[n] && n < (int)sizeof(buf) - 3) { buf[n] = cmd[n]; n++; }
+        while (verb[n] && n < (int)sizeof(buf) - 3) { buf[n] = verb[n]; n++; }
+        if (arg != NULL && n < (int)sizeof(buf) - 4) {
+            buf[n++] = ' ';
+            while (*arg && n < (int)sizeof(buf) - 3) { buf[n++] = *arg++; }
+        }
         buf[n++] = '\r'; buf[n++] = '\n';
         x_send(fd, buf, n, 0);
     }
@@ -107,6 +112,11 @@ static LONG ftp_cmd(LONG fd, const char *cmd)
         }
     }
     return code;
+}
+
+static LONG ftp_cmd(LONG fd, const char *cmd)
+{
+    return ftp_cmd_arg(fd, cmd, NULL);
 }
 
 /* Parse PASV response: "227 Entering Passive Mode (h1,h2,h3,h4,p1,p2)"
@@ -170,7 +180,6 @@ int main(int argc, char **argv)
     LONG ctrl = -1;
     ULONG srv_addr = 0;
     char line[CTRL_BUF];
-    char cmd[CTRL_BUF];
     BPTR script_fh = (BPTR)0;
     BOOL quiet;
     BOOL pasv_any;
@@ -240,10 +249,8 @@ int main(int argc, char **argv)
             const char *user = (opts[2] != 0) ? (const char *)opts[2] : "anonymous";
             const char *pass = (opts[3] != 0) ? (const char *)opts[3] : "tolunnet@";
 
-            sprintf(cmd, "USER %s", user);
-            if (ftp_cmd(ctrl, cmd) == 331) {
-                sprintf(cmd, "PASS %s", pass);
-                ftp_cmd(ctrl, cmd);
+            if (ftp_cmd_arg(ctrl, "USER", user) == 331) {
+                ftp_cmd_arg(ctrl, "PASS", pass);
             }
         }
     }
@@ -316,9 +323,8 @@ int main(int argc, char **argv)
                 dst.sin_addr.s_addr = srv_addr;
                 if (tn_call_connect(ctrl, (struct sockaddr *)&dst, sizeof(dst)) == 0) {
                     ftp_cmd(ctrl, NULL);
-                    sprintf(cmd, "USER anonymous");
-                    if (ftp_cmd(ctrl, cmd) == 331) {
-                        ftp_cmd(ctrl, "PASS tolunnet@");
+                    if (ftp_cmd_arg(ctrl, "USER", "anonymous") == 331) {
+                        ftp_cmd_arg(ctrl, "PASS", "tolunnet@");
                     }
                     tn_cmd_printf("ftp: connected to %s\n", cur_host);
                 } else {
@@ -332,8 +338,7 @@ int main(int argc, char **argv)
             }
         } else if (strncasecmp(line, "cd ", 3) == 0) {
             if (ctrl >= 0) {
-                sprintf(cmd, "CWD %s", &line[3]);
-                ftp_cmd(ctrl, cmd);
+                ftp_cmd_arg(ctrl, "CWD", &line[3]);
             }
         } else if (strncasecmp(line, "ls", 2) == 0 || strncasecmp(line, "dir", 3) == 0) {
             if (ctrl < 0) continue;
@@ -390,8 +395,7 @@ int main(int argc, char **argv)
                     continue;
                 }
 
-                sprintf(cmd, "RETR %s", remote);
-                ftp_cmd(ctrl, cmd);
+                ftp_cmd_arg(ctrl, "RETR", remote);
 
                 /* Local filename = remote basename */
                 {
@@ -454,8 +458,7 @@ int main(int argc, char **argv)
                     continue;
                 }
 
-                sprintf(cmd, "STOR %s", local);
-                ftp_cmd(ctrl, cmd);
+                ftp_cmd_arg(ctrl, "STOR", local);
 
                 {
                     LONG nread;

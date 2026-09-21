@@ -78,6 +78,13 @@ int main(int argc, char **argv)
         return TN_CMD_USAGE;
     }
 
+    /* SEC item 6: bound remote to BLK - 10 or fail with RC 10 (TN_CMD_FAIL) */
+    if (strlen(remote) > (size_t)(BLK - 10)) {
+        tn_cmd_printf("tftp: remote filename too long (max %d)\n", BLK - 10);
+        FreeArgs(rdargs); tn_cmd_fini();
+        return TN_CMD_FAIL;
+    }
+
     addr = tn_cmd_resolve(host);
     if (addr == INADDR_NONE) { FreeArgs(rdargs); tn_cmd_fini(); return TN_CMD_FAIL; }
 
