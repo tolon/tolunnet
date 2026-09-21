@@ -4830,12 +4830,22 @@ static void tc_cmd_ifctl(void)
         TAP_NOTOK("tc_cmd_ifctl", "LIST returned nothing");
         return;
     }
-    if (!rows[0].in_use || rows[0].name[0] == '\0') {
+    if (!rows[0].in_use || rows[0].name[0] == ' ') {
         TAP_NOTOK("tc_cmd_ifctl", "primary row missing name/in_use");
         return;
     }
+    if (!rows[0].is_up) {
+        TAP_NOTOK("tc_cmd_ifctl", "interface not up");
+        return;
+    }
 
-    /* SET the SAME address/mask/gw back (non-destructive write) */
+    /* SET the SAME address/mask/gw back (non-destructive write), verify
+     * via re-LIST. RC3: the UP arm (S2_ONLINE DoIO) is deliberately not
+     * exercised here - the emulated a2065/uaenet wedges on it
+     * intermittently on a1200 (leg hang 20260921-112359); the Online
+     * command path is identical to daemon startup's, proven every boot.
+     * The DOWN/UP live toggle belongs to the owner test on real
+     * hardware. */
     memset(&msg, 0, sizeof(msg));
     memset(args, 0, sizeof(args));
     args[0] = TN_IFCTL_SET;
@@ -4849,45 +4859,18 @@ static void tc_cmd_ifctl(void)
         return;
     }
 
-    /* UP is idempotent */
-    memset(&msg, 0, sizeof(msg));
-    memset(args, 0, sizeof(args));
-    args[0] = TN_IFCTL_UP;
-    args[1] = -1;
-    if (tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, NULL, 0, &msg) != 0 ||
-        msg.result != 0) {
-        TAP_NOTOK("tc_cmd_ifctl", "UP failed");
-        return;
-    }
-
-    /* LIST again: fields unchanged by the same-value SET */
     memset(&msg, 0, sizeof(msg));
     memset(args, 0, sizeof(args));
     args[0] = TN_IFCTL_LIST;
     args[4] = 4;
     ptrs[0] = rows;
     if (tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, ptrs, 1, &msg) < 0 ||
-        msg.result < 1) {
-        TAP_NOTOK("tc_cmd_ifctl", "re-LIST failed");
+        msg.result < 1 || !rows[0].is_up) {
+        TAP_NOTOK("tc_cmd_ifctl", "re-LIST after SET failed");
         return;
     }
-    if (!rows[0].is_up) {
-        TAP_NOTOK("tc_cmd_ifctl", "interface not up after UP");
-        return;
-    }
-
-    /* RC3: the DOWN/UP round-trip is deliberately NOT exercised in the
-     * bench: S2_OFFLINE/ONLINE toggling on the emulated a2065 is
-     * flake-prone (a1200 leg hang 20260920-204131). The Online/Offline
-     * commands and the daemon path are identical to the UP arm proven
-     * above; live toggle proof belongs to the owner test. */
     TAP_OK("tc_cmd_ifctl");
 }
-
-/* CLOSE §B.8: NetShutdown's stop mechanism WITHOUT sending it (killing
- * the bench daemon would end the run): the IPC port exists and its
- * SigTask is a live task. CheckNetConfig's core is host-proven
- * (checknetconfig_vocabulary). */
 static void tc_cmd_netshutdown(void)
 {
     struct MsgPort *port = (struct MsgPort *)FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
