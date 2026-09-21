@@ -445,6 +445,11 @@ static void render_pane_frame(void)
     if (!g_win) return;
     rp = g_win->RPort;
 
+    /* Step SEC item 1: clear title row along top frame edge before drawing title */
+    SetAPen(rp, g_m.pen_bg);
+    RectFill(rp, g_m.pane_l + 8, g_m.pane_t - g_m.fy / 2 - 2,
+             g_m.pane_l + g_m.pane_w - 8, g_m.pane_t + g_m.fy / 2 + 2);
+
     /* recessed bevel: shadow top/left, shine bottom/right */
     SetAPen(rp, g_m.pen_shadow);
     RectFill(rp, g_m.pane_l, g_m.pane_t,
@@ -1099,6 +1104,15 @@ static void rebuild_page_gadgets(void)
         RemoveGList(g_win, g_page_glist, -1);
         FreeGadgets(g_page_glist);
         g_page_glist = NULL;
+    }
+
+    /* Step SEC item 1: clear entire pane area and refresh window frame */
+    {
+        struct RastPort *rp = g_win->RPort;
+        SetAPen(rp, g_m.pen_bg);
+        RectFill(rp, g_m.pane_l, g_m.pane_t,
+                 g_m.pane_l + g_m.pane_w - 1, g_m.pane_t + g_m.pane_h - 1);
+        RefreshWindowFrame(g_win);
     }
 
     struct NewGadget ng;
