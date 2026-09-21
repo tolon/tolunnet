@@ -226,6 +226,22 @@ static int tn_task_real_main(int argc, char *argv[])
     tn_logf(TN_LOG_BASIC, "tolunnet: task priority set to %ld (was %ld)\n",
             (LONG)g_daemon.prefs.priority, (LONG)old_pri);
 
+    /* TNET-152: Duplicate port check BEFORE initializing timer, lwIP, or SANA-II.
+     * Allow short grace retries in case an exiting daemon is in final teardown. */
+    {
+        int retries;
+        for (retries = 0; retries < 10; retries++) {
+            if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) break;
+            Delay(5);
+        }
+        if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
+            tn_log(TN_LOG_BASIC,
+                   "tolunnet: REFUSING start - tolunnet.port exists (previous daemon alive)\n");
+            SetTaskPri(self_task, old_pri);
+            CloseLibrary(DOSBase);
+            return 21;
+        }
+    }
 
     /* Safe log redirection (§G, TNET-108): tn_log_open_file suppresses
      * requesters and re-opens for append; the same call serves RECONFIG. */
@@ -365,17 +381,6 @@ static int tn_task_real_main(int argc, char *argv[])
     g_daemon.ipc_port->mp_Node.ln_Name = (char *)TOLUNNET_PORT_NAME;
     g_daemon.ipc_port->mp_Node.ln_Pri  = 0;
     g_daemon.ipc_port->mp_Node.ln_Type = NT_MSGPORT;
-    /* TNET-152: duplicate port name = a previous daemon still alive */
-    if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
-        tn_log(TN_LOG_BASIC,
-               "tolunnet: REFUSING start - tolunnet.port exists (previous daemon alive)\n");
-        netif_set_down(&prim->lwip_if);
-        netif_remove(&prim->lwip_if);
-        tn_s2_offline_close(&prim->s2if);
-        tn_timer_fini(&g_daemon.timer);
-        CloseLibrary(DOSBase);
-        return 21;
-    }
     AddPort(g_daemon.ipc_port);
     tn_logf(TN_LOG_BASIC,
             "tolunnet: port online: sig_task=0x%p self=0x%p match=%ld (TNET-152)\n",
@@ -514,16 +519,10 @@ static int tn_task_real_main(int argc, char *argv[])
         g_daemon.bsd_lib = NULL;
     }
 
-    tn_log(TN_LOG_BASIC, "tolunnet: deleting IPC port...\n");
-    RemPort(g_daemon.ipc_port);
-    DeleteMsgPort(g_daemon.ipc_port);
-
-    /* Free any remaining sockets */
-    for (i = 0; i < TN_MAX_GLOBAL_SOCKETS; i++) {
-        if (g_daemon.sockets[i].in_use) {
-            tn_slot_free(&g_daemon, i);
-        }
-    }
+    /* TNET-152: Release SANA-II device and network BEFORE removing IPC port or replying
+     * to stop message, ensuring device is fully closed and free for restart. */
+    tn_log(TN_LOG_BASIC, "tolunnet: closing SANA-II device...\n");
+    tn_s2_offline_close(&prim->s2if);
 
     if (use_dhcp) {
         tn_log(TN_LOG_BASIC, "tolunnet: stopping DHCP client...\n");
@@ -533,11 +532,27 @@ static int tn_task_real_main(int argc, char *argv[])
     netif_set_down(&prim->lwip_if);
     netif_remove(&prim->lwip_if);
 
+    /* Free any remaining sockets */
+    for (i = 0; i < TN_MAX_GLOBAL_SOCKETS; i++) {
+        if (g_daemon.sockets[i].in_use) {
+            tn_slot_free(&g_daemon, i);
+        }
+    }
+
     tn_log(TN_LOG_BASIC, "tolunnet: closing timer.device...\n");
     tn_timer_fini(&g_daemon.timer);
 
-    tn_log(TN_LOG_BASIC, "tolunnet: closing SANA-II device...\n");
-    tn_s2_offline_close(&prim->s2if);
+    /* TNET-152: Remove port from Exec's Public Port list BEFORE waking the stop caller */
+    tn_log(TN_LOG_BASIC, "tolunnet: deleting IPC port...\n");
+    RemPort(g_daemon.ipc_port);
+
+    /* Reply to parked stop message (if stopped via IPC) now that port and hardware are 100% free */
+    if (g_daemon.stop_msg != NULL) {
+        ReplyMsg((struct Message *)g_daemon.stop_msg);
+        g_daemon.stop_msg = NULL;
+    }
+
+    DeleteMsgPort(g_daemon.ipc_port);
 
     /* Restore original task priority */
     tn_log(TN_LOG_BASIC, "tolunnet: restoring task priority...\n");
@@ -588,17 +603,26 @@ int main(int argc, char *argv[])
         }
 
         if (opts[OPT_STOP]) {
-            struct MsgPort *dp = FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
+            TnIpcMsg smsg;
+            int sres;
             FreeArgs(rdargs);
-            if (dp == NULL) {
+            if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) {
                 PutStr((CONST_STRPTR)"tolunnet: daemon is not running\n");
                 CloseLibrary(dos_base);
                 return 5;
             }
-            if (dp->mp_SigTask != NULL) {
-                Signal((struct Task *)dp->mp_SigTask, SIGBREAKF_CTRL_C);
+            memset(&smsg, 0, sizeof(smsg));
+            sres = tn_ipc_oneshot(TN_IPC_CMD_STOP, NULL, 0, &smsg);
+            if (sres != 0 || smsg.result != 0) {
+                if (smsg.err_no == EBUSY) {
+                    PutStr((CONST_STRPTR)"tolunnet: cannot stop daemon: clients still open (EBUSY)\n");
+                } else {
+                    PutStr((CONST_STRPTR)"tolunnet: daemon stop failed\n");
+                }
+                CloseLibrary(dos_base);
+                return 5;
             }
-            PutStr((CONST_STRPTR)"tolunnet: stop signal sent to daemon\n");
+            PutStr((CONST_STRPTR)"tolunnet: daemon stopped\n");
             CloseLibrary(dos_base);
             return 0;
         }
@@ -842,7 +866,12 @@ int main(int argc, char *argv[])
         }
 
         if (opts[OPT_START]) {
+            int retries;
             FreeArgs(rdargs);
+            for (retries = 0; retries < 20; retries++) {
+                if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) break;
+                Delay(5);
+            }
             if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
                 PutStr((CONST_STRPTR)"tolunnet: daemon is already running\n");
                 CloseLibrary(dos_base);
@@ -859,11 +888,18 @@ int main(int argc, char *argv[])
             return 0;
         }
 
-        if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
-            PutStr((CONST_STRPTR)"tolunnet: daemon is already running\n");
-            FreeArgs(rdargs);
-            CloseLibrary(dos_base);
-            return 5;
+        {
+            int retries;
+            for (retries = 0; retries < 20; retries++) {
+                if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) break;
+                Delay(5);
+            }
+            if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
+                PutStr((CONST_STRPTR)"tolunnet: daemon is already running\n");
+                FreeArgs(rdargs);
+                CloseLibrary(dos_base);
+                return 5;
+            }
         }
 
         g_cli_device  = (const char *)opts[OPT_DEVICE];

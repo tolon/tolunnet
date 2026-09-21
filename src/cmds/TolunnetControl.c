@@ -36,9 +36,11 @@ int main(int argc, char **argv)
     } else if (strcmp(cmd, "START") == 0) {
         BPTR seg = LoadSeg((CONST_STRPTR)"C:tolunnet");
         if (seg != (BPTR)0) {
+            LONG ret;
             tn_cmd_printf("TolunnetControl: starting C:tolunnet...\n");
-            RunCommand(seg, 32768, "", 0);
-            /* UnLoadSeg when done */
+            ret = RunCommand(seg, 32768, (CONST_STRPTR)"START\n", 6);
+            UnLoadSeg(seg);
+            if (ret != 0) rc = (int)ret;
         } else {
             tn_cmd_printf("TolunnetControl: cannot load C:tolunnet\n");
             rc = TN_CMD_FAIL;
@@ -54,17 +56,51 @@ int main(int argc, char **argv)
             tn_cmd_printf("tolunnet: not running\n");
             rc = TN_CMD_WARN; /* RC 5 = not running */
         }
-    } else if (strcmp(cmd, "STOP") == 0 || strcmp(cmd, "RESTART") == 0 ||
-               strcmp(cmd, "RECONFIG") == 0) {
-        /* Delegate to C:tolunnet CLI subcommand */
+    } else if (strcmp(cmd, "STOP") == 0) {
         BPTR seg = LoadSeg((CONST_STRPTR)"C:tolunnet");
         if (seg != (BPTR)0) {
-            tn_cmd_printf("TolunnetControl: %s...\n", cmd);
-            {
-                char cli_cmd[64];
-                sprintf(cli_cmd, "%s", cmd);
-                RunCommand(seg, 32768, (CONST_STRPTR)cli_cmd, strlen(cli_cmd));
+            LONG ret;
+            tn_cmd_printf("TolunnetControl: STOP...\n");
+            ret = RunCommand(seg, 32768, (CONST_STRPTR)"STOP\n", 5);
+            UnLoadSeg(seg);
+            if (ret != 0) rc = (int)ret;
+        } else {
+            tn_cmd_printf("TolunnetControl: cannot load C:tolunnet\n");
+            rc = TN_CMD_FAIL;
+        }
+    } else if (strcmp(cmd, "RESTART") == 0) {
+        BPTR seg = LoadSeg((CONST_STRPTR)"C:tolunnet");
+        if (seg != (BPTR)0) {
+            LONG ret;
+            tn_cmd_printf("TolunnetControl: STOP...\n");
+            ret = RunCommand(seg, 32768, (CONST_STRPTR)"STOP\n", 5);
+            UnLoadSeg(seg);
+            if (ret != 0) {
+                rc = (int)ret;
+            } else {
+                seg = LoadSeg((CONST_STRPTR)"C:tolunnet");
+                if (seg != (BPTR)0) {
+                    tn_cmd_printf("TolunnetControl: starting C:tolunnet...\n");
+                    ret = RunCommand(seg, 32768, (CONST_STRPTR)"START\n", 6);
+                    UnLoadSeg(seg);
+                    if (ret != 0) rc = (int)ret;
+                } else {
+                    tn_cmd_printf("TolunnetControl: cannot load C:tolunnet\n");
+                    rc = TN_CMD_FAIL;
+                }
             }
+        } else {
+            tn_cmd_printf("TolunnetControl: cannot load C:tolunnet\n");
+            rc = TN_CMD_FAIL;
+        }
+    } else if (strcmp(cmd, "RECONFIG") == 0) {
+        BPTR seg = LoadSeg((CONST_STRPTR)"C:tolunnet");
+        if (seg != (BPTR)0) {
+            LONG ret;
+            tn_cmd_printf("TolunnetControl: RECONFIG...\n");
+            ret = RunCommand(seg, 32768, (CONST_STRPTR)"RECONFIG\n", 9);
+            UnLoadSeg(seg);
+            if (ret != 0) rc = (int)ret;
         } else {
             tn_cmd_printf("TolunnetControl: cannot load C:tolunnet\n");
             rc = TN_CMD_FAIL;

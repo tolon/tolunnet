@@ -61,6 +61,6 @@ void tn_lib_destroy(struct Library *lib)
     Remove(&lib->lib_Node);
     Permit();
 
-    FreeVec((UBYTE *)lib - lib->lib_NegSize);
+    FreeMem((UBYTE *)lib - lib->lib_NegSize, (ULONG)(lib->lib_NegSize + lib->lib_PosSize));
     tn_logf(TN_LOG_BASIC, "tolunnet: bsdsocket.library removed and destroyed\n");
 }

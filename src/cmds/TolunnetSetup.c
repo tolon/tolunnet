@@ -1713,6 +1713,26 @@ int main(int argc, char **argv)
     strncpy(g_ws.dns1_str, "1.1.1.1", sizeof(g_ws.dns1_str) - 1);
     strncpy(g_ws.host_str, "amiga", sizeof(g_ws.host_str) - 1);
 
+    /* Preserve existing log file setting if present */
+    {
+        BPTR cfg_fh = Open((CONST_STRPTR)"DEVS:tolunnet.config", MODE_OLDFILE);
+        if (cfg_fh) {
+            char cline[160];
+            while (FGets(cfg_fh, (STRPTR)cline, (LONG)sizeof(cline))) {
+                if (strncmp(cline, "LOG=", 4) == 0) {
+                    size_t n = strlen(cline);
+                    while (n > 4 && (cline[n - 1] == '\n' || cline[n - 1] == '\r')) {
+                        cline[--n] = '\0';
+                    }
+                    strncpy(g_ws.log_file, cline + 4, sizeof(g_ws.log_file) - 1);
+                    g_ws.log_file[sizeof(g_ws.log_file) - 1] = '\0';
+                    break;
+                }
+            }
+            Close(cfg_fh);
+        }
+    }
+
     struct Process *pr = (struct Process *)FindTask(NULL);
     APTR old_win_ptr = NULL;
     if (pr && pr->pr_Task.tc_Node.ln_Type == NT_PROCESS) {

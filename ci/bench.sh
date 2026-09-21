@@ -194,6 +194,7 @@ for cfg in $CONFIGS; do
     xd() { wsl -d Ubuntu-24.04 -e bash -c "\$HOME/.local/bin/xdftool '$HDF_UX' $*" ; }
 
     xd delete C/tolunnet        >/dev/null 2>&1
+    xd delete C/TolunnetControl >/dev/null 2>&1
     xd delete C/SocketConformance >/dev/null 2>&1
     xd delete C/TolunnetSetup   >/dev/null 2>&1
     xd delete C/S2Toggle        >/dev/null 2>&1
@@ -202,6 +203,7 @@ for cfg in $CONFIGS; do
     xd delete S/Conformance-Script >/dev/null 2>&1
     xd delete Devs/tolunnet.config >/dev/null 2>&1
     xd write build/tolunnet C/tolunnet          || die "xdftool write tolunnet failed"
+    xd write build/TolunnetControl C/TolunnetControl || die "xdftool write TolunnetControl failed"
     xd write build/SocketConformance C/SocketConformance || die "xdftool write conformance failed"
     xd write build/TolunnetSetup C/TolunnetSetup || die "xdftool write TolunnetSetup failed"
     xd write build/S2Toggle C/S2Toggle || die "xdftool write S2Toggle failed"

@@ -228,9 +228,10 @@ static ULONG tc_cfg_ip(const char *key, ULONG def)
 
 /* TNET-111: run one case under the 5 s IPC reply watchdog; an expired
  * reply fails the blocked call with ETIMEDOUT and is flagged here. */
-#define TN_RUN(tc) do { uint32_t tn_wd0 = ((TnSocketBase *)SocketBase)->ipc_timeouts; \
+#define TN_RUN(tc) do { \
+    uint32_t tn_wd0 = (SocketBase != NULL) ? ((TnSocketBase *)SocketBase)->ipc_timeouts : 0; \
     tc(); \
-    if (((TnSocketBase *)SocketBase)->ipc_timeouts > tn_wd0) { \
+    if (SocketBase != NULL && ((TnSocketBase *)SocketBase)->ipc_timeouts > tn_wd0) { \
         tapf("# TIMEOUT: ipc watchdog fired during %s\n", #tc); \
     } } while (0)
 #define TAP_TODO(name, why)  do { g_count++; tapf("not ok %d - %s # TODO %s\n", g_count, name, why); } while (0)
@@ -3807,6 +3808,13 @@ static void tc_reconfig_rc(void)
                               tc_cfg_long("DNS_PORT", 53));
                 { const char *p2 = dp; while (*p2) *out++ = *p2++; }
             }
+            if (tc_cfg_value("LOG") != NULL &&
+                strstr(fixed, "LOG=") == NULL) {
+                char dl[80];
+                snprintf_safe(dl, sizeof(dl), "LOG=%s\n",
+                              tc_cfg_value("LOG"));
+                { const char *p2 = dl; while (*p2) *out++ = *p2++; }
+            }
         }
         *out = 0;
 
@@ -4689,60 +4697,63 @@ static void tc_probe_after_wizard_ntsc(void)   { tc_probe_loop_impl("tc_probe_af
 static void tc_probe_after_wifi_scan(void)     { tc_probe_loop_impl("tc_probe_after_wifi_scan", 23533); }
 static void tc_probe_after_reconfig(void)      { tc_probe_loop_impl("tc_probe_after_reconfig", 23534); }
 
-/* TNET-152 / RC3 item 1: the user-facing stop path. Same mechanism as
- * NetShutdown / TolunnetControl STOP: Signal(port->mp_SigTask,
- * SIGBREAKF_CTRL_C). Proves the daemon actually EXITS (port disappears)
- * and afterwards bsdsocket.library cannot be opened (= TolunnetControl
- * STATUS RC 5 semantics). MUST be the last row - the daemon is gone
- * when it passes, and the bench restarts it for cycle 2 (two-banner
- * proof). */
+/* TNET-152 / RC3 item 1: the user-facing stop and relaunch path.
+ * Tests TolunnetControl STOP (with EBUSY refusal while clients open),
+ * then clean STOP (RC 0), verifying daemon port disappears and library
+ * refuses to open. Then tests TolunnetControl START (RC 0), verifying
+ * daemon port appears, library opens, and socket round-trip works.
+ * Finally stops the daemon cleanly so cycle 2 can boot its own daemon. */
+static BPTR load_control_cmd(void)
+{
+    BPTR seg = LoadSeg((CONST_STRPTR)"C:TolunnetControl");
+    if (seg == (BPTR)0) {
+        seg = LoadSeg((CONST_STRPTR)"C:tolunnet");
+    }
+    return seg;
+}
+
 static void tc_cmd_stop_start(void)
 {
-    struct MsgPort *port;
-    struct Library *gone;
-    TnIpcMsg msg;
+    BPTR seg;
+    LONG ret;
     int waits;
+    struct Library *gone;
 
-    port = (struct MsgPort *)FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
-    if (port == NULL || port->mp_SigTask == NULL) {
-        TAP_NOTOK("tc_cmd_stop_start", "daemon port not found");
-        return;
-    }
-    /* legacy signal path (TNET-152 evidence: alive-but-deaf) */
-    Signal((struct Task *)port->mp_SigTask, SIGBREAKF_CTRL_C);
-    Delay(100); /* 2 s */
-    {
-        char nm[16];
-        LONG alive = (call_gethostname((STRPTR)nm, (LONG)sizeof(nm)) == 0);
-        tapf("# tc_cmd_stop_start: after signal, daemon alive=%ld\n", alive);
+    /* 1. TolunnetControl STOP while our base is open: must refuse with RC 5 / EBUSY */
+    seg = load_control_cmd();
+    if (seg != (BPTR)0) {
+        ret = RunCommand(seg, 32768, (CONST_STRPTR)"STOP\n", 5);
+        UnLoadSeg(seg);
+        if (ret == 0) {
+            TAP_NOTOK("tc_cmd_stop_start", "TolunnetControl STOP succeeded while library was open");
+            return;
+        }
     }
 
-    /* robust stop: IPC (TNET-152). Expect EBUSY while our base is open */
-    memset(&msg, 0, sizeof(msg));
-    if (tn_ipc_oneshot(TN_IPC_CMD_STOP, NULL, 0, &msg) != 0 || msg.result == 0) {
-        tapf("# tc_cmd_stop_start: STOP without clients?? rc=%ld err=%ld\n",
-             msg.result, msg.err_no);
-    }
-    if (msg.err_no != EBUSY) {
-        TAP_NOTOK("tc_cmd_stop_start", "STOP did not refuse with EBUSY while base open");
-        return;
-    }
-
-    /* close our base (nothing runs after this row), then STOP again */
+    /* 2. Close our library base so no open clients remain */
     CloseLibrary(SocketBase);
     SocketBase = NULL;
-    memset(&msg, 0, sizeof(msg));
-    if (tn_ipc_oneshot(TN_IPC_CMD_STOP, NULL, 0, &msg) != 0 || msg.result != 0) {
-        TAP_NOTOK("tc_cmd_stop_start", "IPC STOP failed after close");
+
+    /* 3. TolunnetControl STOP: must succeed with RC 0 */
+    seg = load_control_cmd();
+    if (seg == (BPTR)0) {
+        TAP_NOTOK("tc_cmd_stop_start", "cannot load C:TolunnetControl or C:tolunnet for STOP");
+        return;
+    }
+    ret = RunCommand(seg, 32768, (CONST_STRPTR)"STOP\n", 5);
+    UnLoadSeg(seg);
+    if (ret != 0) {
+        TAP_NOTOK("tc_cmd_stop_start", "TolunnetControl STOP failed with non-zero RC");
         return;
     }
 
+    /* Verify daemon port is gone */
     for (waits = 0; waits < 100; waits++) {
-        Delay(5);
         if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) break;
+        Delay(5);
     }
     if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
-        TAP_NOTOK("tc_cmd_stop_start", "daemon still running 10 s after IPC STOP");
+        TAP_NOTOK("tc_cmd_stop_start", "daemon still running after TolunnetControl STOP");
         return;
     }
 
@@ -4753,6 +4764,67 @@ static void tc_cmd_stop_start(void)
         TAP_NOTOK("tc_cmd_stop_start", "bsdsocket.library still opens after daemon exit");
         return;
     }
+
+    /* 4. TolunnetControl START: must return RC 0 */
+    seg = load_control_cmd();
+    if (seg == (BPTR)0) {
+        TAP_NOTOK("tc_cmd_stop_start", "cannot load C:TolunnetControl or C:tolunnet for START");
+        return;
+    }
+    ret = RunCommand(seg, 32768, (CONST_STRPTR)"START\n", 6);
+    UnLoadSeg(seg);
+    if (ret != 0) {
+        TAP_NOTOK("tc_cmd_stop_start", "TolunnetControl START failed with non-zero RC");
+        return;
+    }
+
+    /* Wait for daemon port to appear */
+    for (waits = 0; waits < 100; waits++) {
+        Delay(5);
+        if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) break;
+    }
+    if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) {
+        TAP_NOTOK("tc_cmd_stop_start", "daemon port did not appear after TolunnetControl START");
+        return;
+    }
+
+    /* Verify bsdsocket.library opens again and socket round trip succeeds */
+    SocketBase = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
+    if (SocketBase == NULL) {
+        TAP_NOTOK("tc_cmd_stop_start", "bsdsocket.library failed to open after START");
+        return;
+    }
+    {
+        LONG s = call_socket(AF_INET, SOCK_DGRAM, 0);
+        if (s < 0) {
+            TAP_NOTOK("tc_cmd_stop_start", "socket round trip failed after restart");
+            return;
+        }
+        call_closesocket(s);
+    }
+
+    /* 5. Cleanly STOP daemon again so cycle 2 in User-Startup can test boot restart */
+    CloseLibrary(SocketBase);
+    SocketBase = NULL;
+
+    seg = load_control_cmd();
+    if (seg != (BPTR)0) {
+        ret = RunCommand(seg, 32768, (CONST_STRPTR)"STOP\n", 5);
+        UnLoadSeg(seg);
+        if (ret != 0) {
+            TAP_NOTOK("tc_cmd_stop_start", "final TolunnetControl STOP failed");
+            return;
+        }
+    }
+    for (waits = 0; waits < 100; waits++) {
+        if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) break;
+        Delay(5);
+    }
+    if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
+        TAP_NOTOK("tc_cmd_stop_start", "daemon still running after final STOP");
+        return;
+    }
+
     TAP_OK("tc_cmd_stop_start");
 }
 

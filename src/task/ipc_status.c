@@ -7,6 +7,7 @@
 #include "netif_mgr.h"
 #include "slot_table.h"
 #include "syslog.h"
+#include "ipc_dispatch.h"
 #include "../common/config_text.h"
 #include <string.h>
 
@@ -234,7 +235,7 @@ int tn_ipc_cmd_reconfig(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 int tn_ipc_cmd_stop(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
     (void)slot;
-    if (d == NULL || imsg == NULL) return 0;
+    if (d == NULL || imsg == NULL) return TN_IPC_REPLY_NOW;
     imsg->result = 0;
     imsg->err_no = 0;
     if (d->bsd_lib != NULL && d->bsd_lib->lib_OpenCnt > 0) {
@@ -242,10 +243,13 @@ int tn_ipc_cmd_stop(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
          * The refusal is reported so callers can reap/close first. */
         imsg->result = -1;
         imsg->err_no = EBUSY;
-        return 0;
+        return TN_IPC_REPLY_NOW;
     }
+    /* TNET-152: defer the reply until after RemPort and SANA-II CloseDevice,
+     * so the caller only wakes up when hardware and ports are 100% released. */
+    d->stop_msg = imsg;
     d->running = FALSE;
-    return 0;
+    return TN_IPC_DEFER;
 }
 
 int tn_ipc_cmd_enumsockets(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
