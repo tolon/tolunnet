@@ -64,9 +64,9 @@ if [ "${1:-}" = "soak" ]; then
     STAGE_DIR="/e/amiga/Amigatolon/bench/tolunnet"
     rm -rf "$STAGE_DIR"
     mkdir -p "$STAGE_DIR"
-    cp "$PRISTINE_HDF" "$STAGE_DIR/wb30-soak.hdf" || die "cannot copy pristine HDF"
+    cp "$PRISTINE_HDF" "$STAGE_DIR/wb30-a1200.hdf" || die "cannot copy pristine HDF"
     HDF_WIN='E:miga\Amigatolonench	olunnet\wb30-soak.hdf'
-    HDF_UX="/mnt/e/amiga/Amigatolon/bench/tolunnet/wb30-soak.hdf"
+    HDF_UX="/mnt/e/amiga/Amigatolon/bench/tolunnet/wb30-a1200.hdf"
 
     xd() { wsl -d Ubuntu-24.04 -e bash -c "\$HOME/.local/bin/xdftool '$HDF_UX' $*" ; }
 
