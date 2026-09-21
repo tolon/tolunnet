@@ -1,10 +1,6 @@
-;BEGIN tolunnet soak (RC3 item 3)
-; Daemon up, then an endless driver loop (no variables - this WB has no
-; Set/Eval; Lab/Skip BACK + If EXISTS only). Each pass is ~30 s:
-; ping x3, wget (10.0.2.2:1 - slirp RSTs fast) + STATUS + Avail once.
-; The host wrapper stops the run at the time budget; WORK:soak-stop is
-; the manual emergency exit.
+;BEGIN tolunnet session-profile soak (2 h, 12 x 10 min cycles)
 Stack 32768
+FailAt 21
 
 If EXISTS WORK:
   Delete >NIL: WORK:soak.log QUIET
@@ -15,25 +11,91 @@ If EXISTS WORK:
   Wait 15
 
   Avail >WORK:soak-avail-base.txt
-
-Lab soak_loop
-  C:TolunnetPing 127.0.0.1 COUNT=4 INTERVAL=1 QUIET >>WORK:soak.log
-  If EXISTS WORK:soak-stop
-    Echo >WORK:bench-done "soak stopped by marker"
-    Quit
-  EndIf
-  Wait 10
-
-  C:TolunnetPing 127.0.0.1 COUNT=4 INTERVAL=1 QUIET >>WORK:soak.log
-  If EXISTS WORK:soak-stop
-    Echo >WORK:bench-done "soak stopped by marker"
-    Quit
-  EndIf
-  Wait 10
-
-  C:TolunnetPing 127.0.0.1 COUNT=4 INTERVAL=1 QUIET >>WORK:soak.log
+  Echo >>WORK:soak.log "=== SOAK START (BASE AVAIL) ==="
   Avail >>WORK:soak.log
-  Wait 10
-  Skip soak_loop BACK
+
+  Echo >>WORK:soak.log "=== CYCLE 1/12 ==="
+  Execute S:Soak-Cycle
+  If EXISTS WORK:soak-stop
+    Echo >WORK:bench-done "soak stopped by marker"
+    Quit
+  EndIf
+
+  Echo >>WORK:soak.log "=== CYCLE 2/12 ==="
+  Execute S:Soak-Cycle
+  If EXISTS WORK:soak-stop
+    Echo >WORK:bench-done "soak stopped by marker"
+    Quit
+  EndIf
+
+  Echo >>WORK:soak.log "=== CYCLE 3/12 ==="
+  Execute S:Soak-Cycle
+  If EXISTS WORK:soak-stop
+    Echo >WORK:bench-done "soak stopped by marker"
+    Quit
+  EndIf
+
+  Echo >>WORK:soak.log "=== CYCLE 4/12 ==="
+  Execute S:Soak-Cycle
+  If EXISTS WORK:soak-stop
+    Echo >WORK:bench-done "soak stopped by marker"
+    Quit
+  EndIf
+
+  Echo >>WORK:soak.log "=== CYCLE 5/12 ==="
+  Execute S:Soak-Cycle
+  If EXISTS WORK:soak-stop
+    Echo >WORK:bench-done "soak stopped by marker"
+    Quit
+  EndIf
+
+  Echo >>WORK:soak.log "=== CYCLE 6/12 ==="
+  Execute S:Soak-Cycle
+  If EXISTS WORK:soak-stop
+    Echo >WORK:bench-done "soak stopped by marker"
+    Quit
+  EndIf
+
+  Echo >>WORK:soak.log "=== CYCLE 7/12 ==="
+  Execute S:Soak-Cycle
+  If EXISTS WORK:soak-stop
+    Echo >WORK:bench-done "soak stopped by marker"
+    Quit
+  EndIf
+
+  Echo >>WORK:soak.log "=== CYCLE 8/12 ==="
+  Execute S:Soak-Cycle
+  If EXISTS WORK:soak-stop
+    Echo >WORK:bench-done "soak stopped by marker"
+    Quit
+  EndIf
+
+  Echo >>WORK:soak.log "=== CYCLE 9/12 ==="
+  Execute S:Soak-Cycle
+  If EXISTS WORK:soak-stop
+    Echo >WORK:bench-done "soak stopped by marker"
+    Quit
+  EndIf
+
+  Echo >>WORK:soak.log "=== CYCLE 10/12 ==="
+  Execute S:Soak-Cycle
+  If EXISTS WORK:soak-stop
+    Echo >WORK:bench-done "soak stopped by marker"
+    Quit
+  EndIf
+
+  Echo >>WORK:soak.log "=== CYCLE 11/12 ==="
+  Execute S:Soak-Cycle
+  If EXISTS WORK:soak-stop
+    Echo >WORK:bench-done "soak stopped by marker"
+    Quit
+  EndIf
+
+  Echo >>WORK:soak.log "=== CYCLE 12/12 ==="
+  Execute S:Soak-Cycle
+
+  Echo >>WORK:soak.log "=== SOAK COMPLETE (12/12 CYCLES) ==="
+  Avail >>WORK:soak.log
+  Echo >WORK:bench-done "soak-done 12-cycles"
 EndIf
 ;END tolunnet

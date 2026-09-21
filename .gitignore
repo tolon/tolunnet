@@ -43,6 +43,7 @@ docs/bench-logs/*-soakquick-*/
 .wsl-*
 .postkey*
 .linktest*
+_shots/
 
 # Soak config & local configs
 ci/.soak-tolunnet.config

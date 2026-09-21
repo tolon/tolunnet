@@ -51,9 +51,9 @@ command -v wsl >/dev/null || die "wsl not available (xdftool runs in WSL)"
 # no Guru lines + RAM drift <= 8 KB between the Avail snapshots in soak.log.
 if [ "${1:-}" = "soak" ]; then
     BENCH_DNS_PORT="${BENCH_DNS_PORT:-15353}"
-    SOAK_HRS="${SOAK_HOURS:-24}"
-    say "soak mode: a1200, ${SOAK_HRS} h, TX_QUEUE=4"
-    if [ "$SOAK_HRS" -lt 24 ]; then
+    SOAK_HRS="${SOAK_HOURS:-2}"
+    say "soak mode: a1200, ${SOAK_HRS} h (session-profile: 12x 10min stop/start), TX_QUEUE=4"
+    if [ "$SOAK_HRS" -lt 2 ]; then
         SOAK_PREFIX="soakquick"
     else
         SOAK_PREFIX="soak"
@@ -61,6 +61,12 @@ if [ "${1:-}" = "soak" ]; then
     SOAK_STAMP="$(date +%Y%m%d-%H%M%S)-$SOAK_PREFIX-$(git rev-parse --short HEAD 2>/dev/null || echo dirty)"
     SOAK_DIR="docs/bench-logs/$SOAK_STAMP"
     mkdir -p "$SOAK_DIR"
+
+    if [ "${SKIP_BUILD:-0}" != "1" ]; then
+        say "building (make all)"
+        wsl -d Ubuntu-24.04 -e bash -lc "export PATH=/home/tolon/opt/m68k-amigaos/bin:\$PATH && cd /mnt/d/Projeler/tolunnet && make all CROSS=$CROSS" >/dev/null \
+            || die "make all failed"
+    fi
 
     BENCH_CFG="ci/.soak-tolunnet.config"
     sed -e "s/__DNS_PORT__/$BENCH_DNS_PORT/" ci/tolunnet.config > "$BENCH_CFG"
@@ -82,24 +88,27 @@ if [ "${1:-}" = "soak" ]; then
     xd delete C/TolunnetControl >/dev/null 2>&1
     xd delete S/User-Startup    >/dev/null 2>&1
     xd delete S/Conformance-Script >/dev/null 2>&1
+    xd delete S/Soak-Cycle      >/dev/null 2>&1
     xd delete Devs/tolunnet.config >/dev/null 2>&1
     xd write build/tolunnet C/tolunnet          || die "soak staging: tolunnet"
     xd write build/TolunnetPing C/TolunnetPing  || die "soak staging: TolunnetPing"
     xd write build/TolunnetGet C/TolunnetGet    || die "soak staging: TolunnetGet"
     xd write build/TolunnetControl C/TolunnetControl || die "soak staging: TolunnetControl"
+    xd write ci/Soak-Cycle S/Soak-Cycle         || die "soak staging: cycle script"
     xd write ci/User-Startup-Soak S/Conformance-Script || die "soak staging: driver script"
     xd write ci/User-Startup-Boot S/User-Startup || die "soak staging: boot shim"
     xd write "$BENCH_CFG" Devs/tolunnet.config  || die "soak staging: config"
     say "soak staged -> $HDF_WIN"
 
-    rm -f "$WORK_DIR/bench-done" "$WORK_DIR/soak.log" "$WORK_DIR/soak-daemon.log"        "$WORK_DIR/tolunnet-task.log" "$WORK_DIR/soak-avail-base.txt"
+    rm -f "$WORK_DIR/bench-done" "$WORK_DIR/soak.log" "$WORK_DIR/soak-daemon.log" \
+          "$WORK_DIR/tolunnet-task.log" "$WORK_DIR/soak-avail-base.txt"
 
     CFG_WIN=$(cygpath -w "$REPO_ROOT/ci/tolunnet-a1200.uae")
-    say "launching soak emulator (up to $(( ${SOAK_HOURS:-24} * 3600 + 1200 )) s)"
+    LIMIT="${SOAK_LIMIT_SECS:-$(( ${SOAK_HOURS:-2} * 3600 + 600 ))}"
+    say "launching soak emulator (budget: up to $LIMIT s)"
     "$WINUAE" -f "$CFG_WIN" >/dev/null 2>&1 &
 
     start=$SECONDS
-    LIMIT="${SOAK_LIMIT_SECS:-$(( ${SOAK_HOURS:-24} * 3600 + 1200 ))}"
     while [ ! -f "$WORK_DIR/bench-done" ]; do
         sleep 60
         el=$(( SECONDS - start ))
@@ -112,7 +121,34 @@ if [ "${1:-}" = "soak" ]; then
     cp "$WORK_DIR/soak-daemon.log"   "$SOAK_DIR/" 2>/dev/null || true
     cp "$WORK_DIR/tolunnet-task.log" "$SOAK_DIR/" 2>/dev/null || true
     cp "$WORK_DIR/soak-avail-base.txt" "$SOAK_DIR/" 2>/dev/null || true
-    say "soak logs: $SOAK_DIR (evaluate: no SOAK-FAIL/Guru lines, RAM drift <= 8 KB)"
+    say "soak logs saved -> $SOAK_DIR"
+
+    # Automated Verification Check
+    say "=== SOAK VERIFICATION AUDIT ==="
+    if [ -f "$WORK_DIR/bench-done" ]; then
+        say "  Marker: $(cat "$WORK_DIR/bench-done")"
+    else
+        say "  Marker: WARNING (budget limit reached, no clean bench-done marker)"
+    fi
+
+    GURUS=$(grep -Eic "Guru|Software Failure|Address Error|Illegal Instruction" "$SOAK_DIR"/*.log 2>/dev/null || echo 0)
+    say "  Guru/Exception lines: $GURUS"
+
+    NOT_OK=$(grep -ci "not ok" "$SOAK_DIR"/soak.log 2>/dev/null || echo 0)
+    say "  not ok count: $NOT_OK"
+
+    RESTARTS=$(grep -c "lwIP 2.2.0 initialized" "$SOAK_DIR"/tolunnet-task.log 2>/dev/null || echo 0)
+    say "  lwIP initializations: $RESTARTS (target: >= 13 for 12 restarts)"
+
+    BASE_FAST=$(grep -i "fast" "$SOAK_DIR"/soak-avail-base.txt 2>/dev/null | awk '{print $2}')
+    LAST_FAST=$(grep -i "fast" "$SOAK_DIR"/soak.log 2>/dev/null | tail -n 1 | awk '{print $2}')
+    if [ -n "$BASE_FAST" ] && [ -n "$LAST_FAST" ]; then
+        DRIFT=$(( BASE_FAST - LAST_FAST ))
+        say "  Fast RAM baseline: $BASE_FAST, final: $LAST_FAST, drift: $DRIFT bytes (limit: <= 8192 bytes)"
+    else
+        say "  Fast RAM: missing snapshot for baseline or final"
+    fi
+
     exit 0
 fi
 

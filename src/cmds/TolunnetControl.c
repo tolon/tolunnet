@@ -105,9 +105,20 @@ int main(int argc, char **argv)
             tn_cmd_printf("TolunnetControl: cannot load C:tolunnet\n");
             rc = TN_CMD_FAIL;
         }
+    } else if (strcmp(cmd, "STATS") == 0) {
+        BPTR seg = LoadSeg((CONST_STRPTR)"C:tolunnet");
+        if (seg != (BPTR)0) {
+            LONG ret;
+            ret = RunCommand(seg, 32768, (CONST_STRPTR)"STATS\n", 6);
+            UnLoadSeg(seg);
+            if (ret != 0) rc = (int)ret;
+        } else {
+            tn_cmd_printf("TolunnetControl: cannot load C:tolunnet\n");
+            rc = TN_CMD_FAIL;
+        }
     } else {
         tn_cmd_printf("TolunnetControl: unknown command '%s'\n", cmd);
-        tn_cmd_printf("Usage: TolunnetControl START|STOP|RESTART|STATUS|RECONFIG|VERSION\n");
+        tn_cmd_printf("Usage: TolunnetControl START|STOP|RESTART|STATUS|RECONFIG|STATS|VERSION\n");
         rc = TN_CMD_USAGE;
     }
 
