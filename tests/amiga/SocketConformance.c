@@ -5084,9 +5084,25 @@ int main(int argc, char *argv[])
     TN_RUN(tc_sendmsg_iov);
     TN_RUN(tc_tcp_scatter_tnet115);
     TN_RUN(tc_recv_peek);
-    /* CLOSE §B/TNET-150: command-surface rows run BEFORE the heavyweight
-     * wizard/reconfig tail — TNET-151 (suite-tail loopback degradation
-     * after the wizard tests) must not colour the command proofs. */
+    TN_RUN(tc_socket_events);
+    TN_RUN(tc_sbtc_full);
+    TN_RUN(tc_release_obtain);
+    TN_RUN(tc_every_vector_callable);
+    TN_RUN(tc_stats_counters);
+    TN_RUN(tc_wizard_wired);
+    TN_RUN(tc_wizard_ntsc);
+    TN_RUN(tc_wifi_scan_parse);
+    TN_RUN(tc_reconfig_rc);
+    /* TNET-151 proof #2: all four probes after the wizard tail -
+     * must pass with the time-verified watchdog */
+    TN_RUN(tc_probe_after_wizard_wired);
+    TN_RUN(tc_probe_after_wizard_ntsc);
+    TN_RUN(tc_probe_after_wifi_scan);
+    TN_RUN(tc_probe_after_reconfig);
+    /* RC3: original order restored — TNET-151 root-caused (every_vector's
+     * SetSocketSignals(-1) corrupted sig_int); the reorder workaround is
+     * retired. Probes above stay as regression canaries. */
+    TN_RUN(tc_link_events);
     TN_RUN(tc_cmd_hostname);
     TN_RUN(tc_cmd_nslookup);
     TN_RUN(tc_cmd_whois);
@@ -5104,21 +5120,6 @@ int main(int argc, char *argv[])
     TN_RUN(tc_cmd_ifctl);
     TN_RUN(tc_cmd_netshutdown);
     TN_RUN(tc_cmd_route);
-    TN_RUN(tc_socket_events);
-    TN_RUN(tc_sbtc_full);
-    TN_RUN(tc_release_obtain);
-    TN_RUN(tc_every_vector_callable);
-    TN_RUN(tc_stats_counters);
-    TN_RUN(tc_wizard_wired);
-    TN_RUN(tc_wizard_ntsc);
-    TN_RUN(tc_wifi_scan_parse);
-    TN_RUN(tc_reconfig_rc);
-    /* TNET-151 proof #2: all four probes after the wizard tail -
-     * must pass with the time-verified watchdog */
-    TN_RUN(tc_probe_after_wizard_wired);
-    TN_RUN(tc_probe_after_wizard_ntsc);
-    TN_RUN(tc_probe_after_wifi_scan);
-    TN_RUN(tc_probe_after_reconfig);
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
