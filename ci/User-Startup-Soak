@@ -1,11 +1,14 @@
 ;BEGIN tolunnet soak (RC3 item 3)
-; Daemon up, then a 24 h driver loop (Lab/Skip BACK - AmigaDOS has no
-; Loop construct): ping every ~10 s, wget every ~30 s, STATUS + Avail
-; every ~10 min into the log.
+; Daemon up, then an endless driver loop (no variables - this WB has no
+; Set/Eval; Lab/Skip BACK + If EXISTS only). Each pass is ~30 s:
+; ping x3, wget (10.0.2.2:1 - slirp RSTs fast) + STATUS + Avail once.
+; The host wrapper stops the run at the time budget; WORK:soak-stop is
+; the manual emergency exit.
 Stack 32768
 
 If EXISTS WORK:
   Delete >NIL: WORK:soak.log QUIET
+  Delete >NIL: WORK:soak-stop QUIET
   Delete >NIL: WORK:bench-done QUIET
 
   Run >WORK:soak-daemon.log C:tolunnet
@@ -13,45 +16,25 @@ If EXISTS WORK:
 
   Avail >WORK:soak-avail-base.txt
 
-  Set SOAK_SECS 86400
-  If EXISTS WORK:soak-quick
-    Set SOAK_SECS 120
-    Delete >NIL: WORK:soak-quiet QUIET
-  EndIf
-  Set SOAK_T 0
-  Set SOAK_TICK 0
-
 Lab soak_loop
-  Echo >>WORK:soak.log MARK T=$SOAK_T TICK=$SOAK_TICK SECS=$SOAK_SECS
-  ; ---- every ~10 s: ping burst (4x 1 s) ----
   C:TolunnetPing 127.0.0.1 COUNT=4 INTERVAL=1 QUIET >>WORK:soak.log
-  If WARN
-    Echo >>WORK:soak.log "SOAK-FAIL: ping at $SOAK_T s"
-  EndIf
-
-  ; ---- every ~30 s: wget socket churn (connect-refused = healthy) ----
-  If $SOAK_TICK EQ 0
-    Echo >>WORK:soak.log MARK-before-wget
-    C:TolunnetGet http://10.0.2.2:1/ >>WORK:soak.log
-    Echo >>WORK:soak.log MARK-after-wget
-  EndIf
-
-  ; ---- every ~10 min: status + Avail drift sampling ----
-  If $SOAK_TICK EQ 0
-    C:TolunnetControl STATUS >>WORK:soak.log
-    Avail >>WORK:soak.log
-  EndIf
-
-  Set SOAK_TICK `Eval $SOAK_TICK + 1`
-  If $SOAK_TICK GE 3
-    Set SOAK_TICK 0
-  EndIf
-
-  Set SOAK_T `Eval $SOAK_T + 10`
-  If $SOAK_T GE $SOAK_SECS
-    Echo >WORK:bench-done "soak complete"
+  If EXISTS WORK:soak-stop
+    Echo >WORK:bench-done "soak stopped by marker"
     Quit
   EndIf
+  Wait 10
+
+  C:TolunnetPing 127.0.0.1 COUNT=4 INTERVAL=1 QUIET >>WORK:soak.log
+  If EXISTS WORK:soak-stop
+    Echo >WORK:bench-done "soak stopped by marker"
+    Quit
+  EndIf
+  Wait 10
+
+  C:TolunnetPing 127.0.0.1 COUNT=4 INTERVAL=1 QUIET >>WORK:soak.log
+  C:TolunnetGet http://10.0.2.2:1/ >>WORK:soak.log
+  C:TolunnetControl STATUS >>WORK:soak.log
+  Avail >>WORK:soak.log
   Wait 10
   Skip soak_loop BACK
 EndIf

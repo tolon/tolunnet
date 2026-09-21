@@ -93,13 +93,13 @@ if [ "${1:-}" = "soak" ]; then
     "$WINUAE" -f "$CFG_WIN" >/dev/null 2>&1 &
 
     start=$SECONDS
-    LIMIT=$(( ${SOAK_HOURS:-24} * 3600 + 1200 ))
+    LIMIT="${SOAK_LIMIT_SECS:-$(( ${SOAK_HOURS:-24} * 3600 + 1200 ))}"
     while [ ! -f "$WORK_DIR/bench-done" ]; do
         sleep 60
         el=$(( SECONDS - start ))
-        [ $el -gt $LIMIT ] && { say "soak: TIMEOUT waiting for bench-done"; break; }
+        [ $el -gt $LIMIT ] && { say "soak: time budget reached ($LIMIT s), stopping"; break; }
     done
-    sleep 10
+    sleep 5
     taskkill //IM winuae64.exe //F >/dev/null 2>&1 || true
     taskkill //IM winuae.exe //F >/dev/null 2>&1 || true
     cp "$WORK_DIR/soak.log"          "$SOAK_DIR/" 2>/dev/null || true
