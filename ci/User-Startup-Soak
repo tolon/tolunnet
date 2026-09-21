@@ -14,10 +14,15 @@ If EXISTS WORK:
   Avail >WORK:soak-avail-base.txt
 
   Set SOAK_SECS 86400
+  If EXISTS WORK:soak-quick
+    Set SOAK_SECS 120
+    Delete >NIL: WORK:soak-quiet QUIET
+  EndIf
   Set SOAK_T 0
   Set SOAK_TICK 0
 
 Lab soak_loop
+  Echo >>WORK:soak.log "MARK loop T=$SOAK_T TICK=$SOAK_TICK SECS=$SOAK_SECS"
   ; ---- every ~10 s: ping burst (4x 1 s) ----
   C:TolunnetPing 127.0.0.1 COUNT=4 INTERVAL=1 QUIET >>WORK:soak.log
   If WARN
@@ -26,7 +31,7 @@ Lab soak_loop
 
   ; ---- every ~30 s: wget socket churn (connect-refused = healthy) ----
   If $SOAK_TICK EQ 0
-    C:TolunnetGet http://127.0.0.1:1/ >>WORK:soak.log
+    C:TolunnetGet http://10.0.2.2:1/ >>WORK:soak.log
   EndIf
 
   ; ---- every ~10 min: status + Avail drift sampling ----
