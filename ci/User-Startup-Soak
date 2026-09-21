@@ -1,6 +1,6 @@
 ;BEGIN tolunnet soak (RC3 item 3)
-; Daemon up, then a 24 h driver loop: wget every 30 s, ping every 10 s,
-; TolunnetControl STATUS (STATS via STATUS) every 10 min into the log.
+; Daemon up, then a 24 h driver loop: ping every 10 s, wget every 30 s,
+; TolunnetControl STATUS + Avail every 10 min into the log.
 Stack 32768
 
 If EXISTS WORK:
@@ -10,25 +10,23 @@ If EXISTS WORK:
   Run >WORK:soak-daemon.log C:tolunnet
   Wait 15
 
-  ; baseline memory snapshot
   Avail >WORK:soak-avail-base.txt
 
-  SetParam SOAK_SECS 86400
-  SetParam SOAK_T 0
-  SetParam SOAK_TICK 0
+  Set SOAK_SECS 86400
+  Set SOAK_T 0
+  Set SOAK_TICK 0
 
   Loop
-    ; ---- every ~10 s: ping burst ----
+    ; ---- every ~10 s: ping burst (4x 1 s) ----
     C:TolunnetPing 127.0.0.1 COUNT=4 INTERVAL=1 QUIET >>WORK:soak.log
     If WARN
-      Echo >>WORK:soak.log "SOAK: ping FAILED at $SOAK_T s"
+      Echo >>WORK:soak.log "SOAK-FAIL: ping at $SOAK_T s"
     EndIf
 
-    ; ---- every ~30 s: wget loopback sanity (connection-refused is fine,
-    ;      the point is socket churn + TCP state) ----
+    ; ---- every ~30 s: wget socket churn (refused = healthy here) ----
     If $SOAK_TICK EQ 0
       C:TolunnetGet http://127.0.0.1:1/ >>WORK:soak.log
-      ; RC 10 (connect refused) is the expected healthy outcome
+      ; RC 10 (connect refused) expected - below abort threshold 20
     EndIf
 
     ; ---- every 10 min: status + Avail ----
@@ -37,12 +35,12 @@ If EXISTS WORK:
       Avail >>WORK:soak.log
     EndIf
 
-    SetParam SOAK_TICK ($SOAK_TICK + 1)
+    Set SOAK_TICK `Eval $SOAK_TICK + 1`
     If $SOAK_TICK GE 3
-      SetParam SOAK_TICK 0
+      Set SOAK_TICK 0
     EndIf
 
-    SetParam SOAK_T ($SOAK_T + 10)
+    Set SOAK_T `Eval $SOAK_T + 10`
     If $SOAK_T GE $SOAK_SECS
       Echo >WORK:bench-done "soak complete"
       Quit
