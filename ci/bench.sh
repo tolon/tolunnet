@@ -46,43 +46,66 @@ command -v wsl >/dev/null || die "wsl not available (xdftool runs in WSL)"
 
 # ANX-01: the bench must never exercise WinUAE's own bsdsocket.library.
 # ---- RC3 item 3: soak mode -------------------------------------------------
-# ci/bench.sh soak  ->  a1200 profile, 24 h driver loop (User-Startup-Soak),
-# TX_QUEUE=4 staged config, pass = bench-done + no Guru + RAM drift <= 8 KB.
+# ci/bench.sh soak  ->  a1200 profile, 24 h driver loop (User-Startup-Soak via
+# the standard User-Startup-Boot shim), TX_QUEUE=4 config, pass = bench-done +
+# no Guru lines + RAM drift <= 8 KB between the Avail snapshots in soak.log.
 if [ "${1:-}" = "soak" ]; then
-    say "soak mode: a1200, 24 h (SOAK_HOURS=${SOAK_HOURS:-24}), TX_QUEUE=4"
-    SOAK_LOG_ROOT="docs/bench-logs/$(date +%Y%m%d-%H%M%S)-soak-$(git rev-parse --short HEAD 2>/dev/null || echo dirty)"
-    SOAK_DIR="$SOAK_LOG_ROOT"
+    say "soak mode: a1200, ${SOAK_HOURS:-24} h, TX_QUEUE=4"
+    SOAK_STAMP="$(date +%Y%m%d-%H%M%S)-soak-$(git rev-parse --short HEAD 2>/dev/null || echo dirty)"
+    SOAK_DIR="docs/bench-logs/$SOAK_STAMP"
     mkdir -p "$SOAK_DIR"
-    WSL_STAMP="ci/.soak-tolunnet.config"
-    sed -e "s/__DNS_PORT__/$BENCH_DNS_PORT/" ci/tolunnet.config | sed '/^TX_QUEUE=/d' > "$WSL_STAMP"
-    echo "TX_QUEUE=4" >> "$WSL_STAMP"
+
+    BENCH_CFG="ci/.soak-tolunnet.config"
+    sed -e "s/__DNS_PORT__/$BENCH_DNS_PORT/" ci/tolunnet.config > "$BENCH_CFG"
+    echo "TX_QUEUE=4" >> "$BENCH_CFG"
+    say "soak config: $(wc -c < "$BENCH_CFG") bytes, TX_QUEUE=4"
+
     STAGE_DIR="/e/amiga/Amigatolon/bench/tolunnet"
+    rm -rf "$STAGE_DIR"
+    mkdir -p "$STAGE_DIR"
+    cp "$PRISTINE_HDF" "$STAGE_DIR/wb30-soak.hdf" || die "cannot copy pristine HDF"
     HDF_WIN='E:miga\Amigatolonench	olunnet\wb30-soak.hdf'
-    say "staging HDF for soak"
-    cp "/e/amiga/Amigatolon/hdf/Workbench v3.0 (1992)(Commodore).hdf" "$STAGE_DIR/wb30-soak.hdf" || die "template HDF copy failed"
-    wsl -d Ubuntu-24.04 -e bash -c "cd /mnt/d/Projeler/tolunnet &&         xd=\$(/home/tolon/.local/bin/xdftool 2>/dev/null || echo /home/tolon/.local/bin/xdftool);         XD='/mnt/e/amiga/Amigatolon/bench/tolunnet/wb30-soak.hdf';         \$xd -f \$XD delete C/tolunnet >/dev/null 2>&1; \n        \$xd -f \$XD delete C/TolunnetPing >/dev/null 2>&1; \n        \$xd -f \$XD delete C/TolunnetGet >/dev/null 2>&1; \n        \$xd -f \$XD delete C/TolunnetControl >/dev/null 2>&1;         \$xd -f \$XD write build/tolunnet C/tolunnet &&         \$xd -f \$XD write build/TolunnetPing C/TolunnetPing &&         \$xd -f \$XD write build/TolunnetGet C/TolunnetGet &&         \$xd -f \$XD write build/TolunnetControl C/TolunnetControl &&         \$xd -f \$XD delete S/User-Startup >/dev/null 2>&1;         \$xd -f \$XD write ci/User-Startup-Soak S/User-Startup &&         \$xd -f \$XD delete Devs/tolunnet.config >/dev/null 2>&1;         \$xd -f \$XD write $WSL_STAMP Devs/tolunnet.config" || die "soak staging failed"
-    rm -f "$WORK_DIR/bench-done" "$WORK_DIR/soak.log" "$WORK_DIR/soak-daemon.log" "$WORK_DIR/tolunnet-task.log" "$WORK_DIR/soak-avail-base.txt"
-    say "launching soak emulator (SOAK_HOURS=${SOAK_HOURS:-24})"
-    SOAK_MS=$(( ${SOAK_HOURS:-24} * 3600 * 1000 + 1200000 ))
-    "$WINUAE" -f ci/tolunnet-a1200.uae         hardfile2=rw,DH0:"$HDF_WIN",0,0,0,512,1,,xhf || true &
-    UAE_PID=$!
+    HDF_UX="/mnt/e/amiga/Amigatolon/bench/tolunnet/wb30-soak.hdf"
+
+    xd() { wsl -d Ubuntu-24.04 -e bash -c "\$HOME/.local/bin/xdftool '$HDF_UX' $*" ; }
+
+    xd delete C/tolunnet        >/dev/null 2>&1
+    xd delete C/TolunnetPing    >/dev/null 2>&1
+    xd delete C/TolunnetGet     >/dev/null 2>&1
+    xd delete C/TolunnetControl >/dev/null 2>&1
+    xd delete S/User-Startup    >/dev/null 2>&1
+    xd delete S/Conformance-Script >/dev/null 2>&1
+    xd delete Devs/tolunnet.config >/dev/null 2>&1
+    xd write build/tolunnet C/tolunnet          || die "soak staging: tolunnet"
+    xd write build/TolunnetPing C/TolunnetPing  || die "soak staging: TolunnetPing"
+    xd write build/TolunnetGet C/TolunnetGet    || die "soak staging: TolunnetGet"
+    xd write build/TolunnetControl C/TolunnetControl || die "soak staging: TolunnetControl"
+    xd write ci/User-Startup-Soak S/Conformance-Script || die "soak staging: driver script"
+    xd write ci/User-Startup-Boot S/User-Startup || die "soak staging: boot shim"
+    xd write "$BENCH_CFG" Devs/tolunnet.config  || die "soak staging: config"
+    say "soak staged -> $HDF_WIN"
+
+    rm -f "$WORK_DIR/bench-done" "$WORK_DIR/soak.log" "$WORK_DIR/soak-daemon.log"        "$WORK_DIR/tolunnet-task.log" "$WORK_DIR/soak-avail-base.txt"
+
+    CFG_WIN=$(cygpath -w "$REPO_ROOT/ci/tolunnet-a1200.uae")
+    say "launching soak emulator (up to $(( ${SOAK_HOURS:-24} * 3600 + 1200 )) s)"
+    "$WINUAE" -f "$CFG_WIN" >/dev/null 2>&1 &
+
     start=$SECONDS
+    LIMIT=$(( ${SOAK_HOURS:-24} * 3600 + 1200 ))
     while [ ! -f "$WORK_DIR/bench-done" ]; do
         sleep 60
         el=$(( SECONDS - start ))
-        if [ $el -gt $(( SOAK_MS / 1000 )) ]; then
-            say "soak: TIMEOUT waiting for bench-done"
-            break
-        fi
+        [ $el -gt $LIMIT ] && { say "soak: TIMEOUT waiting for bench-done"; break; }
     done
     sleep 10
     taskkill //IM winuae64.exe //F >/dev/null 2>&1 || true
     taskkill //IM winuae.exe //F >/dev/null 2>&1 || true
-    cp "$WORK_DIR/soak.log" "$SOAK_DIR/" 2>/dev/null || true
-    cp "$WORK_DIR/soak-daemon.log" "$SOAK_DIR/" 2>/dev/null || true
+    cp "$WORK_DIR/soak.log"          "$SOAK_DIR/" 2>/dev/null || true
+    cp "$WORK_DIR/soak-daemon.log"   "$SOAK_DIR/" 2>/dev/null || true
     cp "$WORK_DIR/tolunnet-task.log" "$SOAK_DIR/" 2>/dev/null || true
     cp "$WORK_DIR/soak-avail-base.txt" "$SOAK_DIR/" 2>/dev/null || true
-    say "soak logs: $SOAK_DIR (evaluate: no Guru lines, RAM drift <= 8 KB)"
+    say "soak logs: $SOAK_DIR (evaluate: no SOAK-FAIL/Guru lines, RAM drift <= 8 KB)"
     exit 0
 fi
 
