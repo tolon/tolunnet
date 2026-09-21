@@ -1,3 +1,11 @@
+# RESOLVED: TNET-151 root-caused and fixed after this report was written
+
+Root cause: tc_every_vector_callable's all-LVO sweep called SetSocketSignals
+with int_mask=-1 (0xFFFFFFFF) — sig_int matched any pending signal, every
+later WaitSelect insta-returned EINTR. Fix: save/restore around the sweep.
+Both orders green: 20260921-134152-400356f, 20260921-135938-51196ec.
+Historical report follows.
+
 # Tolunnet STOP-REPORT: RC3 — TNET-151 root cause narrowed to a client-side timer-signal collision; stop rule fired
 
 **Timestamp:** 2026-09-21 03:00
