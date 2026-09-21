@@ -778,105 +778,144 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
         }
     }
 
-    /* Event-driven wait using timer.device and selector/SIGIO signal (§D) */
+    /* Event-driven wait using timer.device and selector/SIGIO signal (TNET-151:
+     * TIME is the ground truth, not signal bits. A stale/instantly-completing
+     * TR_ADDREQUEST on the shared per-base timer request used to make Wait()
+     * return within 0-1 ticks with only tm_sig fired - waitselect then reported
+     * a bogus timeout while the data was in fact queued (probe evidence
+     * 20260921-025310: timer bit 29 fired instantly, direct recv got=5). Each
+     * attempt therefore measures ELAPSED time; a "timeout" is only accepted
+     * when the budget actually elapsed, otherwise the wait retries with the
+     * remaining budget. */
     {
         ULONG wait_sig = base->sig_select | base->sig_io;
+        ULONG tm_sig = 0;
+        struct timerequest *tm = NULL;
+        ULONG wait_mask2 = sig_mask;
+        ULONG budget_ticks = 0;   /* 0 = no timeout (infinite wait) */
+        ULONG t0 = 0;
+        int attempt;
+
+        if (nfds > 0) {
+            wait_mask2 |= wait_sig;
+        }
         if (nfds > 0 && wait_sig == 0) {
-            /* No signal bit available for wakeup; return ENOBUFS per Section D */
             tn_ipc_call(base, TN_IPC_CMD_SELECT_DISARM);
             tn_set_errno_val(base, ENOBUFS);
             return -1;
         }
-
         if (!tn_ensure_timer(base)) {
             if (nfds > 0) tn_ipc_call(base, TN_IPC_CMD_SELECT_DISARM);
             tn_set_errno_val(base, ENOBUFS);
             return -1;
         }
-
-        struct timerequest *tm = (struct timerequest *)base->timer_io;
-        ULONG tm_sig = 1UL << base->timer_port->mp_SigBit;
-        ULONG wait_mask = sig_mask;
-        BOOL timer_active = FALSE;
-
-        if (nfds > 0) {
-            wait_mask |= wait_sig;
-        }
+        tm = (struct timerequest *)base->timer_io;
+        tm_sig = 1UL << base->timer_port->mp_SigBit;
 
         if (has_timeout) {
+            ULONG micros = (ULONG)timeout->tv_secs * 1000000UL + (ULONG)timeout->tv_micro;
+            budget_ticks = (micros + 19999UL) / 20000UL; /* 1 tick = 20 ms */
+            if (budget_ticks == 0) budget_ticks = 1;
+        }
+
+        for (attempt = 0; ; attempt++) {
             struct Message *m;
+            ULONG fired;
+            ULONG elapsed;
+            struct DateStamp ds;
+
             while ((m = GetMsg(base->timer_port)) != NULL) {}
             SetSignal(0, tm_sig);
 
-            tm->tr_node.io_Command = TR_ADDREQUEST;
-            tm->tr_time.tv_secs    = timeout->tv_secs;
-            tm->tr_time.tv_micro   = timeout->tv_micro;
-            SendIO((struct IORequest *)tm);
-            timer_active = TRUE;
-            wait_mask |= tm_sig;
-        }
-
-        ULONG fired = Wait(wait_mask);
-        base->dbg_wait_fired = fired; /* TNET-151 diag */
-
-        if (timer_active) {
-            if (!CheckIO((struct IORequest *)tm)) {
-                AbortIO((struct IORequest *)tm);
+            DateStamp(&ds);
+            if (attempt == 0) {
+                t0 = (ULONG)ds.ds_Days * 86400UL * 50UL +
+                     (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
             }
-            WaitIO((struct IORequest *)tm);
-            struct Message *m;
-            while ((m = GetMsg(base->timer_port)) != NULL) {}
-            SetSignal(0, tm_sig);
-        }
 
-        /* Disarm selector immediately upon waking */
-        if (nfds > 0) {
-            tn_ipc_call(base, TN_IPC_CMD_SELECT_DISARM);
-        }
+            if (has_timeout) {
+                ULONG gone = (ULONG)ds.ds_Days * 86400UL * 50UL +
+                             (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
+                ULONG remain_ticks = (gone - t0 >= budget_ticks) ? 0 : budget_ticks - (gone - t0);
+                if (remain_ticks == 0) {
+                    /* budget already spent */
+                    if (read_fds)   read_fds->fds_bits[0] = 0;
+                    if (write_fds)  write_fds->fds_bits[0] = 0;
+                    if (except_fds) except_fds->fds_bits[0] = 0;
+                    if (signals != NULL) *signals = 0;
+                    if (nfds > 0) tn_ipc_call(base, TN_IPC_CMD_SELECT_DISARM);
+                    return 0;
+                }
+                tm->tr_node.io_Command = TR_ADDREQUEST;
+                tm->tr_time.tv_secs  = (remain_ticks * 20000UL) / 1000000UL;
+                tm->tr_time.tv_micro = (remain_ticks * 20000UL) % 1000000UL;
+                SendIO((struct IORequest *)tm);
+            }
 
-        /* If interrupted by user signal */
-        if (sig_mask != 0 && (fired & sig_mask)) {
-            received_sigs = fired & sig_mask;
-            SetSignal(0, received_sigs);
-            if (signals != NULL) *signals = received_sigs;
-            /* AmiTCP WaitSelect: signal interrupt returns 0 with fd_sets
-             * zeroed, but errno is set to EINTR (Roadshow autodocs: 'returns
-             * 0 and sets errno to EINTR') — bsdsocktest #66 checks rc==0,
-             * our tc_waitselect_eintr checks errno==EINTR. */
-            if (read_fds)   read_fds->fds_bits[0] = 0;
-            if (write_fds)  write_fds->fds_bits[0] = 0;
-            if (except_fds) except_fds->fds_bits[0] = 0;
-            tn_set_errno_val(base, EINTR);
-            return 0;
-        }
+            fired = Wait(wait_mask2 | (has_timeout ? tm_sig : 0));
 
-        /* If timed out without socket activity */
-        if (timer_active && (fired & tm_sig) && !(fired & wait_sig)) {
-            if (read_fds)   read_fds->fds_bits[0] = 0;
-            if (write_fds)  write_fds->fds_bits[0] = 0;
-            if (except_fds) except_fds->fds_bits[0] = 0;
+            if (has_timeout) {
+                if (!CheckIO((struct IORequest *)tm)) {
+                    AbortIO((struct IORequest *)tm);
+                }
+                WaitIO((struct IORequest *)tm);
+                while ((m = GetMsg(base->timer_port)) != NULL) {}
+                SetSignal(0, tm_sig);
+            }
+
+            /* Disarm selector immediately upon waking */
+            if (nfds > 0) {
+                tn_ipc_call(base, TN_IPC_CMD_SELECT_DISARM);
+            }
+
+            /* If interrupted by user signal */
+            if (sig_mask != 0 && (fired & sig_mask)) {
+                ULONG received_sigs = fired & sig_mask;
+                SetSignal(0, received_sigs);
+                if (signals != NULL) *signals = received_sigs;
+                if (read_fds)   read_fds->fds_bits[0] = 0;
+                if (write_fds)  write_fds->fds_bits[0] = 0;
+                if (except_fds) except_fds->fds_bits[0] = 0;
+                tn_set_errno_val(base, EINTR);
+                return 0;
+            }
+
+            DateStamp(&ds);
+            {
+                ULONG now = (ULONG)ds.ds_Days * 86400UL * 50UL +
+                            (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
+                elapsed = now - t0;
+            }
+
+            /* Socket activity or genuine timeout: query final ready sets.
+             * A res==0 query with budget REMAINING means the wake was a
+             * timer lie (or spurious) - retry instead of reporting timeout. */
+            if (read_fds)   read_fds->fds_bits[0] = orig_r;
+            if (write_fds)  write_fds->fds_bits[0] = orig_w;
+            if (except_fds) except_fds->fds_bits[0] = orig_e;
+
+            base->ipc_msg.args[0] = nfds;
+            base->ipc_msg.ptrs[0] = (APTR)read_fds;
+            base->ipc_msg.ptrs[1] = (APTR)write_fds;
+            base->ipc_msg.ptrs[2] = (APTR)except_fds;
+            res = tn_ipc_call(base, TN_IPC_CMD_WAITSELECT);
             if (signals != NULL) *signals = 0;
-            return 0;
+            if (res != 0) return res;
+
+            if (!has_timeout) {
+                /* infinite wait returned empty - spurious; retry */
+                if (attempt >= 3) return 0;
+                continue;
+            }
+            if (elapsed + 3UL >= budget_ticks) {
+                /* genuine timeout (3-tick measurement slack) */
+                if (read_fds)   read_fds->fds_bits[0] = 0;
+                if (write_fds)  write_fds->fds_bits[0] = 0;
+                if (except_fds) except_fds->fds_bits[0] = 0;
+                return 0;
+            }
+            /* timer lied or spurious wake - retry with remaining budget */
         }
-
-        /* If pure sleep without sockets */
-        if (nfds == 0) {
-            if (signals != NULL) *signals = 0;
-            return 0;
-        }
-
-        /* Socket activity or timeout: query final ready descriptors */
-        if (read_fds)   read_fds->fds_bits[0] = orig_r;
-        if (write_fds)  write_fds->fds_bits[0] = orig_w;
-        if (except_fds) except_fds->fds_bits[0] = orig_e;
-
-        base->ipc_msg.args[0] = nfds;
-        base->ipc_msg.ptrs[0] = (APTR)read_fds;
-        base->ipc_msg.ptrs[1] = (APTR)write_fds;
-        base->ipc_msg.ptrs[2] = (APTR)except_fds;
-        res = tn_ipc_call(base, TN_IPC_CMD_WAITSELECT);
-        if (signals != NULL) *signals = 0;
-        return res;
     }
 }
 
