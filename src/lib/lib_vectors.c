@@ -63,6 +63,17 @@ static inline LONG tn_set_enosys(TnSocketBase *base)
 }
 
 /* Helper to execute a synchronous IPC call from client task to tolunnet task */
+/* TNET-151: 1/50 s ticks from DateStamp - the ground truth the watchdog
+ * and WaitSelect verify signal wakes against (a wedged/stale timer request
+ * completes instantly and would otherwise be trusted). */
+static ULONG tn_ticks_now(void)
+{
+    struct DateStamp ds;
+    DateStamp(&ds);
+    return (ULONG)ds.ds_Days * 86400UL * 50UL +
+           (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
+}
+
 static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd);
 static BOOL tn_ensure_timer(TnSocketBase *base);
 
@@ -141,19 +152,40 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
         while ((m = GetMsg(base->timer_port)) != NULL) {}
         SetSignal(0, tm_sig);
 
-        tm->tr_node.io_Command = TR_ADDREQUEST;
-        tm->tr_time.tv_secs    = base->ipc_timeout_ms / 1000;
-        tm->tr_time.tv_micro   = (base->ipc_timeout_ms % 1000) * 1000;
-        SendIO((struct IORequest *)tm);
+        /* TNET-151: time-verified watchdog. A wedged or stale timer
+         * request completes instantly; trusting tm_sig alone turns every
+         * affected call into a false ETIMEDOUT (20260921-111354: queries
+         * failed while data sat queued). tm_sig is only honored when the
+         * budget actually elapsed; otherwise the wait resumes with the
+         * remaining budget. */
+        {
+            ULONG t0 = tn_ticks_now();
+            ULONG budget_ms = base->ipc_timeout_ms;
 
-        fired = Wait(reply_sig | tm_sig);
+            for (;;) {
+                ULONG elapsed_ms;
 
-        if (!CheckIO((struct IORequest *)tm)) {
-            AbortIO((struct IORequest *)tm);
+                tm->tr_node.io_Command = TR_ADDREQUEST;
+                tm->tr_time.tv_secs    = budget_ms / 1000;
+                tm->tr_time.tv_micro   = (budget_ms % 1000) * 1000;
+                SendIO((struct IORequest *)tm);
+
+                fired = Wait(reply_sig | tm_sig);
+
+                if (!CheckIO((struct IORequest *)tm)) {
+                    AbortIO((struct IORequest *)tm);
+                }
+                WaitIO((struct IORequest *)tm);
+                while ((m = GetMsg(base->timer_port)) != NULL) {}
+                SetSignal(0, tm_sig);
+
+                if (fired & reply_sig) break;
+
+                elapsed_ms = (tn_ticks_now() - t0) * 20UL;
+                if (elapsed_ms + 40UL >= budget_ms) break; /* genuine timeout */
+                /* timer lied: resume with the full remaining budget */
+            }
         }
-        WaitIO((struct IORequest *)tm);
-        while ((m = GetMsg(base->timer_port)) != NULL) {}
-        SetSignal(0, tm_sig);
 
         if (!(fired & reply_sig)) {
             base->ipc_timeouts++;
