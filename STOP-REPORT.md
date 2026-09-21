@@ -38,7 +38,7 @@ in order:
 
 So: after the wizard-area rows, the shared per-base `timer.device` request state
 makes every timed waitselect's SendIO complete instantly — the wait treats it as
-an immediate timeout. Suspect class: a leaked/overlapped `TR_ADDREQUEST` on the
+an immediate timeout. CONFIRMED NEXT-DAY: with time-verified retries the Wait returns fired=0x0 — the request is persistently wedged (20260921-111354). Prime suspect: the TolunnetSetup async child exits without CloseLibrary; its queued timer request Replies into freed memory (exec corruption). Suspect class: a leaked/overlapped `TR_ADDREQUEST` on the
 one `base->timer_io` shared between the IPC watchdog and WaitSelect (double-SendIO
 without an intervening WaitIO makes timer.device complete the second request
 immediately), OR the reply-signal bit left set by an aborted watchdog that a later
