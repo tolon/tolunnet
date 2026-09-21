@@ -1,6 +1,7 @@
 ;BEGIN tolunnet soak (RC3 item 3)
-; Daemon up, then a 24 h driver loop: ping every 10 s, wget every 30 s,
-; TolunnetControl STATUS + Avail every 10 min into the log.
+; Daemon up, then a 24 h driver loop (Lab/Skip BACK - AmigaDOS has no
+; Loop construct): ping every ~10 s, wget every ~30 s, STATUS + Avail
+; every ~10 min into the log.
 Stack 32768
 
 If EXISTS WORK:
@@ -16,36 +17,35 @@ If EXISTS WORK:
   Set SOAK_T 0
   Set SOAK_TICK 0
 
-  Loop
-    ; ---- every ~10 s: ping burst (4x 1 s) ----
-    C:TolunnetPing 127.0.0.1 COUNT=4 INTERVAL=1 QUIET >>WORK:soak.log
-    If WARN
-      Echo >>WORK:soak.log "SOAK-FAIL: ping at $SOAK_T s"
-    EndIf
+Lab soak_loop
+  ; ---- every ~10 s: ping burst (4x 1 s) ----
+  C:TolunnetPing 127.0.0.1 COUNT=4 INTERVAL=1 QUIET >>WORK:soak.log
+  If WARN
+    Echo >>WORK:soak.log "SOAK-FAIL: ping at $SOAK_T s"
+  EndIf
 
-    ; ---- every ~30 s: wget socket churn (refused = healthy here) ----
-    If $SOAK_TICK EQ 0
-      C:TolunnetGet http://127.0.0.1:1/ >>WORK:soak.log
-      ; RC 10 (connect refused) expected - below abort threshold 20
-    EndIf
+  ; ---- every ~30 s: wget socket churn (connect-refused = healthy) ----
+  If $SOAK_TICK EQ 0
+    C:TolunnetGet http://127.0.0.1:1/ >>WORK:soak.log
+  EndIf
 
-    ; ---- every 10 min: status + Avail ----
-    If $SOAK_TICK EQ 0
-      C:TolunnetControl STATUS >>WORK:soak.log
-      Avail >>WORK:soak.log
-    EndIf
+  ; ---- every ~10 min: status + Avail drift sampling ----
+  If $SOAK_TICK EQ 0
+    C:TolunnetControl STATUS >>WORK:soak.log
+    Avail >>WORK:soak.log
+  EndIf
 
-    Set SOAK_TICK `Eval $SOAK_TICK + 1`
-    If $SOAK_TICK GE 3
-      Set SOAK_TICK 0
-    EndIf
+  Set SOAK_TICK `Eval $SOAK_TICK + 1`
+  If $SOAK_TICK GE 3
+    Set SOAK_TICK 0
+  EndIf
 
-    Set SOAK_T `Eval $SOAK_T + 10`
-    If $SOAK_T GE $SOAK_SECS
-      Echo >WORK:bench-done "soak complete"
-      Quit
-    EndIf
-    Wait 10
-  EndLoop
+  Set SOAK_T `Eval $SOAK_T + 10`
+  If $SOAK_T GE $SOAK_SECS
+    Echo >WORK:bench-done "soak complete"
+    Quit
+  EndIf
+  Wait 10
+  Skip soak_loop BACK
 EndIf
 ;END tolunnet
