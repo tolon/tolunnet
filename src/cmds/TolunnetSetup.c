@@ -1075,17 +1075,23 @@ static void draw_page_content(void)
     if (!g_win) return;
     if (g_ws.current_page != WIZARD_PAGE_ADDRESS) return;
 
-    struct RastPort *rp = g_win->RPort;
-    const char *note = "DHCP obtains IP address, netmask, gateway and DNS servers automatically.";
-    LONG note_y = g_m.pane_t + 4 + g_m.pitch + g_m.pitch;  /* row ct+1 */
+    /* Step SEC item 2: <= 60 chars per line rule; only paint in DHCP mode */
+    if (g_ws.ip_mode == 0) {
+        struct RastPort *rp = g_win->RPort;
+        const char *l1 = "DHCP obtains IP address, netmask, gateway";
+        const char *l2 = "and DNS servers automatically.";
+        LONG note_y = g_m.pane_t + 4 + g_m.pitch + g_m.pitch;
 
-    SetAPen(rp, g_m.pen_bg);
-    RectFill(rp, g_m.pane_l + 14, note_y - g_m.fy,
-             g_m.pane_l + g_m.pane_w - 14, note_y);
-    SetAPen(rp, g_m.pen_text);
-    SetFont(rp, g_font ? g_font : rp->Font);
-    Move(rp, g_m.pane_l + 14, note_y);
-    Text(rp, (CONST_STRPTR)note, (WORD)strlen(note));
+        SetAPen(rp, g_m.pen_bg);
+        RectFill(rp, g_m.pane_l + 14, note_y - g_m.fy,
+                 g_m.pane_l + g_m.pane_w - 14, note_y + g_m.pitch + 2);
+        SetAPen(rp, g_m.pen_text);
+        SetFont(rp, g_font ? g_font : rp->Font);
+        Move(rp, g_m.pane_l + 14, note_y);
+        Text(rp, (CONST_STRPTR)l1, (WORD)strlen(l1));
+        Move(rp, g_m.pane_l + 14, note_y + g_m.pitch);
+        Text(rp, (CONST_STRPTR)l2, (WORD)strlen(l2));
+    }
 }
 
 static void rebuild_page_gadgets(void)
@@ -1367,12 +1373,19 @@ static void rebuild_page_gadgets(void)
         break;
     }
 
-    case WIZARD_PAGE_ADDRESS:
-        ng.ng_LeftEdge   = cl + 70;
+    case WIZARD_PAGE_ADDRESS: {
+        const LONG col1_lbl = 64;
+        const LONG col1_x   = cl + col1_lbl;
+        const LONG col1_w   = 115;
+        const LONG col2_lbl = 64;
+        const LONG col2_x   = col1_x + col1_w + 16 + col2_lbl;
+        const LONG col2_w   = 115;
+
+        ng.ng_LeftEdge   = cl + 55;
         ng.ng_TopEdge    = ct;
-        ng.ng_Width      = 230;
+        ng.ng_Width      = 200;
         ng.ng_Height     = g_m.fy + 8;
-        ng.ng_GadgetText = (STRPTR)"IP Mode:";
+        ng.ng_GadgetText = (STRPTR)"Mode:";
         ng.ng_GadgetID   = GID_P4_IPMODE_CYCLE;
         ng.ng_Flags      = PLACETEXT_LEFT;
         prev = CreateGadget(CYCLE_KIND, prev, &ng,
@@ -1380,10 +1393,92 @@ static void rebuild_page_gadgets(void)
                             GTCY_Active, g_ws.ip_mode,
                             TAG_END);
 
-        /* Advanced… opens the sibling window (part 3) */
-        ng.ng_LeftEdge   = cl + cw - 100;
-        ng.ng_TopEdge    = ct;
-        ng.ng_Width      = 100;
+        if (g_ws.ip_mode == 1) {
+            /* Row 1: IP + Mask */
+            ng.ng_TopEdge    = ct + 2 * g_m.pitch;
+            ng.ng_Width      = col1_w;
+            ng.ng_Height     = g_m.fy + 8;
+            ng.ng_Flags      = PLACETEXT_LEFT;
+            ng.ng_GadgetID   = GID_P4_IP_STR;
+            ng.ng_GadgetText = (STRPTR)"IP:";
+            ng.ng_LeftEdge   = col1_x;
+            prev = CreateGadget(STRING_KIND, prev, &ng,
+                                GTST_String, (ULONG)g_ws.ip_str,
+                                GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
+
+            ng.ng_GadgetID   = GID_P4_NM_STR;
+            ng.ng_GadgetText = (STRPTR)"Mask:";
+            ng.ng_LeftEdge   = col2_x;
+            ng.ng_Width      = col2_w;
+            prev = CreateGadget(STRING_KIND, prev, &ng,
+                                GTST_String, (ULONG)g_ws.nm_str,
+                                GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
+
+            /* Row 2: Gateway + DNS 1 */
+            ng.ng_GadgetID   = GID_P4_GW_STR;
+            ng.ng_GadgetText = (STRPTR)"Gateway:";
+            ng.ng_LeftEdge   = col1_x;
+            ng.ng_Width      = col1_w;
+            ng.ng_TopEdge    = ct + 3 * g_m.pitch;
+            prev = CreateGadget(STRING_KIND, prev, &ng,
+                                GTST_String, (ULONG)g_ws.gw_str,
+                                GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
+
+            ng.ng_GadgetID   = GID_P4_DNS1_STR;
+            ng.ng_GadgetText = (STRPTR)"DNS 1:";
+            ng.ng_LeftEdge   = col2_x;
+            ng.ng_Width      = col2_w;
+            prev = CreateGadget(STRING_KIND, prev, &ng,
+                                GTST_String, (ULONG)g_ws.dns1_str,
+                                GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
+        }
+
+        /* DNS 2 + MTU are mode-independent (TNET-110 v2.1) */
+        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1 ? 4 : 2) * g_m.pitch;
+        ng.ng_Width      = col1_w;
+        ng.ng_Height     = g_m.fy + 8;
+        ng.ng_Flags      = PLACETEXT_LEFT;
+        ng.ng_GadgetID   = GID_P4_DNS2_STR;
+        ng.ng_GadgetText = (STRPTR)"DNS 2:";
+        ng.ng_LeftEdge   = col1_x;
+        prev = CreateGadget(STRING_KIND, prev, &ng,
+                            GTST_String, (ULONG)g_ws.dns2_str,
+                            GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
+
+        ng.ng_GadgetID   = GID_P4_MTU_STR;
+        ng.ng_GadgetText = (STRPTR)"MTU:";
+        ng.ng_LeftEdge   = col2_x;
+        ng.ng_Width      = col2_w;
+        prev = CreateGadget(STRING_KIND, prev, &ng,
+                            GTST_String, (ULONG)g_ws.mtu_str,
+                            GTST_MaxChars, 5, GA_TabCycle, TRUE, TAG_END);
+
+        /* Host + Domain share one row (Row 5 in static, Row 3 in DHCP) */
+        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1 ? 5 : 3) * g_m.pitch;
+        ng.ng_Width      = col1_w;
+        ng.ng_Height     = g_m.fy + 8;
+        ng.ng_Flags      = PLACETEXT_LEFT;
+        ng.ng_GadgetID   = GID_P4_HOST_STR;
+        ng.ng_GadgetText = (STRPTR)"Host:";
+        ng.ng_LeftEdge   = col1_x;
+        prev = CreateGadget(STRING_KIND, prev, &ng,
+                            GTST_String, (ULONG)g_ws.host_str,
+                            GTST_MaxChars, sizeof(g_ws.host_str) - 1,
+                            GA_TabCycle, TRUE, TAG_END);
+
+        ng.ng_GadgetID   = GID_P4_DOMAIN_STR;
+        ng.ng_GadgetText = (STRPTR)"Domain:";
+        ng.ng_LeftEdge   = col2_x;
+        ng.ng_Width      = col2_w;
+        prev = CreateGadget(STRING_KIND, prev, &ng,
+                            GTST_String, (ULONG)g_ws.domain_str,
+                            GTST_MaxChars, sizeof(g_ws.domain_str) - 1,
+                            GA_TabCycle, TRUE, TAG_END);
+
+        /* Advanced… button placed on the right edge of Host/Domain row */
+        ng.ng_LeftEdge   = cl + cw - 95;
+        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1 ? 5 : 3) * g_m.pitch;
+        ng.ng_Width      = 95;
         ng.ng_Height     = g_m.btn_h;
         ng.ng_GadgetText = (STRPTR)"Adv_anced...";
         ng.ng_GadgetID   = GID_P4_ADVANCED_BTN;
@@ -1392,90 +1487,20 @@ static void rebuild_page_gadgets(void)
                             GT_Underscore, '_',
                             TAG_END);
 
-        if (g_ws.ip_mode == 1) {
-            ng.ng_TopEdge    = ct + 2 * g_m.pitch;
-            ng.ng_Width      = 130;
-            ng.ng_Height     = g_m.fy + 8;
-            ng.ng_Flags      = PLACETEXT_LEFT;
-            ng.ng_GadgetID   = GID_P4_IP_STR;
-            ng.ng_GadgetText = (STRPTR)"IP:";
-            ng.ng_LeftEdge   = cl + 70;
-            prev = CreateGadget(STRING_KIND, prev, &ng,
-                                GTST_String, (ULONG)g_ws.ip_str,
-                                GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
-            ng.ng_GadgetID   = GID_P4_NM_STR;
-            ng.ng_GadgetText = (STRPTR)"Mask:";
-            ng.ng_LeftEdge   = cl + 290;
-            prev = CreateGadget(STRING_KIND, prev, &ng,
-                                GTST_String, (ULONG)g_ws.nm_str,
-                                GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
-            ng.ng_GadgetID   = GID_P4_GW_STR;
-            ng.ng_GadgetText = (STRPTR)"Gateway:";
-            ng.ng_LeftEdge   = cl + 70;
-            ng.ng_TopEdge    = ct + 3 * g_m.pitch;
-            prev = CreateGadget(STRING_KIND, prev, &ng,
-                                GTST_String, (ULONG)g_ws.gw_str,
-                                GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
-            ng.ng_GadgetID   = GID_P4_DNS1_STR;
-            ng.ng_GadgetText = (STRPTR)"DNS 1:";
-            ng.ng_LeftEdge   = cl + 290;
-            prev = CreateGadget(STRING_KIND, prev, &ng,
-                                GTST_String, (ULONG)g_ws.dns1_str,
-                                GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
-        }
-
-        /* DNS 2 + MTU are mode-independent (TNET-110 v2.1) */
-        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1 ? 4 : 2) * g_m.pitch;
-        ng.ng_Width      = 130;
-        ng.ng_Height     = g_m.fy + 8;
-        ng.ng_Flags      = PLACETEXT_LEFT;
-        ng.ng_GadgetID   = GID_P4_DNS2_STR;
-        ng.ng_GadgetText = (STRPTR)"DNS 2:";
-        ng.ng_LeftEdge   = cl + 70;
-        prev = CreateGadget(STRING_KIND, prev, &ng,
-                            GTST_String, (ULONG)g_ws.dns2_str,
-                            GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
-        ng.ng_GadgetID   = GID_P4_MTU_STR;
-        ng.ng_GadgetText = (STRPTR)"MTU:";
-        ng.ng_LeftEdge   = cl + 290;
-        prev = CreateGadget(STRING_KIND, prev, &ng,
-                            GTST_String, (ULONG)g_ws.mtu_str,
-                            GTST_MaxChars, 5, GA_TabCycle, TRUE, TAG_END);
-
-        /* Host + Domain share one row (compact fit, TNET-110 part 3) */
-        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1 ? 5 : 3) * g_m.pitch;
-        ng.ng_Width      = 130;
-        ng.ng_Height     = g_m.fy + 8;
-        ng.ng_Flags      = PLACETEXT_LEFT;
-        ng.ng_GadgetID   = GID_P4_HOST_STR;
-        ng.ng_GadgetText = (STRPTR)"Host:";
-        ng.ng_LeftEdge   = cl + 70;
-        prev = CreateGadget(STRING_KIND, prev, &ng,
-                            GTST_String, (ULONG)g_ws.host_str,
-                            GTST_MaxChars, sizeof(g_ws.host_str) - 1,
-                            GA_TabCycle, TRUE, TAG_END);
-        ng.ng_GadgetID   = GID_P4_DOMAIN_STR;
-        ng.ng_GadgetText = (STRPTR)"Domain:";
-        ng.ng_LeftEdge   = cl + 290;
-        ng.ng_Width      = 200;
-        prev = CreateGadget(STRING_KIND, prev, &ng,
-                            GTST_String, (ULONG)g_ws.domain_str,
-                            GTST_MaxChars, sizeof(g_ws.domain_str) - 1,
-                            GA_TabCycle, TRUE, TAG_END);
-
         ng.ng_LeftEdge   = cl;
         ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1
                                  ? (g_m.compact ? 6 : 7)
                                  : (g_m.compact ? 5 : 6)) * g_m.pitch;
         ng.ng_Width      = 26;
         ng.ng_Height     = g_m.fy + 6;
-        ng.ng_GadgetText = (STRPTR)"Also write _Roadshow-style DEVS:NetInterfaces/ for other tools";
+        ng.ng_GadgetText = (STRPTR)"Also write _Roadshow DEVS:NetInterfaces/ for other tools";
         ng.ng_GadgetID   = GID_P4_ROADSHOW_CHK;
         ng.ng_Flags      = PLACETEXT_RIGHT;
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
                             GTCB_Checked, g_ws.write_roadshow,
                             TAG_END);
         break;
+    }
 
     case WIZARD_PAGE_TEST: {
         int i;
