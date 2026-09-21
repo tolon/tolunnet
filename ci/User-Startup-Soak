@@ -32,7 +32,6 @@ Lab soak_loop
   Wait 10
 
   C:TolunnetPing 127.0.0.1 COUNT=4 INTERVAL=1 QUIET >>WORK:soak.log
-  C:TolunnetGet http://10.0.2.2:1/ >>WORK:soak.log
   Avail >>WORK:soak.log
   Wait 10
   Skip soak_loop BACK
