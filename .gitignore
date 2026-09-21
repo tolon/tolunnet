@@ -32,7 +32,7 @@ Thumbs.db
 
 # Intermediate dirty bench logs
 docs/bench-logs/*-dirty/
-
+docs/bench-logs/*-soak-*/
 
 # Debugger/scratch artifacts (CLOSE §A.4)
 .dbg-*
@@ -43,3 +43,14 @@ docs/bench-logs/*-dirty/
 .wsl-*
 .postkey*
 .linktest*
+
+# Soak config & local configs
+ci/.soak-tolunnet.config
+
+# AG session & agent artifacts (Step A.5 / user instruction)
+TN-*.md
+.agent
+.ignore
+AGENTS.md
+graft/
+

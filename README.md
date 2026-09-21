@@ -29,7 +29,7 @@ Classic AmigaOS has lacked a modern, actively maintained, fully open-source TCP/
 - **Standard CLI Network Suite:** Includes ICMP `ping` (`HOST/A,COUNT/N,SIZE/N,INTERVAL/N,TTL/N,TIMEOUT/N,QUIET/S,UDP/S`), `ifconfig`, `netstat` (active live socket rows), and `wget`/`curl` (`TolunnetGet` with HTTP/1.1 redirects, chunked transfer, Range resume, and `ReadArgs`) in `SYS:C/`.
 - **Unified Text Configuration:** `DEVS:tolunnet.config` (`KEY=VALUE`) is the persistent source of truth — `DEVICE`, `UNIT`, `DHCP`, `IP`, `NETMASK`, `GATEWAY`, `DNS`, `DNS2`, `HOSTNAME`, `MTU`, `DEBUG` — with Amiga Prefs `Use`/`Save` semantics via `ENV:`/`ENVARC:` mirroring and dynamic mtime change detection.
 - **Native GadTools GUI Panel:** `SYS:Prefs/TolunnetPrefs` — screen-derived layout that fits a 640×200 NTSC Workbench, live non-blocking Start/Stop stack control, ToolTypes (`TOOLPRI`, `PUBSCREEN`), and configuration of all keys above.
-- **Floppy-Optimized Packaging:** Release ADF disk image (`build/tolunnet.adf`, 901,120-byte standard DD image) and LhA archive (`build/tolunnet-1.2.0-rc1.lha`) generated via `make package` (`xdftool`).
+- **Floppy-Optimized Packaging:** Release ADF disk image (`build/tolunnet.adf`, 901,120-byte standard DD image) and LhA archive (`build/tolunnet-1.2.0-rc2.lha`) generated via `make package` (`xdftool`).
 
 ---
 
