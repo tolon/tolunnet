@@ -6,7 +6,7 @@
 #include "cmdlib.h"
 #include <string.h>
 
-#define TEMPLATE "HOST,PORT/N,USER,PASS,SCRIPT,QUIET/S"
+#define TEMPLATE "HOST,PORT/N,USER,PASS,SCRIPT,QUIET/S,PASVANY/S"
 #define FTP_PORT 21
 #define BUF_SIZE 1024
 #define CTRL_BUF 512
@@ -109,8 +109,9 @@ static LONG ftp_cmd(LONG fd, const char *cmd)
     return code;
 }
 
-/* Parse PASV response: "227 Entering Passive Mode (h1,h2,h3,h4,p1,p2)" */
-static int ftp_parse_pasv(const char *resp, ULONG *ip, UWORD *port)
+/* Parse PASV response: "227 Entering Passive Mode (h1,h2,h3,h4,p1,p2)"
+ * SEC item 5: reject if ip != peer unless pasv_any is given; clamp octets/port; log refusal */
+static int ftp_parse_pasv(const char *resp, ULONG *ip, UWORD *port, ULONG peer_ip, BOOL pasv_any)
 {
     const char *p = resp;
     int comma = 0;
@@ -121,12 +122,24 @@ static int ftp_parse_pasv(const char *resp, ULONG *ip, UWORD *port)
     while (*p && comma < 6) {
         ULONG v = 0;
         while (*p >= '0' && *p <= '9') { v = v * 10 + (*p - '0'); p++; }
+        if (v > 255) v = 255;
         parts[comma++] = v;
         if (*p == ',') p++;
     }
     if (comma != 6) return 0;
-    *ip = (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
-    *port = (UWORD)((parts[4] << 8) | parts[5]);
+    ULONG parsed_ip = (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
+    UWORD parsed_port = (UWORD)((parts[4] << 8) | parts[5]);
+
+    if (!pasv_any && peer_ip != 0 && parsed_ip != peer_ip) {
+        tn_cmd_printf("ftp: security: PASV IP %lu.%lu.%lu.%lu != peer %lu.%lu.%lu.%lu (refused; use PASVANY to allow)\n",
+                      parts[0], parts[1], parts[2], parts[3],
+                      (peer_ip >> 24) & 0xFF, (peer_ip >> 16) & 0xFF,
+                      (peer_ip >> 8) & 0xFF, peer_ip & 0xFF);
+        return 0;
+    }
+
+    *ip = parsed_ip;
+    *port = parsed_port;
     return 1;
 }
 
@@ -151,15 +164,16 @@ static LONG ftp_data_connect(ULONG ip, UWORD port)
 
 int main(int argc, char **argv)
 {
-    LONG opts[6] = { 0, 0, 0, 0, 0, 0 };
+    LONG opts[7] = { 0, 0, 0, 0, 0, 0, 0 };
     struct RDArgs *rdargs;
     int rc = TN_CMD_OK;
     LONG ctrl = -1;
-    ULONG srv_addr;
+    ULONG srv_addr = 0;
     char line[CTRL_BUF];
     char cmd[CTRL_BUF];
     BPTR script_fh = (BPTR)0;
     BOOL quiet;
+    BOOL pasv_any;
     BOOL running = TRUE;
     char cur_host[64];
 
@@ -175,6 +189,7 @@ int main(int argc, char **argv)
     }
 
     quiet = (opts[5] != 0);
+    pasv_any = (opts[6] != 0);
 
     if (opts[4] != 0) {
         script_fh = Open((CONST_STRPTR)opts[4], MODE_OLDFILE);
@@ -363,7 +378,7 @@ int main(int argc, char **argv)
                     /* Send PASV and capture raw response */
                     x_send(ctrl, "PASV\r\n", 6, 0);
                     LONG len = ftp_read_line(ctrl, resp, sizeof(resp));
-                    if (len < 0 || !ftp_parse_pasv(resp, &data_ip, &data_port)) {
+                    if (len < 0 || !ftp_parse_pasv(resp, &data_ip, &data_port, srv_addr, pasv_any)) {
                         tn_cmd_printf("ftp: PASV failed\n");
                         continue;
                     }
@@ -424,7 +439,7 @@ int main(int argc, char **argv)
                 ftp_cmd(ctrl, "TYPE I");
                 x_send(ctrl, "PASV\r\n", 6, 0);
                 len = ftp_read_line(ctrl, resp, sizeof(resp));
-                if (len < 0 || !ftp_parse_pasv(resp, &data_ip, &data_port)) {
+                if (len < 0 || !ftp_parse_pasv(resp, &data_ip, &data_port, srv_addr, pasv_any)) {
                     tn_cmd_printf("ftp: PASV failed\n");
                     continue;
                 }
@@ -455,6 +470,9 @@ int main(int argc, char **argv)
                     tn_cmd_printf("ftp: %s sent (%lu bytes)\n", local, total);
                 }
             }
+        } else if (strncasecmp(line, "pasvany", 7) == 0) {
+            pasv_any = !pasv_any;
+            tn_cmd_printf("ftp: PASVANY is now %s\n", pasv_any ? "ON" : "OFF");
         } else if (strncasecmp(line, "hash", 4) == 0) {
             tn_cmd_printf("Hash marking off\n");
         } else if (strncasecmp(line, "help", 4) == 0 || line[0] == '?') {
