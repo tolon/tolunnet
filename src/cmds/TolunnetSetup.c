@@ -67,7 +67,6 @@ unsigned long        __stack        = 32768;
 
 /* Page 1: Replace */
 #define GID_P1_REPLACE_CHK  110
-#define GID_P1_IMPORT_CHK   112
 
 /* Page 2: Hardware */
 #define GID_P2_HW_CYCLE     120
@@ -1176,13 +1175,6 @@ static void rebuild_page_gadgets(void)
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
                             GTCB_Checked, g_ws.replace_stacks,
                             TAG_END);
-
-        ng.ng_TopEdge    += g_m.pitch;
-        ng.ng_GadgetText = (STRPTR)"_Import Roadshow interface settings (when found)";
-        ng.ng_GadgetID   = GID_P1_IMPORT_CHK;
-        prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
-                            GTCB_Checked, g_ws.imported_settings,
-                            TAG_END);
         break;
     }
 
@@ -2025,10 +2017,6 @@ int main(int argc, char **argv)
 
                     case GID_P1_REPLACE_CHK:
                         g_ws.replace_stacks = !g_ws.replace_stacks;
-                        break;
-
-                    case GID_P1_IMPORT_CHK:
-                        g_ws.imported_settings = !g_ws.imported_settings;
                         break;
 
                     case GID_P2_LIST:

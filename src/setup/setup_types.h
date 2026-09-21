@@ -72,7 +72,6 @@ typedef struct WizardState {
     /* Page 1: Stacks */
     int           stack_count;
     DetectedStack stacks[MAX_DETECTED_STACKS];
-    BOOL          imported_settings;
 
     /* Page 2: Hardware */
     int        hw_count;
