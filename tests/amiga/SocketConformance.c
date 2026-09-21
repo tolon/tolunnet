@@ -4638,6 +4638,11 @@ static void tc_probe_loop_impl(const char *label, USHORT port)
         tapf("# %s: wait failed after %ld ticks; direct recv got=%ld; Wait mask fired=0x%x\n",
              label, (LONG)(t1 - t0), got,
              ((TnSocketBase *)SocketBase)->dbg_wait_fired);
+            tapf("# %s: waitselect exit path=0x%x sig_int=0x%x pend_breaks=0x%x\n",
+                 label,
+                 (unsigned)(((TnSocketBase *)SocketBase)->dbg_wait_fired & 0xF),
+                 (unsigned)(((TnSocketBase *)SocketBase)->sig_int),
+                 (unsigned)(SetSignal(0, 0) & 0xF000));
         {
             /* TNET-151: name the bits - timer, sig_select, reply */
             TnSocketBase *tb = (TnSocketBase *)SocketBase;

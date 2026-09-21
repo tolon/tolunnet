@@ -753,7 +753,7 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
             if (write_fds)  write_fds->fds_bits[0] = 0;
             if (except_fds) except_fds->fds_bits[0] = 0;
             tn_set_errno_val(base, EINTR);
-            return 0;
+            base->dbg_wait_fired = 0x1; return 0;
         }
     }
 
@@ -787,6 +787,7 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
              * bogus timeout (0-tick evidence 20260921-012936). Fire a
              * best-effort DISARM so the slot cannot stay armed. */
             tn_ipc_call(base, TN_IPC_CMD_SELECT_DISARM);
+            base->dbg_wait_fired = 0x3;
             return -1;
         }
         if (res > 0) {
@@ -800,7 +801,7 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
             if (write_fds)  write_fds->fds_bits[0] = 0;
             if (except_fds) except_fds->fds_bits[0] = 0;
             if (signals != NULL) *signals = 0;
-            return 0;
+            base->dbg_wait_fired = 0x4; return 0;
         }
     } else {
         /* nfds == 0: pure select-based sleep */
@@ -839,7 +840,7 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
         if (!tn_ensure_timer(base)) {
             if (nfds > 0) tn_ipc_call(base, TN_IPC_CMD_SELECT_DISARM);
             tn_set_errno_val(base, ENOBUFS);
-            return -1;
+            base->dbg_wait_fired = 0x2; return -1;
         }
         tm = (struct timerequest *)base->timer_io;
         tm_sig = 1UL << base->timer_port->mp_SigBit;
@@ -876,7 +877,7 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
                     if (except_fds) except_fds->fds_bits[0] = 0;
                     if (signals != NULL) *signals = 0;
                     if (nfds > 0) tn_ipc_call(base, TN_IPC_CMD_SELECT_DISARM);
-                    return 0;
+                    base->dbg_wait_fired = 0x5; return 0;
                 }
                 tm->tr_node.io_Command = TR_ADDREQUEST;
                 tm->tr_time.tv_secs  = (remain_ticks * 20000UL) / 1000000UL;
@@ -908,6 +909,7 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
                 if (read_fds)   read_fds->fds_bits[0] = 0;
                 if (write_fds)  write_fds->fds_bits[0] = 0;
                 if (except_fds) except_fds->fds_bits[0] = 0;
+                base->dbg_wait_fired = 0x6;
                 tn_set_errno_val(base, EINTR);
                 return 0;
             }
@@ -932,7 +934,7 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
             base->ipc_msg.ptrs[2] = (APTR)except_fds;
             res = tn_ipc_call(base, TN_IPC_CMD_WAITSELECT);
             if (signals != NULL) *signals = 0;
-            if (res != 0) return res;
+            if (res != 0) { base->dbg_wait_fired = 0x8; return res; }
 
             if (!has_timeout) {
                 /* infinite wait returned empty - spurious; retry */
@@ -944,7 +946,7 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
                 if (read_fds)   read_fds->fds_bits[0] = 0;
                 if (write_fds)  write_fds->fds_bits[0] = 0;
                 if (except_fds) except_fds->fds_bits[0] = 0;
-                return 0;
+                base->dbg_wait_fired = 0x7; return 0;
             }
             /* timer lied or spurious wake - retry with remaining budget */
         }
