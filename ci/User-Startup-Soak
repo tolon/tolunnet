@@ -22,7 +22,7 @@ If EXISTS WORK:
   Set SOAK_TICK 0
 
 Lab soak_loop
-  Echo >>WORK:soak.log "MARK loop T=$SOAK_T TICK=$SOAK_TICK SECS=$SOAK_SECS"
+  Echo >>WORK:soak.log MARK T=$SOAK_T TICK=$SOAK_TICK SECS=$SOAK_SECS
   ; ---- every ~10 s: ping burst (4x 1 s) ----
   C:TolunnetPing 127.0.0.1 COUNT=4 INTERVAL=1 QUIET >>WORK:soak.log
   If WARN
@@ -31,7 +31,9 @@ Lab soak_loop
 
   ; ---- every ~30 s: wget socket churn (connect-refused = healthy) ----
   If $SOAK_TICK EQ 0
+    Echo >>WORK:soak.log MARK-before-wget
     C:TolunnetGet http://10.0.2.2:1/ >>WORK:soak.log
+    Echo >>WORK:soak.log MARK-after-wget
   EndIf
 
   ; ---- every ~10 min: status + Avail drift sampling ----
