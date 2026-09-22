@@ -181,6 +181,15 @@ a2065.device, cnet.device, ariadne.device)")
   (dest "SYS:Prefs/TolunnetSetup.info")
 )
 
+(if (not (exists "LIBS:usergroup.library"))
+  (copyfiles
+    (prompt "Installing usergroup.library to LIBS:")
+    (help "Installs usergroup.library POSIX compatibility library required by AmiSSL and network utilities.")
+    (source "Libs/usergroup.library")
+    (dest "LIBS:usergroup.library")
+  )
+)
+
 (if (= #ip-mode 0)
   (set #startup-line (cat "Stack 32768\nRun <NIL: >NIL: C:tolunnet " #device-name " " #unit-num))
   (set #startup-line (cat "Stack 32768\nRun <NIL: >NIL: C:tolunnet " #device-name " " #unit-num " " #static-ip " " #static-nm " " #static-gw))

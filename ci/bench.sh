@@ -169,6 +169,7 @@ fi
 [ -f build/tolunnet ] || die "build/tolunnet missing (run without SKIP_BUILD)"
 [ -f build/SocketConformance ] || die "build/SocketConformance missing"
 [ -f build/bsdsocktest ] || die "build/bsdsocktest missing (vendor/bsdsocktest)"
+[ -f build/usergroup.library ] || die "build/usergroup.library missing"
 
 GIT_DESC="$(git describe --always --dirty 2>/dev/null || echo nogit)"
 IS_DIRTY=0
@@ -241,6 +242,7 @@ for cfg in $CONFIGS; do
     xd delete C/TolunnetSetup   >/dev/null 2>&1
     xd delete C/S2Toggle        >/dev/null 2>&1
     xd delete C/bsdsocktest     >/dev/null 2>&1
+    xd delete Libs/usergroup.library >/dev/null 2>&1
     xd delete S/User-Startup    >/dev/null 2>&1
     xd delete S/Conformance-Script >/dev/null 2>&1
     xd delete Devs/tolunnet.config >/dev/null 2>&1
@@ -250,10 +252,11 @@ for cfg in $CONFIGS; do
     xd write build/TolunnetSetup C/TolunnetSetup || die "xdftool write TolunnetSetup failed"
     xd write build/S2Toggle C/S2Toggle || die "xdftool write S2Toggle failed"
     xd write build/bsdsocktest C/bsdsocktest || die "xdftool write bsdsocktest failed"
+    xd write build/usergroup.library Libs/usergroup.library || die "xdftool write usergroup.library failed"
     xd write ci/User-Startup-Conformance S/Conformance-Script || die "xdftool write Conformance-Script failed"
     xd write ci/User-Startup-Boot S/User-Startup || die "xdftool write User-Startup failed"
     xd write "$BENCH_CFG" Devs/tolunnet.config          || die "xdftool write tolunnet.config failed"
-    say "staged: tolunnet + SocketConformance + bsdsocktest + TolunnetSetup + Conformance-Script + User-Startup + tolunnet.config -> $HDF_WIN"
+    say "staged: tolunnet + SocketConformance + bsdsocktest + usergroup.library + TolunnetSetup + Conformance-Script + User-Startup + tolunnet.config -> $HDF_WIN"
 
     # ---- run headless ---------------------------------------------------
     rm -f "$WORK_DIR/conformance.log" "$WORK_DIR/conformance2.log" "$WORK_DIR/bench-done" "$WORK_DIR/tolunnet-task.log" "$WORK_DIR/bsdsocktest.log" "$WORK_DIR"/wizard-*.iff

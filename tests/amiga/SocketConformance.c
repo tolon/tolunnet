@@ -5117,6 +5117,237 @@ static void tc_cmd_route(void)
     TAP_OK("tc_cmd_route");
 }
 
+/* --- usergroup.library conformance test ----------------------------------- */
+struct tn_passwd {
+    char *pw_name;
+    char *pw_passwd;
+    LONG  pw_uid;
+    LONG  pw_gid;
+    char *pw_gecos;
+    char *pw_dir;
+    char *pw_shell;
+};
+
+struct tn_group {
+    char  *gr_name;
+    char  *gr_passwd;
+    LONG   gr_gid;
+    char **gr_mem;
+};
+
+static struct Library *UserGroupBase = NULL;
+
+static struct tn_passwd *ug_getpwnam(const char *name)
+{
+    register struct Library *a6 __asm__("a6") = UserGroupBase;
+    register struct tn_passwd *d0 __asm__("d0");
+    register const char *a1 __asm__("a1") = name;
+    __asm__ __volatile__ ("jsr -114(%%a6)"
+        : "=r"(d0), "+r"(a1)
+        : "r"(a6)
+        : "d1", "a0", "memory");
+    return d0;
+}
+
+static struct tn_passwd *ug_getpwuid(LONG uid)
+{
+    register struct Library *a6 __asm__("a6") = UserGroupBase;
+    register struct tn_passwd *d0 __asm__("d0");
+    register LONG arg_d0 __asm__("d0") = uid;
+    __asm__ __volatile__ ("jsr -120(%%a6)"
+        : "=r"(d0), "+r"(arg_d0)
+        : "r"(a6)
+        : "d1", "a0", "a1", "memory");
+    return d0;
+}
+
+static struct tn_group *ug_getgrnam(const char *name)
+{
+    register struct Library *a6 __asm__("a6") = UserGroupBase;
+    register struct tn_group *d0 __asm__("d0");
+    register const char *a1 __asm__("a1") = name;
+    __asm__ __volatile__ ("jsr -144(%%a6)"
+        : "=r"(d0), "+r"(a1)
+        : "r"(a6)
+        : "d1", "a0", "memory");
+    return d0;
+}
+
+static struct tn_group *ug_getgrgid(LONG gid)
+{
+    register struct Library *a6 __asm__("a6") = UserGroupBase;
+    register struct tn_group *d0 __asm__("d0");
+    register LONG arg_d0 __asm__("d0") = gid;
+    __asm__ __volatile__ ("jsr -150(%%a6)"
+        : "=r"(d0), "+r"(arg_d0)
+        : "r"(a6)
+        : "d1", "a0", "a1", "memory");
+    return d0;
+}
+
+static LONG ug_getuid(void)
+{
+    register struct Library *a6 __asm__("a6") = UserGroupBase;
+    register LONG d0 __asm__("d0");
+    __asm__ __volatile__ ("jsr -48(%%a6)"
+        : "=r"(d0)
+        : "r"(a6)
+        : "d1", "a0", "a1", "memory");
+    return d0;
+}
+
+static LONG ug_getgid(void)
+{
+    register struct Library *a6 __asm__("a6") = UserGroupBase;
+    register LONG d0 __asm__("d0");
+    __asm__ __volatile__ ("jsr -72(%%a6)"
+        : "=r"(d0)
+        : "r"(a6)
+        : "d1", "a0", "a1", "memory");
+    return d0;
+}
+
+static LONG ug_setreuid(LONG ruid, LONG euid)
+{
+    register struct Library *a6 __asm__("a6") = UserGroupBase;
+    register LONG d0 __asm__("d0") = ruid;
+    register LONG d1 __asm__("d1") = euid;
+    __asm__ __volatile__ ("jsr -60(%%a6)"
+        : "+r"(d0), "+r"(d1)
+        : "r"(a6)
+        : "a0", "a1", "memory");
+    return d0;
+}
+
+static ULONG ug_getumask(void)
+{
+    register struct Library *a6 __asm__("a6") = UserGroupBase;
+    register ULONG d0 __asm__("d0");
+    __asm__ __volatile__ ("jsr -198(%%a6)"
+        : "=r"(d0)
+        : "r"(a6)
+        : "d1", "a0", "a1", "memory");
+    return d0;
+}
+
+static void tc_usergroup(void)
+{
+    struct tn_passwd *pw;
+    struct tn_group *gr;
+
+    UserGroupBase = OpenLibrary((CONST_STRPTR)"usergroup.library", 4);
+    if (UserGroupBase == NULL) {
+        TAP_NOTOK("tc_usergroup", "OpenLibrary usergroup.library failed");
+        return;
+    }
+
+    if (UserGroupBase->lib_Version < 4) {
+        TAP_NOTOK("tc_usergroup", "usergroup.library version < 4");
+        CloseLibrary(UserGroupBase);
+        UserGroupBase = NULL;
+        return;
+    }
+
+    /* Check root user */
+    pw = ug_getpwnam("root");
+    if (!pw || pw->pw_uid != 0 || pw->pw_gid != 0 || strcmp(pw->pw_name, "root") != 0) {
+        TAP_NOTOK("tc_usergroup", "getpwnam(root) failed or fields mismatch");
+        CloseLibrary(UserGroupBase);
+        UserGroupBase = NULL;
+        return;
+    }
+
+    /* Check amiga user */
+    pw = ug_getpwnam("amiga");
+    if (!pw || pw->pw_uid != 1000 || pw->pw_gid != 1000 || strcmp(pw->pw_name, "amiga") != 0) {
+        TAP_NOTOK("tc_usergroup", "getpwnam(amiga) failed or fields mismatch");
+        CloseLibrary(UserGroupBase);
+        UserGroupBase = NULL;
+        return;
+    }
+
+    /* Check getpwuid(0) */
+    pw = ug_getpwuid(0);
+    if (!pw || strcmp(pw->pw_name, "root") != 0) {
+        TAP_NOTOK("tc_usergroup", "getpwuid(0) != root");
+        CloseLibrary(UserGroupBase);
+        UserGroupBase = NULL;
+        return;
+    }
+
+    /* Check getpwuid(1000) */
+    pw = ug_getpwuid(1000);
+    if (!pw || strcmp(pw->pw_name, "amiga") != 0) {
+        TAP_NOTOK("tc_usergroup", "getpwuid(1000) != amiga");
+        CloseLibrary(UserGroupBase);
+        UserGroupBase = NULL;
+        return;
+    }
+
+    /* Non-existent user should be NULL */
+    if (ug_getpwnam("nonexistent_user") != NULL || ug_getpwuid(9999) != NULL) {
+        TAP_NOTOK("tc_usergroup", "lookup of missing user did not return NULL");
+        CloseLibrary(UserGroupBase);
+        UserGroupBase = NULL;
+        return;
+    }
+
+    /* Check wheel group */
+    gr = ug_getgrnam("wheel");
+    if (!gr || gr->gr_gid != 0 || strcmp(gr->gr_name, "wheel") != 0) {
+        TAP_NOTOK("tc_usergroup", "getgrnam(wheel) failed or fields mismatch");
+        CloseLibrary(UserGroupBase);
+        UserGroupBase = NULL;
+        return;
+    }
+
+    /* Check staff group */
+    gr = ug_getgrgid(1000);
+    if (!gr || gr->gr_gid != 1000 || strcmp(gr->gr_name, "staff") != 0) {
+        TAP_NOTOK("tc_usergroup", "getgrgid(1000) != staff");
+        CloseLibrary(UserGroupBase);
+        UserGroupBase = NULL;
+        return;
+    }
+
+    /* Initial context IDs (default root 0/0) */
+    if (ug_getuid() != 0 || ug_getgid() != 0) {
+        TAP_NOTOK("tc_usergroup", "initial context UID/GID != 0");
+        CloseLibrary(UserGroupBase);
+        UserGroupBase = NULL;
+        return;
+    }
+
+    /* Change identity */
+    if (ug_setreuid(1000, 1000) != 0 || ug_getuid() != 1000) {
+        TAP_NOTOK("tc_usergroup", "setreuid(1000, 1000) failed");
+        CloseLibrary(UserGroupBase);
+        UserGroupBase = NULL;
+        return;
+    }
+
+    /* Restore identity */
+    ug_setreuid(0, 0);
+    if (ug_getuid() != 0) {
+        TAP_NOTOK("tc_usergroup", "failed to restore UID 0");
+        CloseLibrary(UserGroupBase);
+        UserGroupBase = NULL;
+        return;
+    }
+
+    /* Check default umask */
+    if (ug_getumask() != 022) {
+        TAP_NOTOK("tc_usergroup", "default umask != 022");
+        CloseLibrary(UserGroupBase);
+        UserGroupBase = NULL;
+        return;
+    }
+
+    CloseLibrary(UserGroupBase);
+    UserGroupBase = NULL;
+    TAP_OK("tc_usergroup");
+}
+
 /* Bench plumbing (not a TAP case): ask the daemon to exit so the bench can
  * prove the TNET-059/060 restart cycle. Mirrors TolunnetPrefs' Stop logic. */
 static void request_daemon_stop(void)
@@ -5246,6 +5477,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_cmd_ifctl);
     TN_RUN(tc_cmd_netshutdown);
     TN_RUN(tc_cmd_route);
+    TN_RUN(tc_usergroup);
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
