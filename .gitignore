@@ -37,13 +37,18 @@ docs/bench-logs/*-soakquick-*/
 # Debugger/scratch artifacts (CLOSE §A.4)
 .dbg-*
 .uae-*
-.zoom-*
+.zoom*
 .hunt*
 .capture*
 .wsl-*
 .postkey*
 .linktest*
+.findsum*
+.tap
+.testboot/
+.zcode/
 _shots/
+wireless-prefs-evidence/
 
 # Soak config & local configs
 ci/.soak-tolunnet.config
