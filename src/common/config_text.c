@@ -39,6 +39,8 @@ void tn_prefs_default(TnPrefs *prefs)
     prefs->diag = FALSE;       /* TNET-139: crash diagnostics off by default */
     prefs->tx_queue = 0;        /* TNET-106: absent = synchronous DoIO */
     prefs->font[0] = '\0';      /* empty = TolunnetSetup uses the screen font */
+    prefs->autoip = TRUE;       /* default: RFC 3927 link-local fallback active */
+    prefs->mdns = TRUE;         /* default: Zeroconf mDNS responder active */
 }
 
 
@@ -287,6 +289,20 @@ void tn_config_parse_line(TnPrefs *prefs, const char *key, const char *val)
         } else {
             prefs->diag = FALSE;
         }
+    } else if (tn_str_equal_nocase(clean_key, "AUTOIP")) {
+        if (tn_str_equal_nocase(clean_val, "NO") || tn_str_equal_nocase(clean_val, "0") ||
+            tn_str_equal_nocase(clean_val, "FALSE") || tn_str_equal_nocase(clean_val, "OFF")) {
+            prefs->autoip = FALSE;
+        } else {
+            prefs->autoip = TRUE;
+        }
+    } else if (tn_str_equal_nocase(clean_key, "MDNS")) {
+        if (tn_str_equal_nocase(clean_val, "NO") || tn_str_equal_nocase(clean_val, "0") ||
+            tn_str_equal_nocase(clean_val, "FALSE") || tn_str_equal_nocase(clean_val, "OFF")) {
+            prefs->mdns = FALSE;
+        } else {
+            prefs->mdns = TRUE;
+        }
     } else if (tn_str_equal_nocase(clean_key, "VERSION")) {
         /* Config format version recognised */
     }
@@ -415,6 +431,12 @@ int tn_config_format(const TnPrefs *prefs, char *buf, int buf_size)
     if (prefs->font[0] != '\0') {
         tn_cfg_put_kv_str(&o, "FONT=", prefs->font);
     }
+    if (!prefs->autoip) {
+        tn_cfg_put(&o, "AUTOIP=NO\n");
+    }
+    if (!prefs->mdns) {
+        tn_cfg_put(&o, "MDNS=NO\n");
+    }
 
     if (o.overflow) {
         return -1; /* buffer too small; TN_CONFIG_TEXT_MAX is always sufficient */
@@ -508,9 +530,9 @@ const char *tn_recfg_key_name(uint32_t bit)
 #include <string.h>
 
 static const char *const g_cfg_keys[] = {
-    "DATABASE_ORDER", "DEBUG", "DEVICE", "DIAG", "DHCP", "DNS", "DNS1",
+    "AUTOIP", "DATABASE_ORDER", "DEBUG", "DEVICE", "DIAG", "DHCP", "DNS", "DNS1",
     "DNS2", "DNS_PENDING", "DNS_PORT", "DNS_RETRIES", "FONT", "GATEWAY",
-    "GW", "HOSTNAME", "IP", "IP_ADDR", "LOG", "LOGLEVEL", "MASK", "MTU",
+    "GW", "HOSTNAME", "IP", "IP_ADDR", "LOG", "LOGLEVEL", "MASK", "MDNS", "MTU",
     "NAMESERVER", "NETMASK", "PRIORITY", "S2EVENTS", "SELECTORS",
     "STATS", "SYSLOG", "TX_QUEUE", "UNIT", "USE_DHCP", "VERSION",
     NULL
@@ -538,7 +560,7 @@ int tn_config_value_class(const char *key)
         { "PRIORITY", 2 }, { "DNS_PENDING", 2 }, { "DNS_RETRIES", 2 },
         { "LOGLEVEL", 2 },
         { "DHCP", 3 }, { "USE_DHCP", 3 }, { "STATS", 3 }, { "DIAG", 3 },
-        { "DEBUG", 3 },
+        { "DEBUG", 3 }, { "AUTOIP", 3 }, { "MDNS", 3 },
         { NULL, 0 }
     };
     int i;

@@ -4,6 +4,7 @@
  * ROUND4b ?B & ?L.
  */
 #include "netif_mgr.h"
+#include <lwip/apps/mdns.h>
 
 void ip_to_str(char *buf, const ip4_addr_t *addr)
 {
@@ -74,6 +75,9 @@ void tn_apply_live_config(TnDaemon *d)
     /* HOSTNAME: DHCP option 12 + gethostname() for future library openers */
     if (d->prefs.hostname[0] != '\0') {
         netif_set_hostname(&prim->lwip_if, d->prefs.hostname);
+        if (d->prefs.mdns && mdns_resp_netif_active(&prim->lwip_if)) {
+            mdns_resp_rename_netif(&prim->lwip_if, d->prefs.hostname);
+        }
     }
 
     /* MTU: clamp the netif below the driver-reported maximum */
