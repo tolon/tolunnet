@@ -1,0 +1,31 @@
+# tolunnet SocketConformance (Round 3 §B.2)
+ok 1 - tc_lib_open_close
+ok 2 - tc_socket_types
+ok 3 - tc_bind_udp
+ok 4 - tc_bind_reuse
+ok 5 - tc_sockopt_matrix
+ok 6 - tc_multicast_join
+ok 7 - tc_ioctl_ifconf
+ok 8 - tc_ioctl_fionread
+ok 9 - tc_listen_accept_loopback
+ok 10 - tc_connect_refused
+ok 11 - tc_nonblock_connect # SKIP needs a live TCP target on the bench (gauntlet config; §C11 EINPROGRESS path)
+ok 12 - tc_shutdown_wr
+ok 13 - tc_getpeername
+not ok 14 - tc_dns_a # TODO resolve aminet.net (offline bench, no DNS forwarder)
+ok 15 - tc_dns_fail
+ok 16 - tc_errno_ptr
+ok 17 - tc_dup2
+ok 18 - tc_waitselect_timeout
+ok 19 - tc_waitselect_eintr
+ok 20 - tc_waitselect_badf
+ok 21 - tc_sigio
+ok 22 - tc_icmp_raw
+ok 23 - tc_sendmsg_iov
+ok 24 - tc_recv_peek
+ok 25 - tc_socket_events
+ok 26 - tc_sbtc_full
+ok 27 - tc_release_obtain
+ok 28 - tc_every_vector_callable
+1..28
+# bench: asking daemon to stop (restart-cycle proof)

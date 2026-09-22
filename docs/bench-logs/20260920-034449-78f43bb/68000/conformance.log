@@ -1,0 +1,64 @@
+# tolunnet SocketConformance (Round 3 §B.2)
+ok 1 - tc_lib_open_close
+ok 2 - tc_socket_types
+ok 3 - tc_bind_udp
+ok 4 - tc_bind_reuse
+ok 5 - tc_sockopt_matrix
+ok 6 - tc_multicast_join
+ok 7 - tc_ioctl_ifconf
+ok 8 - tc_ioctl_fionread
+ok 9 - tc_listen_accept_loopback
+ok 10 - tc_connect_refused
+# TIMEOUT: ipc watchdog fired during tc_connect_refused
+# tc_nonblock_connect: rc=-1 errno=36 EINPROGRESS=36
+# tc_nonblock_connect: calling waitselect s=1
+# tc_nonblock_connect: waitselect returned 1 errno=36
+ok 11 - tc_nonblock_connect
+ok 12 - tc_shutdown_wr
+ok 13 - tc_getpeername
+ok 14 - tc_dns_a # SKIP external
+ok 15 - tc_dns_local
+ok 16 - tc_dns_fail
+ok 17 - tc_errno_ptr
+ok 18 - tc_dup2
+ok 19 - tc_waitselect_timeout
+ok 20 - tc_waitselect_eintr
+ok 21 - tc_waitselect_badf
+ok 22 - tc_waitselect_no_sigio
+ok 23 - tc_sigio
+ok 24 - tc_icmp_raw
+ok 25 - tc_sendmsg_iov
+# control: send=100 waitselect=1 recv=100
+# waitselect_rc=1 recv_rc=100 errno=45 retries=1
+ok 26 - tc_tcp_scatter_tnet115
+ok 27 - tc_recv_peek
+ok 28 - tc_socket_events
+ok 29 - tc_sbtc_full
+ok 30 - tc_release_obtain
+ok 31 - tc_cmd_whois
+ok 32 - tc_every_vector_callable
+ok 33 - tc_stats_counters
+ok 34 - tc_wizard_wired
+ok 35 - tc_wizard_ntsc
+ok 36 - tc_wifi_scan_parse
+ok 37 - tc_reconfig_rc
+ok 38 - tc_link_events # SKIP link flip not enabled for this driver (create WORK:linktest-on)
+ok 39 - tc_cmd_hostname
+ok 40 - tc_cmd_nslookup
+ok 41 - tc_cmd_traceroute
+# tc_cmd_nc: send/recv got=1 errno=4
+not ok 42 - tc_cmd_nc # client->server pipe failed
+not ok 43 - tc_cmd_sntp # request exchange failed
+ok 44 - tc_cmd_telnet
+ok 45 - tc_cmd_tftp
+# tc_cmd_ftp: stage errno=4
+not ok 46 - tc_cmd_ftp # control/data exchange failed
+ok 47 - tc_cmd_arp
+ok 48 - tc_cmd_shownetstatus
+ok 49 - tc_cmd_tolunnetcontrol
+ok 50 - tc_cmd_getnetstatus
+# iperf loopback: 113312 bytes in ~2s = 1134 KB/s
+ok 51 - tc_iperf_loopback
+ok 52 - tc_cmd_route
+1..52
+# bench: asking daemon to stop (restart-cycle proof)

@@ -1,0 +1,312 @@
+tolunnet: lwIP 2.2.0 initialized (NO_SYS=1)
+tolunnet: S2_ONLINE: already online (ok)
+tolunnet: ethernet.device:0 online (MAC 00:80:10:32:33:34, MTU 1500)
+tolunnet: secondary DNS 8.8.8.8
+tolunnet: starting DHCP client...
+tolunnet: bsdsocket.library v4.1 registered into Exec LibList
+tolunnet: bsdsocket.library v4.1 registered with Exec
+tolunnet: network task running (Press Ctrl-C to stop)
+----------------------------------------
+tolunnet: DHCP lease obtained!
+  IP Address : 10.0.2.15
+  Netmask    : 255.255.255.0
+  Gateway    : 10.0.2.2
+----------------------------------------
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: client task 0x234ca0 opened bsdsocket.library
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=10, slot=0) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=3, proto=1) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: client task 0x245a90 opened bsdsocket.library
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: client task 0x245a90 closing bsdsocket.library
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: client task 0x234ca0 closing bsdsocket.library
+
+tolunnet: Ctrl-C received, shutting down...
+tolunnet: removing bsdsocket.library...
+tolunnet: bsdsocket.library removed and destroyed
+tolunnet: deleting IPC port...
+tolunnet: stopping DHCP client...
+tolunnet: bringing netif down...
+tolunnet: closing timer.device...
+tolunnet: closing SANA-II device...
+tolunnet: restoring task priority...
+tolunnet: shutdown complete.

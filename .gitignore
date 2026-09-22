@@ -33,6 +33,8 @@ Thumbs.db
 # Intermediate dirty bench logs
 docs/bench-logs/*-dirty/
 docs/bench-logs/*-soakquick-*/
+*-dirty/
+*-soakquick-*/
 
 # Debugger/scratch artifacts (CLOSE §A.4)
 .dbg-*
@@ -47,8 +49,10 @@ docs/bench-logs/*-soakquick-*/
 .tap
 .testboot/
 .zcode/
-_shots/
+_shots*/
 wireless-prefs-evidence/
+Claude outputs/
+_to_delete/
 
 # Soak config & local configs
 ci/.soak-tolunnet.config
@@ -60,9 +64,3 @@ TN-*.md
 AGENTS.md
 graft/
 /archive/
-
-# Markdown policy: only these .md files are published
-*.md
-!/README.md
-!/STATUS.md
-!/THIRD_PARTY_LICENSES.md

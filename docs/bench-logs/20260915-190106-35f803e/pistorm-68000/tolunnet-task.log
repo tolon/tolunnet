@@ -1,0 +1,930 @@
+tolunnet: PRNG entropy pool initialized (seed: 0x2fc2db0a)
+tolunnet: lwIP 2.2.0 initialized (NO_SYS=1)
+s2: OpenDevice...
+s2: OpenDevice err=0
+s2: DEVICEQUERY err=0 MTU=1500 addr_bits=48
+s2: GETSTATIONADDRESS...
+s2: CONFIGINTERFACE...
+s2: ONLINE...
+tolunnet: S2_ONLINE: already online (ok)
+tolunnet: ethernet.device:0 online (MAC 00:80:10:32:33:34, MTU 1500)
+tolunnet: PRNG entropy pool initialized (seed: 0x39d2fa43)
+tolunnet: starting DHCP client...
+tolunnet: bsdsocket.library v4.1 registered into Exec LibList
+tolunnet: bsdsocket.library v4.1 registered with Exec
+tolunnet: network task running (Press Ctrl-C to stop)
+tolunnet: netif link callback: down
+tolunnet: S2 link DOWN (offline event)
+tolunnet: netif link callback: up
+tolunnet: link up: DHCP renew requested
+tolunnet: netif link callback: down
+tolunnet: S2 link DOWN (offline event)
+tolunnet: netif link callback: up
+tolunnet: link up: DHCP renew requested
+tolunnet: netif link callback: down
+tolunnet: S2 link DOWN (offline event)
+tolunnet: netif link callback: up
+tolunnet: link up: DHCP renew requested
+tolunnet: netif link callback: down
+tolunnet: S2 link DOWN (offline event)
+tolunnet: netif link callback: up
+tolunnet: link up: DHCP renew requested
+tolunnet: netif link callback: down
+tolunnet: S2 link DOWN (offline event)
+tolunnet: netif link callback: up
+tolunnet: link up: DHCP renew requested
+tolunnet: netif link callback: down
+tolunnet: S2 link DOWN (offline event)
+tolunnet: netif link callback: up
+tolunnet: link up: DHCP renew requested
+tolunnet: netif link callback: down
+tolunnet: S2 link DOWN (offline event)
+tolunnet: netif link callback: up
+tolunnet: link up: DHCP renew requested
+tolunnet: netif link callback: down
+tolunnet: S2 link DOWN (offline event)
+tolunnet: netif link callback: up
+tolunnet: link up: DHCP renew requested
+----------------------------------------
+tolunnet: DHCP lease obtained!
+  IP Address : 10.0.2.15
+  Netmask    : 255.255.255.0
+  Gateway    : 10.0.2.2
+----------------------------------------
+tolunnet: netif link callback: down
+tolunnet: S2 link DOWN (offline event)
+tolunnet: netif link callback: up
+tolunnet: link up: DHCP renew requested
+tolunnet: netif link callback: down
+tolunnet: S2 link DOWN (offline event)
+tolunnet: netif link callback: up
+tolunnet: link up: DHCP renew requested
+tolunnet: netif link callback: down
+tolunnet: S2 link DOWN (offline event)
+tolunnet: netif link callback: up
+tolunnet: link up: DHCP renew requested
+tolunnet: netif link callback: down
+tolunnet: S2 link DOWN (offline event)
+tolunnet: netif link callback: up
+tolunnet: link up: DHCP renew requested
+tolunnet: S2_ONEVENT storm from driver (instant completions); link events disabled
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=3, proto=1) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: tcp_err_cb slot=0 err=-14
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: tcp_err_cb slot=1 err=-14
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: tcp_err_cb slot=1 err=-14
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: tcp_err_cb slot=0 err=-14
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: tcp_err_cb slot=0 err=-14
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: tcp_err_cb slot=1 err=-14
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: tcp_err_cb slot=1 err=-14
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: select_arm sel_slot=0 task=0xc35830 sig=0x40000000 nfds=3 w=0x0
+tolunnet: select_disarm slot=0
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: select_arm sel_slot=0 task=0xc35830 sig=0x40000000 nfds=3 w=0x0
+tolunnet: select_disarm slot=0
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: select_arm sel_slot=0 task=0xc35830 sig=0x40000000 nfds=3 w=0x0
+tolunnet: select_disarm slot=0
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: tcp_err_cb slot=1 err=-14
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 3 (slot 3)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 4 (slot 4)
+tolunnet: tcp_connected_cb slot=4 established
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 6 (slot 6)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 7 (slot 7)
+tolunnet: tcp_connected_cb slot=7 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: tcp_err_cb slot=1 err=-14
+tolunnet: CloseSocket(fd=5, slot=5) -> ok
+tolunnet: tcp_err_cb slot=4 err=-14
+tolunnet: CloseSocket(fd=8, slot=8) -> ok
+tolunnet: tcp_err_cb slot=7 err=-14
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=4, slot=4) -> ok
+tolunnet: CloseSocket(fd=7, slot=7) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=3, slot=3) -> ok
+tolunnet: CloseSocket(fd=6, slot=6) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: tcp_err_cb slot=1 err=-14
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: select_arm sel_slot=0 task=0xc35830 sig=0x40000000 nfds=2 w=0x0
+tolunnet: select_disarm slot=0
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: tcp_err_cb slot=1 err=-14
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: tcp_err_cb slot=1 err=-14
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: tcp_err_cb slot=1 err=-14
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 3 (slot 3)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 4 (slot 4)
+tolunnet: tcp_connected_cb slot=4 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: tcp_err_cb slot=1 err=-14
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=5, slot=5) -> ok
+tolunnet: tcp_err_cb slot=4 err=-14
+tolunnet: CloseSocket(fd=4, slot=4) -> ok
+tolunnet: CloseSocket(fd=3, slot=3) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: tcp_err_cb slot=1 err=-14
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=10, slot=0) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=2) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: tcp_err_cb slot=0 err=-14
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=3) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+[syslog:6] phase 4 canary %s
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=2, slot=3) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 2 (slot 3)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 3 (slot 4)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 4 (slot 5)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 5 (slot 6)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 6 (slot 7)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 7 (slot 8)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 8 (slot 9)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 9 (slot 10)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 10 (slot 11)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 11 (slot 12)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 12 (slot 13)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 13 (slot 14)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 14 (slot 15)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 15 (slot 16)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 16 (slot 17)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 17 (slot 18)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 18 (slot 19)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 19 (slot 20)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 20 (slot 21)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 21 (slot 22)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 22 (slot 23)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 23 (slot 24)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 24 (slot 25)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 25 (slot 26)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 26 (slot 27)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 27 (slot 28)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 28 (slot 29)
+tolunnet: CloseSocket(fd=28, slot=29) -> ok
+tolunnet: CloseSocket(fd=27, slot=28) -> ok
+tolunnet: CloseSocket(fd=26, slot=27) -> ok
+tolunnet: CloseSocket(fd=25, slot=26) -> ok
+tolunnet: CloseSocket(fd=24, slot=25) -> ok
+tolunnet: CloseSocket(fd=23, slot=24) -> ok
+tolunnet: CloseSocket(fd=22, slot=23) -> ok
+tolunnet: CloseSocket(fd=21, slot=22) -> ok
+tolunnet: CloseSocket(fd=20, slot=21) -> ok
+tolunnet: CloseSocket(fd=19, slot=20) -> ok
+tolunnet: CloseSocket(fd=18, slot=19) -> ok
+tolunnet: CloseSocket(fd=17, slot=18) -> ok
+tolunnet: CloseSocket(fd=16, slot=17) -> ok
+tolunnet: CloseSocket(fd=15, slot=16) -> ok
+tolunnet: CloseSocket(fd=14, slot=15) -> ok
+tolunnet: CloseSocket(fd=13, slot=14) -> ok
+tolunnet: CloseSocket(fd=12, slot=13) -> ok
+tolunnet: CloseSocket(fd=11, slot=12) -> ok
+tolunnet: CloseSocket(fd=10, slot=11) -> ok
+tolunnet: CloseSocket(fd=9, slot=10) -> ok
+tolunnet: CloseSocket(fd=8, slot=9) -> ok
+tolunnet: CloseSocket(fd=7, slot=8) -> ok
+tolunnet: CloseSocket(fd=6, slot=7) -> ok
+tolunnet: CloseSocket(fd=5, slot=6) -> ok
+tolunnet: CloseSocket(fd=4, slot=5) -> ok
+tolunnet: CloseSocket(fd=3, slot=4) -> ok
+tolunnet: CloseSocket(fd=2, slot=3) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=3, proto=1) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=3, proto=1) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=3, proto=1) -> fd 0 (slot 0)
+tolunnet: select_arm sel_slot=0 task=0xc35830 sig=0x40000000 nfds=1 w=0x0
+tolunnet: select_disarm slot=0
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=3) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: select_arm sel_slot=0 task=0xc35830 sig=0x40000000 nfds=2 w=0x0
+tolunnet: select_disarm slot=0
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=3) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: client task 0xc35830 opened bsdsocket.library
+tolunnet: client task 0xc35830 closing bsdsocket.library
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=3) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=3) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=10, slot=0) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: select_arm sel_slot=0 task=0xc35830 sig=0x40000000 nfds=5 w=0x0
+tolunnet: select_disarm slot=0
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: select_arm sel_slot=0 task=0xc35830 sig=0x40000000 nfds=1 w=0x0
+tolunnet: select_disarm slot=0
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: select_arm sel_slot=0 task=0xc35830 sig=0x40000000 nfds=1 w=0x0
+tolunnet: select_disarm slot=0
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=3, proto=1) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 1 (slot 1)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=2, slot=3) -> ok
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 1 (slot 1)
+tolunnet: tcp_connected_cb slot=1 established
+tolunnet: CloseSocket(fd=1, slot=1) -> ok
+tolunnet: CloseSocket(fd=2, slot=3) -> ok
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: CloseSocket(fd=1, slot=0) -> ok
+tolunnet: socket(domain=2, type=1, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: client task 0xc4d8b0 opened bsdsocket.library
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: client task 0xc4d8b0 closing bsdsocket.library
+tolunnet: bpf_open not implemented
+tolunnet: bpf_close not implemented
+tolunnet: bpf_read not implemented
+tolunnet: bpf_write not implemented
+tolunnet: bpf_set_notify_mask not implemented
+tolunnet: bpf_set_interrupt_mask not implemented
+tolunnet: bpf_ioctl not implemented
+tolunnet: bpf_data_waiting not implemented
+tolunnet: AddRouteTagList not implemented
+tolunnet: DeleteRouteTagList not implemented
+tolunnet: ChangeRouteTagList not implemented
+tolunnet: FreeRouteInfo not implemented
+tolunnet: GetRouteInfo not implemented
+tolunnet: AddInterfaceTagList not implemented
+tolunnet: ConfigureInterfaceTagList not implemented
+tolunnet: ReleaseInterfaceList not implemented
+tolunnet: ObtainInterfaceList not implemented
+tolunnet: QueryInterfaceTagList not implemented
+tolunnet: CreateAddrAllocMessageA not implemented
+tolunnet: DeleteAddrAllocMessage not implemented
+tolunnet: BeginInterfaceConfig not implemented
+tolunnet: AbortInterfaceConfig not implemented
+tolunnet: AddNetMonitorHookTagList not implemented
+tolunnet: RemoveNetMonitorHook not implemented
+tolunnet: GetNetworkStatistics not implemented
+tolunnet: AddDomainNameServer not implemented
+tolunnet: RemoveDomainNameServer not implemented
+tolunnet: ReleaseDomainNameServerList not implemented
+tolunnet: ObtainDomainNameServerList not implemented
+tolunnet: mbuf_copym not implemented
+tolunnet: mbuf_copyback not implemented
+tolunnet: mbuf_copydata not implemented
+tolunnet: mbuf_free not implemented
+tolunnet: mbuf_freem not implemented
+tolunnet: mbuf_get not implemented
+tolunnet: mbuf_gethdr not implemented
+tolunnet: mbuf_prepend not implemented
+tolunnet: mbuf_cat not implemented
+tolunnet: mbuf_adj not implemented
+tolunnet: mbuf_pullup not implemented
+tolunnet: ObtainRoadshowData not implemented
+tolunnet: ReleaseRoadshowData not implemented
+tolunnet: ChangeRoadshowData not implemented
+tolunnet: RemoveInterface not implemented
+tolunnet: ipf_open not implemented
+tolunnet: ipf_close not implemented
+tolunnet: ipf_ioctl not implemented
+tolunnet: ipf_log_read not implemented
+tolunnet: ipf_log_data_waiting not implemented
+tolunnet: ipf_set_notify_mask not implemented
+tolunnet: ipf_set_interrupt_mask not implemented
+tolunnet: freeaddrinfo not implemented
+tolunnet: getaddrinfo not implemented
+tolunnet: gai_strerror not implemented
+tolunnet: getnameinfo not implemented
+tolunnet: socket(domain=2, type=2, proto=0) -> fd 0 (slot 0)
+tolunnet: CloseSocket(fd=0, slot=0) -> ok
+tolunnet: RECONFIG applied
+tolunnet: RECONFIG: task priority 5 -> 7
+tolunnet: RECONFIG: netdb database order -> local,dns
+tolunnet: RECONFIG: selector table grown to 32 entries
+tolunnet: RECONFIG: statistics counters reset (reporting off)
+tolunnet: syslog forwarding armed to 10.0.2.2:514
+tolunnet: RECONFIG applied
+tolunnet: RECONFIG: netdb database order -> (default)
+tolunnet: RECONFIG: statistics counters reset (reporting on)
+tolunnet: syslog forwarding disabled
+tolunnet: RECONFIG: needs restart: DEVICE
+tolunnet: RECONFIG: task priority 7 -> 5
+tolunnet: RECONFIG: log file -> WORK:tolunnet-task.log
+tolunnet: RECONFIG applied
+tolunnet: RECONFIG: task priority 5 -> 7
+tolunnet: RECONFIG: netdb database order -> local,dns
+tolunnet: RECONFIG: selector table grown to 32 entries
+tolunnet: RECONFIG: statistics counters reset (reporting off)
+tolunnet: syslog forwarding armed to 10.0.2.2:514
+tolunnet: RECONFIG applied
+tolunnet: RECONFIG: netdb database order -> (default)
+tolunnet: RECONFIG: statistics counters reset (reporting on)
+tolunnet: syslog forwarding disabled
+tolunnet: RECONFIG: needs restart: DEVICE
+tolunnet: RECONFIG: task priority 7 -> 5

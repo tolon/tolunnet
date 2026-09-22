@@ -1,0 +1,9 @@
+68000: Wed Sep  9 17:04:29 TSS 2026
+conformance.log: core: 0 ok / 0 not ok; external: 0 skipped
+conformance2.log: core: 0 ok / 0 not ok; external: 0 skipped
+bench services: none (suite is loopback-hermetic); DNS_PORT=15353
+config: ci/tolunnet-68000.uae (HDF copy staged from the pristine WB3.0 image)
+commit: 989eebf91a1a59886c314413f32dc0e9f62e7437
+describe: 989eebf
+dirty: NO
+MuForce pass: SKIP (MuForce/Enforcer not present on this bench; MUFORCE_ADF unset)
