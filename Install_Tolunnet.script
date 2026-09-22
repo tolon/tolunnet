@@ -8,7 +8,7 @@
         "tolunnet is a lightweight, high-performance SANA-II TCP/IP stack\n"
         "and bsdsocket.library v4.1 implementation for Commodore Amiga.\n\n"
         "Author: Tolon\n"
-        "Requirements: AmigaOS 3.0+, 68020+ CPU, SANA-II Network Driver.")
+        "Requirements: AmigaOS 3.0+, 68000 or higher CPU, SANA-II Network Driver.")
 )
 
 (set @default-dest "SYS:")
@@ -46,29 +46,48 @@
 
 (message "Installing tolunnet system binaries to SYS:C/ ...")
 
-(copylib
-  (source "C/tolunnet")
-  (dest "SYS:C")
-  (confirm)
+(copylib (source "C/tolunnet") (dest "SYS:C") (confirm))
+(copylib (source "C/TolunnetControl") (dest "SYS:C") (confirm))
+(copylib (source "C/ping") (dest "SYS:C") (confirm))
+(copylib (source "C/TolunnetPing") (dest "SYS:C") (confirm))
+(copylib (source "C/ifconfig") (dest "SYS:C") (confirm))
+(copylib (source "C/netstat") (dest "SYS:C") (confirm))
+(copylib (source "C/TolunnetStatus") (dest "SYS:C") (confirm))
+(copylib (source "C/route") (dest "SYS:C") (confirm))
+(copylib (source "C/AddNetRoute") (dest "SYS:C") (confirm))
+(copylib (source "C/DeleteNetRoute") (dest "SYS:C") (confirm))
+(copylib (source "C/AddNetInterface") (dest "SYS:C") (confirm))
+(copylib (source "C/ConfigureNetInterface") (dest "SYS:C") (confirm))
+(copylib (source "C/Online") (dest "SYS:C") (confirm))
+(copylib (source "C/Offline") (dest "SYS:C") (confirm))
+(copylib (source "C/CheckNetConfig") (dest "SYS:C") (confirm))
+(copylib (source "C/NetShutdown") (dest "SYS:C") (confirm))
+(copylib (source "C/wget") (dest "SYS:C") (confirm))
+(copylib (source "C/curl") (dest "SYS:C") (confirm))
+(copylib (source "C/TolunnetGet") (dest "SYS:C") (confirm))
+(copylib (source "C/iperf") (dest "SYS:C") (confirm))
+(copylib (source "C/tftp") (dest "SYS:C") (confirm))
+(copylib (source "C/ftp") (dest "SYS:C") (confirm))
+(copylib (source "C/hostname") (dest "SYS:C") (confirm))
+(copylib (source "C/nslookup") (dest "SYS:C") (confirm))
+(copylib (source "C/whois") (dest "SYS:C") (confirm))
+(copylib (source "C/traceroute") (dest "SYS:C") (confirm))
+(copylib (source "C/nc") (dest "SYS:C") (confirm))
+(copylib (source "C/arp") (dest "SYS:C") (confirm))
+(copylib (source "C/sntp") (dest "SYS:C") (confirm))
+(copylib (source "C/telnet") (dest "SYS:C") (confirm))
+(copylib (source "C/GetNetStatus") (dest "SYS:C") (confirm))
+(copylib (source "C/ShowNetStatus") (dest "SYS:C") (confirm))
+(copylib (source "C/TestSocket") (dest "SYS:C") (confirm))
+
+(if (exists "Libs/usergroup.library")
+  (action
+    (message "Installing usergroup.library to SYS:Libs/ ...")
+    (copylib (source "Libs/usergroup.library") (dest "SYS:Libs") (confirm))
+  )
 )
 
-(copylib
-  (source "C/TolunnetPing")
-  (dest "SYS:C")
-  (confirm)
-)
-
-(copylib
-  (source "C/TolunnetGet")
-  (dest "SYS:C")
-  (confirm)
-)
-
-(copylib
-  (source "C/TolunnetStatus")
-  (dest "SYS:C")
-  (confirm)
-)
+(message "Installing Preferences tools to SYS:Prefs/ ...")
 
 (run "Delete >NIL: SYS:Prefs/TolunnetPrefs ALL FORCE QUIET")
 (run "Delete >NIL: SYS:Prefs/TolunnetPrefs.info FORCE QUIET")
@@ -81,6 +100,18 @@
 )
 
 (run "Copy TolunnetPrefs.info SYS:Prefs/TolunnetPrefs.info CLONE QUIET")
+
+(run "Delete >NIL: SYS:Prefs/TolunnetSetup ALL FORCE QUIET")
+(run "Delete >NIL: SYS:Prefs/TolunnetSetup.info FORCE QUIET")
+
+(copylib
+  (source "TolunnetSetup")
+  (dest "SYS:Prefs")
+  (infos)
+  (confirm)
+)
+
+(run "Copy TolunnetSetup.info SYS:Prefs/TolunnetSetup.info CLONE QUIET")
 
 ; -------------------------------------------------------------
 ; Stack backup & non-destructive migration (Item 4b)

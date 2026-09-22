@@ -44,19 +44,19 @@ Classic AmigaOS has long lacked an actively maintained, production-grade, 100% o
 
 ## Commands
 
-The release archive ships the following programs, in `C/` unless noted. The installer copies the ones marked **I**. If you need the others, copy them from the archive's `C/` drawer to `SYS:C/`.
+The release archive ships the following programs, in `C/` unless noted. The installer (`Install_Tolunnet`) installs the complete command set, companion tools and libraries to `SYS:C/`, `SYS:Prefs/` and `SYS:Libs/`.
 
 | Command | ReadArgs template / purpose |
 |---|---|
-| `tolunnet` **I** | Stack daemon and `bsdsocket.library` provider. `START/S,STOP/S,STATUS/S,RECONFIG/S,STATS/S,RAW/S,WATCH/N,DEVICE,UNIT/N,IP,NETMASK,GATEWAY`. With no arguments it reads `DEVS:tolunnet.config`. |
+| `tolunnet` | Stack daemon and `bsdsocket.library` provider. `START/S,STOP/S,STATUS/S,RECONFIG/S,STATS/S,RAW/S,WATCH/N,DEVICE,UNIT/N,IP,NETMASK,GATEWAY`. With no arguments it reads `DEVS:tolunnet.config`. |
 | `TolunnetControl` | `COMMAND/A`: `START`, `STOP`, `RESTART`, `STATUS`, `RECONFIG`, `STATS`, `VERSION`. |
-| `TolunnetSetup` **I** (`SYS:Prefs/`) | First-run network wizard: hardware detection, DHCP/static setup, connection test. |
-| `TolunnetPrefs` **I** (`SYS:Prefs/`) | Preferences editor with stack Start/Stop. |
-| `TolunnetStatus` **I**, `ifconfig` **I**, `netstat` **I** | One read-only binary that takes no arguments. The name it is started under picks the output: stack status, interface summary, or socket/route summary. |
-| `ShowNetStatus` **I** | `INTERFACES/S,ROUTES/S,DNS/S,SOCKETS/S,FULL/S` |
+| `TolunnetSetup` (`SYS:Prefs/`) | First-run network wizard: hardware detection, DHCP/static setup, connection test. |
+| `TolunnetPrefs` (`SYS:Prefs/`) | Preferences editor with stack Start/Stop. |
+| `TolunnetStatus`, `ifconfig`, `netstat` | One read-only binary that takes no arguments. The name it is started under picks the output: stack status, interface summary, or socket/route summary. |
+| `ShowNetStatus` | `INTERFACES/S,ROUTES/S,DNS/S,SOCKETS/S,FULL/S` |
 | `GetNetStatus` | `ONLINE/S,ADDRESS/S,GATEWAY/S,DNS/S`: status query for scripts, answered through the return code. |
-| `TolunnetPing` **I**, `ping` **I** | `HOST/A,COUNT/N,SIZE/N,INTERVAL/N,TTL/N,TIMEOUT/N,QUIET/S,UDP/S`: ICMP echo with min/avg/max/mdev. |
-| `TolunnetGet` **I**, `wget` **I**, `curl` **I** | `URL/A,PORT/N,PATH,TO/K,QUIET/S`: HTTP/1.1 client with 301/302/303/307/308 redirects, chunked transfer and Range resume. |
+| `TolunnetPing`, `ping` | `HOST/A,COUNT/N,SIZE/N,INTERVAL/N,TTL/N,TIMEOUT/N,QUIET/S,UDP/S`: ICMP echo with min/avg/max/mdev. |
+| `TolunnetGet`, `wget`, `curl` | `URL/A,PORT/N,PATH,TO/K,QUIET/S`: HTTP/1.1 client with 301/302/303/307/308 redirects, chunked transfer and Range resume. |
 | `route` | `SHOW/S,ADD/S,DEST/K,NETMASK/K,GATEWAY/K,DELETE/S,DEFAULT/S` |
 | `AddNetRoute`, `DeleteNetRoute` | `DEST/A,MASK/K,GATEWAY/K` and `DEST/A,MASK/K` (Roadshow-style names). |
 | `AddNetInterface` | `FILE` (Roadshow-style interface control). |
@@ -65,9 +65,9 @@ The release archive ships the following programs, in `C/` unless noted. The inst
 | `CheckNetConfig` | `FILE`: syntax check of a tolunnet config file. |
 | `NetShutdown` | `FORCE/S`: orderly stack shutdown. |
 | `arp` | `SHOW/S,FLUSH/S`: shows the ARP cache. `FLUSH` is not implemented yet. |
-| `hostname` **I** | `HOSTNAME,SAVE/S` |
+| `hostname` | `HOSTNAME,SAVE/S` |
 | `nslookup` | `NAME/A,SERVER`: forward (A) and reverse (PTR) lookups. |
-| `traceroute` **I** | `HOST/A,MAXHOPS/N,QUERIES/N,WAIT/N,NUMERIC/S`: UDP probe routing diagnosis with per-hop IP_TTL and ICMP replies. |
+| `traceroute` | `HOST/A,MAXHOPS/N,QUERIES/N,WAIT/N,NUMERIC/S`: UDP probe routing diagnosis with per-hop IP_TTL and ICMP replies. |
 | `whois` | `QUERY/A,SERVER` (default server `whois.iana.org`). |
 | `telnet` | `HOST/A,PORT/N`: raw TCP terminal. Telnet option negotiation (IAC/SB) is filtered out, not negotiated. |
 | `nc` | `HOST/A,PORT/N,UDP/S,LISTEN/S,TIMEOUT/N` |
@@ -76,7 +76,7 @@ The release archive ships the following programs, in `C/` unless noted. The inst
 | `sntp` | `HOST,SET/S,OFFSET/N` |
 | `iperf` | `CLIENT/K,SERVER/S,PORT/N,SECONDS/N`: simple TCP throughput sink/source with its own format, default port 5201. Not wire-compatible with iperf2 or iperf3. |
 | `TestSocket` | Minimal socket smoke test. |
-| `usergroup.library` **I** (`LIBS:`) | See [Key Architecture & Features](#key-architecture--features). |
+| `usergroup.library` (`SYS:Libs/`) | See [Key Architecture & Features](#key-architecture--features). |
 
 ---
 
@@ -175,9 +175,10 @@ Outputs in `build/`:
 1. Extract `tolunnet-<version>.lha` to `RAM:` or any drawer.
 2. Double-click **`Install_Tolunnet`**:
    - It asks for the SANA-II device name and unit, and for DHCP or static addressing.
-   - It copies the programs marked **I** above plus `usergroup.library`.
-   - It adds a start line to `S:User-Startup`.
-3. At the end it launches `SYS:Prefs/TolunnetSetup`, which writes `DEVS:tolunnet.config` and tests the connection.
+   - It detects existing TCP/IP stacks (Roadshow, Miami, AmiTCP), backs up `LIBS:bsdsocket.library` and emits `S:tolunnet-undo`.
+   - It copies the complete command set to `SYS:C/`, `usergroup.library` to `SYS:Libs/`, and GUI tools to `SYS:Prefs/`.
+   - It writes `DEVS:tolunnet.config` and adds the config-driven startup line to `S:User-Startup`.
+3. At the end it launches `SYS:Prefs/TolunnetSetup`, which validates the configuration and tests the connection.
 
 ### Manual
 1. Copy files from the archive:

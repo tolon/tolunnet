@@ -5428,6 +5428,37 @@ static void tc_install_script(void)
         return;
     }
 
+    /* Item 5: CPU requirement text must say "68000 or higher", never "68020+" */
+    if (strstr(buf, "68020+") != NULL) {
+        TAP_NOTOK(label, "Install script still claims 68020+ requirement");
+        return;
+    }
+    if (strstr(buf, "68000 or higher") == NULL) {
+        TAP_NOTOK(label, "Install script missing '68000 or higher' CPU requirement");
+        return;
+    }
+
+    /* Item 5: Install full command set from docs/commands.md and companion tools */
+    static const char *const required_cmds[] = {
+        "C/tolunnet", "C/TolunnetControl", "C/ping", "C/TolunnetPing",
+        "C/ifconfig", "C/netstat", "C/TolunnetStatus", "C/route",
+        "C/AddNetRoute", "C/DeleteNetRoute", "C/AddNetInterface",
+        "C/ConfigureNetInterface", "C/Online", "C/Offline",
+        "C/CheckNetConfig", "C/NetShutdown", "C/wget", "C/curl",
+        "C/TolunnetGet", "C/iperf", "C/tftp", "C/ftp",
+        "C/hostname", "C/nslookup", "C/whois", "C/traceroute",
+        "C/nc", "C/arp", "C/sntp", "C/telnet",
+        "C/GetNetStatus", "C/ShowNetStatus", "C/TestSocket",
+        "Libs/usergroup.library", "TolunnetPrefs", "TolunnetSetup"
+    };
+    for (size_t i = 0; i < sizeof(required_cmds) / sizeof(required_cmds[0]); i++) {
+        if (strstr(buf, required_cmds[i]) == NULL) {
+            tapf("# %s: missing installation entry for %s\n", label, required_cmds[i]);
+            TAP_NOTOK(label, "Install script missing required command or tool");
+            return;
+        }
+    }
+
     /* Daemon's actual ReadArgs template from src/task/daemon_main.c:710 */
     const char *template = "START/S,STOP/S,STATUS/S,RECONFIG/S,STATS/S,RAW/S,WATCH/N,DEVICE,UNIT/N,IP,NETMASK,GATEWAY";
 
