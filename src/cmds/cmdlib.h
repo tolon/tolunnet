@@ -49,6 +49,8 @@ LONG tn_call_bind(LONG fd, const struct sockaddr *a, LONG len);
 LONG tn_call_listen(LONG fd, LONG backlog);
 LONG tn_call_accept(LONG fd, struct sockaddr *a, LONG *len);
 LONG tn_call_shutdown(LONG fd, LONG how);
+LONG tn_call_setsockopt(LONG fd, LONG level, LONG optname, const void *optval, LONG optlen);
+LONG tn_call_getsockopt(LONG fd, LONG level, LONG optname, void *optval, LONG *optlen);
 
 /* --- Helpers --- */
 int  tn_cmd_init(void);

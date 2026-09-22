@@ -119,6 +119,36 @@ LONG tn_call_shutdown(LONG fd, LONG how)
     return d0;
 }
 
+LONG tn_call_setsockopt(LONG fd, LONG level, LONG optname, const void *optval, LONG optlen)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = fd;
+    register LONG d1 __asm__("d1") = level;
+    register LONG d2 __asm__("d2") = optname;
+    register const void *a0 __asm__("a0") = optval;
+    register LONG d3 __asm__("d3") = optlen;
+    __asm__ __volatile__("jsr -90(%%a6)"
+        : "+r"(d0)
+        : "r"(a6), "r"(d0), "r"(d1), "r"(d2), "r"(a0), "r"(d3)
+        : "d1","d2","d3","a0","a1","memory");
+    return d0;
+}
+
+LONG tn_call_getsockopt(LONG fd, LONG level, LONG optname, void *optval, LONG *optlen)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = fd;
+    register LONG d1 __asm__("d1") = level;
+    register LONG d2 __asm__("d2") = optname;
+    register void *a0 __asm__("a0") = optval;
+    register LONG *a1 __asm__("a1") = optlen;
+    __asm__ __volatile__("jsr -96(%%a6)"
+        : "+r"(d0)
+        : "r"(a6), "r"(d0), "r"(d1), "r"(d2), "r"(a0), "r"(a1)
+        : "d1","d2","a0","a1","memory");
+    return d0;
+}
+
 LONG tn_call_errno(void)
 {
     register struct Library *a6 __asm__("a6") = SocketBase;

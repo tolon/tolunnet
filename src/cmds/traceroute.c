@@ -84,6 +84,14 @@ int main(int argc, char **argv)
     dst.sin_addr.s_addr = addr;
     dst.sin_port = htons(UDP_PROBE_PORT);
 
+    if (tn_call_connect(udp_fd, (struct sockaddr *)&dst, sizeof(dst)) < 0) {
+        tn_cmd_printf("traceroute: connect failed (errno=%ld)\n", tn_call_errno());
+        tn_call_closesocket(icmp_fd);
+        tn_call_closesocket(udp_fd);
+        FreeArgs(rdargs); tn_cmd_fini();
+        return TN_CMD_FAIL;
+    }
+
     for (hop = 1; hop <= maxhops && !reached; hop++) {
         struct sockaddr_in from;
         LONG from_len = sizeof(from);
@@ -101,8 +109,7 @@ int main(int argc, char **argv)
             /* Send UDP probe with current TTL */
             {
                 LONG ttl_set = hop;
-                /* setsockopt via inline would be needed; for now use the
-                 * raw socket for receive and just send UDP datagrams */
+                tn_call_setsockopt(udp_fd, IPPROTO_IP, IP_TTL, &ttl_set, sizeof(ttl_set));
                 tn_call_send(udp_fd, "probe", 5, 0);
             }
 

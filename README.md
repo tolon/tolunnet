@@ -67,7 +67,7 @@ The release archive ships the following programs, in `C/` unless noted. The inst
 | `arp` | `SHOW/S,FLUSH/S`: shows the ARP cache. `FLUSH` is not implemented yet. |
 | `hostname` **I** | `HOSTNAME,SAVE/S` |
 | `nslookup` | `NAME/A,SERVER`: forward (A) and reverse (PTR) lookups. |
-| `traceroute` **I** | Sends UDP probes to port 33434 and reads ICMP replies (see [Known limitations](STATUS.md#known-limitations)). |
+| `traceroute` **I** | `HOST/A,MAXHOPS/N,QUERIES/N,WAIT/N,NUMERIC/S`: UDP probe routing diagnosis with per-hop IP_TTL and ICMP replies. |
 | `whois` | `QUERY/A,SERVER` (default server `whois.iana.org`). |
 | `telnet` | `HOST/A,PORT/N`: raw TCP terminal. Telnet option negotiation (IAC/SB) is filtered out, not negotiated. |
 | `nc` | `HOST/A,PORT/N,UDP/S,LISTEN/S,TIMEOUT/N` |

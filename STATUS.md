@@ -24,7 +24,7 @@ _Last updated: 2026-09-22 · HEAD `4dff8ef` · version string `1.2.0-rc3` (`incl
 |---|---|---|
 | Host unit tests (`make test-host`) | 20 programs, ASan/UBSan | run locally before every commit |
 | Emulated conformance bench, rc3 tree | **ALL-GREEN**: 58/58 in both cycles on both profiles (a1200 + 68000); bsdsocktest **126/142** | bench `20260921-135938-51196ec` (in git history up to `7f87caf`) |
-| Emulated conformance bench, post-rc3 work | **ALL-GREEN**: 60/60 in both cycles on both profiles (a1200 + 68000); bsdsocktest **126/142** | bench `20260922-225234-v1.2.0-rc3-12-g4dff8ef` |
+| Emulated conformance bench, post-rc3 work | **ALL-GREEN**: 60/60 in both cycles on both profiles (a1200 + 68000); bsdsocktest **126/142** | bench `20260922-230900-v1.2.0-rc3-14-gf012dd2` |
 | Session-profile soak | **PASS**: 12 cycles (3 h 20 m, a1200, `TX_QUEUE=4`), 0 Gurus, 0 `not ok`, Chip RAM drift 0 B, Fast RAM −1200 B (cycle 1 → 11) | bench `20260922-144257-soak-842cc1f` (in git history up to `7f87caf`) |
 | MuForce / Enforcer | **SKIP**: the tool image is not part of the bench | `muforce.txt` in each bench run |
 | RTG (Picasso96) wizard layout | **SKIP**: no RTG drivers in the bench image. PAL 640×256 and NTSC 640×200 are verified; RTG is retested by the owner on PiStorm. | — |
@@ -37,7 +37,6 @@ bsdsocktest (142 tests): 126 passed, 2 failed, 14 skipped.
 ## Known limitations
 
 **Stack / commands**
-- `traceroute`: every UDP probe goes out with the default TTL. The per-hop TTL is computed but never set on the socket (`src/cmds/traceroute.c`), so the tool does not trace intermediate hops yet.
 - `ftp`: passive mode only (no `PORT`/`EPRT`).
 - `arp FLUSH`: not implemented.
 - `iperf`: simple TCP throughput tool with its own format, not iperf2/iperf3 compatible.

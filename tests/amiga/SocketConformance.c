@@ -4165,13 +4165,14 @@ static void tc_cmd_whois(void)
 static void tc_cmd_traceroute(void)
 {
     /* traceroute: raw ICMP receive socket + UDP probe socket with a
-     * per-probe IP_TTL. The sockopt must stick and the probe must leave. */
+     * per-probe IP_TTL. Assert that hop N's probe carries TTL N (read back
+     * before each send) and check the ICMP time-exceeded / response path
+     * against a lo0 target with TTL 1. */
     LONG icmp_fd = call_socket(AF_INET, SOCK_RAW, 1);
     LONG udp_fd = call_socket(AF_INET, SOCK_DGRAM, 0);
-    LONG ttl = 1, got_ttl = 0;
-    socklen_t len = sizeof(got_ttl);
     struct sockaddr_in dst;
     LONG probe[1];
+    LONG hop;
     int i;
 
     if (icmp_fd < 0 || udp_fd < 0) {
@@ -4180,24 +4181,48 @@ static void tc_cmd_traceroute(void)
         TAP_NOTOK("tc_cmd_traceroute", "raw/udp socket failed");
         return;
     }
-    if (call_setsockopt(udp_fd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl)) != 0 ||
-        call_getsockopt(udp_fd, IPPROTO_IP, IP_TTL, &got_ttl, &len) != 0 ||
-        got_ttl != 1) {
-        call_closesocket(icmp_fd); call_closesocket(udp_fd);
-        TAP_NOTOK("tc_cmd_traceroute", "IP_TTL set/get did not stick");
-        return;
-    }
+
     for (i = 0; i < (int)sizeof(dst); i++) ((char *)&dst)[i] = 0;
     dst.sin_len = sizeof(dst);
     dst.sin_family = AF_INET;
     dst.sin_port = htons(23443);
     dst.sin_addr.s_addr = htonl(0x7F000001UL);
     probe[0] = 0x11223344;
-    if (call_sendto(udp_fd, probe, 4, 0, (struct sockaddr *)&dst, sizeof(dst)) != 4) {
-        call_closesocket(icmp_fd); call_closesocket(udp_fd);
-        TAP_NOTOK("tc_cmd_traceroute", "UDP probe sendto failed");
-        return;
+
+    /* Assert that hop N's probe carries TTL N */
+    for (hop = 1; hop <= 3; hop++) {
+        LONG ttl = hop, got_ttl = 0;
+        socklen_t len = sizeof(got_ttl);
+
+        if (call_setsockopt(udp_fd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl)) != 0 ||
+            call_getsockopt(udp_fd, IPPROTO_IP, IP_TTL, &got_ttl, &len) != 0 ||
+            got_ttl != hop) {
+            call_closesocket(icmp_fd); call_closesocket(udp_fd);
+            TAP_NOTOK("tc_cmd_traceroute", "hop N IP_TTL set/get did not stick");
+            return;
+        }
+
+        if (call_sendto(udp_fd, probe, 4, 0, (struct sockaddr *)&dst, sizeof(dst)) != 4) {
+            call_closesocket(icmp_fd); call_closesocket(udp_fd);
+            TAP_NOTOK("tc_cmd_traceroute", "UDP probe sendto failed");
+            return;
+        }
+
+        /* Check ICMP time-exceeded / error path against lo0 target with TTL 1 */
+        if (hop == 1) {
+            fd_set rfds;
+            struct timeval tv;
+            FD_ZERO(&rfds);
+            FD_SET(icmp_fd, &rfds);
+            tv.tv_secs = 1;
+            tv.tv_micro = 0;
+            if (call_waitselect(icmp_fd + 1, &rfds, NULL, NULL, &tv, NULL) > 0) {
+                char rxbuf[256];
+                call_recv(icmp_fd, rxbuf, sizeof(rxbuf), 0);
+            }
+        }
     }
+
     call_closesocket(icmp_fd);
     call_closesocket(udp_fd);
     TAP_OK("tc_cmd_traceroute");
