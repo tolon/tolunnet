@@ -127,9 +127,17 @@ ONLINE_BIN    = $(BUILD)/Online
 OFFLINE_BIN   = $(BUILD)/Offline
 CHECKNETCONFIG_BIN = $(BUILD)/CheckNetConfig
 NETSHUTDOWN_BIN    = $(BUILD)/NetShutdown
+USERGROUP_LIB      = $(BUILD)/usergroup.library
+
+UG_OBJS = $(BUILD)/src/usergroup/ug_init.o \
+          $(BUILD)/src/usergroup/ug_db.o \
+          $(BUILD)/src/usergroup/ug_context.o \
+          $(BUILD)/src/usergroup/ug_crypt.o \
+          $(BUILD)/src/usergroup/ug_table.gen.o \
+          $(BUILD)/src/usergroup/ug_stubs.gen.o
 
 .PHONY: all clean test-host package
-all: $(TOLUNNET_BIN) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN) $(BSDTEST_BIN) $(FREEZEWATCH_BIN) $(HOSTNAME_BIN) $(NSLOOKUP_BIN) $(WHOIS_BIN) $(TRACEROUTE_BIN) $(NC_BIN) $(ARP_BIN) $(SHOWNETSTATUS_BIN) $(SNTP_BIN) $(TELNET_BIN) $(TFTP_BIN) $(CONTROL_BIN) $(GETNETSTATUS_BIN) $(FTP_BIN) $(ROUTE_BIN) $(ADDNETROUTE_BIN) $(DELETENETROUTE_BIN) $(IPERF_BIN) $(ADDNETIF_BIN) $(CONFNETIF_BIN) $(ONLINE_BIN) $(OFFLINE_BIN) $(CHECKNETCONFIG_BIN) $(NETSHUTDOWN_BIN)
+all: $(TOLUNNET_BIN) $(USERGROUP_LIB) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN) $(BSDTEST_BIN) $(FREEZEWATCH_BIN) $(HOSTNAME_BIN) $(NSLOOKUP_BIN) $(WHOIS_BIN) $(TRACEROUTE_BIN) $(NC_BIN) $(ARP_BIN) $(SHOWNETSTATUS_BIN) $(SNTP_BIN) $(TELNET_BIN) $(TFTP_BIN) $(CONTROL_BIN) $(GETNETSTATUS_BIN) $(FTP_BIN) $(ROUTE_BIN) $(ADDNETROUTE_BIN) $(DELETENETROUTE_BIN) $(IPERF_BIN) $(ADDNETIF_BIN) $(CONFNETIF_BIN) $(ONLINE_BIN) $(OFFLINE_BIN) $(CHECKNETCONFIG_BIN) $(NETSHUTDOWN_BIN)
 
 # --- Host unit tests (Round 3 §B.1) -----------------------------------------
 # Every tests/host/test_*.c runs under native gcc with sanitizers + Werror;
@@ -165,13 +173,16 @@ $(BUILD)/host/%: tests/host/%.c $(HOST_UNITS) tests/host/tn_test.h
 .PHONY: python-checks
 python-checks:
 	python3 scripts/gen_lvo_table.py
+	python3 scripts/gen_usergroup_table.py
 	python3 scripts/verify_icons.py
 	python3 scripts/check_md_links.py
 	sh scripts/check-forbid.sh
 	@git diff --exit-code -- src/lib/lib_table.gen.c src/lib/lib_stubs.gen.s \
-		src/lib/lib_unimpl.c src/lib/lib_compat_table.gen.md README.md \
+		src/lib/lib_unimpl.c src/lib/lib_compat_table.gen.md \
+		src/usergroup/ug_table.gen.c src/usergroup/ug_stubs.gen.s \
+		src/usergroup/ug_compat_table.gen.md README.md \
 		|| (echo "FAIL: generated LVO/compat files are stale or hand-edited —"; \
-		    echo "       run scripts/gen_lvo_table.py and commit the result (ANX-02)"; \
+		    echo "       run generators and commit the result"; \
 		    exit 1)
 
 # TNET-139: host-gcc strict cast-alignment gate over src/ (zero-warning).
@@ -200,6 +211,10 @@ DEP_FILES := $(shell find $(BUILD) -name '*.d' 2>/dev/null)
 # Target: Network Task with embedded bsdsocket.library (M2/M3)
 $(TOLUNNET_BIN): $(TASK_OBJS) $(LIB_OBJS) $(SANA2_OBJS) $(COMMON_OBJS) $(LWIP_OBJS)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+
+# Target: usergroup.library Amiga Shared Library (ANX-10)
+$(USERGROUP_LIB): $(UG_OBJS)
+	$(CC) $(LDFLAGS) -nostartfiles -o $@ $^
 
 # Target: TolunnetStatus Diagnostic Tool (M1/M2)
 $(STATUS_BIN): $(BUILD)/src/cmds/TolunnetStatus.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/config_text.o $(BUILD)/src/common/log.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/common/rawfmt.o
@@ -406,6 +421,9 @@ package: all
 	if [ -f Installer ]; then cp Installer $(PACKAGE_DIR)/Installer; fi
 	cp $(PREFS_BIN) $(PACKAGE_DIR)/
 	cp $(SETUP_BIN) $(PACKAGE_DIR)/
+	mkdir -p $(PACKAGE_DIR)/Libs
+	cp $(USERGROUP_LIB) $(PACKAGE_DIR)/Libs/
+	$(STRIP) $(PACKAGE_DIR)/Libs/* || true
 	$(STRIP) $(PACKAGE_DIR)/TolunnetPrefs || true
 	$(STRIP) $(PACKAGE_DIR)/TolunnetSetup || true
 	cp TolunnetPrefs.info $(PACKAGE_DIR)/TolunnetPrefs.info
@@ -434,6 +452,9 @@ adf:
 		$(STRIP) -o $(BUILD)/adf-pkg/tolunnet/C/$$(basename $$f) $$f 2>/dev/null \
 		|| cp $$f $(BUILD)/adf-pkg/tolunnet/C/; \
 	done
+	@mkdir -p $(BUILD)/adf-pkg/tolunnet/Libs
+	@$(STRIP) -o $(BUILD)/adf-pkg/tolunnet/Libs/usergroup.library $(USERGROUP_LIB) 2>/dev/null \
+		|| cp $(USERGROUP_LIB) $(BUILD)/adf-pkg/tolunnet/Libs/
 	@cp LICENSE $(BUILD)/adf-pkg/tolunnet/
 	$(XDFTOOL) -f $(ADF_IMAGE) pack $(BUILD)/adf-pkg/tolunnet tolunnet
 	@echo "ADF successfully created: $(ADF_IMAGE)"
