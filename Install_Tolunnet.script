@@ -83,9 +83,28 @@
 (run "Copy TolunnetPrefs.info SYS:Prefs/TolunnetPrefs.info CLONE QUIET")
 
 (if (= #ip-mode 0)
-  (set #startup-line (cat "Run <NIL: >NIL: C:tolunnet " #device-name " " #unit-num))
-  (set #startup-line (cat "Run <NIL: >NIL: C:tolunnet " #device-name " " #unit-num " " #static-ip " " #static-nm " " #static-gw))
+  (textfile
+    (dest "DEVS:tolunnet.config")
+    (append
+      (cat "DEVICE=" #device-name "\n")
+      (cat "UNIT=" #unit-num "\n")
+      "DHCP=YES\n"
+    )
+  )
+  (textfile
+    (dest "DEVS:tolunnet.config")
+    (append
+      (cat "DEVICE=" #device-name "\n")
+      (cat "UNIT=" #unit-num "\n")
+      "DHCP=NO\n"
+      (cat "IP=" #static-ip "\n")
+      (cat "NETMASK=" #static-nm "\n")
+      (cat "GATEWAY=" #static-gw "\n")
+    )
+  )
 )
+
+(set #startup-line "Run <NIL: >NIL: C:tolunnet")
 
 (startup "tolunnet"
   (prompt "Add tolunnet network stack to your S:User-Startup?")

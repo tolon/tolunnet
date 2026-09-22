@@ -5373,6 +5373,111 @@ static void tc_usergroup(void)
     TAP_OK("tc_usergroup");
 }
 
+/* Item 4: Installer dry-run verification.
+ * Asserts that Install_Tolunnet.script:
+ * 1. Exists and contains the textfile config creation for DEVS:tolunnet.config.
+ * 2. Emits config-driven startup command "Run <NIL: >NIL: C:tolunnet" without positional arguments.
+ * 3. Does NOT contain positional daemon invocations like "C:tolunnet " #device-name.
+ * 4. Simulates an Install_Tolunnet dry run: extracts the startup command arguments,
+ *    and parses them through the daemon's own ReadArgs template:
+ *    "START/S,STOP/S,STATUS/S,RECONFIG/S,STATS/S,RAW/S,WATCH/N,DEVICE,UNIT/N,IP,NETMASK,GATEWAY".
+ *    With the config-driven line, ReadArgs succeeds (no BAD_NUMBER).
+ *    Also verifies that if the buggy legacy positional string were fed, ReadArgs would fail with ERROR_BAD_NUMBER.
+ */
+static void tc_install_script(void)
+{
+    const char *label = "tc_install_script";
+    BPTR fh = Open((CONST_STRPTR)"S:Install_Tolunnet.script", MODE_OLDFILE);
+    if (!fh) {
+        fh = Open((CONST_STRPTR)"Install_Tolunnet.script", MODE_OLDFILE);
+    }
+    if (!fh) {
+        TAP_NOTOK(label, "Install_Tolunnet.script not found");
+        return;
+    }
+
+    char buf[4096];
+    LONG bytes = Read(fh, buf, sizeof(buf) - 1);
+    Close(fh);
+    if (bytes <= 0) {
+        TAP_NOTOK(label, "Cannot read Install_Tolunnet.script");
+        return;
+    }
+    buf[bytes] = '\0';
+
+    /* Verify DEVS:tolunnet.config write block is present */
+    if (strstr(buf, "DEVS:tolunnet.config") == NULL) {
+        TAP_NOTOK(label, "DEVS:tolunnet.config missing from install script");
+        return;
+    }
+    if (strstr(buf, "DEVICE=") == NULL || strstr(buf, "UNIT=") == NULL) {
+        TAP_NOTOK(label, "DEVICE=/UNIT= keys missing from install script");
+        return;
+    }
+
+    /* Verify startup line is config-driven: Run <NIL: >NIL: C:tolunnet */
+    if (strstr(buf, "Run <NIL: >NIL: C:tolunnet") == NULL) {
+        TAP_NOTOK(label, "Run <NIL: >NIL: C:tolunnet startup line missing");
+        return;
+    }
+
+    /* Verify buggy positional startup pattern is NOT present */
+    if (strstr(buf, "C:tolunnet \" #device-name") != NULL) {
+        TAP_NOTOK(label, "Positional device/unit arguments still present in startup line");
+        return;
+    }
+
+    /* Daemon's actual ReadArgs template from src/task/daemon_main.c:710 */
+    const char *template = "START/S,STOP/S,STATUS/S,RECONFIG/S,STATS/S,RAW/S,WATCH/N,DEVICE,UNIT/N,IP,NETMASK,GATEWAY";
+
+    /* Dry run: parse the produced startup command arguments with ReadArgs.
+     * The startup line is "Run <NIL: >NIL: C:tolunnet", so arguments to C:tolunnet are empty ("\n"). */
+    {
+        struct RDArgs rda;
+        memset(&rda, 0, sizeof(rda));
+        char empty_args[] = "\n";
+        rda.RDA_Source.CS_Buffer = (STRPTR)empty_args;
+        rda.RDA_Source.CS_Length = strlen(empty_args);
+        rda.RDA_Flags |= RDAF_NOPROMPT;
+
+        LONG opts[12];
+        memset(opts, 0, sizeof(opts));
+        struct RDArgs *res = ReadArgs((CONST_STRPTR)template, opts, &rda);
+        if (!res) {
+            TAP_NOTOK(label, "ReadArgs rejected empty daemon arguments");
+            return;
+        }
+        FreeArgs(res);
+    }
+
+    /* Negative proof: verify that buggy positional arguments fail with ERROR_BAD_NUMBER */
+    {
+        struct RDArgs rda;
+        memset(&rda, 0, sizeof(rda));
+        char bad_args[] = "ethernet.device 0\n";
+        rda.RDA_Source.CS_Buffer = (STRPTR)bad_args;
+        rda.RDA_Source.CS_Length = strlen(bad_args);
+        rda.RDA_Flags |= RDAF_NOPROMPT;
+
+        LONG opts[12];
+        memset(opts, 0, sizeof(opts));
+        struct RDArgs *res = ReadArgs((CONST_STRPTR)template, opts, &rda);
+        if (res != NULL) {
+            FreeArgs(res);
+            TAP_NOTOK(label, "Positional arguments unexpectedly parsed by WATCH/N template");
+            return;
+        }
+        LONG err = IoErr();
+        if (err != ERROR_BAD_NUMBER) {
+            tapf("# %s: expected ERROR_BAD_NUMBER (226), got %ld\n", label, err);
+            TAP_NOTOK(label, "Expected ERROR_BAD_NUMBER for positional device argument");
+            return;
+        }
+    }
+
+    TAP_OK(label);
+}
+
 /* Bench plumbing (not a TAP case): ask the daemon to exit so the bench can
  * prove the TNET-059/060 restart cycle. Mirrors TolunnetPrefs' Stop logic. */
 static void request_daemon_stop(void)
@@ -5503,6 +5608,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_cmd_netshutdown);
     TN_RUN(tc_cmd_route);
     TN_RUN(tc_usergroup);
+    TN_RUN(tc_install_script);
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");

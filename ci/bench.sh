@@ -163,7 +163,7 @@ fi
 
 if [ "${SKIP_BUILD:-0}" != "1" ]; then
     say "building (make all)"
-    wsl -d Ubuntu-24.04 -e bash -c "export PATH=/home/tolon/opt/m68k-amigaos/bin:\$PATH && cd /mnt/d/Projeler/tolunnet && make all CROSS=$CROSS" >/dev/null \
+    wsl -d Ubuntu-24.04 -e bash -c "export PATH=/usr/bin:/bin:/usr/local/bin:/home/tolon/opt/m68k-amigaos/bin:\$PATH && cd /mnt/d/Projeler/tolunnet && make all CROSS=$CROSS" >/dev/null \
         || die "make all failed"
 fi
 [ -f build/tolunnet ] || die "build/tolunnet missing (run without SKIP_BUILD)"
@@ -245,6 +245,7 @@ for cfg in $CONFIGS; do
     xd delete Libs/usergroup.library >/dev/null 2>&1
     xd delete S/User-Startup    >/dev/null 2>&1
     xd delete S/Conformance-Script >/dev/null 2>&1
+    xd delete S/Install_Tolunnet.script >/dev/null 2>&1
     xd delete Devs/tolunnet.config >/dev/null 2>&1
     xd write build/tolunnet C/tolunnet          || die "xdftool write tolunnet failed"
     xd write build/TolunnetControl C/TolunnetControl || die "xdftool write TolunnetControl failed"
@@ -255,6 +256,7 @@ for cfg in $CONFIGS; do
     xd write build/usergroup.library Libs/usergroup.library || die "xdftool write usergroup.library failed"
     xd write ci/User-Startup-Conformance S/Conformance-Script || die "xdftool write Conformance-Script failed"
     xd write ci/User-Startup-Boot S/User-Startup || die "xdftool write User-Startup failed"
+    xd write Install_Tolunnet.script S/Install_Tolunnet.script || die "xdftool write Install_Tolunnet.script failed"
     xd write "$BENCH_CFG" Devs/tolunnet.config          || die "xdftool write tolunnet.config failed"
     say "staged: tolunnet + SocketConformance + bsdsocktest + usergroup.library + TolunnetSetup + Conformance-Script + User-Startup + tolunnet.config -> $HDF_WIN"
 
