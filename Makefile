@@ -377,7 +377,6 @@ $(BSDTEST_BIN): $(BSDTEST_OBJS)
 # Release Packaging Target (M7)
 # single source: include/version.h (CLOSE S-D.14)
 VERSION := $(shell sed -n 's/.*TOLUNNET_VERSION "\(.*\)".*/\1/p' include/version.h)
-VERSION ?= 1.2.0-rc2
 PACKAGE_DIR = $(BUILD)/release/tolunnet
 LHA_ARCHIVE = $(BUILD)/tolunnet-$(VERSION).lha
 ADF_IMAGE = $(BUILD)/tolunnet.adf
@@ -386,7 +385,7 @@ XDFTOOL ?= $(shell PATH="$$PATH:$$HOME/.local/bin" which xdftool 2>/dev/null || 
 package: all
 	@echo "--- Creating Release Directory ---"
 	rm -rf $(BUILD)/release
-	mkdir -p $(PACKAGE_DIR)/C $(PACKAGE_DIR)/Docs
+	mkdir -p $(PACKAGE_DIR)/C
 	cp $(TOLUNNET_BIN) $(PACKAGE_DIR)/C/
 	cp $(STATUS_BIN) $(PACKAGE_DIR)/C/
 	cp $(STATUS_BIN) $(PACKAGE_DIR)/C/ifconfig
@@ -441,7 +440,6 @@ package: all
 	cp tolunnet.readme $(PACKAGE_DIR)/
 	cp LICENSE $(PACKAGE_DIR)/
 	cp THIRD_PARTY_LICENSES.md $(PACKAGE_DIR)/
-	cp docs/protocol.md $(PACKAGE_DIR)/Docs/
 	cp assets/tolunnet_drawer.info $(BUILD)/release/tolunnet.info || true
 	@echo "--- Building LhA Archive ---"
 	python3 scripts/create_lha.py $(PACKAGE_DIR) $(LHA_ARCHIVE)

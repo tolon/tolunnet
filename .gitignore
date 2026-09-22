@@ -59,4 +59,10 @@ TN-*.md
 .ignore
 AGENTS.md
 graft/
+/archive/
 
+# Markdown policy: only these .md files are published
+*.md
+!/README.md
+!/STATUS.md
+!/THIRD_PARTY_LICENSES.md
