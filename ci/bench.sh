@@ -64,7 +64,7 @@ if [ "${1:-}" = "soak" ]; then
 
     if [ "${SKIP_BUILD:-0}" != "1" ]; then
         say "building (make all)"
-        wsl -d Ubuntu-24.04 -e bash -lc "export PATH=/home/tolon/opt/m68k-amigaos/bin:\$PATH && cd /mnt/d/Projeler/tolunnet && make all CROSS=$CROSS" >/dev/null \
+        wsl -d Ubuntu-24.04 -e bash -c "export PATH=/usr/bin:/bin:/usr/local/bin:/home/tolon/opt/m68k-amigaos/bin:\$PATH && cd /mnt/d/Projeler/tolunnet && make all CROSS=$CROSS" >/dev/null \
             || die "make all failed"
     fi
 
