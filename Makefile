@@ -180,7 +180,7 @@ python-checks:
 	python3 scripts/verify_icons.py
 	python3 scripts/check_md_links.py
 	sh scripts/check-forbid.sh
-	@git diff --exit-code -- src/lib/lib_table.gen.c src/lib/lib_stubs.gen.s \
+	@git --no-pager diff --exit-code -- src/lib/lib_table.gen.c src/lib/lib_stubs.gen.s \
 		src/lib/lib_unimpl.c src/lib/lib_compat_table.gen.md \
 		src/usergroup/ug_table.gen.c src/usergroup/ug_stubs.gen.s \
 		src/usergroup/ug_compat_table.gen.md README.md \
