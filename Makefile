@@ -78,6 +78,7 @@ TASK_OBJS   = $(BUILD)/src/task/daemon_main.o \
               $(BUILD)/src/task/netif_mgr.o \
               $(BUILD)/src/task/ipc_dispatch.o \
               $(BUILD)/src/task/ipc_socket.o \
+              $(BUILD)/src/task/ipc_getsockopt.o \
               $(BUILD)/src/task/ipc_tcp.o \
               $(BUILD)/src/task/ipc_dgram.o \
               $(BUILD)/src/task/ipc_msg.o \

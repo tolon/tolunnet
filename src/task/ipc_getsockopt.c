@@ -1,10 +1,14 @@
 /*
  * tolunnet — getsockopt IPC handler with Roadshow semantics (SEC item 7).
  *
- * Included by src/task/ipc_socket.c (Amiga daemon) and tests/host/test_sockopt.c (host test).
+ * Compiled separately in src/task/ipc_getsockopt.c (Amiga daemon) and
+ * included by tests/host/test_sockopt.c (host test).
  * Roadshow semantics: if *optlen < sizeof(int) -> returns -1 with EINVAL, optval untouched;
  * else writes value and updates *optlen.
  */
+
+#include "ipc_socket.h"
+#include "slot_table.h"
 
 #ifndef RAW_FLAGS_HDRINCL
 #define RAW_FLAGS_HDRINCL 0x01

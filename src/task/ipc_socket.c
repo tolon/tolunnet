@@ -730,8 +730,8 @@ int tn_ipc_cmd_setsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     }
 }
 
-/* SEC item 7: getsockopt with Roadshow optlen validation (EINVAL if *optlen < sizeof(int)) */
-#include "ipc_getsockopt.c"
+/* SEC item 7: getsockopt with Roadshow optlen validation (compiled in ipc_getsockopt.c) */
+
 
 
 int tn_ipc_cmd_ioctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
