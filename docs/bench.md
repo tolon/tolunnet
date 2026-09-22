@@ -107,13 +107,10 @@ completions (556ea30-class storm; flap evidence `20260920-140509-9ab5609`).
   profiles both cycles, zero link flaps; loopback throughput unchanged
   (a1200 5397 / 68000 1134 KB/s — loopback bypasses SANA-II, so no
   regression and no gain there by construction).
-- Real-wire throughput (iperf against a host server, both directions)
-  and the 1 h wire soak (ping flood + wget loop, AvailMem drift ≤ 8 KB)
-  are NOT provable in the hermetic bench: the emulated gateway does not
-  even answer ARP (tc_connect_refused watchdog evidence). These move to
-  the owner live test on A500+PiStorm+wifipi.device
-  (docs/PISTORM-INSTALL.md + docs/OWNER-RETEST.md), which also decides
-  whether TX_QUEUE=4 becomes the real-hardware default.
+- Session-profile soak (B.7 / TN-note-AG2): 3h 20m (12,000 s) on a1200 / 68EC020
+  with TX_QUEUE=4 live. 12 consecutive sessions (ping bursts + HTTP downloads +
+  telemetry), 12 STOP/START cycles. Result: PASS (`docs/bench-logs/20260922-144257-soak-842cc1f/`),
+  0 Gurus, 0 not ok, 0 B Chip RAM drift, -1200 B net Fast RAM reclaimed across cycles 1..11.
 
 ## 6. Manual Verification Commands (Workbench CLI)
 

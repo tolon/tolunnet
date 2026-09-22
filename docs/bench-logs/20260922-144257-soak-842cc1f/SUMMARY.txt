@@ -1,0 +1,13 @@
+bench: session-profile soak (3h 20m, 12 sessions)
+profile: a1200 / 68EC020 (TX_QUEUE=4)
+duration_secs: 12000
+cycles_executed: 12
+lwip_initializations: 12
+guru_count: 0
+not_ok_count: 0
+chip_ram_drift_bytes: 0
+fast_ram_baseline: 8146616
+fast_ram_cycle1: 8137080
+fast_ram_cycle11: 8138280
+fast_ram_drift_cycle1_to_cycle11: -1200
+status: PASS
