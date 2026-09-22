@@ -28,8 +28,8 @@
 
 ## Working Tree Build Artifacts
 
-- LhA Release Archive: `build/tolunnet-1.2.0-rc2.lha` — 956,327 bytes, SHA256 `449e351f805ab0f0a953e9943e0674fe871be46967261079c1fc4291b4019cb8`
-- ADF Floppy Image: `build/tolunnet.adf` — stripped-binary staging (732 KB content), SHA256 `7451f1c4eb52771ce7e2d871653c83d36a49c186843ee152d84fb41782082794`
+- LhA Release Archive: `build/tolunnet-1.2.0-rc3.lha` — 942,198 bytes, SHA256 `618cf53d753648dede615a06b2ce3a7f74eb0387989d98c40ac2ff592aa785f2`
+- ADF Floppy Image: `build/tolunnet.adf` — stripped-binary staging, SHA256 `29cf9bd489f813295159d93492d4d84800287adc6e93c26799e3adee9cb6e1a2`
 - Owner target: A500 + PiStorm + WiFiPi — `docs/PISTORM-INSTALL.md`; rc2 retest procedure `docs/OWNER-RETEST.md`
 - **TX_QUEUE default is 0 (synchronous DoIO) in the release** — the TX pool is proven in bench only (TX_QUEUE=4 staged); the owner live test decides the real-hardware default
 - MuForce/Enforcer: **SKIP (tool not supplied)** — no ADF under `E:\amiga\Amigatolon\tools\`, `MUFORCE_ADF` unset; recorded per-run in each bench dir's `muforce.txt`

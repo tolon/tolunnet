@@ -1,8 +1,8 @@
 Short:        Lightweight high-performance TCP/IP stack & bsdsocket.library
-Author:       Tolon
+Author:       İsmail Öztürk
 Uploader:     tolon
 Type:         comm/tcp
-Version:      1.2.0-rc2
+Version:      1.2.0-rc3
 Architecture: m68k-amigaos >= 3.0.0
 
 ==============================================================================

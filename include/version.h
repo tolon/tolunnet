@@ -6,6 +6,6 @@
 #ifndef TOLUNNET_VERSION_H
 #define TOLUNNET_VERSION_H
 
-#define TOLUNNET_VERSION "1.2.0-rc2"
+#define TOLUNNET_VERSION "1.2.0-rc3"
 
 #endif /* TOLUNNET_VERSION_H */
