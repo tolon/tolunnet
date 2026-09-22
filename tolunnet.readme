@@ -25,9 +25,12 @@ Features:
 - Optional pipelined TX pool (TX_QUEUE=) with per-slot requests and buffers
 - Hardware-seeded entropy PRNG (GetSysTime, MAC, memory pools)
 - Fast 68k assembly register trampolines for SANA-II Rev 7 buffer management
-- 22 CLI tools: ping, ifconfig, netstat, wget, curl, hostname, nslookup,
+- 33 CLI tools: ping, ifconfig, netstat, wget, curl, hostname, nslookup,
   whois, traceroute, nc, sntp, telnet, tftp, ftp, arp, iperf, route,
-  ShowNetStatus, GetNetStatus, TolunnetControl, CheckNetConfig, NetShutdown
+  ShowNetStatus, GetNetStatus, TolunnetControl, CheckNetConfig, NetShutdown,
+  AddNetRoute, DeleteNetRoute, AddNetInterface, ConfigureNetInterface,
+  Online, Offline, TolunnetPing, TolunnetGet, TolunnetStatus, TestSocket
+- usergroup.library v1.0 compatibility layer for multi-user tools
 - Native 3D beveled GadTools preferences panel (SYS:Prefs/TolunnetPrefs)
 - First-run GUI wizard (SYS:Prefs/TolunnetSetup): hardware, WiFi, address, test
 - Optional crash diagnostics (DIAG=YES writes RAM:tolunnet-crash.log)
@@ -41,5 +44,4 @@ Requirements:
 
 Installation:
 Double-click on the "Install_Tolunnet" icon or copy binaries in C/ to SYS:C/.
-See README.guide for complete details; A500+PiStorm+WiFiPi owners see
-docs/PISTORM-INSTALL.md and the owner test procedure in docs/OWNER-RETEST.md.
+See README.guide for complete details.

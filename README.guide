@@ -1,6 +1,6 @@
 @database "tolunnet"
 @author "Tolon" "tolunnet TCP/IP Stack User Guide"
-@$VER: tolunnet.guide 1.2.0-rc1 (06.09.2026)
+@$VER: tolunnet.guide 1.2.0-rc3 (23.09.2026)
 
 @node Main "tolunnet TCP/IP Stack User Guide"
 @{b}tolunnet — Modern TCP/IP Stack for AmigaOS 3.0+@{ub}
@@ -309,8 +309,9 @@ YAM, SimpleMail, Wget, Lynx) work transparently using standard BSD socket calls:
 @node License "License & Credits"
 @{b}7. License & Credits@{ub}
 
-* @{b}tolunnet Core & Architecture:@{ub} Copyright (c) 2026 Tolon.
-  Licensed under the MIT License.
+* @{b}tolunnet Core & Architecture:@{ub} Copyright (c) 2026 Tolon (Ismail Ozturk).
+  Licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later).
+  See the accompanying LICENSE file for the full license terms.
 
 * @{b}lwIP TCP/IP Stack:@{ub} Copyright (c) 2001-2023 Swedish Institute of
   Computer Science. Licensed under the BSD License.

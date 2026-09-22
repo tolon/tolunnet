@@ -177,14 +177,15 @@ $(BUILD)/host/%: tests/host/%.c $(HOST_UNITS) tests/host/tn_test.h
 python-checks:
 	python3 scripts/gen_lvo_table.py
 	python3 scripts/gen_usergroup_table.py
+	python3 scripts/gen_pkg_docs.py
 	python3 scripts/verify_icons.py
 	python3 scripts/check_md_links.py
 	sh scripts/check-forbid.sh
 	@git --no-pager diff --exit-code -- src/lib/lib_table.gen.c src/lib/lib_stubs.gen.s \
 		src/lib/lib_unimpl.c src/lib/lib_compat_table.gen.md \
 		src/usergroup/ug_table.gen.c src/usergroup/ug_stubs.gen.s \
-		src/usergroup/ug_compat_table.gen.md README.md \
-		|| (echo "FAIL: generated LVO/compat files are stale or hand-edited —"; \
+		src/usergroup/ug_compat_table.gen.md README.md README.guide tolunnet.readme \
+		|| (echo "FAIL: generated LVO/compat/doc files are stale or hand-edited —"; \
 		    echo "       run generators and commit the result"; \
 		    exit 1)
 
@@ -384,6 +385,7 @@ XDFTOOL ?= $(shell PATH="$$PATH:$$HOME/.local/bin" which xdftool 2>/dev/null || 
 
 package: all
 	@echo "--- Creating Release Directory ---"
+	python3 scripts/gen_pkg_docs.py
 	rm -rf $(BUILD)/release
 	mkdir -p $(PACKAGE_DIR)/C
 	cp $(TOLUNNET_BIN) $(PACKAGE_DIR)/C/
