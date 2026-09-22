@@ -587,8 +587,24 @@ TN_TEST(checknetconfig_vocabulary)
     TN_ASSERT_EQ(tn_config_value_class("UNIT"), 2);
     TN_ASSERT_EQ(tn_config_value_class("DNS_RETRIES"), 2);
     TN_ASSERT_EQ(tn_config_value_class("DHCP"), 3);
+    TN_ASSERT_EQ(tn_config_value_class("AUTOIP"), 3);
+    TN_ASSERT_EQ(tn_config_value_class("MDNS"), 3);
     TN_ASSERT_EQ(tn_config_value_class("HOSTNAME"), 0);  /* free string */
     TN_ASSERT_EQ(tn_config_value_class("BOGUS"), 0);
+    {
+        TnPrefs p;
+        tn_prefs_default(&p);
+        TN_ASSERT_TRUE(p.autoip);
+        TN_ASSERT_TRUE(p.mdns);
+        tn_config_parse_line(&p, "AUTOIP", "NO");
+        tn_config_parse_line(&p, "MDNS", "0");
+        TN_ASSERT_TRUE(!p.autoip);
+        TN_ASSERT_TRUE(!p.mdns);
+        tn_config_parse_line(&p, "AUTOIP", "YES");
+        tn_config_parse_line(&p, "MDNS", "ON");
+        TN_ASSERT_TRUE(p.autoip);
+        TN_ASSERT_TRUE(p.mdns);
+    }
 }
 
 int main(void)

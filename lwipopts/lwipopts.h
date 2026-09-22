@@ -39,6 +39,24 @@
 
 /* TNET-109: S2_ONEVENT link tracking → netif_set_link_up/down plumbing */
 #define LWIP_NETIF_LINK_CALLBACK 1
+#define LWIP_NETIF_STATUS_CALLBACK 1
+#define LWIP_NETIF_EXT_STATUS_CALLBACK 1
+
+/* --- AutoIP (RFC 3927 Link-Local) & Fast DHCP Cooperation --- */
+#define LWIP_AUTOIP                   1
+#define LWIP_DHCP_AUTOIP_COOP          1
+#define LWIP_DHCP_AUTOIP_COOP_TRIES    2   /* Fast 3-4 s fallback to 169.254.x.x */
+
+#if LWIP_AUTOIP
+#ifndef LWIP_AUTOIP_INTERNAL
+#define autoip_start(netif) tn_autoip_start(netif)
+#endif
+#endif
+
+/* --- mDNS / Zeroconf Multicast DNS Responder --- */
+#define LWIP_NUM_NETIF_CLIENT_DATA     1
+#define LWIP_MDNS_RESPONDER            1
+#define MDNS_MAX_SERVICES              2
 
 /* --- IPv4 only --- */
 #define LWIP_IPV6            0
@@ -55,7 +73,7 @@
 #define MEMP_NUM_TCP_SEG     64
 #define DNS_MAX_SERVERS      2
 #define DNS_TABLE_SIZE       8
-#define LWIP_DHCP_PROVIDE_DNS_SERVERS 2
+#define LWIP_DHCP_MAX_DNS_SERVERS 2
 #define SO_REUSE             1
 
 /* TNET-085 (v3 contract §3.5): two pad bytes BEFORE the ethernet header so

@@ -54,7 +54,10 @@ LWIP_CORE_SRCS = \
 	vendor/lwip/src/core/ipv4/ip4.c \
 	vendor/lwip/src/core/ipv4/ip4_addr.c \
 	vendor/lwip/src/core/ipv4/ip4_frag.c \
-	vendor/lwip/src/netif/ethernet.c
+	vendor/lwip/src/netif/ethernet.c \
+	vendor/lwip/src/apps/mdns/mdns.c \
+	vendor/lwip/src/apps/mdns/mdns_domain.c \
+	vendor/lwip/src/apps/mdns/mdns_out.c
 
 LWIP_OBJS = $(patsubst %.c,$(BUILD)/%.o,$(LWIP_CORE_SRCS))
 
@@ -201,6 +204,8 @@ $(BUILD)/%.o: %.c
 $(BUILD)/%.o: %.s
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/vendor/lwip/src/core/ipv4/autoip.o: CFLAGS += -DLWIP_AUTOIP_INTERNAL=1
 
 # Header dependency files (-MMD -MP): every object rebuilds when any header it
 # includes changes. This is the structural fix for the TNET-096 / TNET-108

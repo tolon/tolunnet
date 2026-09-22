@@ -22,6 +22,9 @@
 #include <lwip/timeouts.h>
 #include <lwip/ip4_addr.h>
 #include <lwip/etharp.h>
+#include <lwip/autoip.h>
+#include <lwip/apps/mdns.h>
+#include <lwip/apps/mdns_priv.h>
 #include "route.h"
 #include <netif/ethernet.h>
 
@@ -115,6 +118,66 @@ static int tn_reap_dead_clients(TnDaemon *d)
     return reaped;
 }
 
+/* Real lwIP autoip_start declared without macro expansion */
+err_t (autoip_start)(struct netif *netif);
+
+err_t tn_autoip_start(struct netif *netif)
+{
+    if (!g_daemon.prefs.autoip) {
+        return ERR_VAL;
+    }
+    return (autoip_start)(netif);
+}
+
+static void tn_mdns_name_result_cb(struct netif *netif, u8_t result, s8_t slot)
+{
+    (void)netif;
+    (void)slot;
+    if (result == MDNS_PROBING_SUCCESSFUL) {
+        tn_logf(TN_LOG_BASIC, "tolunnet: mDNS host '%s.local' registered\n",
+                g_daemon.prefs.hostname[0] != '\0' ? g_daemon.prefs.hostname : "amiga");
+    } else {
+        tn_logf(TN_LOG_BASIC, "tolunnet: mDNS name conflict for '%s.local'\n",
+                g_daemon.prefs.hostname[0] != '\0' ? g_daemon.prefs.hostname : "amiga");
+    }
+}
+
+static void tn_mdns_workstation_txt(struct mdns_service *service, void *txt_userdata)
+{
+    (void)txt_userdata;
+    mdns_resp_add_service_txtitem(service, "model=Amiga", 11);
+    mdns_resp_add_service_txtitem(service, "os=AmigaOS", 10);
+    mdns_resp_add_service_txtitem(service, "stack=tolunnet", 14);
+}
+
+static void tn_netif_status_callback(struct netif *netif)
+{
+    if (g_daemon.prefs.mdns && mdns_resp_netif_active(netif)) {
+        mdns_resp_netif_settings_changed(netif);
+    }
+}
+
+static void tn_mdns_cleanup(TnNetif *prim)
+{
+    if (g_daemon.prefs.mdns && mdns_resp_netif_active(&prim->lwip_if)) {
+        struct udp_pcb *mpcb;
+        tn_log(TN_LOG_BASIC, "tolunnet: stopping mDNS responder...\n");
+        mdns_resp_remove_netif(&prim->lwip_if);
+        mpcb = get_mdns_pcb();
+        if (mpcb != NULL) {
+            udp_remove(mpcb);
+        }
+    }
+}
+
+static void tn_autoip_cleanup(TnNetif *prim)
+{
+    if (autoip_supplied_address(&prim->lwip_if)) {
+        tn_log(TN_LOG_BASIC, "tolunnet: stopping AutoIP...\n");
+        autoip_stop(&prim->lwip_if);
+    }
+}
+
 static int tn_task_real_main(int argc, char *argv[])
 {
     struct Library *DOSBase;
@@ -127,6 +190,7 @@ static int tn_task_real_main(int argc, char *argv[])
     ULONG           s2_sig, event_sig, timer_sig, ipc_sig, ctrl_c_sig, wait_mask;
     BOOL            use_dhcp = TRUE;
     BOOL            dhcp_logged = FALSE;
+    BOOL            autoip_logged = FALSE;
     ULONG           tick_count = 0;
     int             i;
     TnNetif        *prim = tn_netif_primary(&g_daemon);
@@ -314,6 +378,24 @@ static int tn_task_real_main(int argc, char *argv[])
     netif_set_default(&prim->lwip_if);
     netif_set_up(&prim->lwip_if);
 
+    netif_set_status_callback(&prim->lwip_if, tn_netif_status_callback);
+
+    if (g_daemon.prefs.mdns) {
+        const char *hname = g_daemon.prefs.hostname[0] != '\0' ? g_daemon.prefs.hostname : "amiga";
+        mdns_resp_register_name_result_cb(tn_mdns_name_result_cb);
+        mdns_resp_init();
+        {
+            struct udp_pcb *mpcb = get_mdns_pcb();
+            if (mpcb != NULL) {
+                ip_set_option(mpcb, SOF_REUSEADDR);
+            }
+        }
+        mdns_resp_add_netif(&prim->lwip_if, hname);
+        mdns_resp_add_service(&prim->lwip_if, hname, "_workstation", DNSSD_PROTO_TCP, 9, tn_mdns_workstation_txt, NULL);
+        mdns_resp_announce(&prim->lwip_if);
+        tn_logf(TN_LOG_BASIC, "tolunnet: mDNS responder active for '%s.local'\n", hname);
+    }
+
     /* 6. Arm async SANA-II receive pump */
     /* TNET-106 §C: TX pool — separate requests, pipelined SendIO.
      * TX_QUEUE=0 keeps the synchronous path; alloc failure also falls
@@ -325,6 +407,7 @@ static int tn_task_real_main(int argc, char *argv[])
     }
     if (tn_s2_arm_reads(&prim->s2if) != TN_S2_OK) {
         tn_log(TN_LOG_BASIC, "tolunnet: tn_s2_arm_reads failed\n");
+        tn_mdns_cleanup(prim);
         netif_set_down(&prim->lwip_if);
         netif_remove(&prim->lwip_if);
         tn_s2_offline_close(&prim->s2if);
@@ -371,6 +454,7 @@ static int tn_task_real_main(int argc, char *argv[])
     g_daemon.ipc_port = CreateMsgPort();
     if (g_daemon.ipc_port == NULL) {
         tn_log(TN_LOG_BASIC, "tolunnet: failed to create IPC port\n");
+        tn_mdns_cleanup(prim);
         netif_set_down(&prim->lwip_if);
         netif_remove(&prim->lwip_if);
         tn_s2_offline_close(&prim->s2if);
@@ -393,6 +477,7 @@ static int tn_task_real_main(int argc, char *argv[])
         tn_log(TN_LOG_BASIC, "tolunnet: failed to create bsdsocket.library\n");
         RemPort(g_daemon.ipc_port);
         DeleteMsgPort(g_daemon.ipc_port);
+        tn_mdns_cleanup(prim);
         netif_set_down(&prim->lwip_if);
         netif_remove(&prim->lwip_if);
         tn_s2_offline_close(&prim->s2if);
@@ -486,7 +571,7 @@ static int tn_task_real_main(int argc, char *argv[])
             tn_s2_rearm_reads(&prim->s2if);
             tn_s2_tx_drain(&prim->s2if); /* TNET-106: reap TX completions */
 
-            /* Check DHCP lease progress */
+            /* Check DHCP / AutoIP lease progress */
             if (use_dhcp && !dhcp_logged && dhcp_supplied_address(&prim->lwip_if)) {
                 char str_ip[16], str_nm[16], str_gw[16];
                 ip_to_str(str_ip, netif_ip4_addr(&prim->lwip_if));
@@ -494,13 +579,37 @@ static int tn_task_real_main(int argc, char *argv[])
                 ip_to_str(str_gw, netif_ip4_gw(&prim->lwip_if));
 
                 tn_log(TN_LOG_BASIC, "----------------------------------------\n");
-                tn_logf(TN_LOG_BASIC, "tolunnet: DHCP lease obtained!\n");
+                if (autoip_logged) {
+                    tn_logf(TN_LOG_BASIC, "tolunnet: DHCP lease obtained (superseding AutoIP)!\n");
+                } else {
+                    tn_logf(TN_LOG_BASIC, "tolunnet: DHCP lease obtained!\n");
+                }
                 tn_logf(TN_LOG_BASIC, "  IP Address : %s\n", str_ip);
                 tn_logf(TN_LOG_BASIC, "  Netmask    : %s\n", str_nm);
                 tn_logf(TN_LOG_BASIC, "  Gateway    : %s\n", str_gw);
                 tn_log(TN_LOG_BASIC, "----------------------------------------\n");
 
                 dhcp_logged = TRUE;
+                autoip_logged = FALSE;
+            } else if (use_dhcp && !autoip_logged && !dhcp_logged && autoip_supplied_address(&prim->lwip_if)) {
+                char str_ip[16], str_nm[16];
+                ip_to_str(str_ip, netif_ip4_addr(&prim->lwip_if));
+                ip_to_str(str_nm, netif_ip4_netmask(&prim->lwip_if));
+
+                tn_log(TN_LOG_BASIC, "----------------------------------------\n");
+                tn_logf(TN_LOG_BASIC, "tolunnet: AutoIP address assigned (RFC 3927)!\n");
+                tn_logf(TN_LOG_BASIC, "  IP Address : %s (Link-Local)\n", str_ip);
+                tn_logf(TN_LOG_BASIC, "  Netmask    : %s\n", str_nm);
+                tn_log(TN_LOG_BASIC, "----------------------------------------\n");
+
+                autoip_logged = TRUE;
+            }
+
+            if (dhcp_logged && !dhcp_supplied_address(&prim->lwip_if)) {
+                dhcp_logged = FALSE;
+            }
+            if (autoip_logged && !autoip_supplied_address(&prim->lwip_if)) {
+                autoip_logged = FALSE;
             }
 
             /* Re-arm timer */
@@ -523,6 +632,9 @@ static int tn_task_real_main(int argc, char *argv[])
      * to stop message, ensuring device is fully closed and free for restart. */
     tn_log(TN_LOG_BASIC, "tolunnet: closing SANA-II device...\n");
     tn_s2_offline_close(&prim->s2if);
+
+    tn_mdns_cleanup(prim);
+    tn_autoip_cleanup(prim);
 
     if (use_dhcp) {
         tn_log(TN_LOG_BASIC, "tolunnet: stopping DHCP client...\n");
