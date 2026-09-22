@@ -440,3 +440,8 @@ adf:
 
 clean:
 	rm -rf $(BUILD)
+
+distclean: clean
+	rm -rf .testboot .zcode _shots
+	rm -f .capture* .dbg-* .findsum* .hunt* .postkey* .tap .uae-* .wsl-* .zoom*
+
