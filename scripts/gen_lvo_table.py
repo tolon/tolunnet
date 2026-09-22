@@ -194,6 +194,8 @@ def latest_bench_green_tests(root_dir):
         return set(), None
     newest = None
     for d in sorted(os.listdir(base)):
+        if "-dirty" in d:
+            continue
         log = os.path.join(base, d, "68000", "conformance.log")
         if not os.path.isfile(log):
             continue

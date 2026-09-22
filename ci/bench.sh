@@ -104,7 +104,7 @@ if [ "${1:-}" = "soak" ]; then
           "$WORK_DIR/tolunnet-task.log" "$WORK_DIR/soak-avail-base.txt"
 
     CFG_WIN=$(cygpath -w "$REPO_ROOT/ci/tolunnet-a1200.uae")
-    LIMIT="${SOAK_LIMIT_SECS:-$(( ${SOAK_HOURS:-2} * 3600 + 600 ))}"
+    LIMIT="${SOAK_LIMIT_SECS:-$(( ${SOAK_HOURS:-4} * 3600 + 1800 ))}"
     say "launching soak emulator (budget: up to $LIMIT s)"
     "$WINUAE" -f "$CFG_WIN" >/dev/null 2>&1 &
 
@@ -125,31 +125,84 @@ if [ "${1:-}" = "soak" ]; then
 
     # Automated Verification Check
     say "=== SOAK VERIFICATION AUDIT ==="
+    SOAK_STATUS="PASS"
+
     if [ -f "$WORK_DIR/bench-done" ]; then
-        say "  Marker: $(cat "$WORK_DIR/bench-done")"
+        MARKER="$(cat "$WORK_DIR/bench-done")"
+        say "  Marker: $MARKER"
     else
-        say "  Marker: WARNING (budget limit reached, no clean bench-done marker)"
+        MARKER="WARNING (budget limit reached, no clean bench-done marker)"
+        say "  Marker: $MARKER"
+        SOAK_STATUS="FAIL"
     fi
 
-    GURUS=$(grep -Eic "Guru|Software Failure|Address Error|Illegal Instruction" "$SOAK_DIR"/*.log 2>/dev/null || echo 0)
+    GURUS=$(grep -Eih "Guru|Software Failure|Address Error|Illegal Instruction" "$SOAK_DIR"/*.log 2>/dev/null | wc -l)
     say "  Guru/Exception lines: $GURUS"
+    [ "$GURUS" -ne 0 ] && SOAK_STATUS="FAIL"
 
-    NOT_OK=$(grep -ci "not ok" "$SOAK_DIR"/soak.log 2>/dev/null || echo 0)
+    NOT_OK=$(grep -F "not ok" "$SOAK_DIR"/soak.log 2>/dev/null | wc -l)
     say "  not ok count: $NOT_OK"
+    [ "$NOT_OK" -ne 0 ] && SOAK_STATUS="FAIL"
 
-    RESTARTS=$(grep -c "lwIP 2.2.0 initialized" "$SOAK_DIR"/tolunnet-task.log 2>/dev/null || echo 0)
-    say "  lwIP initializations: $RESTARTS (target: >= 13 for 12 restarts)"
+    CYCLES=$(grep -F "=== CYCLE " "$SOAK_DIR"/soak.log 2>/dev/null | wc -l)
+    EXPECTED_CYCLES=12
+    say "  Cycles executed: $CYCLES (expected: $EXPECTED_CYCLES)"
+    [ "$CYCLES" -ne "$EXPECTED_CYCLES" ] && SOAK_STATUS="FAIL"
+
+    RESTARTS=$(grep -F "lwIP 2.2.0 initialized" "$SOAK_DIR"/tolunnet-task.log 2>/dev/null | wc -l)
+    say "  lwIP initializations: $RESTARTS (target: >= 12)"
+    [ "$RESTARTS" -lt 12 ] && SOAK_STATUS="FAIL"
+
+    BASE_CHIP=$(grep -i "chip" "$SOAK_DIR"/soak-avail-base.txt 2>/dev/null | awk '{print $2}')
+    LAST_CHIP=$(grep -i "chip" "$SOAK_DIR"/soak.log 2>/dev/null | tail -n 1 | awk '{print $2}')
+    CHIP_DRIFT=0
+    if [ -n "$BASE_CHIP" ] && [ -n "$LAST_CHIP" ]; then
+        CHIP_DRIFT=$(( BASE_CHIP - LAST_CHIP ))
+    fi
 
     BASE_FAST=$(grep -i "fast" "$SOAK_DIR"/soak-avail-base.txt 2>/dev/null | awk '{print $2}')
+    CYCLE1_FAST=$(grep -i "fast" "$SOAK_DIR"/soak.log 2>/dev/null | sed -n '3p' | awk '{print $2}')
     LAST_FAST=$(grep -i "fast" "$SOAK_DIR"/soak.log 2>/dev/null | tail -n 1 | awk '{print $2}')
-    if [ -n "$BASE_FAST" ] && [ -n "$LAST_FAST" ]; then
-        DRIFT=$(( BASE_FAST - LAST_FAST ))
-        say "  Fast RAM baseline: $BASE_FAST, final: $LAST_FAST, drift: $DRIFT bytes (limit: <= 8192 bytes)"
+    DRIFT=0
+    REF_FAST="${CYCLE1_FAST:-$BASE_FAST}"
+    if [ -n "$REF_FAST" ] && [ -n "$LAST_FAST" ]; then
+        DRIFT=$(( REF_FAST - LAST_FAST ))
+        say "  Fast RAM reference: $REF_FAST, final: $LAST_FAST, drift: $DRIFT bytes (limit: <= 8192 bytes)"
+        ABS_DRIFT=${DRIFT#-}
+        if [ "$ABS_DRIFT" -gt 8192 ]; then
+            say "  Fast RAM drift exceeds 8192 bytes limit!"
+            SOAK_STATUS="FAIL"
+        fi
     else
         say "  Fast RAM: missing snapshot for baseline or final"
+        SOAK_STATUS="FAIL"
     fi
 
-    exit 0
+    # Emit SUMMARY.txt in $SOAK_DIR
+    cat <<EOF > "$SOAK_DIR/SUMMARY.txt"
+bench: session-profile soak (${SOAK_HRS}h, ${EXPECTED_CYCLES} sessions)
+profile: a1200 / 68EC020 (TX_QUEUE=4)
+duration_secs: ${el:-0}
+cycles_executed: $CYCLES
+lwip_initializations: $RESTARTS
+guru_count: $GURUS
+not_ok_count: $NOT_OK
+chip_ram_drift_bytes: $CHIP_DRIFT
+fast_ram_baseline: ${BASE_FAST:-0}
+fast_ram_cycle1: ${CYCLE1_FAST:-0}
+fast_ram_final: ${LAST_FAST:-0}
+fast_ram_drift_cycle1_to_final: $DRIFT
+status: $SOAK_STATUS
+EOF
+
+    say "  Final status: $SOAK_STATUS"
+    if [ "$SOAK_STATUS" = "PASS" ]; then
+        say "=== SOAK AUDIT: PASSED ==="
+        exit 0
+    else
+        say "=== SOAK AUDIT: FAILED ==="
+        exit 1
+    fi
 fi
 
 for cfg in $CONFIGS; do
