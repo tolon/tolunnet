@@ -30,6 +30,9 @@ Classic AmigaOS has long lacked an actively maintained, production-grade, 100% o
 - **SANA-II Rev 7 Network Driver Interface:** Standard register convention trampolines (`A0`/`A1`/`D0`) with BufferManagement, multi-request DMA read pumps, and support for all standard SANA-II Ethernet/Wireless drivers (`a2065.device`, `ethernet.device`, `wifipi.device`, `cnet.device`, `ariadne.device`, etc.).
 - **Hardware-Seeded Entropy:** Cryptographically hardened Pseudo-Random Number Generator (PRNG) pool seeded at boot from `GetSysTime` (microsecond resolution), network hardware MAC address, and memory allocator pool addresses.
 - **Unified Text Configuration:** `DEVS:tolunnet.config` (`KEY=VALUE`) provides a persistent, human-editable source of truth (`DEVICE`, `UNIT`, `DHCP`, `IP`, `NETMASK`, `GATEWAY`, `DNS`, `DNS2`, `HOSTNAME`, `MTU`, `DEBUG`, `TX_QUEUE`) with dynamic file modification detection.
+- **`usergroup.library` Universal Runtime:** Full-featured 43-vector resident Amiga shared library (`LIBS:usergroup.library`) for user/group identity, credential management (`getuid`, `geteuid`, `getpwuid`, `getpwnam`, `getgrnam`, `getgroups`), and traditional crypt/salt routines. Provides an in-memory database with standard default accounts (`root`, `amiga`, `nobody`) and disk fallback (`DEVS:passwd`), fully compliant with Roadshow and AmiSSL requirements.
+- **AutoIP (RFC 3927 Link-Local Fallback):** Automatic link-local IPv4 allocation (`169.254.x.x` / `255.255.0.0`) with Address Conflict Detection (ACD) and fast 3–4 second DHCP cooperation. Operates seamlessly in ad-hoc direct crossover and unmanaged switch environments.
+- **Zeroconf / mDNS Responder & LAN Discovery:** RFC 6762 multicast DNS responder answering queries for `<hostname>.local` on UDP port 5353 (`224.0.0.251`). Publishes `_workstation._tcp` DNS-SD service with hardware/OS metadata (`model=Amiga`, `os=AmigaOS`, `stack=tolunnet`), making the Amiga immediately discoverable and visible in modern network browsers (macOS Finder, Windows Network Explorer, Linux Avahi).
 - **Metric-Driven Workbench GUI:**
   - `TolunnetSetup`: Metric-driven wizard that automatically scales to NTSC (640×200), PAL (640×256), and RTG high-resolution displays (Picasso96/uaegfx 800×600, 1024×768, 1920×1080) based on font metrics (`TextLength()`, `Font->tf_YSize`).
   - `TolunnetPrefs`: Full-featured Workbench Preferences tool with non-blocking Start/Stop daemon controls, ToolTypes (`TOOLPRI`, `PUBSCREEN`), and WBStartup support.
@@ -64,6 +67,7 @@ All network utilities are located in `SYS:C/` and `SYS:Prefs/`:
 | **`whois`** | `SYS:C/whois` | WHOIS query utility for domain and IP registry lookups |
 | **`CheckNetConfig`** | `SYS:C/CheckNetConfig` | Sanity checking tool for network configuration and SANA-II device availability |
 | **`NetShutdown`** | `SYS:C/NetShutdown` | Orderly multi-client network teardown utility |
+| **`usergroup.library`** | `LIBS:usergroup.library` | Standard resident shared library providing POSIX credentials, identity, and crypt services (43 LVO vectors) |
 
 ---
 
@@ -74,9 +78,10 @@ The stability of an AmigaOS network stack is paramount: on an operating system w
 To eliminate these failure classes, **tolunnet** is subjected to a multi-tiered, automated verification pipeline:
 
 ### 1. Host Unit Test Suite (Native & Sanitized)
-Before touching any 68k emulator or real hardware, 19 standalone test suites are compiled with GCC/Clang on the development host under AddressSanitizer (ASan) and UndefinedBehaviorSanitizer (UBSan):
+Before touching any 68k emulator or real hardware, 20 standalone test suites are compiled with GCC/Clang on the development host under AddressSanitizer (ASan) and UndefinedBehaviorSanitizer (UBSan):
 - `test_inet_addr` — IP address parsing and format conversion.
 - `test_config` — Text configuration parser, key validation, and default fallback.
+- `test_usergroup` — POSIX user and group database, context credentials, and crypt routines.
 - `test_sbtc` — TagList validation across all 69 Roadshow/AmiTCP tags.
 - `test_fdset` — Descriptor set bitmask operations and bounds checking.
 - `test_lvo_table` — Complete 139-vector SFD jump table offset and signature verification.
