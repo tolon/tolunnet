@@ -63,3 +63,14 @@ Yukarıdaki DIAG prosedürü aynen geçerli (DIAG=YES). Ek olarak bu sürümde
    30 sn'de bir `wget` döngüsü; başta ve sonda `AvailMem` değerleri
    (fark ≤ 8 KB olmalı).
 7. Çökme olursa: `RAM:tolunnet-crash.log` + `RAM:tolunnet-diag.log`.
+8. **PiStorm RTG HD Ekranında TolunnetSetup Doğrulaması (TN-note-AG4):**
+   Bench ortamındaki HDF Picasso96 içermediğinden (`SKIP (P96 not in bench image)`),
+   metrik tabanlı sihirbaz yerleşiminin HD çözünürlükte (800×600, 1024×768 veya üzeri)
+   ve sistem yazı tipinde düzgün ölçeklendiğini doğrulamak için şu 5 sayfanın fotoğrafını çekip gönderin:
+   - Sayfa 1 (Replace Stacks): Liste ve onay kutusu
+   - Sayfa 2 (Hardware): Arayüz seçimi ve butonlar
+   - Sayfa 3 (WiFi Setup): Ağ listesi, SSID, Passphrase ve Show kutusu
+   - Sayfa 4 (IP Address): 2 sütunlu IP/Mask/GW/DNS/MTU/Host/Domain alanları ve Gelişmiş butonu (hem DHCP hem Static modunda)
+   - Sayfa 5 (Test & Finish): 5 maddelik denetim listesi, butonlar ve onay kutuları
+   (Her sayfada pencerenin ekranı ortaladığı, taşma olmadığı ve tüm kontrollerin okunabilir olduğu doğrulanacaktır.)
+

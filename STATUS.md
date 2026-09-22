@@ -31,7 +31,8 @@
 - ADF Floppy Image: `build/tolunnet.adf` — stripped-binary staging (732 KB content), SHA256 `7451f1c4eb52771ce7e2d871653c83d36a49c186843ee152d84fb41782082794`
 - Owner target: A500 + PiStorm + WiFiPi — `docs/PISTORM-INSTALL.md`; rc2 retest procedure `docs/OWNER-RETEST.md`
 - **TX_QUEUE default is 0 (synchronous DoIO) in the release** — the TX pool is proven in bench only (TX_QUEUE=4 staged); the owner live test decides the real-hardware default
-- MuForce/Enforcer: **SKIP (tool not supplied)** — no ADF under `E:miga\Amigatolon	ools\`, `MUFORCE_ADF` unset; recorded per-run in each bench dir's `muforce.txt`
+- MuForce/Enforcer: **SKIP (tool not supplied)** — no ADF under `E:\amiga\Amigatolon\tools\`, `MUFORCE_ADF` unset; recorded per-run in each bench dir's `muforce.txt`
+- RTG (Picasso96/uaegfx) Profile: **SKIP (P96 not in bench image)** — pristine Workbench 3.0 HDF contains no P96/uaegfx drivers; metric-driven layout verified on PAL 640×256 and NTSC 640×200; owner tests on PiStorm HD screen (procedure in `docs/OWNER-RETEST.md`)
 
 ---
 

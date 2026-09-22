@@ -325,9 +325,12 @@ static void derive_metrics(struct Screen *scr)
     if (g_font_spec_set) {
         g_font = OpenDiskFont(&g_gui_font);
     } else {
-        /* default: follow the screen font (TNET-110); it is already open */
+        /* default: follow the screen font (TNET-110 / TN-note-AG4); do not force topaz */
         if (scr->Font && scr->Font->ta_Name) {
             g_font = OpenFont(scr->Font);
+        }
+        if (g_font == NULL && GfxBase && GfxBase->DefaultFont) {
+            g_font = GfxBase->DefaultFont;
         }
     }
     if (g_font == NULL) {
@@ -337,10 +340,12 @@ static void derive_metrics(struct Screen *scr)
         g_gui_font.ta_Flags = FPF_ROMFONT;
         g_font = OpenFont(&g_gui_font);
     }
-    /* if even topaz/8 failed, metrics stay at the 8x8 default and the
-     * window font is used for rendering */
 
     if (g_font != NULL) {
+        g_gui_font.ta_Name  = (STRPTR)g_font->tf_Message.mn_Node.ln_Name;
+        g_gui_font.ta_YSize = g_font->tf_YSize;
+        g_gui_font.ta_Style = g_font->tf_Style;
+        g_gui_font.ta_Flags = g_font->tf_Flags;
         g_m.fx = g_font->tf_XSize;
         g_m.fy = g_font->tf_YSize;
     } else {
@@ -352,35 +357,54 @@ static void derive_metrics(struct Screen *scr)
     g_m.pitch = g_m.fy + 6;
     if (g_m.compact && g_m.pitch < 14) g_m.pitch = 14;
 
-    g_m.win_w = 632;
-    g_m.win_h = g_m.compact ? 176 : 240;
-    if (g_m.win_h > scr->Height - 4) g_m.win_h = scr->Height - 4;
-    if (g_m.win_w > scr->Width - 4) g_m.win_w = scr->Width - 4;
-
-    g_m.rail_w = 110;
-    g_m.pane_l = g_m.rail_w + 8;
-    g_m.pane_w = g_m.win_w - g_m.pane_l - 8;
-    g_m.btn_h = g_m.fy + 6;
-
-    /* chrome heights approximated from the window border data */
+    /* Rule 1: step column width = longest step label + 2 chars */
     {
-        LONG border_t = scr->WBorTop + scr->Font->ta_YSize + 1;
-        LONG border_b = scr->WBorBottom + 2;
-        LONG title_h = border_t + 1;
-        g_m.pane_t = title_h + (g_m.compact ? 3 : 6);
-        g_m.btn_t = g_m.win_h - border_b - g_m.btn_h - 3;
-        g_m.status_t = g_m.btn_t - g_m.fy - 6;
-        g_m.pane_h = g_m.status_t - g_m.pane_t - 4;
+        LONG max_step_chars = 0;
+        int p;
+        for (p = 0; g_page_names[p] != NULL; p++) {
+            LONG len = (LONG)strlen((const char *)g_page_names[p]);
+            if (len > max_step_chars) max_step_chars = len;
+        }
+        g_m.rail_w = (max_step_chars + 2) * g_m.fx;
     }
 
+    g_m.btn_h = g_m.fy + 6;
+
+    /* Rule 2: Window size = min(screen visible size, ideal)
+     * where ideal = what font needs for tallest page (5) with 2-column grid */
+    LONG border_t = scr->WBorTop + (scr->Font ? scr->Font->ta_YSize : g_m.fy) + 1;
+    LONG border_b = scr->WBorBottom + 2;
+    LONG title_h  = border_t + 1;
+
+    LONG ideal_w = g_m.rail_w + 8 + 14 + (60 * g_m.fx) + 14 + 8;
+    LONG ideal_h = title_h + (g_m.compact ? 3 : 6) + 4 + g_m.pitch + (5 * g_m.pitch + 6) +
+                   (g_m.pitch / 2) + (g_m.fy + 6) + 4 + 4 + (g_m.fy + 6) + 3 + g_m.btn_h + border_b + 3;
+
+    LONG vis_w = scr->Width - 8;
+    LONG vis_h = scr->Height - 4;
+
+    g_m.win_w = ideal_w;
+    if (g_m.win_w > vis_w) g_m.win_w = vis_w;
+    if (g_m.win_w < 520 && vis_w >= 520) g_m.win_w = 520;
+
+    g_m.win_h = ideal_h;
+    if (g_m.win_h > vis_h) g_m.win_h = vis_h;
+    if (g_m.compact && g_m.win_h > 176) g_m.win_h = 176;
+
+    g_m.pane_l   = g_m.rail_w + 8;
+    g_m.pane_w   = g_m.win_w - g_m.pane_l - 8;
+    g_m.pane_t   = title_h + (g_m.compact ? 3 : 6);
+    g_m.btn_t    = g_m.win_h - border_b - g_m.btn_h - 3;
+    g_m.status_t = g_m.btn_t - g_m.fy - 6;
+    g_m.pane_h   = g_m.status_t - g_m.pane_t - 4;
 
     if (g_dri) {
-        g_m.pen_text = g_dri->dri_Pens[TEXTPEN];
-        g_m.pen_fill = g_dri->dri_Pens[FILLPEN];
+        g_m.pen_text     = g_dri->dri_Pens[TEXTPEN];
+        g_m.pen_fill     = g_dri->dri_Pens[FILLPEN];
         g_m.pen_filltext = g_dri->dri_Pens[FILLTEXTPEN];
-        g_m.pen_bg = g_dri->dri_Pens[BACKGROUNDPEN];
-        g_m.pen_shine = g_dri->dri_Pens[SHINEPEN];
-        g_m.pen_shadow = g_dri->dri_Pens[SHADOWPEN];
+        g_m.pen_bg       = g_dri->dri_Pens[BACKGROUNDPEN];
+        g_m.pen_shine    = g_dri->dri_Pens[SHINEPEN];
+        g_m.pen_shadow   = g_dri->dri_Pens[SHADOWPEN];
     }
 }
 
@@ -415,22 +439,23 @@ static void render_rail(void)
         LONG y = g_m.pane_t + 4 + i * g_m.pitch;
         const char *name = (const char *)g_page_names[i];
         LONG len = (LONG)strlen(name);
+        LONG mx = 6 + g_m.fx / 2;
 
         if (i == g_ws.current_page) {
             SetAPen(rp, g_m.pen_fill);
-            RectFill(rp, 6, y - 2, g_m.rail_w - 8, y + g_m.fy);
+            RectFill(rp, 4, y - 2, g_m.rail_w - 4, y + g_m.fy);
             SetAPen(rp, g_m.pen_filltext);
-            Move(rp, 10, y + g_m.fy - 1);
+            Move(rp, mx, y + g_m.fy - 1);
             Text(rp, (CONST_STRPTR)name, (WORD)len);
         } else {
             if (i < g_ws.current_page) {
                 /* done: filled marker + text */
                 SetAPen(rp, g_m.pen_text);
-                RectFill(rp, 10, y + g_m.fy - 3, 15, y + g_m.fy - 1);
+                RectFill(rp, mx, y + g_m.fy - 3, mx + g_m.fx / 2 + 1, y + g_m.fy - 1);
             } else {
                 SetAPen(rp, g_m.pen_text);
             }
-            Move(rp, 20, y + g_m.fy - 1);
+            Move(rp, mx + g_m.fx + 2, y + g_m.fy - 1);
             Text(rp, (CONST_STRPTR)name, (WORD)len);
         }
     }
@@ -1078,12 +1103,13 @@ static void draw_page_content(void)
     if (!g_win) return;
     if (g_ws.current_page != WIZARD_PAGE_ADDRESS) return;
 
-    /* Step SEC item 2: <= 60 chars per line rule; only paint in DHCP mode */
+    /* Step SEC item 2 / TN-note-AG4: DHCP note starts one pitch below Mode gadget bottom edge */
     if (g_ws.ip_mode == 0) {
         struct RastPort *rp = g_win->RPort;
         const char *l1 = "DHCP obtains IP address, netmask, gateway";
         const char *l2 = "and DNS servers automatically.";
-        LONG note_y = g_m.pane_t + 4 + g_m.pitch + g_m.pitch;
+        LONG ct = g_m.pane_t + 4 + g_m.pitch;
+        LONG note_y = ct + g_m.btn_h + g_m.pitch;
 
         SetAPen(rp, g_m.pen_bg);
         RectFill(rp, g_m.pane_l + 14, note_y - g_m.fy,
@@ -1170,7 +1196,7 @@ static void rebuild_page_gadgets(void)
         g_gad_listview = prev;
 
         ng.ng_LeftEdge   = cl;
-        ng.ng_TopEdge    = ct + g_m.pitch * rows + 10 + g_m.pitch + 4;
+        ng.ng_TopEdge    = ct + g_m.pitch * rows + g_m.pitch / 2;
         ng.ng_Width      = 26;
         ng.ng_Height     = g_m.fy + 6;
         ng.ng_GadgetText = (STRPTR)"_Replace with tolunnet (recommended, non-destructive)";
@@ -1221,9 +1247,10 @@ static void rebuild_page_gadgets(void)
                             TAG_END);
         g_gad_listview = prev;
 
-        ng.ng_LeftEdge   = cl + cw - 2 * 110 - 8;
-        ng.ng_TopEdge    = ct + g_m.pitch * rows + 10 + g_m.pitch + 4;
-        ng.ng_Width      = 110;
+        LONG btn_w = g_m.pane_w * 24 / 100;
+        ng.ng_LeftEdge   = cl + cw - 2 * btn_w - g_m.fx;
+        ng.ng_TopEdge    = ct + g_m.pitch * rows + g_m.pitch / 2;
+        ng.ng_Width      = btn_w;
         ng.ng_Height     = g_m.btn_h;
         ng.ng_GadgetText = (STRPTR)"_Rescan";
         ng.ng_GadgetID   = GID_P2_SCAN_BTN;
@@ -1232,7 +1259,7 @@ static void rebuild_page_gadgets(void)
                             GT_Underscore, '_',
                             TAG_END);
 
-        ng.ng_LeftEdge   = cl + cw - 110;
+        ng.ng_LeftEdge   = cl + cw - btn_w;
         ng.ng_GadgetText = (STRPTR)"_Test adapter";
         ng.ng_GadgetID   = GID_P2_TEST_BTN;
         prev = CreateGadget(BUTTON_KIND, prev, &ng,
@@ -1277,9 +1304,10 @@ static void rebuild_page_gadgets(void)
             shown = 1;
         }
 
+        LONG btn_scan_w = g_m.pane_w * 22 / 100;
         ng.ng_LeftEdge   = cl;
         ng.ng_TopEdge    = ct;
-        ng.ng_Width      = cw;
+        ng.ng_Width      = cw - btn_scan_w - g_m.fx;
         ng.ng_Height     = g_m.pitch * rows + 6;
         ng.ng_GadgetText = (STRPTR)"Networks:";
         ng.ng_GadgetID   = GID_P3_NETLIST;
@@ -1290,9 +1318,9 @@ static void rebuild_page_gadgets(void)
                             TAG_END);
         g_gad_listview = prev;
 
-        ng.ng_LeftEdge   = cl + cw - 100;
+        ng.ng_LeftEdge   = cl + cw - btn_scan_w;
         ng.ng_TopEdge    = ct;
-        ng.ng_Width      = 100;
+        ng.ng_Width      = btn_scan_w;
         ng.ng_Height     = g_m.btn_h;
         ng.ng_GadgetText = (STRPTR)"_Scan APs";
         ng.ng_GadgetID   = GID_P3_RESCAN_BTN;
@@ -1301,19 +1329,22 @@ static void rebuild_page_gadgets(void)
                             GT_Underscore, '_',
                             TAG_END);
 
-        /* SSID row (editable: hidden networks) */
+        /* SSID / Passphrase: longest label + 1 char gap, field is share of pane */
         {
-            LONG row_y = ct + g_m.pitch * rows + 10 + g_m.pitch + 4;
+            LONG row_y = ct + g_m.pitch * rows + g_m.pitch / 2;
+            LONG label_w = (11 + 1) * g_m.fx; /* "Passphrase:" + 1 char */
+            LONG field_w = g_m.pane_w * 45 / 100;
+
             if (g_ws.wifi_ssid_str[0] == '\0' &&
                 g_ws.selected_wifi_idx >= 0 && g_ws.selected_wifi_idx < g_ws.wifi_count) {
                 strncpy(g_ws.wifi_ssid_str, g_ws.wifi[g_ws.selected_wifi_idx].ssid,
                         sizeof(g_ws.wifi_ssid_str) - 1);
                 g_ws.wifi_ssid_str[sizeof(g_ws.wifi_ssid_str) - 1] = '\0';
             }
-            ng.ng_LeftEdge   = cl + 60;
+            ng.ng_LeftEdge   = cl + label_w;
             ng.ng_TopEdge    = row_y;
-            ng.ng_Width      = 200;
-            ng.ng_Height     = g_m.fy + 8;
+            ng.ng_Width      = field_w;
+            ng.ng_Height     = g_m.fy + 6;
             ng.ng_GadgetText = (STRPTR)"SSID:";
             ng.ng_GadgetID   = GID_P3_SSID_STR;
             ng.ng_Flags      = PLACETEXT_LEFT;
@@ -1323,64 +1354,61 @@ static void rebuild_page_gadgets(void)
                                 GA_TabCycle, TRUE,
                                 TAG_END);
 
-            ng.ng_LeftEdge   = cl + 60;
+            ng.ng_LeftEdge   = cl + label_w;
             ng.ng_TopEdge    = row_y + g_m.pitch;
-            ng.ng_Width      = 200;
-            ng.ng_Height     = g_m.fy + 8;
+            ng.ng_Width      = field_w;
+            ng.ng_Height     = g_m.fy + 6;
             ng.ng_GadgetText = (STRPTR)"Passphrase:";
             ng.ng_GadgetID   = GID_P3_PASS_STR;
             ng.ng_Flags      = PLACETEXT_LEFT;
-        if (g_ws.wifi_show_pass) {
-            strncpy(s_pass_display_buf, g_ws.wifi_pass, sizeof(s_pass_display_buf) - 1);
-            s_pass_display_buf[sizeof(s_pass_display_buf) - 1] = '\0';
-            prev = CreateGadget(STRING_KIND, prev, &ng,
-                                GTST_String, (ULONG)s_pass_display_buf,
-                                GTST_MaxChars, 63,
-                                GA_TabCycle, TRUE,
-                                TAG_END);
-        } else {
-            size_t plen = strlen(g_ws.wifi_pass);
-            {
+            if (g_ws.wifi_show_pass) {
+                strncpy(s_pass_display_buf, g_ws.wifi_pass, sizeof(s_pass_display_buf) - 1);
+                s_pass_display_buf[sizeof(s_pass_display_buf) - 1] = '\0';
+                prev = CreateGadget(STRING_KIND, prev, &ng,
+                                    GTST_String, (ULONG)s_pass_display_buf,
+                                    GTST_MaxChars, 63,
+                                    GA_TabCycle, TRUE,
+                                    TAG_END);
+            } else {
+                size_t plen = strlen(g_ws.wifi_pass);
                 size_t pi;
                 for (pi = 0; pi < plen && pi < sizeof(s_pass_display_buf) - 1; pi++) {
                     s_pass_display_buf[pi] = '*';
                 }
+                s_pass_display_buf[plen < sizeof(s_pass_display_buf) ? plen : sizeof(s_pass_display_buf) - 1] = '\0';
+                prev = CreateGadget(STRING_KIND, prev, &ng,
+                                    GTST_String, (ULONG)s_pass_display_buf,
+                                    GTST_EditHook, (ULONG)&s_pass_hook,
+                                    GTST_MaxChars, 63,
+                                    GA_TabCycle, TRUE,
+                                    TAG_END);
             }
-            s_pass_display_buf[plen < sizeof(s_pass_display_buf) ? plen : sizeof(s_pass_display_buf) - 1] = '\0';
-            prev = CreateGadget(STRING_KIND, prev, &ng,
-                                GTST_String, (ULONG)s_pass_display_buf,
-                                GTST_EditHook, (ULONG)&s_pass_hook,
-                                GTST_MaxChars, 63,
-                                GA_TabCycle, TRUE,
-                                TAG_END);
-        }
 
-        ng.ng_LeftEdge   = cl + 300;
-        ng.ng_TopEdge    = ct + (g_m.compact ? 6 : 8) * g_m.pitch + 1;
-        ng.ng_Width      = 26;
-        ng.ng_Height     = g_m.fy + 6;
-        ng.ng_GadgetText = (STRPTR)"Show";
-        ng.ng_GadgetID   = GID_P3_SHOWPASS_CHK;
-        ng.ng_Flags      = PLACETEXT_RIGHT;
-        prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
-                            GTCB_Checked, g_ws.wifi_show_pass,
-                            TAG_END);
+            ng.ng_LeftEdge   = cl + label_w + field_w + 2 * g_m.fx;
+            ng.ng_TopEdge    = row_y + g_m.pitch;
+            ng.ng_Width      = 26;
+            ng.ng_Height     = g_m.fy + 6;
+            ng.ng_GadgetText = (STRPTR)"Show";
+            ng.ng_GadgetID   = GID_P3_SHOWPASS_CHK;
+            ng.ng_Flags      = PLACETEXT_RIGHT;
+            prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
+                                GTCB_Checked, g_ws.wifi_show_pass,
+                                TAG_END);
         }
         break;
     }
 
     case WIZARD_PAGE_ADDRESS: {
-        const LONG col1_lbl = 64;
-        const LONG col1_x   = cl + col1_lbl;
-        const LONG col1_w   = 115;
-        const LONG col2_lbl = 64;
-        const LONG col2_x   = col1_x + col1_w + 16 + col2_lbl;
-        const LONG col2_w   = 115;
+        /* Rule 1: Address...Domain use the same column; longest label + 1 char */
+        LONG label_w = (8 + 1) * g_m.fx; /* "Gateway:" (8 chars) + 1 char */
+        LONG col_w   = g_m.pane_w * 28 / 100;
+        LONG col1_x  = cl + label_w;
+        LONG col2_x  = col1_x + col_w + 2 * g_m.fx + label_w;
 
-        ng.ng_LeftEdge   = cl + 55;
+        ng.ng_LeftEdge   = cl + label_w;
         ng.ng_TopEdge    = ct;
-        ng.ng_Width      = 200;
-        ng.ng_Height     = g_m.fy + 8;
+        ng.ng_Width      = g_m.pane_w * 48 / 100;
+        ng.ng_Height     = g_m.btn_h;
         ng.ng_GadgetText = (STRPTR)"Mode:";
         ng.ng_GadgetID   = GID_P4_IPMODE_CYCLE;
         ng.ng_Flags      = PLACETEXT_LEFT;
@@ -1392,8 +1420,8 @@ static void rebuild_page_gadgets(void)
         if (g_ws.ip_mode == 1) {
             /* Row 1: IP + Mask */
             ng.ng_TopEdge    = ct + 2 * g_m.pitch;
-            ng.ng_Width      = col1_w;
-            ng.ng_Height     = g_m.fy + 8;
+            ng.ng_Width      = col_w;
+            ng.ng_Height     = g_m.fy + 6;
             ng.ng_Flags      = PLACETEXT_LEFT;
             ng.ng_GadgetID   = GID_P4_IP_STR;
             ng.ng_GadgetText = (STRPTR)"IP:";
@@ -1405,7 +1433,7 @@ static void rebuild_page_gadgets(void)
             ng.ng_GadgetID   = GID_P4_NM_STR;
             ng.ng_GadgetText = (STRPTR)"Mask:";
             ng.ng_LeftEdge   = col2_x;
-            ng.ng_Width      = col2_w;
+            ng.ng_Width      = col_w;
             prev = CreateGadget(STRING_KIND, prev, &ng,
                                 GTST_String, (ULONG)g_ws.nm_str,
                                 GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
@@ -1414,7 +1442,7 @@ static void rebuild_page_gadgets(void)
             ng.ng_GadgetID   = GID_P4_GW_STR;
             ng.ng_GadgetText = (STRPTR)"Gateway:";
             ng.ng_LeftEdge   = col1_x;
-            ng.ng_Width      = col1_w;
+            ng.ng_Width      = col_w;
             ng.ng_TopEdge    = ct + 3 * g_m.pitch;
             prev = CreateGadget(STRING_KIND, prev, &ng,
                                 GTST_String, (ULONG)g_ws.gw_str,
@@ -1423,16 +1451,16 @@ static void rebuild_page_gadgets(void)
             ng.ng_GadgetID   = GID_P4_DNS1_STR;
             ng.ng_GadgetText = (STRPTR)"DNS 1:";
             ng.ng_LeftEdge   = col2_x;
-            ng.ng_Width      = col2_w;
+            ng.ng_Width      = col_w;
             prev = CreateGadget(STRING_KIND, prev, &ng,
                                 GTST_String, (ULONG)g_ws.dns1_str,
                                 GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
         }
 
-        /* DNS 2 + MTU are mode-independent (TNET-110 v2.1) */
-        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1 ? 4 : 2) * g_m.pitch;
-        ng.ng_Width      = col1_w;
-        ng.ng_Height     = g_m.fy + 8;
+        /* DNS 2 + MTU row */
+        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1 ? 4 : 3) * g_m.pitch;
+        ng.ng_Width      = col_w;
+        ng.ng_Height     = g_m.fy + 6;
         ng.ng_Flags      = PLACETEXT_LEFT;
         ng.ng_GadgetID   = GID_P4_DNS2_STR;
         ng.ng_GadgetText = (STRPTR)"DNS 2:";
@@ -1444,15 +1472,15 @@ static void rebuild_page_gadgets(void)
         ng.ng_GadgetID   = GID_P4_MTU_STR;
         ng.ng_GadgetText = (STRPTR)"MTU:";
         ng.ng_LeftEdge   = col2_x;
-        ng.ng_Width      = col2_w;
+        ng.ng_Width      = col_w;
         prev = CreateGadget(STRING_KIND, prev, &ng,
                             GTST_String, (ULONG)g_ws.mtu_str,
                             GTST_MaxChars, 5, GA_TabCycle, TRUE, TAG_END);
 
-        /* Host + Domain share one row (Row 5 in static, Row 3 in DHCP) */
-        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1 ? 5 : 3) * g_m.pitch;
-        ng.ng_Width      = col1_w;
-        ng.ng_Height     = g_m.fy + 8;
+        /* Host + Domain share row 5 (static) / row 4 (DHCP) */
+        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1 ? 5 : 4) * g_m.pitch;
+        ng.ng_Width      = col_w;
+        ng.ng_Height     = g_m.fy + 6;
         ng.ng_Flags      = PLACETEXT_LEFT;
         ng.ng_GadgetID   = GID_P4_HOST_STR;
         ng.ng_GadgetText = (STRPTR)"Host:";
@@ -1465,16 +1493,17 @@ static void rebuild_page_gadgets(void)
         ng.ng_GadgetID   = GID_P4_DOMAIN_STR;
         ng.ng_GadgetText = (STRPTR)"Domain:";
         ng.ng_LeftEdge   = col2_x;
-        ng.ng_Width      = col2_w;
+        ng.ng_Width      = col_w;
         prev = CreateGadget(STRING_KIND, prev, &ng,
                             GTST_String, (ULONG)g_ws.domain_str,
                             GTST_MaxChars, sizeof(g_ws.domain_str) - 1,
                             GA_TabCycle, TRUE, TAG_END);
 
-        /* Advanced… button placed on the right edge of Host/Domain row */
-        ng.ng_LeftEdge   = cl + cw - 95;
-        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1 ? 5 : 3) * g_m.pitch;
-        ng.ng_Width      = 95;
+        /* Advanced… button placed on right edge of Host/Domain row */
+        LONG adv_w       = g_m.pane_w * 20 / 100;
+        ng.ng_LeftEdge   = cl + cw - adv_w;
+        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1 ? 5 : 4) * g_m.pitch;
+        ng.ng_Width      = adv_w;
         ng.ng_Height     = g_m.btn_h;
         ng.ng_GadgetText = (STRPTR)"Adv_anced...";
         ng.ng_GadgetID   = GID_P4_ADVANCED_BTN;
@@ -1483,10 +1512,9 @@ static void rebuild_page_gadgets(void)
                             GT_Underscore, '_',
                             TAG_END);
 
+        /* Roadshow checkbox */
         ng.ng_LeftEdge   = cl;
-        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1
-                                 ? (g_m.compact ? 6 : 7)
-                                 : (g_m.compact ? 5 : 6)) * g_m.pitch;
+        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1 ? 6 : 5) * g_m.pitch + g_m.pitch / 2;
         ng.ng_Width      = 26;
         ng.ng_Height     = g_m.fy + 6;
         ng.ng_GadgetText = (STRPTR)"Also write _Roadshow DEVS:NetInterfaces/ for other tools";
@@ -1522,9 +1550,11 @@ static void rebuild_page_gadgets(void)
         }
 
         /* checklist leaves room for the two right-side buttons */
+        LONG btn_w   = g_m.pane_w * 28 / 100;
+        LONG cw_list = cw - btn_w - g_m.fx;
         ng.ng_LeftEdge   = cl;
         ng.ng_TopEdge    = ct;
-        ng.ng_Width      = cw - 150;
+        ng.ng_Width      = cw_list;
         ng.ng_Height     = g_m.pitch * 5 + 6;
         ng.ng_GadgetText = (STRPTR)"Checks:";
         ng.ng_GadgetID   = GID_P5_CHECKLIST;
@@ -1535,9 +1565,9 @@ static void rebuild_page_gadgets(void)
                             TAG_END);
         g_gad_listview = prev;
 
-        ng.ng_LeftEdge   = cl + cw - 140;
+        ng.ng_LeftEdge   = cl + cw - btn_w;
         ng.ng_TopEdge    = ct;
-        ng.ng_Width      = 140;
+        ng.ng_Width      = btn_w;
         ng.ng_Height     = g_m.btn_h;
         ng.ng_GadgetText = (STRPTR)"Run tests a_gain";
         ng.ng_GadgetID   = GID_P5_TEST_BTN;
@@ -1546,17 +1576,15 @@ static void rebuild_page_gadgets(void)
                             GT_Underscore, '_',
                             TAG_END);
 
-        ng.ng_TopEdge    = ct + g_m.btn_h + 6;
-        ng.ng_Width      = 140;
+        ng.ng_TopEdge    = ct + g_m.btn_h + 4;
         ng.ng_GadgetText = (STRPTR)"_Save log...";
         ng.ng_GadgetID   = GID_P5_SAVELOG_BTN;
         prev = CreateGadget(BUTTON_KIND, prev, &ng,
                             GT_Underscore, '_',
                             TAG_END);
-    }
 
         ng.ng_LeftEdge   = cl;
-        ng.ng_TopEdge    = ct + g_m.pitch * 5 + 10;
+        ng.ng_TopEdge    = ct + g_m.pitch * 5 + g_m.pitch / 2;
         ng.ng_Width      = 26;
         ng.ng_Height     = g_m.fy + 6;
         ng.ng_GadgetText = (STRPTR)"Start at _boot";
@@ -1566,13 +1594,14 @@ static void rebuild_page_gadgets(void)
                             GTCB_Checked, g_ws.start_at_boot,
                             TAG_END);
 
-        ng.ng_LeftEdge   = cl + 180;
+        ng.ng_LeftEdge   = cl + g_m.pane_w * 35 / 100;
         ng.ng_GadgetText = (STRPTR)"Open _Prefs after finish";
         ng.ng_GadgetID   = GID_P5_PREFS_CHK;
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
                             GTCB_Checked, g_ws.open_prefs_after_finish,
                             TAG_END);
         break;
+    }
     }
 
     if (g_page_glist) {
@@ -1869,10 +1898,18 @@ int main(int argc, char **argv)
                                 TAG_END);
             g_gad_status = prev;
 
+            WORD win_left = (scr->Width - g_m.win_w) / 2;
+            WORD win_top  = (scr->Height - g_m.win_h) / 2;
+            WORD top_bar  = scr->WBorTop + (scr->Font ? scr->Font->ta_YSize : g_m.fy) + 1;
+            if (win_top < top_bar) win_top = top_bar;
+            if (win_top + g_m.win_h > scr->Height) win_top = scr->Height - g_m.win_h;
+            if (win_left < 0) win_left = 0;
+            if (win_left + g_m.win_w > scr->Width) win_left = scr->Width - g_m.win_w;
+
             wlog("building gadgets");
             g_win = OpenWindowTags(NULL,
-                                   WA_Left,         (scr->Width - g_m.win_w) / 2,
-                                   WA_Top,          (scr->Height - g_m.win_h) / 2,
+                                   WA_Left,         win_left,
+                                   WA_Top,          win_top,
                                    WA_Width,        g_m.win_w,
                                    WA_Height,       g_m.win_h,
                                    WA_IDCMP,        IDCMP_CLOSEWINDOW | IDCMP_REFRESHWINDOW |
