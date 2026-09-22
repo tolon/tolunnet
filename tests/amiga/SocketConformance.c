@@ -36,6 +36,7 @@
 #include "../../src/common/tn_arp.h"
 #include "../../src/task/route.h"
 #include "../../src/setup/wifi_mgr.h"
+#include "../../src/setup/stack_detect.h"
 #include <net/if_arp.h>
 
 static struct Library *SocketBase = NULL;
@@ -5396,7 +5397,7 @@ static void tc_install_script(void)
         return;
     }
 
-    char buf[4096];
+    char buf[16384];
     LONG bytes = Read(fh, buf, sizeof(buf) - 1);
     Close(fh);
     if (bytes <= 0) {
@@ -5473,6 +5474,127 @@ static void tc_install_script(void)
             TAP_NOTOK(label, "Expected ERROR_BAD_NUMBER for positional device argument");
             return;
         }
+    }
+
+    /* Item 4b: Existing stack migration & undo verification.
+     * Asserts that:
+     * 1. Install_Tolunnet.script declares backup of existing LIBS:bsdsocket.library and S:tolunnet-undo.
+     * 2. Live test: fake LIBS:bsdsocket.library + fake stack in S:User-Startup -> tn_stack_apply_replacement()
+     *    backs up library as LIBS:bsdsocket.library.<stack>, comments out stack line, creates S:tolunnet-undo.
+     * 3. S:tolunnet-undo restores LIBS:bsdsocket.library (content verified intact) and cleans up backup.
+     */
+    if (strstr(buf, "S:tolunnet-undo") == NULL) {
+        TAP_NOTOK(label, "S:tolunnet-undo creation missing from install script");
+        return;
+    }
+    if (strstr(buf, "LIBS:bsdsocket.library.") == NULL) {
+        TAP_NOTOK(label, "LIBS:bsdsocket.library backup missing from install script");
+        return;
+    }
+
+    /* Live migration & undo execution test */
+    {
+        const char *fake_lib_text = "FAKE_BSDSOCKET_STACK_TEST";
+        BPTR fl_fh = Open((CONST_STRPTR)"LIBS:bsdsocket.library", MODE_NEWFILE);
+        if (!fl_fh) {
+            TAP_NOTOK(label, "Failed to create fake LIBS:bsdsocket.library");
+            return;
+        }
+        Write(fl_fh, (CONST_APTR)fake_lib_text, strlen(fake_lib_text));
+        Close(fl_fh);
+
+        /* Append fake stack line to S:User-Startup */
+        BPTR us_app = Open((CONST_STRPTR)"S:User-Startup", MODE_READWRITE);
+        if (us_app) {
+            Seek(us_app, 0, OFFSET_END);
+            const char *fake_cmd = "\nRun MiamiDx\n";
+            Write(us_app, (CONST_APTR)fake_cmd, strlen(fake_cmd));
+            Close(us_app);
+        }
+
+        /* Run stack detection & replacement */
+        WizardState ws;
+        memset(&ws, 0, sizeof(ws));
+        ws.replace_stacks = TRUE;
+        tn_stack_detect_all(&ws);
+        if (!tn_stack_apply_replacement(&ws)) {
+            DeleteFile((CONST_STRPTR)"LIBS:bsdsocket.library");
+            TAP_NOTOK(label, "tn_stack_apply_replacement returned FALSE");
+            return;
+        }
+
+        /* 1. Assert original LIBS:bsdsocket.library is moved */
+        BPTR orig_lock = Lock((CONST_STRPTR)"LIBS:bsdsocket.library", ACCESS_READ);
+        if (orig_lock != (BPTR)0) {
+            UnLock(orig_lock);
+            DeleteFile((CONST_STRPTR)"LIBS:bsdsocket.library");
+            TAP_NOTOK(label, "Original LIBS:bsdsocket.library not moved during migration");
+            return;
+        }
+
+        /* 2. Assert backup exists with correct content */
+        BPTR bk_fh = Open((CONST_STRPTR)"LIBS:bsdsocket.library.miami", MODE_OLDFILE);
+        if (!bk_fh) {
+            bk_fh = Open((CONST_STRPTR)"LIBS:bsdsocket.library.pre-tolunnet", MODE_OLDFILE);
+        }
+        if (!bk_fh) {
+            TAP_NOTOK(label, "Backup LIBS:bsdsocket.library.<stack> not created");
+            return;
+        }
+        char bk_buf[64];
+        LONG bk_read = Read(bk_fh, bk_buf, sizeof(bk_buf) - 1);
+        Close(bk_fh);
+        if (bk_read <= 0) bk_read = 0;
+        bk_buf[bk_read] = '\0';
+        if (strcmp(bk_buf, fake_lib_text) != 0) {
+            TAP_NOTOK(label, "Backup content does not match original library");
+            return;
+        }
+
+        /* 3. Assert S:tolunnet-undo exists and contains valid restore commands */
+        BPTR undo_fh = Open((CONST_STRPTR)"S:tolunnet-undo", MODE_OLDFILE);
+        if (!undo_fh) {
+            TAP_NOTOK(label, "S:tolunnet-undo script not created");
+            return;
+        }
+        char ubuf[1024];
+        LONG ulen = Read(undo_fh, ubuf, sizeof(ubuf) - 1);
+        Close(undo_fh);
+        if (ulen <= 0) ulen = 0;
+        ubuf[ulen] = '\0';
+        if (strstr(ubuf, "LIBS:bsdsocket.library") == NULL ||
+            strstr(ubuf, "S:User-Startup") == NULL) {
+            TAP_NOTOK(label, "S:tolunnet-undo script missing restoration commands");
+            return;
+        }
+
+        /* 4. Restore previous stack via migration engine */
+        if (!tn_stack_undo_replacement()) {
+            TAP_NOTOK(label, "tn_stack_undo_replacement returned FALSE");
+            return;
+        }
+
+        /* 5. Assert LIBS:bsdsocket.library is restored with intact content */
+        BPTR res_fh = Open((CONST_STRPTR)"LIBS:bsdsocket.library", MODE_OLDFILE);
+        if (!res_fh) {
+            TAP_NOTOK(label, "LIBS:bsdsocket.library not restored by undo");
+            return;
+        }
+        LONG res_read = Read(res_fh, bk_buf, sizeof(bk_buf) - 1);
+        Close(res_fh);
+        if (res_read <= 0) res_read = 0;
+        bk_buf[res_read] = '\0';
+        if (strcmp(bk_buf, fake_lib_text) != 0) {
+            TAP_NOTOK(label, "Restored library content corrupted");
+            return;
+        }
+
+        /* 6. Clean up fake test files */
+        DeleteFile((CONST_STRPTR)"LIBS:bsdsocket.library");
+        DeleteFile((CONST_STRPTR)"LIBS:bsdsocket.library.miami");
+        DeleteFile((CONST_STRPTR)"LIBS:bsdsocket.library.pre-tolunnet");
+        DeleteFile((CONST_STRPTR)"S:tolunnet-undo");
+        DeleteFile((CONST_STRPTR)"S:User-Startup.tolunnet-bak");
     }
 
     TAP_OK(label);

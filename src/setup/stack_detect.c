@@ -434,10 +434,38 @@ BOOL tn_stack_apply_replacement(WizardState *ws)
         rewrite_file_with_parser("S:Network-Startup", tn_parse_startup_script);
     }
 
-    /* 3. Rename LIBS:bsdsocket.library -> LIBS:bsdsocket.library.pre-tolunnet */
+    /* 3. Rename LIBS:bsdsocket.library -> LIBS:bsdsocket.library.<stack> */
+    const char *stack_suffix = "pre-tolunnet";
+    for (int i = 0; i < ws->stack_count; i++) {
+        if (strstr(ws->stacks[i].name, "Roadshow") != NULL) {
+            stack_suffix = "roadshow";
+            break;
+        } else if (strstr(ws->stacks[i].name, "Miami") != NULL) {
+            stack_suffix = "miami";
+            break;
+        } else if (strstr(ws->stacks[i].name, "AmiTCP") != NULL) {
+            stack_suffix = "amitcp";
+            break;
+        } else if (strstr(ws->stacks[i].name, "Genesis") != NULL) {
+            stack_suffix = "genesis";
+            break;
+        }
+    }
+    if (strcmp(stack_suffix, "pre-tolunnet") == 0) {
+        if (file_exists("DEVS:NetInterfaces") || file_exists("DEVS:Internet")) {
+            stack_suffix = "roadshow";
+        } else if (assign_exists("Miami") || file_exists("ENVARC:MiamiDx") || file_exists("ENVARC:Miami")) {
+            stack_suffix = "miami";
+        } else if (assign_exists("AmiTCP") || file_exists("AmiTCP:")) {
+            stack_suffix = "amitcp";
+        }
+    }
+
     if (file_exists("LIBS:bsdsocket.library")) {
-        Rename((CONST_STRPTR)"LIBS:bsdsocket.library",
-               (CONST_STRPTR)"LIBS:bsdsocket.library.pre-tolunnet");
+        char backup_path[64];
+        snprintf(backup_path, sizeof(backup_path), "LIBS:bsdsocket.library.%s", stack_suffix);
+        DeleteFile((CONST_STRPTR)backup_path);
+        Rename((CONST_STRPTR)"LIBS:bsdsocket.library", (CONST_STRPTR)backup_path);
     }
 
     /* 4. Disable WBStartup icons */
@@ -448,6 +476,32 @@ BOOL tn_stack_apply_replacement(WizardState *ws)
     if (file_exists("SYS:WBStartup/Genesis.info")) {
         Rename((CONST_STRPTR)"SYS:WBStartup/Genesis.info",
                (CONST_STRPTR)"SYS:WBStartup/Genesis.info.pre-tolunnet");
+    }
+
+    /* 5. Write S:tolunnet-undo restoration script */
+    BPTR undo_fh = Open((CONST_STRPTR)"S:tolunnet-undo", MODE_NEWFILE);
+    if (undo_fh) {
+        char undo_content[1024];
+        snprintf(undo_content, sizeof(undo_content),
+                 "; tolunnet-undo — restores previous TCP/IP stack\n"
+                 "FailAt 21\n"
+                 "IF EXISTS S:User-Startup.tolunnet-bak\n"
+                 "  Copy S:User-Startup.tolunnet-bak S:User-Startup CLONE QUIET\n"
+                 "ENDIF\n"
+                 "IF EXISTS LIBS:bsdsocket.library.%s\n"
+                 "  Copy LIBS:bsdsocket.library.%s LIBS:bsdsocket.library CLONE QUIET\n"
+                 "  Delete LIBS:bsdsocket.library.%s QUIET\n"
+                 "ENDIF\n"
+                 "IF EXISTS LIBS:bsdsocket.library.pre-tolunnet\n"
+                 "  Copy LIBS:bsdsocket.library.pre-tolunnet LIBS:bsdsocket.library CLONE QUIET\n"
+                 "  Delete LIBS:bsdsocket.library.pre-tolunnet QUIET\n"
+                 "ENDIF\n"
+                 "Delete >NIL: DEVS:tolunnet.config QUIET\n"
+                 "Echo \"Previous TCP/IP stack configuration restored.\"\n",
+                 stack_suffix, stack_suffix, stack_suffix);
+        Write(undo_fh, undo_content, strlen(undo_content));
+        Close(undo_fh);
+        SetProtection((CONST_STRPTR)"S:tolunnet-undo", FIBF_SCRIPT);
     }
 
     return TRUE;
@@ -463,10 +517,16 @@ BOOL tn_stack_undo_replacement(void)
         rewrite_file_with_parser("S:Network-Startup", tn_uncomment_startup_script);
     }
 
-    /* 2. Restore LIBS:bsdsocket.library.pre-tolunnet */
-    if (file_exists("LIBS:bsdsocket.library.pre-tolunnet")) {
-        Rename((CONST_STRPTR)"LIBS:bsdsocket.library.pre-tolunnet",
-               (CONST_STRPTR)"LIBS:bsdsocket.library");
+    /* 2. Restore LIBS:bsdsocket.library.<stack> */
+    const char *suffixes[] = { "roadshow", "miami", "amitcp", "genesis", "pre-tolunnet", NULL };
+    for (int i = 0; suffixes[i] != NULL; i++) {
+        char path[64];
+        snprintf(path, sizeof(path), "LIBS:bsdsocket.library.%s", suffixes[i]);
+        if (file_exists(path)) {
+            DeleteFile((CONST_STRPTR)"LIBS:bsdsocket.library");
+            Rename((CONST_STRPTR)path, (CONST_STRPTR)"LIBS:bsdsocket.library");
+            break;
+        }
     }
 
     /* 3. Restore WBStartup icons */

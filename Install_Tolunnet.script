@@ -82,6 +82,59 @@
 
 (run "Copy TolunnetPrefs.info SYS:Prefs/TolunnetPrefs.info CLONE QUIET")
 
+; -------------------------------------------------------------
+; Stack backup & non-destructive migration (Item 4b)
+; -------------------------------------------------------------
+(set #stack-suffix "pre-tolunnet")
+(if (exists "DEVS:NetInterfaces")
+  (set #stack-suffix "roadshow")
+)
+(if (exists "Miami:")
+  (set #stack-suffix "miami")
+)
+(if (exists "AmiTCP:")
+  (set #stack-suffix "amitcp")
+)
+
+(if (exists "LIBS:bsdsocket.library")
+  (action
+    (message "Existing bsdsocket.library detected. Backing up...")
+    (run (cat "Copy LIBS:bsdsocket.library LIBS:bsdsocket.library." #stack-suffix " CLONE QUIET"))
+    (run "Delete LIBS:bsdsocket.library FORCE QUIET")
+  )
+)
+
+(if (exists "S:User-Startup")
+  (action
+    (if (not (exists "S:User-Startup.tolunnet-bak"))
+      (run "Copy S:User-Startup S:User-Startup.tolunnet-bak CLONE QUIET")
+    )
+  )
+)
+
+; Write S:tolunnet-undo restoration script
+(textfile
+  (dest "S:tolunnet-undo")
+  (append
+    "; tolunnet-undo — restores previous TCP/IP stack\n"
+    "FailAt 21\n"
+    "IF EXISTS S:User-Startup.tolunnet-bak\n"
+    "  Copy S:User-Startup.tolunnet-bak S:User-Startup CLONE QUIET\n"
+    "ENDIF\n"
+    (cat "IF EXISTS LIBS:bsdsocket.library." #stack-suffix "\n")
+    (cat "  Copy LIBS:bsdsocket.library." #stack-suffix " LIBS:bsdsocket.library CLONE QUIET\n")
+    (cat "  Delete LIBS:bsdsocket.library." #stack-suffix " QUIET\n")
+    "ENDIF\n"
+    "IF EXISTS LIBS:bsdsocket.library.pre-tolunnet\n"
+    "  Copy LIBS:bsdsocket.library.pre-tolunnet LIBS:bsdsocket.library CLONE QUIET\n"
+    "  Delete LIBS:bsdsocket.library.pre-tolunnet QUIET\n"
+    "ENDIF\n"
+    "Delete >NIL: DEVS:tolunnet.config QUIET\n"
+    "Echo \"Previous TCP/IP stack configuration restored.\"\n"
+  )
+)
+(run "Protect S:tolunnet-undo +s +e QUIET")
+
 (if (= #ip-mode 0)
   (textfile
     (dest "DEVS:tolunnet.config")
