@@ -35,6 +35,9 @@ Status: `open` · `answered` · `superseded`.
 9. **[answered] Unified Configuration Architecture (TNET-032 / TNET-044).**
    - Resolved: Single source of truth is `DEVS:tolunnet.config` (human-readable `KEY=VALUE` text format), mirrored to `ENVARC:tolunnet.prefs`.
 
+10. **[auto] ARP FLUSH Template Argument (TNET-153).**
+    - Resolved: [auto] WONTFIX (etharp has no full-flush primitive; DELETE covers the use case). Removed `FLUSH/S` from `arp` ReadArgs template and documentation to eliminate no-op arguments.
+
 ---
 
 ## Active Testing & Integration Horizon

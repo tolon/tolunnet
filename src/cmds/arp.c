@@ -1,8 +1,7 @@
 /*
- * tolunnet — arp command (CMD-6, TNET-141). ReadArgs: SHOW/S,FLUSH/S
+ * tolunnet — arp command (CMD-6, TNET-141). ReadArgs: SHOW/S
  * SHOW scans the primary interface's /24 with SIOCGARP and prints every
- * completed entry. FLUSH needs a daemon-side table clear (ARPCTL) and
- * stays RC 5 with a notice.
+ * completed entry.
  */
 #include "cmdlib.h"
 #include "../common/tn_arp.h"
@@ -11,7 +10,7 @@
 #include <sys/sockio.h>
 #include <string.h>
 
-#define TEMPLATE "SHOW/S,FLUSH/S"
+#define TEMPLATE "SHOW/S"
 
 static void fmt_ip_mac(char *line, ULONG addr_network, const UBYTE *mac)
 {
@@ -72,7 +71,7 @@ static ULONG arp_if_addr(const struct ifreq *ifr)
 
 int main(int argc, char **argv)
 {
-    LONG opts[2] = { 0, 0 };
+    LONG opts[1] = { 0 };
     struct RDArgs *rdargs;
     int rc = TN_CMD_OK;
     LONG fd;
@@ -91,11 +90,6 @@ int main(int argc, char **argv)
         PrintFault(IoErr(), (CONST_STRPTR)"arp");
         tn_cmd_fini();
         return TN_CMD_USAGE;
-    }
-
-    if (opts[1]) {
-        tn_cmd_printf("arp: FLUSH not implemented (needs daemon ARPCTL)\n");
-        rc = TN_CMD_WARN;
     }
 
     fd = tn_call_socket(AF_INET, SOCK_DGRAM, 0);

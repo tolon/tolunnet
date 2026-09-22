@@ -53,7 +53,7 @@ All commands install to `SYS:C/` (except Prefs tools). Every command is a thin c
 |---------|------------------|-----|-------------|-------------|
 | `traceroute` | `HOST/A,MAXHOPS/N,QUERIES/N,WAIT/N,NUMERIC/S` | 0/5 | ICMP TTL route tracing | `tc_cmd_traceroute` |
 | `nc` | `HOST/A,PORT/N,UDP/S,LISTEN/S,TIMEOUT/N` | 0/10 | TCP/UDP pipe (netcat) | `tc_cmd_nc` |
-| `arp` | `SHOW/S,FLUSH/S` | 0/5 | ARP table via SIOCGARP /24 scan (FLUSH RC 5) | `tc_cmd_arp` |
+| `arp` | `SHOW/S` | 0 | ARP table via SIOCGARP /24 scan | `tc_cmd_arp` |
 
 ## Time
 

@@ -64,7 +64,7 @@ The release archive ships the following programs, in `C/` unless noted. The inst
 | `Online`, `Offline` | `NAME` |
 | `CheckNetConfig` | `FILE`: syntax check of a tolunnet config file. |
 | `NetShutdown` | `FORCE/S`: orderly stack shutdown. |
-| `arp` | `SHOW/S,FLUSH/S`: shows the ARP cache. `FLUSH` is not implemented yet. |
+| `arp` | `SHOW/S`: shows the ARP cache via SIOCGARP. |
 | `hostname` | `HOSTNAME,SAVE/S` |
 | `nslookup` | `NAME/A,SERVER`: forward (A) and reverse (PTR) lookups. |
 | `traceroute` | `HOST/A,MAXHOPS/N,QUERIES/N,WAIT/N,NUMERIC/S`: UDP probe routing diagnosis with per-hop IP_TTL and ICMP replies. |
