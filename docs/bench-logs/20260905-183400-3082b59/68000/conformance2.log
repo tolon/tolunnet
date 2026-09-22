@@ -1,6 +1,0 @@
-# tolunnet SocketConformance (Round 3 §B.2)
-ok 1 - tc_lib_open_close
-not ok 2 - tc_socket_types # stream/dgram ok + bad type rejected expected
-not ok 3 - tc_bind_udp # bind returned error (TNET-077: ENOSYS baseline)
-ok 4 - tc_bind_reuse # SKIP needs BIND handler (TNET-077, Round 3 §C1)
-ok 5 - tc_listen_accept_loopback # SKIP needs loopback + listen/accept (TNET-071/077, §C1/C10)

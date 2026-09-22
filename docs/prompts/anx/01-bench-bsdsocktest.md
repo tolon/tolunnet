@@ -1,8 +1,0 @@
-# ANX-01 — bench: UAE bsdsocket emülasyonunu kapat, bsdsocktest ekle
-Kurallar (değişmez): (1) yalnız bu dosyadaki iş; başka dosyaya, başka TNET'e dokunma. (2) Tek commit; iş bitmeden ara commit yok, iş bittikten sonra bekleyen değişiklik yok. (3) Kanıt = `ci/bench.sh` log dizini + host test çıktısı; kendi ifaden kanıt değildir. (4) DUR kuralı: bench üst üste 2 kez kırmızı → dur; 4 saat içinde commit yoksa → dur; durunca `STOP-REPORT.md` yaz (ne yapıldı, ne kırmızı, son yeşil commit) ve bitir. (5) Yeşil kalması gereken taban: mevcut core testleri iki profilde (a1200, 68000) — biri düşerse bu iş kırmızıdır.
-1. `ci/tolunnet-a1200.uae` ve `ci/tolunnet-68000.uae` içine açıkça `bsdsocket_emu=false` ekle. `ci/bench.sh` başında `grep -q '^bsdsocket_emu=false'` yoksa hata ver.
-2. bsdsocktest'i al: github.com/tbdye/bsdsocktest. Kaynak `vendor/bsdsocktest/` altına, sürüm/commit `THIRD_PARTY_LICENSES.md`'ye. `m68k-amigaos-gcc` ile `-m68000 -noixemul` derle; Makefile hedefi `bsdsocktest`.
-3. `ci/User-Startup-Conformance`'a `SocketConformance` sonrası `bsdsocktest >RAM:bsdsocktest.log` ekle; `bench.sh` logu bench dizinine kopyalasın ve son satırdan `passed/failed` sayısını ayrıştırıp `SUMMARY.txt`'e `bsdsocktest: N/142` yazsın. 142 ≠ toplam ise sayıyı logdan al, sabitleme.
-4. `STATUS.md` matrisine yeni satır: `M9 bsdsocktest | N/142 | log linki`.
-5. Her başarısız bsdsocktest maddesi için `ISSUES.md`'ye tek satır `TNET-1xx | bsdsocktest #N <ad> | OPEN` (düzeltme bu prompt'ta değil).
-Kabul: iki profilde bench yeşil (34/34 korunur), `SUMMARY.txt`'te `bsdsocktest:` satırı, commit `ci: gate UAE bsdsocket emulation off, add bsdsocktest (N/142)`.

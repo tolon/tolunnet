@@ -1,2 +1,0 @@
-a1200: bsdsocktest: 124/142 (failed 4) — docs/bench-logs/20260918-171217-a70a1a6/a1200/bsdsocktest.log
-68000: bsdsocktest: 124/142 (failed 4) — docs/bench-logs/20260918-171217-a70a1a6/68000/bsdsocktest.log

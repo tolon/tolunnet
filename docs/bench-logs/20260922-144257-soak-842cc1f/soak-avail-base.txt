@@ -1,4 +1,0 @@
-Type  Available    In-Use   Maximum   Largest
-chip    2006864     89264   2096128   2002896
-fast    8146616    766280   8912896   7620144
-total  10153480    855544  11009024   7620144
