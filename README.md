@@ -8,7 +8,7 @@
 
 Classic AmigaOS has lacked a modern, actively maintained, fully open-source TCP/IP stack. Roadshow is commercial and closed. Miami is discontinued. AmiTCP's last open release is 3.0b from 1994. **tolunnet** fills that gap: GPL-3.0-or-later, modern, documented, tested, and ready for release on Aminet and GitHub.
 
-**Author:** tolon  
+**Author:** İsmail Öztürk  
 **Licence:** GPL-3.0-or-later — see [LICENSE](LICENSE).  
 **lwIP Licence:** BSD — see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).  
 
