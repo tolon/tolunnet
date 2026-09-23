@@ -133,6 +133,47 @@ def run_udp_echo(port):
     sock.close()
 
 # ---------------------------------------------------------------------------
+# 2b. TCP Echo Server (z.ai step 3: conformance rows #68/#69 connect over
+# TCP to ECHO_PORT; thread per connection, echo until EOF)
+# ---------------------------------------------------------------------------
+def run_tcp_echo(port):
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("0.0.0.0", port))
+    srv.listen(8)
+    srv.settimeout(1.0)
+    log("tcp_echo", f"listening on TCP {port}")
+
+    while g_running:
+        try:
+            conn, addr = srv.accept()
+        except socket.timeout:
+            continue
+        except Exception:
+            break
+
+        def handler(c, a):
+            try:
+                c.settimeout(1.0)
+                while g_running:
+                    try:
+                        data = c.recv(4096)
+                    except socket.timeout:
+                        continue
+                    if not data:
+                        break
+                    log("tcp_echo", f"echoing {len(data)} bytes to {a}")
+                    c.sendall(data)
+            except Exception as e:
+                log("tcp_echo", f"error: {e}")
+            finally:
+                c.close()
+
+        t = threading.Thread(target=handler, args=(conn, addr), daemon=True)
+        t.start()
+    srv.close()
+
+# ---------------------------------------------------------------------------
 # 3. SNTP Server (RFC 4330)
 # ---------------------------------------------------------------------------
 def run_sntp(port):
@@ -450,7 +491,7 @@ def run_http(port):
 def check_ports_free(ports):
     busy = []
     # Check TCP
-    for name in ("TCP_DELAY_PORT", "FTP_PORT", "FTP_PASV_PORT", "WHOIS_PORT", "HTTP_PORT"):
+    for name in ("TCP_DELAY_PORT", "FTP_PORT", "FTP_PASV_PORT", "WHOIS_PORT", "HTTP_PORT", "ECHO_PORT"):
         p = ports[name]
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
@@ -479,7 +520,7 @@ def check_ports_free(ports):
 
 def probe_readiness(ports, timeout=5.0):
     start = time.time()
-    tcp_ports = [ports["TCP_DELAY_PORT"], ports["FTP_PORT"], ports["WHOIS_PORT"], ports["HTTP_PORT"]]
+    tcp_ports = [ports["TCP_DELAY_PORT"], ports["FTP_PORT"], ports["WHOIS_PORT"], ports["HTTP_PORT"], ports["ECHO_PORT"]]
     while time.time() - start < timeout:
         all_ok = True
         for p in tcp_ports:
@@ -543,6 +584,7 @@ def main():
     threads = [
         threading.Thread(target=run_tcp_delay, args=(ports["TCP_DELAY_PORT"],), daemon=True),
         threading.Thread(target=run_udp_echo, args=(ports["ECHO_PORT"],), daemon=True),
+        threading.Thread(target=run_tcp_echo, args=(ports["ECHO_PORT"],), daemon=True),
         threading.Thread(target=run_sntp, args=(ports["SNTP_PORT"],), daemon=True),
         threading.Thread(target=run_tftp, args=(ports["TFTP_PORT"],), daemon=True),
         threading.Thread(target=run_ftp, args=(ports["FTP_PORT"], ports["FTP_PASV_PORT"]), daemon=True),
