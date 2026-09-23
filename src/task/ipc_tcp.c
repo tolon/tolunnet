@@ -470,12 +470,20 @@ int tn_ipc_cmd_send(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             return 0;
         }
         if (slot->tcp_state == TN_TCP_STATE_ERROR) {
+            /* z.ai step 4 item 2: report the captured lwIP error (usually
+             * ECONNRESET/RST) once, then plain EPIPE afterwards. */
             imsg->result = -1;
-            imsg->err_no = EPIPE;
+            if (slot->last_error != 0) {
+                imsg->err_no = slot->last_error;
+                slot->last_error = 0;
+            } else {
+                imsg->err_no = EPIPE;
+            }
             return 0;
         }
-        if (slot->tcp_state != TN_TCP_STATE_ESTABLISHED &&
-            slot->tcp_state != TN_TCP_STATE_PEER_CLOSED) {
+        if (slot->tcp_pcb == NULL ||
+            (slot->tcp_state != TN_TCP_STATE_ESTABLISHED &&
+             slot->tcp_state != TN_TCP_STATE_PEER_CLOSED)) {
             imsg->result = -1;
             imsg->err_no = ENOTCONN;
             return 0;
@@ -707,9 +715,14 @@ int tn_ipc_cmd_shutdown(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     err_t serr;
     (void)d;
 
-    if (slot == NULL || slot->type != 1 /* TCP */ || slot->tcp_pcb == NULL) {
+    if (slot == NULL || slot->type != 1 /* TCP */) {
         imsg->result = -1;
         imsg->err_no = ENOTCONN;
+        return 0;
+    }
+    if (how < 0 || how > 2) {
+        imsg->result = -1;
+        imsg->err_no = EINVAL;
         return 0;
     }
 
@@ -719,7 +732,40 @@ int tn_ipc_cmd_shutdown(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     if (shut_rx) slot->shut_rd = TRUE;
     if (shut_tx) slot->shut_wr = TRUE;
 
-    if (slot->tcp_state == TN_TCP_STATE_CLOSED) {
+    /* Second shutdown() (or one after the pcb left) is 4.4BSD-quiet: the
+     * flags above are already set, nothing to drive. */
+    if (slot->tcp_pcb == NULL || slot->tcp_state == TN_TCP_STATE_CLOSED) {
+        imsg->result = 0;
+        imsg->err_no = 0;
+        return 0;
+    }
+
+    if (shut_rx && shut_tx) {
+        /* SHUT_RDWR: tcp_shutdown(pcb,1,1) is tcp_close() and can FREE the
+         * pcb (and would send RST if rx data is unread). Detach the slot
+         * BEFORE closing, drain the rx queue + tcp_recved so the FIN path
+         * (not RST) is taken, then close on an unrefenced pcb. (z.ai step 4
+         * item 2: the old order called tcp_arg/recv/sent/err on the freed
+         * pcb.) */
+        tn_rx_queue_drain_with_recved(slot);
+        tcp_arg(slot->tcp_pcb, NULL);
+        tcp_recv(slot->tcp_pcb, NULL);
+        tcp_sent(slot->tcp_pcb, NULL);
+        tcp_err(slot->tcp_pcb, NULL);
+        /* capture before close: tcp_close may free the pcb */
+        {
+            struct tcp_pcb *closing = slot->tcp_pcb;
+            slot->tcp_pcb = NULL;
+            slot->tcp_state = TN_TCP_STATE_CLOSED;
+            serr = tcp_close(closing);
+        }
+        if (serr != ERR_OK) {
+            /* ERR_MEM: pcb not freed (backlog pbufs) - it stays referenced
+             * by lwIP's pcb lists; report the failure, slot stays detached */
+            imsg->result = -1;
+            imsg->err_no = ENOBUFS;
+            return 0;
+        }
         imsg->result = 0;
         imsg->err_no = 0;
         return 0;
@@ -730,17 +776,6 @@ int tn_ipc_cmd_shutdown(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         imsg->result = -1;
         imsg->err_no = ECONNRESET;
         return 0;
-    }
-
-    if (shut_rx && shut_tx) {
-        /* In lwIP, tcp_shutdown(1, 1) frees the PCB via tcp_close(pcb).
-         * Clear callbacks and clear slot->tcp_pcb so it is not a dangling pointer. */
-        tcp_arg(slot->tcp_pcb, NULL);
-        tcp_recv(slot->tcp_pcb, NULL);
-        tcp_sent(slot->tcp_pcb, NULL);
-        tcp_err(slot->tcp_pcb, NULL);
-        slot->tcp_pcb = NULL;
-        slot->tcp_state = TN_TCP_STATE_CLOSED;
     }
 
     imsg->result = 0;

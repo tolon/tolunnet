@@ -374,6 +374,26 @@ void tn_rx_queue_drain(TnSocketSlot *slot)
     slot->rx_count = 0;
 }
 
+/* z.ai step 4 item 2: drain AND return the receive window - unread rx data
+ * at tcp_close makes lwIP send RST instead of FIN. */
+void tn_rx_queue_drain_with_recved(TnSocketSlot *slot)
+{
+    if (slot == NULL) return;
+    while (slot->rx_head != NULL) {
+        TnRxPacket *pkt = slot->rx_head;
+        if (pkt->p != NULL && slot->tcp_pcb != NULL) {
+            tcp_recved(slot->tcp_pcb, pkt->p->tot_len - pkt->offset);
+        }
+        slot->rx_head = pkt->next;
+        if (pkt->p != NULL) {
+            pbuf_free(pkt->p);
+        }
+        tn_rxpkt_put(pkt);
+    }
+    slot->rx_tail = NULL;
+    slot->rx_count = 0;
+}
+
 static err_t tn_tcp_queued_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 {
     TnAcceptEntry *ent = (TnAcceptEntry *)arg;

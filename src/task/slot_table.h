@@ -32,6 +32,7 @@ void tn_rxpkt_fini(void);
 int tn_rx_queue_push(TnSocketSlot *slot, struct pbuf *p, const ip_addr_t *src_ip, u16_t src_port);
 TnRxPacket *tn_rx_queue_pop(TnSocketSlot *slot);
 void tn_rx_queue_drain(TnSocketSlot *slot);
+void tn_rx_queue_drain_with_recved(TnSocketSlot *slot); /* z.ai step 4 item 2 */
 
 int tn_accept_queue_push(TnSocketSlot *slot, struct tcp_pcb *new_pcb);
 struct tcp_pcb *tn_accept_queue_pop(TnSocketSlot *slot);

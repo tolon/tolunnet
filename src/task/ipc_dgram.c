@@ -189,17 +189,9 @@ int tn_ipc_cmd_sendto(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     }
 
     if (slot->type == SOCK_STREAM) {
-        /* Directive 3: TCP üzerinde sendto()
-         * to == NULL ise send() ile aynı.
-         * to != NULL ve soket bağlıysa: adres yok sayılır, veri mevcut akışa yazılır (4.4BSD tcp_usrreq).
-         * Bağlı değilse: -1, ENOTCONN.
-         * Gönderme yönü kapatılmışsa veya bağlantı kopmuşsa: -1, EPIPE.
-         */
-        if (slot->tcp_pcb == NULL) {
-            imsg->result = -1;
-            imsg->err_no = ENOTCONN;
-            return 0;
-        }
+        /* Directive 3 + z.ai step 4 item 2: send() owns the full error
+         * order (shut_wr -> EPIPE; ERROR -> last_error once then EPIPE;
+         * only then pcb==NULL -> ENOTCONN) - no pre-check here. */
         return tn_ipc_cmd_send(d, imsg, slot);
     } else if (slot->type == SOCK_DGRAM && slot->udp_pcb != NULL) {
         struct pbuf *p;

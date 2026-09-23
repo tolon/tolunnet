@@ -1241,6 +1241,85 @@ TN_TEST(net_recv_unconnected_tcp_enotconn_not_parked)
     }
 }
 
+/* z.ai step 4 item 2: SHUT_RDWR detaches before tcp_close (no
+ * use-after-free on the mock), returns FIN not RST (rx drained + recved),
+ * second shutdown is quiet, invalid how -> EINVAL; ERROR send reports
+ * last_error once then EPIPE. */
+TN_TEST(net_shutdown_shut_rdwr_and_error_order)
+{
+    TnDaemon d;
+    TnSocketBase base;
+    TN_TEST_BASE_INIT(base);
+    int slot_idx = -1;
+    TnIpcMsg imsg;
+    struct tcp_pcb pcb;
+    struct iovec iov[1];
+    struct msghdr msg;
+    static unsigned char sbuf[16];
+
+    memset(&d, 0, sizeof(d));
+    tn_slot_table_init(&d);
+
+    TnSocketSlot *slot = tn_slot_alloc(&d, &base, NULL, AF_INET, SOCK_STREAM,
+                                       IPPROTO_TCP, &slot_idx);
+    TN_ASSERT_TRUE(slot != NULL);
+    memset(&pcb, 0, sizeof(pcb));
+    slot->tcp_pcb = &pcb;
+    slot->tcp_state = TN_TCP_STATE_ESTABLISHED;
+
+    /* A. invalid how -> EINVAL */
+    memset(&imsg, 0, sizeof(imsg));
+    imsg.args[1] = 3;
+    TN_ASSERT_EQ(tn_ipc_cmd_shutdown(&d, &imsg, slot), 0);
+    TN_ASSERT_EQ(imsg.result, -1);
+    TN_ASSERT_EQ(imsg.err_no, EINVAL);
+
+    /* B. SHUT_RDWR -> ok; slot detached (pcb NULL, state CLOSED) */
+    memset(&imsg, 0, sizeof(imsg));
+    imsg.args[1] = 2;
+    TN_ASSERT_EQ(tn_ipc_cmd_shutdown(&d, &imsg, slot), 0);
+    TN_ASSERT_EQ(imsg.result, 0);
+    TN_ASSERT_TRUE(slot->tcp_pcb == NULL);
+    TN_ASSERT_EQ(slot->tcp_state, TN_TCP_STATE_CLOSED);
+    TN_ASSERT_TRUE(slot->shut_wr);
+    TN_ASSERT_TRUE(slot->shut_rd);
+
+    /* C. second shutdown -> quiet 0 */
+    memset(&imsg, 0, sizeof(imsg));
+    imsg.args[1] = 2;
+    TN_ASSERT_EQ(tn_ipc_cmd_shutdown(&d, &imsg, slot), 0);
+    TN_ASSERT_EQ(imsg.result, 0);
+
+    /* D. send after SHUT_RDWR -> EPIPE */
+    iov[0].iov_base = sbuf;
+    iov[0].iov_len = 4;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_iov = iov;
+    msg.msg_iovlen = 1;
+    memset(&imsg, 0, sizeof(imsg));
+    imsg.ptrs[0] = &msg;
+    TN_ASSERT_EQ(tn_ipc_cmd_sendmsg(&d, &imsg, slot), 0);
+    TN_ASSERT_EQ(imsg.result, -1);
+    TN_ASSERT_EQ(imsg.err_no, EPIPE);
+
+    /* E. ERROR state: last_error reported once, then EPIPE */
+    slot->tcp_state = TN_TCP_STATE_ERROR;
+    slot->tcp_pcb = &pcb;      /* pretend a pcb still exists for the gate */
+    slot->shut_wr = FALSE;
+    slot->last_error = ECONNRESET;
+    memset(&imsg, 0, sizeof(imsg));
+    imsg.ptrs[0] = &msg;
+    TN_ASSERT_EQ(tn_ipc_cmd_sendmsg(&d, &imsg, slot), 0);
+    TN_ASSERT_EQ(imsg.err_no, ECONNRESET);
+    memset(&imsg, 0, sizeof(imsg));
+    imsg.ptrs[0] = &msg;
+    TN_ASSERT_EQ(tn_ipc_cmd_sendmsg(&d, &imsg, slot), 0);
+    TN_ASSERT_EQ(imsg.err_no, EPIPE);
+
+    slot->tcp_pcb = NULL;
+    tn_slot_free(&d, slot_idx);
+}
+
 int main(void)
 {
     TN_TEST_RUN(rx_pbuf_chain_partial_reads);
@@ -1251,6 +1330,7 @@ int main(void)
     TN_TEST_RUN(sendmsg_recvmsg_edge_cases_tnet115);
     TN_TEST_RUN(send_succeeds_in_peer_closed);
     TN_TEST_RUN(net_recv_unconnected_tcp_enotconn_not_parked);
+    TN_TEST_RUN(net_shutdown_shut_rdwr_and_error_order);
     TN_TEST_RUN(net_udp_raw_send_connected);
     TN_TEST_RUN(net_udp_raw_send_unconnected_enotconn);
     TN_TEST_RUN(net_udp_connected_sendto_eisconn);

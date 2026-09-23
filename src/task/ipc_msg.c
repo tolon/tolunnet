@@ -58,7 +58,7 @@ int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         have_to = 1;
     }
 
-    if (slot->type == SOCK_STREAM && slot->tcp_pcb != NULL) {
+    if (slot->type == SOCK_STREAM) {
         u16_t snd_buf;
         u16_t to_send;
         u16_t remaining;
@@ -74,11 +74,17 @@ int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         }
         if (slot->tcp_state == TN_TCP_STATE_ERROR) {
             imsg->result = -1;
-            imsg->err_no = EPIPE;
+            if (slot->last_error != 0) {
+                imsg->err_no = slot->last_error;
+                slot->last_error = 0;
+            } else {
+                imsg->err_no = EPIPE;
+            }
             return 0;
         }
-        if (slot->tcp_state != TN_TCP_STATE_ESTABLISHED &&
-            slot->tcp_state != TN_TCP_STATE_PEER_CLOSED) {
+        if (slot->tcp_pcb == NULL ||
+            (slot->tcp_state != TN_TCP_STATE_ESTABLISHED &&
+             slot->tcp_state != TN_TCP_STATE_PEER_CLOSED)) {
             imsg->result = -1;
             imsg->err_no = ENOTCONN;
             return 0;
