@@ -568,6 +568,9 @@ static int tn_task_real_main(int argc, char *argv[])
             sys_check_timeouts();
             tn_drain_loopback();
 
+            /* Check socket receive timeouts (SO_RCVTIMEO) */
+            tn_slot_check_recv_timeouts(&g_daemon);
+
             /* TNET-109: bounded re-arm of error-completed CMD_READ slots */
             tn_s2_rearm_reads(&prim->s2if);
             tn_s2_tx_drain(&prim->s2if); /* TNET-106: reap TX completions */

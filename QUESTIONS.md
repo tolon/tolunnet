@@ -38,6 +38,9 @@ Status: `open` · `answered` · `superseded`.
 10. **[auto] ARP FLUSH Template Argument (TNET-153).**
     - Resolved: [auto] WONTFIX (etharp has no full-flush primitive; DELETE covers the use case). Removed `FLUSH/S` from `arp` ReadArgs template and documentation to eliminate no-op arguments.
 
+11. **[auto] Blocking recv parking and SO_RCVTIMEO (Phase 1b Item 2).**
+    - Resolved: [auto] Per Roadshow SDK 1.8 / BSD 4.4, blocking recv/recvfrom/recvmsg calls park the client's `TnIpcMsg` with lwIP until incoming data or connection termination (FIN/RST), or until `SO_RCVTIMEO` expires (`EWOULDBLOCK`). Parked messages are tracked in `slot->pending_recv_msg` and cancelled on `closesocket` (`EBADF`) and `CloseLibrary` (`ECONNABORTED`).
+
 ---
 
 ## Active Testing & Integration Horizon

@@ -40,4 +40,8 @@ void tn_accept_queue_drain(TnSocketSlot *slot);
 void tn_record_socket_event(TnDaemon *d, TnSocketSlot *slot, ULONG event_mask);
 int tn_slot_live_count(const TnDaemon *d);
 
+int tn_slot_park_recv(TnDaemon *d, TnSocketSlot *slot, TnIpcMsg *imsg);
+void tn_slot_check_recv_timeouts(TnDaemon *d);
+void tn_recv_cancel_for_base(TnDaemon *d, TnSocketBase *base);
+
 #endif /* TOLUNNET_SLOT_TABLE_H */

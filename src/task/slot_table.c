@@ -162,6 +162,8 @@ static void tn_init_socket_slot(TnSocketSlot *s, TnSocketBase *base, struct Task
     s->accept_count        = 0;
     s->pending_connect_msg = NULL;
     s->pending_accept_msg  = NULL;
+    s->pending_recv_msg    = NULL;
+    s->recv_deadline_tick  = 0;
     s->park_id             = 0;
     s->is_parked           = FALSE;
 }
@@ -269,6 +271,14 @@ void tn_slot_free(TnDaemon *d, int slot_idx)
         amsg->result = -1;
         amsg->err_no = EBADF;
         ReplyMsg((struct Message *)amsg);
+    }
+    if (slot->pending_recv_msg != NULL) {
+        TnIpcMsg *rmsg = slot->pending_recv_msg;
+        slot->pending_recv_msg = NULL;
+        slot->recv_deadline_tick = 0;
+        rmsg->result = -1;
+        rmsg->err_no = EBADF;
+        ReplyMsg((struct Message *)rmsg);
     }
 
     slot->rx_tail             = NULL;
@@ -436,6 +446,72 @@ void tn_record_socket_event(TnDaemon *d, TnSocketSlot *slot, ULONG event_mask)
         }
         if (posted && base->sig_event != 0 && slot->owner_task != NULL) {
             Signal(slot->owner_task, base->sig_event);
+        }
+    }
+}
+
+int tn_slot_park_recv(TnDaemon *d, TnSocketSlot *slot, TnIpcMsg *imsg)
+{
+    if (slot == NULL || imsg == NULL) return 0;
+
+    if (slot->pending_recv_msg != NULL) {
+        if (slot->pending_recv_msg == imsg) {
+            return 1; /* TN_IPC_DEFER */
+        }
+        imsg->result = -1;
+        imsg->err_no = EALREADY;
+        return 0;
+    }
+
+    slot->pending_recv_msg = imsg;
+
+    if (slot->opt_rcvtimeo.tv_secs > 0 || slot->opt_rcvtimeo.tv_micro > 0) {
+        uint32_t ms = (uint32_t)slot->opt_rcvtimeo.tv_secs * 1000 +
+                      (uint32_t)(slot->opt_rcvtimeo.tv_micro + 999) / 1000;
+        uint32_t ticks = (ms + 99) / 100;
+        if (ticks == 0) ticks = 1;
+        slot->recv_deadline_tick = (d != NULL) ? (d->mainloop_ticks + ticks) : 0;
+    } else {
+        slot->recv_deadline_tick = 0;
+    }
+
+    return 1; /* TN_IPC_DEFER */
+}
+
+void tn_slot_check_recv_timeouts(TnDaemon *d)
+{
+    int i;
+    if (d == NULL) return;
+    for (i = 0; i < TN_MAX_GLOBAL_SOCKETS; i++) {
+        TnSocketSlot *slot = &d->sockets[i];
+        if (slot->in_use && slot->pending_recv_msg != NULL && slot->recv_deadline_tick != 0) {
+            if ((int32_t)(d->mainloop_ticks - slot->recv_deadline_tick) >= 0) {
+                TnIpcMsg *imsg = slot->pending_recv_msg;
+                slot->pending_recv_msg = NULL;
+                slot->recv_deadline_tick = 0;
+                imsg->result = -1;
+                imsg->err_no = EWOULDBLOCK;
+                ReplyMsg((struct Message *)imsg);
+            }
+        }
+    }
+}
+
+void tn_recv_cancel_for_base(TnDaemon *d, TnSocketBase *base)
+{
+    int i;
+    if (d == NULL || base == NULL) return;
+    for (i = 0; i < TN_MAX_GLOBAL_SOCKETS; i++) {
+        TnSocketSlot *slot = &d->sockets[i];
+        if (slot->in_use && slot->pending_recv_msg != NULL) {
+            if (slot->pending_recv_msg->socket_base == (struct Library *)base) {
+                TnIpcMsg *rmsg = slot->pending_recv_msg;
+                slot->pending_recv_msg = NULL;
+                slot->recv_deadline_tick = 0;
+                rmsg->result = -1;
+                rmsg->err_no = ECONNABORTED;
+                ReplyMsg((struct Message *)rmsg);
+            }
         }
     }
 }

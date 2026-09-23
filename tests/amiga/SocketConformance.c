@@ -5785,7 +5785,7 @@ static void tc_net_tcp_blocking_recv(void)
     s = call_socket(AF_INET, SOCK_STREAM, 0);
     if (s < 0) {
         tapf("# net_tcp_blocking_recv: socket failed errno=%ld\n", call_errno());
-        TAP_TODO("net_tcp_blocking_recv", "red-baseline 2");
+        TAP_NOTOK("net_tcp_blocking_recv", "socket failed");
         return;
     }
     for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
@@ -5797,12 +5797,12 @@ static void tc_net_tcp_blocking_recv(void)
     if (call_connect(s, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
         tapf("# net_tcp_blocking_recv: connect failed errno=%ld\n", call_errno());
         call_closesocket(s);
-        TAP_TODO("net_tcp_blocking_recv", "red-baseline 2");
+        TAP_NOTOK("net_tcp_blocking_recv", "connect failed");
         return;
     }
 
     /* Blocking recv: server delays 1.0 s before sending data.
-     * On HEAD, returns EWOULDBLOCK (-1) immediately instead of blocking. */
+     * Blocks until delayed data arrives from the slirp host helper. */
     n = call_recv(s, buf, sizeof(buf) - 1, 0);
     call_closesocket(s);
 
@@ -5814,7 +5814,7 @@ static void tc_net_tcp_blocking_recv(void)
         }
     }
     tapf("# net_tcp_blocking_recv: recv got=%ld errno=%ld\n", n, call_errno());
-    TAP_TODO("net_tcp_blocking_recv", "red-baseline 2");
+    TAP_NOTOK("net_tcp_blocking_recv", "recv failed or content mismatch");
 }
 
 /* Item 3: send() on connected UDP socket (Madde 3: ipc_tcp.c:403-481) */

@@ -8,6 +8,7 @@
 #include "ipc_select.h"
 #include "slot_table.h"
 #include "netif_mgr.h"
+#include "ipc_dispatch.h"
 #include "../common/sockaddr_util.h"
 
 err_t tn_tcp_sent_cb(void *arg, struct tcp_pcb *pcb, u16_t len)
@@ -45,6 +46,9 @@ err_t tn_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
         slot->tcp_state = TN_TCP_STATE_PEER_CLOSED;
         tn_signal_socket(&g_daemon, slot);
         tn_record_socket_event(&g_daemon, slot, FD_CLOSE | FD_READ);
+        if (slot->pending_recv_msg != NULL) {
+            tn_service_pending_recv(&g_daemon, slot);
+        }
         return ERR_OK;
     }
 
@@ -55,6 +59,9 @@ err_t tn_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 
     tn_signal_socket(&g_daemon, slot);
     tn_record_socket_event(&g_daemon, slot, FD_READ);
+    if (slot->pending_recv_msg != NULL) {
+        tn_service_pending_recv(&g_daemon, slot);
+    }
     return ERR_OK;
 }
 
@@ -112,6 +119,9 @@ void tn_tcp_err_cb(void *arg, err_t err)
         slot->pending_connect_msg->err_no = ECONNREFUSED;
         ReplyMsg((struct Message *)slot->pending_connect_msg);
         slot->pending_connect_msg = NULL;
+    }
+    if (slot->pending_recv_msg != NULL) {
+        tn_service_pending_recv(&g_daemon, slot);
     }
 }
 
@@ -553,9 +563,12 @@ int tn_ipc_cmd_recv(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             imsg->err_no = ECONNRESET;
             return 0;
         } else {
-            imsg->result = -1;
-            imsg->err_no = EWOULDBLOCK;
-            return 0;
+            if (slot->is_nonblocking || (flags & MSG_DONTWAIT)) {
+                imsg->result = -1;
+                imsg->err_no = EWOULDBLOCK;
+                return 0;
+            }
+            return tn_slot_park_recv(d, slot, imsg);
         }
     } else if (slot->type == SOCK_DGRAM || slot->type == SOCK_RAW) {
         if (slot->rx_head != NULL) {
@@ -581,9 +594,12 @@ int tn_ipc_cmd_recv(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             imsg->err_no = 0;
             return 0;
         } else {
-            imsg->result = -1;
-            imsg->err_no = EWOULDBLOCK;
-            return 0;
+            if (slot->is_nonblocking || (flags & MSG_DONTWAIT)) {
+                imsg->result = -1;
+                imsg->err_no = EWOULDBLOCK;
+                return 0;
+            }
+            return tn_slot_park_recv(d, slot, imsg);
         }
     }
 

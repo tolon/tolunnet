@@ -8,6 +8,7 @@
 #include "ipc_select.h"
 #include "slot_table.h"
 #include "netif_mgr.h"
+#include "ipc_dispatch.h"
 #include "../common/sockaddr_util.h"
 
 void tn_udp_recv_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p,
@@ -40,6 +41,9 @@ void tn_udp_recv_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p,
 
     tn_signal_socket(&g_daemon, slot);
     tn_record_socket_event(&g_daemon, slot, FD_READ);
+    if (slot->pending_recv_msg != NULL) {
+        tn_service_pending_recv(&g_daemon, slot);
+    }
 }
 
 u8_t tn_raw_recv_cb(void *arg, struct raw_pcb *pcb, struct pbuf *p,
@@ -75,6 +79,9 @@ u8_t tn_raw_recv_cb(void *arg, struct raw_pcb *pcb, struct pbuf *p,
 
     tn_signal_socket(&g_daemon, slot);
     tn_record_socket_event(&g_daemon, slot, FD_READ);
+    if (slot->pending_recv_msg != NULL) {
+        tn_service_pending_recv(&g_daemon, slot);
+    }
     return 0;
 }
 
@@ -327,9 +334,12 @@ int tn_ipc_cmd_recvfrom(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             imsg->err_no = 0;
             return 0;
         } else {
-            imsg->result = -1;
-            imsg->err_no = EWOULDBLOCK;
-            return 0;
+            if (slot->is_nonblocking || (flags & MSG_DONTWAIT)) {
+                imsg->result = -1;
+                imsg->err_no = EWOULDBLOCK;
+                return 0;
+            }
+            return tn_slot_park_recv(d, slot, imsg);
         }
     } else if (slot->type == SOCK_RAW) {
         if (slot->rx_head != NULL) {
@@ -362,9 +372,12 @@ int tn_ipc_cmd_recvfrom(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             imsg->err_no = 0;
             return 0;
         } else {
-            imsg->result = -1;
-            imsg->err_no = EWOULDBLOCK;
-            return 0;
+            if (slot->is_nonblocking || (flags & MSG_DONTWAIT)) {
+                imsg->result = -1;
+                imsg->err_no = EWOULDBLOCK;
+                return 0;
+            }
+            return tn_slot_park_recv(d, slot, imsg);
         }
     }
 

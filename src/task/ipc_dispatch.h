@@ -26,5 +26,6 @@ typedef struct TnIpcHandler {
 
 const char *tn_ipc_cmd_name(TnIpcCmd cmd);
 BOOL tn_handle_ipc(TnDaemon *d, TnIpcMsg *imsg);
+void tn_service_pending_recv(TnDaemon *d, TnSocketSlot *slot);
 
 #endif /* TOLUNNET_IPC_DISPATCH_H */

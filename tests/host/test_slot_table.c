@@ -381,6 +381,98 @@ TN_TEST(selector_table_grow)
     TN_ASSERT_EQ(d.max_selectors, 0u);
 }
 
+TN_TEST(recv_parking_and_rcvtimeo_lifecycle)
+{
+    TnDaemon d;
+    TnSocketBase base;
+    static LONG test_fd_map[TN_DEFAULT_DTABLESIZE];
+    int _i;
+    int slot_idx = -1;
+    TnSocketSlot *slot;
+    TnIpcMsg msg1, msg2;
+
+    memset(&base, 0, sizeof(base));
+    base.fd_map = test_fd_map;
+    base.dtablesize = TN_DEFAULT_DTABLESIZE;
+    for (_i = 0; _i < TN_DEFAULT_DTABLESIZE; _i++) base.fd_map[_i] = -1;
+
+    memset(&msg1, 0, sizeof(msg1));
+    msg1.cmd = TN_IPC_CMD_RECV;
+    msg1.socket_base = (struct Library *)&base;
+
+    memset(&msg2, 0, sizeof(msg2));
+    msg2.cmd = TN_IPC_CMD_RECV;
+    msg2.socket_base = (struct Library *)&base;
+
+    tn_slot_table_init(&d);
+    d.mainloop_ticks = 100;
+
+    slot = tn_slot_alloc(&d, &base, NULL, 2, 1, 6, &slot_idx);
+    TN_ASSERT_TRUE(slot != NULL);
+    TN_ASSERT_TRUE(slot->pending_recv_msg == NULL);
+    TN_ASSERT_EQ(slot->recv_deadline_tick, 0u);
+
+    /* 1. Park without timeout */
+    int act = tn_slot_park_recv(&d, slot, &msg1);
+    TN_ASSERT_EQ(act, 1);
+    TN_ASSERT_EQ(slot->pending_recv_msg, &msg1);
+    TN_ASSERT_EQ(slot->recv_deadline_tick, 0u);
+
+    /* 2. Re-parking the same message returns 1 (deferred) */
+    TN_ASSERT_EQ(tn_slot_park_recv(&d, slot, &msg1), 1);
+
+    /* 3. Parking another message while busy returns 0 with EALREADY */
+    act = tn_slot_park_recv(&d, slot, &msg2);
+    TN_ASSERT_EQ(act, 0);
+    TN_ASSERT_EQ(msg2.result, -1);
+    TN_ASSERT_EQ(msg2.err_no, EALREADY);
+
+    /* 4. Reset and configure SO_RCVTIMEO (500 ms = 5 ticks) */
+    slot->pending_recv_msg = NULL;
+    slot->opt_rcvtimeo.tv_secs = 0;
+    slot->opt_rcvtimeo.tv_micro = 500000;
+
+    act = tn_slot_park_recv(&d, slot, &msg1);
+    TN_ASSERT_EQ(act, 1);
+    TN_ASSERT_EQ(slot->recv_deadline_tick, 105u); /* 100 + 5 ticks */
+
+    /* Advance ticks but not past deadline */
+    d.mainloop_ticks = 104;
+    tn_slot_check_recv_timeouts(&d);
+    TN_ASSERT_EQ(slot->pending_recv_msg, &msg1);
+
+    /* Advance ticks to deadline -> expires with EWOULDBLOCK */
+    d.mainloop_ticks = 105;
+    tn_slot_check_recv_timeouts(&d);
+    TN_ASSERT_TRUE(slot->pending_recv_msg == NULL);
+    TN_ASSERT_EQ(slot->recv_deadline_tick, 0u);
+    TN_ASSERT_EQ(msg1.result, -1);
+    TN_ASSERT_EQ(msg1.err_no, EWOULDBLOCK);
+
+    /* 5. Cancel on base close */
+    msg1.result = 0;
+    msg1.err_no = 0;
+    slot->opt_rcvtimeo.tv_micro = 0;
+    tn_slot_park_recv(&d, slot, &msg1);
+    TN_ASSERT_EQ(slot->pending_recv_msg, &msg1);
+
+    tn_recv_cancel_for_base(&d, &base);
+    TN_ASSERT_TRUE(slot->pending_recv_msg == NULL);
+    TN_ASSERT_EQ(msg1.result, -1);
+    TN_ASSERT_EQ(msg1.err_no, ECONNABORTED);
+
+    /* 6. Cancel on slot_free */
+    msg1.result = 0;
+    msg1.err_no = 0;
+    tn_slot_park_recv(&d, slot, &msg1);
+    TN_ASSERT_EQ(slot->pending_recv_msg, &msg1);
+
+    tn_slot_free(&d, slot_idx);
+    TN_ASSERT_TRUE(slot->pending_recv_msg == NULL);
+    TN_ASSERT_EQ(msg1.result, -1);
+    TN_ASSERT_EQ(msg1.err_no, EBADF);
+}
+
 int main(void)
 {
     TN_TEST_RUN(selector_table_grow);
@@ -392,6 +484,7 @@ int main(void)
     TN_TEST_RUN(rx_queue_limit_32);
     TN_TEST_RUN(accept_queue_operations);
     TN_TEST_RUN(event_signaling);
+    TN_TEST_RUN(recv_parking_and_rcvtimeo_lifecycle);
 
     TN_TEST_PLAN();
     return tn_test_failures();

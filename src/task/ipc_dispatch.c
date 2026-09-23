@@ -27,6 +27,10 @@
 #include "ipc_ifctl.h"
 #include "slot_table.h"
 
+#if defined(__AMIGA__) || defined(__amigaos__) || defined(TN_AMIGA_BUILD)
+#include <proto/exec.h>
+#endif
+
 static const char * const g_ipc_cmd_names[] = {
     [TN_IPC_CMD_OPEN]          = "OPEN",
     [TN_IPC_CMD_CLOSE]         = "CLOSE",
@@ -162,4 +166,37 @@ BOOL tn_handle_ipc(TnDaemon *d, TnIpcMsg *imsg)
         d->deferred_replies++;
     }
     return (action == TN_IPC_REPLY_NOW);
+}
+
+void tn_service_pending_recv(TnDaemon *d, TnSocketSlot *slot)
+{
+    TnIpcMsg *imsg;
+    int action;
+
+    if (d == NULL || slot == NULL || slot->pending_recv_msg == NULL) return;
+
+    imsg = slot->pending_recv_msg;
+
+    switch (imsg->cmd) {
+    case TN_IPC_CMD_RECV:
+        action = tn_ipc_cmd_recv(d, imsg, slot);
+        break;
+    case TN_IPC_CMD_RECVFROM:
+        action = tn_ipc_cmd_recvfrom(d, imsg, slot);
+        break;
+    case TN_IPC_CMD_RECVMSG:
+        action = tn_ipc_cmd_recvmsg(d, imsg, slot);
+        break;
+    default:
+        imsg->result = -1;
+        imsg->err_no = EINVAL;
+        action = TN_IPC_REPLY_NOW;
+        break;
+    }
+
+    if (action == TN_IPC_REPLY_NOW) {
+        slot->pending_recv_msg = NULL;
+        slot->recv_deadline_tick = 0;
+        ReplyMsg((struct Message *)imsg);
+    }
 }

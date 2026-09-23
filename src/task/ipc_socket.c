@@ -72,6 +72,7 @@ int tn_ipc_cmd_close(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
      * no late dns_found_cb may ever touch these imsgs again. */
     if (base != NULL) {
         tn_dns_cancel_for_base(d, base);
+        tn_recv_cancel_for_base(d, base);
     }
 
     /* TNET-150 item 6: leaving the open-bases registry */
@@ -230,6 +231,15 @@ int tn_ipc_cmd_closesocket(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     }
 
     slot_idx = (int)(slot - d->sockets);
+    if (slot->pending_recv_msg != NULL &&
+        slot->pending_recv_msg->socket_base == (struct Library *)base) {
+        TnIpcMsg *rmsg = slot->pending_recv_msg;
+        slot->pending_recv_msg = NULL;
+        slot->recv_deadline_tick = 0;
+        rmsg->result = -1;
+        rmsg->err_no = EBADF;
+        ReplyMsg((struct Message *)rmsg);
+    }
     base->fd_map[client_fd] = -1;
     tn_slot_unref(d, slot_idx);
 
@@ -501,6 +511,17 @@ int tn_ipc_cmd_setsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                 imsg->result = -1;
                 imsg->err_no = EINVAL;
                 return 0;
+            }
+            if (slot->pending_recv_msg != NULL) {
+                if (slot->opt_rcvtimeo.tv_secs > 0 || slot->opt_rcvtimeo.tv_micro > 0) {
+                    uint32_t ms = (uint32_t)slot->opt_rcvtimeo.tv_secs * 1000 +
+                                  (uint32_t)(slot->opt_rcvtimeo.tv_micro + 999) / 1000;
+                    uint32_t ticks = (ms + 99) / 100;
+                    if (ticks == 0) ticks = 1;
+                    slot->recv_deadline_tick = (d != NULL) ? (d->mainloop_ticks + ticks) : 0;
+                } else {
+                    slot->recv_deadline_tick = 0;
+                }
             }
             break;
 

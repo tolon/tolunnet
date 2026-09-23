@@ -159,6 +159,8 @@ typedef struct TnSocketSlot {
     ULONG           accept_count;
     TnIpcMsg       *pending_connect_msg;
     TnIpcMsg       *pending_accept_msg;
+    TnIpcMsg       *pending_recv_msg;
+    uint32_t        recv_deadline_tick;
     LONG            park_id;
     BOOL            is_parked;
 } TnSocketSlot;

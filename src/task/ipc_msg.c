@@ -315,9 +315,12 @@ int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             imsg->err_no = ECONNRESET;
             return 0;
         } else {
-            imsg->result = -1;
-            imsg->err_no = EWOULDBLOCK;
-            return 0;
+            if (slot->is_nonblocking || (flags & MSG_DONTWAIT)) {
+                imsg->result = -1;
+                imsg->err_no = EWOULDBLOCK;
+                return 0;
+            }
+            return tn_slot_park_recv(d, slot, imsg);
         }
     } else if (slot->type == SOCK_DGRAM || slot->type == SOCK_RAW) {
         if (slot->rx_head != NULL) {
@@ -369,9 +372,12 @@ int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             imsg->err_no = 0;
             return 0;
         } else {
-            imsg->result = -1;
-            imsg->err_no = EWOULDBLOCK;
-            return 0;
+            if (slot->is_nonblocking || (flags & MSG_DONTWAIT)) {
+                imsg->result = -1;
+                imsg->err_no = EWOULDBLOCK;
+                return 0;
+            }
+            return tn_slot_park_recv(d, slot, imsg);
         }
     }
 
