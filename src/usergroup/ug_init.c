@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * ug_init.c — Library initialization, resident RomTag, and lifecycle.
  *

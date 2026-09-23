@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — Socket Control & Option IPC Handlers Implementation (ipc_socket.c).
  *

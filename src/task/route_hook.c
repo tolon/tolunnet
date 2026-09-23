@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — lwIP routing hooks over the static route table (CLOSE §B.5).
  *

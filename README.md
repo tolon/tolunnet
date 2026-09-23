@@ -33,6 +33,7 @@ Classic AmigaOS has long lacked an actively maintained, production-grade, 100% o
 - **`usergroup.library`:** resident library (`LIBS:usergroup.library`, 39 public LVOs) for user/group identity and credentials (`getuid`, `geteuid`, `getpwuid`, `getpwnam`, `getgrnam`, `getgroups`, `crypt`, …).
   - It has a built-in in-memory database: users `root`, `amiga`, `nobody`; groups `wheel`, `staff`, `nobody`.
   - The first `passwd`/`group` file found in `AmiTCP:db/`, `DEVS:Internet/` or `DEVS:tolunnet/` overrides that database.
+  - `crypt()` uses an internal FNV hash, not Unix DES; existing AmiTCP passwd files are not compatible.
   - Partial implementations are listed under [Known limitations](STATUS.md#known-limitations).
 - **AutoIP (RFC 3927):** optional link-local `169.254.x.x/16` address fallback with Address Conflict Detection (lwIP DHCP/AutoIP cooperation, about 3–4 s). Off by default; `AUTOIP=YES` enables it.
 - **mDNS responder (RFC 6762):** optional Zeroconf responder that answers `<hostname>.local` on `224.0.0.251:5353` and publishes a `_workstation._tcp` DNS-SD service (`model=Amiga`, `os=AmigaOS`, `stack=tolunnet`). Off by default; `MDNS=YES` enables it.

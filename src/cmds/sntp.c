@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — sntp command (CMD-1). ReadArgs: HOST,SET/S,OFFSET/N
  * Pure thin-client: UDP socket to port 123, NTPv3 packet, no daemon changes.

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * lib_table.gen.c — Generated bsdsocket.library jump table.
  * Generated automatically by scripts/gen_lvo_table.py from sfd/bsdsocket_lib.sfd.

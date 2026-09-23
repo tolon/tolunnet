@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — pure KEY=VALUE config parse/format (host-testable).
  *

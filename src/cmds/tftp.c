@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — tftp command (CMD-4). RFC 1350 octet mode.
  * ReadArgs: HOST/A,GET/S,PUT/S,FILE/A,LOCAL

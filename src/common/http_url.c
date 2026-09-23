@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * Tolunnet — HTTP URL and Header Parser Implementation
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet ? Select & Async Signaling (ipc_select.h).
  *

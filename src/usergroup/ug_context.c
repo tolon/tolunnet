@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * ug_context.c — Task context, credentials, and usergroup LVO implementations.
  *

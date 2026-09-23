@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — pure dotted-quad / classful address parser (host-testable).
  * Behaviour identical to the bsdsocket inet_addr() LVO (TNET-019/TNET-051).

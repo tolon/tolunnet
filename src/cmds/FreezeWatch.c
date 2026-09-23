@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * FreezeWatch — TNET-115 live capture without the WinUAE debugger
  * (TN-bugtrack-2 item 2). Runs as a background task next to the bench;

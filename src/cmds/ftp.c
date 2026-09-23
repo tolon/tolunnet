@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — ftp command (CMD-5). Interactive FTP client with passive mode.
  * ReadArgs: HOST,PORT/N,USER,PASS,SCRIPT,QUIET/S

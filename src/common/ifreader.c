@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — Roadshow-style interfaces file parser (CLOSE §B.7).
  *

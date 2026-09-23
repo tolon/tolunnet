@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet logging interface — DOS Write/Output (master prompt §3: no stdio in
  * resident code).

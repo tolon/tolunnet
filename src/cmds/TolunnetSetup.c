@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — First-Run Network Setup Wizard (TolunnetSetup), UI v2
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — ShowNetStatus command (CMD-6). ReadArgs: INTERFACES/S,ROUTES/S,DNS/S,SOCKETS/S,FULL/S
  * Shows a human-readable network status report. Thin client: reads via

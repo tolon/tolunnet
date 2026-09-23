@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — Static IPv4 route table implementation (CLOSE §B.5).
  *

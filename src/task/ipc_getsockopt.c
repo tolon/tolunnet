@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — getsockopt IPC handler with Roadshow semantics (SEC item 7).
  *

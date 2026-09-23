@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — TolunnetControl command (CMD-1 item 4).
  * Control front-end: START|STOP|RESTART|STATUS|RECONFIG|VERSION

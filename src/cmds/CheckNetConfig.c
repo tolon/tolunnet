@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — CheckNetConfig command (CLOSE §B.8).
  * ReadArgs: FILE — validates a tolunnet config file (default

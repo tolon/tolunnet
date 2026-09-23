@@ -2,6 +2,8 @@
 
 Generated automatically by `scripts/gen_usergroup_table.py` from `sfd/usergroup_lib.sfd`.
 
+> Note: `crypt()` uses an internal FNV hash, not Unix DES; existing AmiTCP passwd files are not compatible.
+
 | Offset | Function | Signature | Status | Implementation Details |
 |--------|----------|-----------|--------|------------------------|
 | `-30` | `ug_SetupContextTagList` | `LONG ug_SetupContextTagList(STRPTR name,struct TagItem *tags)` | **BUILT** | In-memory DB + file reader fallback |
@@ -28,18 +30,18 @@ Generated automatically by `scripts/gen_usergroup_table.py` from `sfd/usergroup_
 | `-156` | `setgrent` | `VOID setgrent()` | **BUILT** | In-memory DB + file reader fallback |
 | `-162` | `getgrent` | `struct group * getgrent()` | **BUILT** | In-memory DB + file reader fallback |
 | `-168` | `endgrent` | `VOID endgrent()` | **BUILT** | In-memory DB + file reader fallback |
-| `-174` | `crypt` | `UBYTE * crypt(UBYTE *key,UBYTE *set)` | **BUILT** | In-memory DB + file reader fallback |
+| `-174` | `crypt` | `UBYTE * crypt(UBYTE *key,UBYTE *set)` | **BUILT** | FNV-based hash (internal; existing AmiTCP passwd files are not compatible) |
 | `-180` | `ug_GetSalt` | `UBYTE * ug_GetSalt(struct passwd *user,UBYTE *buf,ULONG size)` | **BUILT** | In-memory DB + file reader fallback |
-| `-186` | `getpass` | `STRPTR getpass(STRPTR prompt)` | **BUILT** | In-memory DB + file reader fallback |
+| `-186` | `getpass` | `STRPTR getpass(STRPTR prompt)` | **BUILT** | In-memory stub (returns empty string without prompt) |
 | `-192` | `umask` | `ULONG umask(UWORD mask)` | **BUILT** | In-memory DB + file reader fallback |
 | `-198` | `getumask` | `ULONG getumask()` | **BUILT** | In-memory DB + file reader fallback |
 | `-204` | `setsid` | `LONG setsid()` | **BUILT** | In-memory DB + file reader fallback |
 | `-210` | `getpgrp` | `LONG getpgrp()` | **BUILT** | In-memory DB + file reader fallback |
 | `-216` | `getlogin` | `STRPTR getlogin()` | **BUILT** | In-memory DB + file reader fallback |
 | `-222` | `setlogin` | `LONG setlogin(STRPTR name)` | **BUILT** | In-memory DB + file reader fallback |
-| `-228` | `setutent` | `VOID setutent()` | **BUILT** | In-memory DB + file reader fallback |
-| `-234` | `getutent` | `struct utmp * getutent()` | **BUILT** | In-memory DB + file reader fallback |
-| `-240` | `endutent` | `VOID endutent()` | **BUILT** | In-memory DB + file reader fallback |
-| `-246` | `getlastlog` | `struct lastlog * getlastlog(LONG uid)` | **BUILT** | In-memory DB + file reader fallback |
-| `-252` | `setlastlog` | `LONG setlastlog(LONG uid,STRPTR name,STRPTR host)` | **BUILT** | In-memory DB + file reader fallback |
+| `-228` | `setutent` | `VOID setutent()` | **BUILT** | No-op stub |
+| `-234` | `getutent` | `struct utmp * getutent()` | **BUILT** | Fixed root/console record |
+| `-240` | `endutent` | `VOID endutent()` | **BUILT** | No-op stub |
+| `-246` | `getlastlog` | `struct lastlog * getlastlog(LONG uid)` | **BUILT** | In-memory tracking only |
+| `-252` | `setlastlog` | `LONG setlastlog(LONG uid,STRPTR name,STRPTR host)` | **BUILT** | In-memory tracking only |
 | `-258` | `getcredentials` | `struct UserGroupCredentials * getcredentials(struct Task *task)` | **BUILT** | In-memory DB + file reader fallback |

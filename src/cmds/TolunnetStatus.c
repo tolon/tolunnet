@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * TolunnetStatus — Interface & Network Status Diagnostic Tool for AmigaOS.
  *

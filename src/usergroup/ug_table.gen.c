@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * ug_table.gen.c — Generated usergroup.library jump table.
  * Generated automatically by scripts/gen_usergroup_table.py from sfd/usergroup_lib.sfd.

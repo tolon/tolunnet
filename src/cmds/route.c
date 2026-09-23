@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — route command (CLOSE §B.5).
  * ReadArgs: SHOW/S,ADD/S,DEST,NETMASK,GATEWAY,DELETE/S,DEFAULT/S

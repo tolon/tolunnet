@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — hostname command (CMD-1). ReadArgs: HOSTNAME,SAVE/S
  */

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — traceroute command (CMD-3). ReadArgs: HOST/A,MAXHOPS/N,QUERIES/N,WAIT/N,NUMERIC/S
  */

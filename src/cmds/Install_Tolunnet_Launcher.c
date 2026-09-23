@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — Native AmigaOS Installer Launcher Binary (v1.1)
  *

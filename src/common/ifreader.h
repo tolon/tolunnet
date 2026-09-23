@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — Roadshow-style DEVS:Internet/interfaces reader (CLOSE §B.7).
  *

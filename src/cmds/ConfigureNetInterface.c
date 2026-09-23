@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — ConfigureNetInterface command (CLOSE §B.7, Roadshow-style).
  * ReadArgs: NAME/M,ADDRESS/K,NETMASK/K,GATEWAY/K,DHCP/K

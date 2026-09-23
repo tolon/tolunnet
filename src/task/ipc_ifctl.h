@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — IFCTL IPC handler (ipc_ifctl.h, CLOSE §B.7).
  */

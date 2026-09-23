@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — GetNetStatus command (CMD-6).
  * Prints a single value for scripts. RC 0 = online, 5 = offline.

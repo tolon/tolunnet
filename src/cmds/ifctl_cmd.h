@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — shared IFCTL client helpers for the interface commands
  * (CLOSE §B.7): one-line IPC wrappers + dotted-quad formatting.

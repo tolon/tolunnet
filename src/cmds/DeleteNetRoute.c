@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — DeleteNetRoute command (CLOSE §B.5, Roadshow-style wrapper).
  * ReadArgs: DEST/A,MASK/K — deletes the matching static route via ROUTECTL.

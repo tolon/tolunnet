@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * usergroup_base.h — Internal structures and definitions for usergroup.library.
  *

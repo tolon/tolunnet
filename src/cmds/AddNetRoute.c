@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — AddNetRoute command (CLOSE §B.5, Roadshow-style wrapper).
  * ReadArgs: DEST/A,MASK/K,GATEWAY/K — adds a static route via ROUTECTL.

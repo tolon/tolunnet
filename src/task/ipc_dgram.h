@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet ? Datagram & Raw Socket Handlers (ipc_dgram.h).
  *

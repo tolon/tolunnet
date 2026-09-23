@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — Table-Driven IPC Dispatcher (ipc_dispatch.h).
  *

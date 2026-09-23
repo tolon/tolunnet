@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — nc (netcat) command (CMD-3). ReadArgs: HOST/A,PORT/N,UDP/S,LISTEN/S,TIMEOUT/N
  */

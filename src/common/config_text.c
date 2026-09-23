@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — pure KEY=VALUE config parse/format (host-testable).
  * Grammar per master prompt §5.2 / README.guide §4 (TNET-032/044/063).

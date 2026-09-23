@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet ? Operational & Telemetry IPC Handlers Implementation (ipc_status.c).
  *

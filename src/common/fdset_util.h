@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — pure WaitSelect fd_set / timeout helpers (host-testable).
  *

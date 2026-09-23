@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — portable SocketBaseTagList tag classifier (host-testable).
  * Semantics mirror the SocketBaseTagList LVO (COMPAT-1, TNET-036): the LVO

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — telnet command (CMD-4). ReadArgs: HOST/A,PORT/N
  * Simplified: raw TCP terminal, no NVT negotiation (connect + pipe).

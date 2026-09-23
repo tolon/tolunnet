@@ -242,6 +242,7 @@ def vector_status(name, per_func_cmds, ipc_handlers):
 
 def generate_lib_table(vectors, out_path):
     lines = [
+        "/* SPDX-License-Identifier: GPL-3.0-or-later */",
         "/*",
         " * lib_table.gen.c — Generated bsdsocket.library jump table.",
         " * Generated automatically by scripts/gen_lvo_table.py from sfd/bsdsocket_lib.sfd.",
@@ -389,6 +390,7 @@ def generate_lib_stubs(vectors, out_path):
 
 def generate_lib_unimpl(vectors, out_path):
     lines = [
+        "/* SPDX-License-Identifier: GPL-3.0-or-later */",
         "/*",
         " * lib_unimpl.c — Honest C stubs for unimplemented bsdsocket.library vectors.",
         " * Generated automatically by scripts/gen_lvo_table.py from sfd/bsdsocket_lib.sfd (Round 3 §D.2).",

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — task-owned copy ring (M1, UNPROVEN skeleton).
  *

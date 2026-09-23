@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — iperf command (CLOSE §B.6 / ANX-18g).
  * ReadArgs: CLIENT/K,SERVER/S,PORT/N,SECONDS/N,NUMERIC? — no, minimal:

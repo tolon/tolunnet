@@ -68,6 +68,7 @@ def parse_sfd(sfd_path):
 
 def generate_ug_table(vectors, out_path):
     lines = [
+        "/* SPDX-License-Identifier: GPL-3.0-or-later */",
         "/*",
         " * ug_table.gen.c — Generated usergroup.library jump table.",
         " * Generated automatically by scripts/gen_usergroup_table.py from sfd/usergroup_lib.sfd.",
@@ -203,6 +204,8 @@ def generate_ug_compat_table(vectors, out_path):
         "",
         "Generated automatically by `scripts/gen_usergroup_table.py` from `sfd/usergroup_lib.sfd`.",
         "",
+        "> Note: `crypt()` uses an internal FNV hash, not Unix DES; existing AmiTCP passwd files are not compatible.",
+        "",
         "| Offset | Function | Signature | Status | Implementation Details |",
         "|--------|----------|-----------|--------|------------------------|"
     ]
@@ -211,7 +214,19 @@ def generate_ug_compat_table(vectors, out_path):
         off = v["offset"]
         name = v["name"]
         sig = f"{v['ret']} {name}({v['args']})"
-        lines.append(f"| `{off}` | `{name}` | `{sig}` | **BUILT** | In-memory DB + file reader fallback |")
+        if name == "crypt":
+            details = "FNV-based hash (internal; existing AmiTCP passwd files are not compatible)"
+        elif name == "getpass":
+            details = "In-memory stub (returns empty string without prompt)"
+        elif name in ("setutent", "endutent"):
+            details = "No-op stub"
+        elif name == "getutent":
+            details = "Fixed root/console record"
+        elif name in ("getlastlog", "setlastlog"):
+            details = "In-memory tracking only"
+        else:
+            details = "In-memory DB + file reader fallback"
+        lines.append(f"| `{off}` | `{name}` | `{sig}` | **BUILT** | {details} |")
 
     lines.append("")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)

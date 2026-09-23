@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet ? NetDB IPC Handlers (ipc_netdb.h).
  *

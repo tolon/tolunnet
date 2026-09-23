@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — RFC3164 syslog forwarding (Round 4 §D3, TNET-108).
  *

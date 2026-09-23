@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet ? TCP Stream IPC Handlers & lwIP Callbacks Implementation (ipc_tcp.c).
  *

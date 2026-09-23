@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — ARP ioctl shared definition (TNET-141, CLOSE §B).
  *

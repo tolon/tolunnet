@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — NetShutdown command (CLOSE §B.8).
  * ReadArgs: FORCE/S — takes the interface down (IFCTL DOWN) and asks the

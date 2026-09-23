@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — Shared command-line client infrastructure implementation (CMD-0).
  * All bsdsocket calls use inline-asm LVO wrappers (-noixemul compatible).

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — timer.device management and real hardware time/random helpers for lwIP.
  *

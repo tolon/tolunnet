@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * ug_db.c — In-memory user and group database with file reading fallback.
  *

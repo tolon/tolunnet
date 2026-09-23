@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — Online command (CLOSE §B.7, Roadshow-style).
  * ReadArgs: NAME — brings the named interface up (default: primary).

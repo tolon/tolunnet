@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * lib_unimpl.c — Honest C stubs for unimplemented bsdsocket.library vectors.
  * Generated automatically by scripts/gen_lvo_table.py from sfd/bsdsocket_lib.sfd (Round 3 §D.2).

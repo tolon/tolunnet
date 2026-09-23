@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — arp command (CMD-6, TNET-141). ReadArgs: SHOW/S
  * SHOW scans the primary interface's /24 with SIOCGARP and prints every

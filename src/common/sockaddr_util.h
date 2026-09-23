@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — sockaddr to/from generic IP address marshaling (host-testable).
  *

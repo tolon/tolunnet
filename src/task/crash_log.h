@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — DIAG crash capture (TN-bugtrack-2 item 1 / TNET-139).
  *

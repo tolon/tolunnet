@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * ug_crypt.c — Crypt, salt, getpass, and utmp/lastlog implementations.
  *
