@@ -325,15 +325,9 @@ int tn_ipc_cmd_recvfrom(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
      * Bağlı olmayan TCP soketinde → -1, ENOTCONN (PR_CONNREQUIRED kontrolü).
      */
     if (slot->type == SOCK_STREAM) {
-        if (slot->tcp_pcb == NULL ||
-            (slot->tcp_state != TN_TCP_STATE_ESTABLISHED &&
-             slot->tcp_state != TN_TCP_STATE_PEER_CLOSED &&
-             slot->rx_head == NULL)) {
-            imsg->result = -1;
-            imsg->err_no = (slot->tcp_state == TN_TCP_STATE_ERROR) ? ECONNRESET : ENOTCONN;
-            return 0;
-        }
-
+        /* z.ai step 4 item 1: delegate to recv BEFORE any pcb/state check -
+         * recv owns the full 4.4BSD semantics (ENOTCONN on CLOSED/LISTENING,
+         * EOF on shut_rd/PEER_CLOSED, park only CONNECTING/ESTABLISHED). */
         int ret = tn_ipc_cmd_recv(d, imsg, slot);
         if (ret == 0 && imsg->result >= 0) {
             if (fromlen != NULL) {

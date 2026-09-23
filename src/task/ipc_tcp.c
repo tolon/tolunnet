@@ -646,6 +646,13 @@ int tn_ipc_cmd_recv(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             imsg->result = -1;
             imsg->err_no = ECONNRESET;
             return 0;
+        } else if (slot->tcp_state != TN_TCP_STATE_CONNECTING &&
+                   slot->tcp_state != TN_TCP_STATE_ESTABLISHED) {
+            /* 4.4BSD soreceive: CLOSED or LISTENING has no circuit to wait
+             * for - parked forever before (z.ai step 4 item 1). */
+            imsg->result = -1;
+            imsg->err_no = ENOTCONN;
+            return 0;
         } else {
             if (slot->is_nonblocking || (flags & MSG_DONTWAIT)) {
                 imsg->result = -1;

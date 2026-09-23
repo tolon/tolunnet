@@ -1159,6 +1159,88 @@ TN_TEST(send_succeeds_in_peer_closed)
     (void)rbuf;
 }
 
+/* z.ai step 4 item 1: recv on CLOSED/LISTENING returns ENOTCONN instead
+ * of parking forever; shut_rd gives EOF; recvfrom on TCP delegates. */
+TN_TEST(net_recv_unconnected_tcp_enotconn_not_parked)
+{
+    TnDaemon d;
+    TnSocketBase base;
+    TN_TEST_BASE_INIT(base);
+    int slot_idx = -1;
+    TnIpcMsg imsg;
+    static char buf[16];
+
+    memset(&d, 0, sizeof(d));
+    tn_slot_table_init(&d);
+
+    /* A. CLOSED */
+    {
+        TnSocketSlot *slot = tn_slot_alloc(&d, &base, NULL, AF_INET, SOCK_STREAM,
+                                           IPPROTO_TCP, &slot_idx);
+        TN_ASSERT_TRUE(slot != NULL);
+        slot->tcp_state = TN_TCP_STATE_CLOSED;
+        memset(&imsg, 0, sizeof(imsg));
+        imsg.ptrs[0] = buf;
+        imsg.args[1] = sizeof(buf);
+        TN_ASSERT_EQ(tn_ipc_cmd_recv(&d, &imsg, slot), 0);
+        TN_ASSERT_EQ(imsg.result, -1);
+        TN_ASSERT_EQ(imsg.err_no, ENOTCONN);
+        tn_slot_free(&d, slot_idx);
+    }
+
+    /* B. LISTENING */
+    {
+        TnSocketSlot *slot = tn_slot_alloc(&d, &base, NULL, AF_INET, SOCK_STREAM,
+                                           IPPROTO_TCP, &slot_idx);
+        TN_ASSERT_TRUE(slot != NULL);
+        slot->tcp_state = TN_TCP_STATE_LISTENING;
+        memset(&imsg, 0, sizeof(imsg));
+        imsg.ptrs[0] = buf;
+        imsg.args[1] = sizeof(buf);
+        TN_ASSERT_EQ(tn_ipc_cmd_recv(&d, &imsg, slot), 0);
+        TN_ASSERT_EQ(imsg.result, -1);
+        TN_ASSERT_EQ(imsg.err_no, ENOTCONN);
+        tn_slot_free(&d, slot_idx);
+    }
+
+    /* C. shut_rd without data -> EOF 0 (recvmsg path used to ignore it) */
+    {
+        struct iovec iov[1];
+        struct msghdr msg;
+        TnSocketSlot *slot = tn_slot_alloc(&d, &base, NULL, AF_INET, SOCK_STREAM,
+                                           IPPROTO_TCP, &slot_idx);
+        TN_ASSERT_TRUE(slot != NULL);
+        slot->tcp_state = TN_TCP_STATE_ESTABLISHED;
+        slot->shut_rd = TRUE;
+        iov[0].iov_base = buf;
+        iov[0].iov_len = sizeof(buf);
+        memset(&msg, 0, sizeof(msg));
+        msg.msg_iov = iov;
+        msg.msg_iovlen = 1;
+        memset(&imsg, 0, sizeof(imsg));
+        imsg.ptrs[0] = &msg;
+        TN_ASSERT_EQ(tn_ipc_cmd_recvmsg(&d, &imsg, slot), 0);
+        TN_ASSERT_EQ(imsg.result, 0);
+        TN_ASSERT_EQ(imsg.err_no, 0);
+        tn_slot_free(&d, slot_idx);
+    }
+
+    /* D. recvfrom on a CLOSED TCP socket delegates to recv -> ENOTCONN */
+    {
+        TnSocketSlot *slot = tn_slot_alloc(&d, &base, NULL, AF_INET, SOCK_STREAM,
+                                           IPPROTO_TCP, &slot_idx);
+        TN_ASSERT_TRUE(slot != NULL);
+        slot->tcp_state = TN_TCP_STATE_CLOSED;
+        memset(&imsg, 0, sizeof(imsg));
+        imsg.ptrs[0] = buf;
+        imsg.args[1] = sizeof(buf);
+        TN_ASSERT_EQ(tn_ipc_cmd_recvfrom(&d, &imsg, slot), 0);
+        TN_ASSERT_EQ(imsg.result, -1);
+        TN_ASSERT_EQ(imsg.err_no, ENOTCONN);
+        tn_slot_free(&d, slot_idx);
+    }
+}
+
 int main(void)
 {
     TN_TEST_RUN(rx_pbuf_chain_partial_reads);
@@ -1168,6 +1250,7 @@ int main(void)
     TN_TEST_RUN(sendmsg_recvmsg_scatter_tnet115);
     TN_TEST_RUN(sendmsg_recvmsg_edge_cases_tnet115);
     TN_TEST_RUN(send_succeeds_in_peer_closed);
+    TN_TEST_RUN(net_recv_unconnected_tcp_enotconn_not_parked);
     TN_TEST_RUN(net_udp_raw_send_connected);
     TN_TEST_RUN(net_udp_raw_send_unconnected_enotconn);
     TN_TEST_RUN(net_udp_connected_sendto_eisconn);

@@ -319,7 +319,7 @@ int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             imsg->result = (LONG)total_copied;
             imsg->err_no = 0;
             return 0;
-        } else if (slot->tcp_state == TN_TCP_STATE_PEER_CLOSED) {
+        } else if (slot->shut_rd || slot->tcp_state == TN_TCP_STATE_PEER_CLOSED) {
             if (msg->msg_name != NULL) msg->msg_namelen = 0;
             imsg->result = 0; /* EOF */
             imsg->err_no = 0;
@@ -327,6 +327,14 @@ int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         } else if (slot->tcp_state == TN_TCP_STATE_ERROR) {
             imsg->result = -1;
             imsg->err_no = ECONNRESET;
+            return 0;
+        } else if (slot->tcp_state != TN_TCP_STATE_CONNECTING &&
+                   slot->tcp_state != TN_TCP_STATE_ESTABLISHED) {
+            /* 4.4BSD soreceive: no circuit on CLOSED/LISTENING - this path
+             * parked forever before and never honoured shut_rd (z.ai step 4
+             * item 1). */
+            imsg->result = -1;
+            imsg->err_no = ENOTCONN;
             return 0;
         } else {
             if (slot->is_nonblocking || (flags & MSG_DONTWAIT)) {
