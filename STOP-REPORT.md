@@ -1,63 +1,57 @@
-# Tolunnet STOP-REPORT: z.ai step 2 — bench red at 17e0e53 (bsdsocktest #36 freeze, both profiles)
+# Tolunnet STOP-REPORT: z.ai step 2 — #36 freeze FIXED; bench still red on two NEW rows (#68/#69 connect failed, both profiles)
 
 **Timestamp:** 2026-09-23
-**Work order:** TN-zai-step.md (steps 1-2 executed; step 3 fires: bench red → do not fix → report and stop)
-**Commit:** `17e0e53` — `fix(stack): plan items 3-11 (UDP send, accept queue, shutdown, owner clear, len clamp, setsockopt, UDP RX copy, EClock, clean shutdown)` (includes the step-1 shutdown-sequence regression fix)
-**Last green bench:** `docs/bench-logs/20260923-143321-v1.2.0-rc4-3-g8df5606/` (HEAD~1 `8df5606`, "Item 2")
-**Host tests:** 20 binaries, 0 not ok; check-forbid 26 regions 0 findings; align-check 0 warnings.
+**Work order:** TN-zai-step_1.md. The diagnosed fix was applied and works; the bench is still red for a DIFFERENT reason, so per the rules this report is updated and work stops.
+**Fix commit:** `88d459b` — `fix(stack): reset shut_wr/shut_rd on slot reuse; allow send in CLOSE_WAIT`
+**Bench dir:** `docs/bench-logs/20260923-221506-v1.2.0-rc4-7-g88d459b/` (RESULT: HAS-FAILURES)
+**Previous red:** `17e0e53` — bsdsocktest #36 froze both profiles (that bench's report is in git history of this file).
 
-## What was done (per work order)
+## What the fix delivered (verified)
 
-1. **Step 1 regression fix (committed in 17e0e53):** the daemon's clean-shutdown
-   block called `tn_lib_destroy` unconditionally, and `tn_lib_destroy`
-   `Remove()`d the library node even with `lib_OpenCnt > 0` — a live client's
-   clone jumps into the daemon task's code segment, so Remove/exit under an
-   open client unloads that code from under it (TNET-059 Guru class).
-   Restored contract:
-   - shutdown gate: `tn_reap_dead_clients`, then under `Forbid()` re-check
-     `lib_OpenCnt` — if > 0: `Permit()`, log, `goto tn_main_loop` (return to
-     servicing IPC until the last close); only at 0: `RemLibrary` + `RemPort`
-     + drain the queue with ENETDOWN under the same Forbid.
-   - `tn_lib_destroy` refuses BOTH `Remove` and `FreeMem` while
-     `lib_OpenCnt > 0` (logs the refusal); removal/free only at zero.
-2. `make test-host` → 20 binaries, 0 not ok. Committed everything as one
-   commit (17e0e53), benched that sha.
+- **bsdsocktest #36 freeze: GONE.** Both profiles complete: 126/142 (failed 2,
+  the historical MSG_OOB WONTFIX pair). The 17e0e53 red bench never got past
+  bsdsocktest; now the full boot script runs to the end on both profiles.
+- Root cause exactly as diagnosed: slot reuse did not reset `shut_wr`/`shut_rd`
+  → #35's `shutdown()` poisoned #36's slot → first send EPIPE → both test
+  tasks blocked in recv() → hang. Both send gates (send + sendmsg) also now
+  implement 4.4BSD CLOSE_WAIT semantics (EPIPE only for OUR SHUT_WR or hard
+  error). Host suite: 20 binaries, 0 not ok (new slot-reuse test + CLOSE_WAIT
+  sendmsg test; the contradictory old case C updated with a C2 for our-side
+  shutdown).
+- Two previously-TODO rows turned green vs the last green bench (8df5606):
+  `net_udp_connected_send`, `net_cmd_traceroute`. Bench's own tally:
+  **net TODO remaining: 4** (was 6).
 
-## The red bench (verbatim)
+## The remaining red (verbatim, identical in all four logs)
 
 ```
-20260923-195432-v1.2.0-rc4-5-g17e0e53 / a1200 AND 68000 (identical):
-bsdsocktest.log frozen at 48 lines:
-ok 34 - # SKIP send buffer never filled (>1MB)
-ok 35 - send(): error after peer closes connection [BSD 4.4]
-#   errno: 32 (after 1 attempt(s))
-not ok 36 - send()/recv(): simultaneous bidirectional transfer [BSD 4.4]
-#   send(client): rc=-1 errno=32
-[bench] TIMEOUT waiting for bench-done after 900s   (68000 leg; a1200 same)
-conformance.log / conformance2.log: "(missing)" — SocketConformance never ran
+# net_tcp_connected_sendto_ignored_to: connect failed errno=60
+not ok 68 - net_tcp_connected_sendto_ignored_to # connect failed
+# TIMEOUT: ipc watchdog fired during tc_net_tcp_connected_sendto_ignored_to
+# net_tcp_shutdown_sendto_epipe: connect failed errno=60
+not ok 69 - net_tcp_shutdown_sendto_epipe # connect failed
+not ok 70 - net_cmd_nc # TODO red-baseline 18
+not ok 71 - net_cmd_whois # TODO red-baseline 19
+not ok 74 - net_cmd_sntp # TODO red-baseline 18
+not ok 76 - net_cmd_tftp # TODO red-baseline 20
 ```
 
-- Both profiles freeze at the byte-identical point: bsdsocktest **#36
-  (simultaneous bidirectional transfer)** hangs the emulator after printing
-  `not ok 36` + `#   send(client): rc=-1 errno=32` (EPIPE on the client's
-  first send).
-- The daemon task log ends right after `socket() -> fd 0` / `fd 1` for that
-  test's pair — no further IPC activity logged; the guest never reaches the
-  boot script's next stage.
-- The failure is deterministic across a1200 and 68000, so it is in the
-  carried items-3-11 code (UDP send / accept-queue callbacks / shutdown /
-  owner-clear paths are the neighbors of #35-#36), not a timing flake.
+- Rows #70/#74/#76 etc. are pre-existing `TODO red-baseline` markers (the
+  standing 4), not regressions.
+- **#68/#69 are NEW conformance rows shipped in the carried items-3-11
+  batch** (first time they ever ran in a bench — 8df5606 has neither name).
+  Both fail identically on a1200 and 68000, both cycles: their setup
+  `connect()` times out (errno 60 = ETIMEDOUT after the client watchdog),
+  i.e. the test's own TCP connect to its loopback listener never completes.
+  Neighbors #66 (net_tcp_connected_recvfrom) and #67
+  (net_tcp_unconnected_sendto) pass, so plain connect/recvto works — the
+  common factor of the two failures is pending investigation (their listener
+  setup or a connect-with-destination interaction), which per the work order
+  is NOT attempted here.
 
-Per step 3 of the work order: not fixing. Evidence dir kept:
-`docs/bench-logs/20260923-195432-v1.2.0-rc4-5-g17e0e53/` (bsdsocktest.log,
-tolunnet-task.log per profile).
+## Report fields (work order)
 
-## Requested report fields
-
-- **commit sha:** `17e0e53`
-- **bench dir:** `docs/bench-logs/20260923-195432-v1.2.0-rc4-5-g17e0e53/`
-- **verbatim `not ok`:** the two lines above (#36 + send(client) errno 32),
-  both profiles; conformance rows absent (suite never started).
-- **net TODO remaining:** the bench's own tally prints `net TODO remaining: 0`
-  (was 6) — note this is the TODO-marker count, not a health statement; the
-  #36 freeze is the blocker.
+- commit sha: `88d459b`
+- bench dir: `docs/bench-logs/20260923-221506-v1.2.0-rc4-7-g88d459b/`
+- verbatim not ok: the six lines above (per log, identical ×4)
+- net TODO remaining: **4**
