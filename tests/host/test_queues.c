@@ -747,8 +747,21 @@ TN_TEST(net_tcp_sendto_semantics_enotconn_epipe_ignored_to)
     TN_ASSERT_EQ((LONG)msg.result, 4);
     TN_ASSERT_EQ(msg.err_no, 0);
 
-    /* C. Send direction shutdown / peer closed -> -1, EPIPE */
+    /* C. Peer closed (CLOSE_WAIT analogue) with a live pcb -> send STILL
+     * WORKS (z.ai step 2 / 4.4BSD: EPIPE only after OUR shutdown(SHUT_WR)
+     * or a hard error; a server that reads to EOF then replies depends
+     * on this). */
     slot->tcp_state = TN_TCP_STATE_PEER_CLOSED;
+    memset(&msg, 0, sizeof(msg));
+    msg.ptrs[0] = "TEST";
+    msg.args[1] = 4;
+    msg.ptrs[1] = NULL;
+    TN_ASSERT_EQ(tn_ipc_cmd_sendto(&d, &msg, slot), 0);
+    TN_ASSERT_EQ((LONG)msg.result, 4);
+    TN_ASSERT_EQ(msg.err_no, 0);
+
+    /* C2. OUR shutdown(SHUT_WR) -> -1, EPIPE */
+    slot->shut_wr = TRUE;
     memset(&msg, 0, sizeof(msg));
     msg.ptrs[0] = "TEST";
     msg.args[1] = 4;
@@ -756,6 +769,7 @@ TN_TEST(net_tcp_sendto_semantics_enotconn_epipe_ignored_to)
     TN_ASSERT_EQ(tn_ipc_cmd_sendto(&d, &msg, slot), 0);
     TN_ASSERT_EQ((LONG)msg.result, -1);
     TN_ASSERT_EQ(msg.err_no, EPIPE);
+    slot->shut_wr = FALSE;
 
     /* D. Connection broken / error -> -1, EPIPE */
     slot->tcp_state = TN_TCP_STATE_ERROR;
@@ -1099,6 +1113,52 @@ TN_TEST(net_sys_now_eclock_monotonic_conversion)
     TN_ASSERT_EQ(ms, 864000000UL);
 }
 
+/* z.ai step 2: 4.4BSD CLOSE_WAIT semantics - send() with a live pcb after
+ * the peer's FIN must deliver data, not EPIPE. */
+TN_TEST(send_succeeds_in_peer_closed)
+{
+    TnDaemon d;
+    TnSocketBase base;
+    TN_TEST_BASE_INIT(base);
+    int slot_idx = -1;
+    TnIpcMsg imsg;
+    struct tcp_pcb pcb;
+    struct iovec iov[1];
+    struct msghdr msg;
+    static unsigned char sbuf[64], rbuf[64];
+
+    memset(&d, 0, sizeof(d));
+    tn_slot_table_init(&d);
+
+    TnSocketSlot *slot = tn_slot_alloc(&d, &base, NULL, AF_INET, SOCK_STREAM,
+                                       IPPROTO_TCP, &slot_idx);
+    TN_ASSERT_TRUE(slot != NULL);
+    memset(&pcb, 0, sizeof(pcb));
+    slot->tcp_pcb = &pcb;
+    slot->tcp_state = TN_TCP_STATE_PEER_CLOSED;   /* CLOSE_WAIT analogue */
+
+    iov[0].iov_base = sbuf;
+    iov[0].iov_len = 10;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_iov = iov;
+    msg.msg_iovlen = 1;
+    memset(&imsg, 0, sizeof(imsg));
+    imsg.ptrs[0] = &msg;
+
+    TN_ASSERT_EQ(tn_ipc_cmd_sendmsg(&d, &imsg, slot), 0);
+    TN_ASSERT_EQ((LONG)imsg.result, 10);
+    TN_ASSERT_EQ(imsg.err_no, 0);
+
+    /* but shut_wr still earns EPIPE */
+    slot->shut_wr = TRUE;
+    memset(&imsg, 0, sizeof(imsg));
+    imsg.ptrs[0] = &msg;
+    TN_ASSERT_EQ(tn_ipc_cmd_sendmsg(&d, &imsg, slot), 0);
+    TN_ASSERT_EQ(imsg.result, -1);
+    TN_ASSERT_EQ(imsg.err_no, EPIPE);
+    (void)rbuf;
+}
+
 int main(void)
 {
     TN_TEST_RUN(rx_pbuf_chain_partial_reads);
@@ -1107,6 +1167,7 @@ int main(void)
     TN_TEST_RUN(event_queue_coalescing_per_bsdsocket_doc);
     TN_TEST_RUN(sendmsg_recvmsg_scatter_tnet115);
     TN_TEST_RUN(sendmsg_recvmsg_edge_cases_tnet115);
+    TN_TEST_RUN(send_succeeds_in_peer_closed);
     TN_TEST_RUN(net_udp_raw_send_connected);
     TN_TEST_RUN(net_udp_raw_send_unconnected_enotconn);
     TN_TEST_RUN(net_udp_connected_sendto_eisconn);

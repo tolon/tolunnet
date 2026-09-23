@@ -460,12 +460,24 @@ int tn_ipc_cmd_send(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             return 0;
         }
 
-        if (slot->shut_wr || slot->tcp_state != TN_TCP_STATE_ESTABLISHED) {
+        /* 4.4BSD: send() in CLOSE_WAIT (peer sent FIN, ours not sent yet)
+         * still works - a server that reads the request to EOF and then
+         * replies depends on it. EPIPE only after OUR shutdown(SHUT_WR)
+         * or a hard error; ENOTCONN for states without a live circuit. */
+        if (slot->shut_wr) {
             imsg->result = -1;
-            imsg->err_no = (slot->shut_wr ||
-                            slot->tcp_state == TN_TCP_STATE_ERROR ||
-                            slot->tcp_state == TN_TCP_STATE_PEER_CLOSED) ? EPIPE
-                         : ENOTCONN;
+            imsg->err_no = EPIPE;
+            return 0;
+        }
+        if (slot->tcp_state == TN_TCP_STATE_ERROR) {
+            imsg->result = -1;
+            imsg->err_no = EPIPE;
+            return 0;
+        }
+        if (slot->tcp_state != TN_TCP_STATE_ESTABLISHED &&
+            slot->tcp_state != TN_TCP_STATE_PEER_CLOSED) {
+            imsg->result = -1;
+            imsg->err_no = ENOTCONN;
             return 0;
         }
 

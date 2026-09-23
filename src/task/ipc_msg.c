@@ -64,11 +64,23 @@ int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         u16_t remaining;
         u16_t sent_bytes = 0;
 
-        if (slot->tcp_state != TN_TCP_STATE_ESTABLISHED) {
+        /* 4.4BSD CLOSE_WAIT: send() after the peer's FIN still works (the
+         * mirror of the send() gate in ipc_tcp.c; shut_wr/EPIPE only after
+         * OUR shutdown(SHUT_WR) or a hard error). */
+        if (slot->shut_wr) {
             imsg->result = -1;
-            imsg->err_no = (slot->tcp_state == TN_TCP_STATE_ERROR) ? ECONNRESET
-                         : (slot->tcp_state == TN_TCP_STATE_PEER_CLOSED) ? EPIPE
-                         : ENOTCONN;
+            imsg->err_no = EPIPE;
+            return 0;
+        }
+        if (slot->tcp_state == TN_TCP_STATE_ERROR) {
+            imsg->result = -1;
+            imsg->err_no = EPIPE;
+            return 0;
+        }
+        if (slot->tcp_state != TN_TCP_STATE_ESTABLISHED &&
+            slot->tcp_state != TN_TCP_STATE_PEER_CLOSED) {
+            imsg->result = -1;
+            imsg->err_no = ENOTCONN;
             return 0;
         }
 

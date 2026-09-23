@@ -121,6 +121,11 @@ static void tn_init_socket_slot(TnSocketSlot *s, TnSocketBase *base, struct Task
     s->protocol            = protocol;
     s->tcp_state           = TN_TCP_STATE_CLOSED;
     s->is_nonblocking      = FALSE;
+    /* 17e0e53 regression: these two were the only new TnSocketSlot fields
+     * the init missed - a reused slot kept shut_wr=TRUE from its previous
+     * life and the next owner's first send() got EPIPE (bsdsocktest #36) */
+    s->shut_wr             = FALSE;
+    s->shut_rd             = FALSE;
 
     /* Level SOL_SOCKET options */
     s->opt_broadcast       = FALSE;

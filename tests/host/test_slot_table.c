@@ -515,11 +515,38 @@ TN_TEST(dead_base_clear_on_close)
     tn_slot_free(&d, idx2);
 }
 
+/* z.ai step 2: 17e0e53 regression - slot reuse must reset shut_wr/shut_rd
+ * (bsdsocktest #36: #35's shutdown() leaked into #36's slot -> EPIPE). */
+TN_TEST(slot_reuse_resets_shutdown_flags)
+{
+    TnDaemon d;
+    TnSocketBase base;
+    int idx = -1, idx2 = -1;
+    TnSocketSlot *s;
+
+    memset(&base, 0, sizeof(base));
+    memset(&d, 0, sizeof(d));
+    tn_slot_table_init(&d);
+
+    s = tn_slot_alloc(&d, &base, (struct Task *)0x1111, AF_INET, SOCK_STREAM, 0, &idx);
+    TN_ASSERT_TRUE(s != NULL);
+    s->shut_wr = TRUE;
+    s->shut_rd = TRUE;
+    tn_slot_free(&d, idx);
+
+    s = tn_slot_alloc(&d, &base, (struct Task *)0x1111, AF_INET, SOCK_STREAM, 0, &idx2);
+    TN_ASSERT_TRUE(s != NULL);
+    TN_ASSERT_TRUE(s->shut_wr == FALSE);
+    TN_ASSERT_TRUE(s->shut_rd == FALSE);
+    tn_slot_free(&d, idx2);
+}
+
 int main(void)
 {
     TN_TEST_RUN(selector_table_grow);
     TN_TEST_RUN(slot_table_init_and_empty);
     TN_TEST_RUN(slot_allocation_and_lookup);
+    TN_TEST_RUN(slot_reuse_resets_shutdown_flags);
     TN_TEST_RUN(slot_exhaustion_64_limit);
     TN_TEST_RUN(refcounting_semantics);
     TN_TEST_RUN(rx_queue_operations);
