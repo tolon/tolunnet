@@ -5138,7 +5138,7 @@ static void tc_cmd_ifctl(void)
         TAP_NOTOK("tc_cmd_ifctl", "LIST returned nothing");
         return;
     }
-    if (!rows[0].in_use || rows[0].name[0] == ' ') {
+    if (!rows[0].in_use || rows[0].name[0] == '\0') {
         TAP_NOTOK("tc_cmd_ifctl", "primary row missing name/in_use");
         return;
     }
@@ -6136,6 +6136,75 @@ static void tc_net_cmd_nc(void)
     }
 }
 
+/* z.ai step 3: telnet must honor its PORT argument - today the port is
+ * ignored (connects to 23) so nothing comes back from the echo service. */
+static void tc_net_cmd_telnet(void)
+{
+    BPTR seg = LoadSeg((CONST_STRPTR)"C:telnet");
+    BPTR fh;
+    LONG ret;
+    char cmdline[96];
+
+    if (seg == (BPTR)0) {
+        tapf("# net_cmd_telnet: C:telnet missing\n");
+        TAP_TODO("net_cmd_telnet", "red-baseline 18");
+        return;
+    }
+    /* one line of stdin; the echo server must return it */
+    fh = Open((CONST_STRPTR)"T:tl.in", MODE_NEWFILE);
+    if (fh != (BPTR)0) {
+        Write(fh, (CONST APTR)"ping\n", 5);
+        Close(fh);
+    }
+    DeleteFile((CONST_STRPTR)"T:tl.out");
+    snprintf_safe(cmdline, sizeof(cmdline), "10.0.2.2 %ld\n", (LONG)NETSVC_ECHO_PORT);
+    ret = RunCommand(seg, 32768, (CONST_STRPTR)cmdline, strlen(cmdline));
+    UnLoadSeg(seg);
+    DeleteFile((CONST_STRPTR)"T:tl.in");
+
+    /* content proof: the echo must land in the session transcript. telnet
+     * writes its session to the console; capture via the T:tl.in feed is
+     * not redirectable today, so the observable contract is the PORT being
+     * honored - if PORT is ignored, connect() goes to port 23 where
+     * nothing listens and the tool errors out (or hangs to the 6 s
+     * watchdog). rc!=0 => PORT ignored. */
+    if (ret == 0) {
+        TAP_OK("net_cmd_telnet");
+    } else {
+        tapf("# net_cmd_telnet: RunCommand rc=%ld (PORT argument honored?)\n", ret);
+        TAP_TODO("net_cmd_telnet", "red-baseline 18");
+    }
+}
+
+/* z.ai step 3: dotted-quad -> name round trip - resolving 10.0.2.2 must
+ * print the address back (Inet_NtoA / Resolving line of any tool). */
+static void tc_net_inet_ntoa(void)
+{
+    BPTR seg = LoadSeg((CONST_STRPTR)"C:nslookup");
+    LONG ret;
+    char cmdline[32];
+
+    if (seg == (BPTR)0) {
+        tapf("# net_inet_ntoa: C:nslookup missing\n");
+        TAP_TODO("net_inet_ntoa", "red-baseline 19");
+        return;
+    }
+    /* nslookup prints the resolved address for a dotted-quad query; the
+     * output goes to the console (bench log captures it). The observable
+     * contract here: rc 0 and the tool completes; the "10.0.2.2" string
+     * in the bench log is the human check, TODO 19 pins the tool. */
+    snprintf_safe(cmdline, sizeof(cmdline), "10.0.2.2\n");
+    ret = RunCommand(seg, 32768, (CONST_STRPTR)cmdline, strlen(cmdline));
+    UnLoadSeg(seg);
+
+    if (ret == 0) {
+        TAP_OK("net_inet_ntoa");
+    } else {
+        tapf("# net_inet_ntoa: RunCommand rc=%ld\n", ret);
+        TAP_TODO("net_inet_ntoa", "red-baseline 19");
+    }
+}
+
 /* Item 19: whois command & tn_call_inet_ntoa A0/D0 (Madde 19: cmdlib.c:173, whois.c) */
 static void tc_net_cmd_whois(void)
 {
@@ -6182,13 +6251,35 @@ static void tc_net_cmd_wget(void)
     snprintf_safe(cmdline, sizeof(cmdline), "http://10.0.2.2:%ld/test TO T:wget_test.bin QUIET\n", (LONG)NETSVC_HTTP_PORT);
     ret = RunCommand(seg, 32768, (CONST_STRPTR)cmdline, strlen(cmdline));
     UnLoadSeg(seg);
-    DeleteFile((CONST_STRPTR)"T:wget_test.bin");
 
-    if (ret == 0) {
+    /* z.ai step 3: content check - netsvc serves exactly "TOLUNNET_HTTP_OK"
+     * plus LF (18 bytes). The pre-created 5-byte file stays: a resume bug
+     * would return the Range suffix or append. want[] is assembled without
+     * a newline-escape literal (heredoc-escape safe). */
+    {
+        static char want[19] = "TOLUNNET_HTTP_OK";
+        char got[64];
+        LONG got_len = -1;
+        want[17] = '\n';
+        want[18] = 0;
+        fh = Open((CONST_STRPTR)"T:wget_test.bin", MODE_OLDFILE);
+        if (fh != (BPTR)0) {
+            got_len = Read(fh, (APTR)got, sizeof(got) - 1);
+            Close(fh);
+            if (got_len > 0) got[got_len] = 0;
+        }
+        DeleteFile((CONST_STRPTR)"T:wget_test.bin");
+        if (ret != 0) {
+            tapf("# net_cmd_wget: RunCommand rc=%ld\n", ret);
+            TAP_TODO("net_cmd_wget", "red-baseline 21");
+            return;
+        }
+        if (got_len != 18 || memcmp(got, want, 18) != 0) {
+            tapf("# net_cmd_wget: content mismatch len=%ld (want 18)\n", got_len);
+            TAP_TODO("net_cmd_wget", "red-baseline 21");
+            return;
+        }
         TAP_OK("net_cmd_wget");
-    } else {
-        tapf("# net_cmd_wget: RunCommand rc=%ld\n", ret);
-        TAP_TODO("net_cmd_wget", "red-baseline 21");
     }
 }
 
@@ -6207,19 +6298,43 @@ static void tc_net_cmd_ftp(void)
     }
     fh = Open((CONST_STRPTR)"T:ftp.cmd", MODE_NEWFILE);
     if (fh != (BPTR)0) {
+        /* z.ai step 3: exercise ls AND a real RETR - netsvc's FTP server
+         * answers RETR test.bin with "TOLUNNET_FTP_OK" + LF (17 bytes). */
+        Write(fh, (CONST APTR)"ls\n", 3);
+        Write(fh, (CONST APTR)"get test.bin T:ftp.bin\n", 22);
         Write(fh, (CONST APTR)"quit\n", 5);
         Close(fh);
     }
+    DeleteFile((CONST_STRPTR)"T:ftp.bin");
     snprintf_safe(cmdline, sizeof(cmdline), "10.0.2.2 %ld SCRIPT T:ftp.cmd QUIET\n", (LONG)NETSVC_FTP_PORT);
     ret = RunCommand(seg, 32768, (CONST_STRPTR)cmdline, strlen(cmdline));
     UnLoadSeg(seg);
     DeleteFile((CONST_STRPTR)"T:ftp.cmd");
 
-    if (ret == 0) {
+    {
+        static char want[18] = "TOLUNNET_FTP_OK";
+        char got[64];
+        LONG got_len = -1;
+        want[16] = '\n';
+        want[17] = 0;
+        fh = Open((CONST_STRPTR)"T:ftp.bin", MODE_OLDFILE);
+        if (fh != (BPTR)0) {
+            got_len = Read(fh, (APTR)got, sizeof(got) - 1);
+            Close(fh);
+            if (got_len > 0) got[got_len] = 0;
+        }
+        DeleteFile((CONST_STRPTR)"T:ftp.bin");
+        if (ret != 0) {
+            tapf("# net_cmd_ftp: RunCommand rc=%ld\n", ret);
+            TAP_TODO("net_cmd_ftp", "red-baseline 21");
+            return;
+        }
+        if (got_len != 17 || memcmp(got, want, 17) != 0) {
+            tapf("# net_cmd_ftp: content mismatch len=%ld (want 17)\n", got_len);
+            TAP_TODO("net_cmd_ftp", "red-baseline 21");
+            return;
+        }
         TAP_OK("net_cmd_ftp");
-    } else {
-        tapf("# net_cmd_ftp: RunCommand rc=%ld\n", ret);
-        TAP_TODO("net_cmd_ftp", "red-baseline 21");
     }
 }
 
@@ -6475,6 +6590,8 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_tcp_shutdown_sendto_epipe);
     TN_RUN(tc_net_cmd_nc);
     TN_RUN(tc_net_cmd_whois);
+    TN_RUN(tc_net_cmd_telnet);
+    TN_RUN(tc_net_inet_ntoa);
     TN_RUN(tc_net_cmd_wget);
     TN_RUN(tc_net_cmd_ftp);
     TN_RUN(tc_net_cmd_sntp);
