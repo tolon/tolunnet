@@ -223,6 +223,13 @@ fi
 [ -f build/SocketConformance ] || die "build/SocketConformance missing"
 [ -f build/bsdsocktest ] || die "build/bsdsocktest missing (vendor/bsdsocktest)"
 [ -f build/usergroup.library ] || die "build/usergroup.library missing"
+[ -f build/nc ] || die "build/nc missing"
+[ -f build/whois ] || die "build/whois missing"
+[ -f build/TolunnetGet ] || die "build/TolunnetGet missing"
+[ -f build/ftp ] || die "build/ftp missing"
+[ -f build/sntp ] || die "build/sntp missing"
+[ -f build/traceroute ] || die "build/traceroute missing"
+[ -f build/tftp ] || die "build/tftp missing"
 
 GIT_DESC="$(git describe --always --dirty 2>/dev/null || echo nogit)"
 IS_DIRTY=0
@@ -238,7 +245,12 @@ if [[ "$GIT_DESC" == *-dirty* ]]; then
     fi
 fi
 
-STAMP="$(date +%Y%m%d-%H%M%S)-$GIT_DESC"
+BENCH_SUFFIX="${BENCH_SUFFIX:-}"
+if [ -n "$BENCH_SUFFIX" ]; then
+    STAMP="$(date +%Y%m%d-%H%M%S)-$GIT_DESC-$BENCH_SUFFIX"
+else
+    STAMP="$(date +%Y%m%d-%H%M%S)-$GIT_DESC"
+fi
 LOG_ROOT="docs/bench-logs/$STAMP"
 mkdir -p "$LOG_ROOT"
 
@@ -247,8 +259,7 @@ if [ -z "${MUFORCE_ADF:-}" ]; then
     MUFORCE_NOTE="SKIP (MuForce/Enforcer not present on this bench; MUFORCE_ADF unset)"
 fi
 
-# TNET-111: the suite is fully hermetic — loopback listeners only, no host
-# services are started. DNS_PORT is the loopback resolver port used by
+# TNET-111: DNS_PORT is the loopback resolver port used by
 # tc_dns_local (5353 must be avoided: system mDNS on Windows).
 BENCH_DNS_PORT="${BENCH_DNS_PORT:-15353}"
 
@@ -269,11 +280,28 @@ say "bench config: resolver 127.0.0.1:$BENCH_DNS_PORT (loopback), external=${BEN
 SUCCESS=0
 cleanup() {
     rm -f "${BENCH_CFG:-ci/.bench-tolunnet.config}" 2>/dev/null || true
+    if [ -n "${NETSVC_PID:-}" ]; then
+        say "stopping hermetic slirp host services (PID $NETSVC_PID)"
+        kill -9 "$NETSVC_PID" 2>/dev/null || true
+        wait "$NETSVC_PID" 2>/dev/null || true
+        sleep 1
+        python.exe ci/netsvc.py --check-free || say "warning: netsvc ports not free after shutdown"
+    fi
     if [ "${SUCCESS:-0}" != "1" ] && [ -n "${LOG_ROOT:-}" ] && [ -d "$LOG_ROOT" ]; then
         say "run had failures; keeping log directory for analysis: $LOG_ROOT"
     fi
 }
 trap cleanup EXIT INT TERM
+
+# ---- start hermetic slirp host mock services (ci/netsvc.py) -----------------
+say "verifying netsvc ports are free"
+python.exe ci/netsvc.py --check-free || die "port busy: netsvc ports not free before bench run"
+say "starting hermetic slirp host services (ci/netsvc.py)"
+python.exe ci/netsvc.py --log "$LOG_ROOT/netsvc.log" &
+NETSVC_PID=$!
+say "probing netsvc readiness (5s limit)..."
+python.exe ci/netsvc.py --probe || die "netsvc readiness probe failed"
+say "netsvc ready (PID $NETSVC_PID)"
 
 fail=0
 for cfg in $CONFIGS; do
@@ -296,6 +324,13 @@ for cfg in $CONFIGS; do
     xd delete C/TolunnetPrefs   >/dev/null 2>&1
     xd delete C/S2Toggle        >/dev/null 2>&1
     xd delete C/bsdsocktest     >/dev/null 2>&1
+    xd delete C/nc              >/dev/null 2>&1
+    xd delete C/whois           >/dev/null 2>&1
+    xd delete C/TolunnetGet     >/dev/null 2>&1
+    xd delete C/ftp             >/dev/null 2>&1
+    xd delete C/sntp            >/dev/null 2>&1
+    xd delete C/traceroute      >/dev/null 2>&1
+    xd delete C/tftp            >/dev/null 2>&1
     xd delete Libs/usergroup.library >/dev/null 2>&1
     xd delete S/User-Startup    >/dev/null 2>&1
     xd delete S/Conformance-Script >/dev/null 2>&1
@@ -308,12 +343,19 @@ for cfg in $CONFIGS; do
     xd write build/TolunnetPrefs C/TolunnetPrefs || die "xdftool write TolunnetPrefs failed"
     xd write build/S2Toggle C/S2Toggle || die "xdftool write S2Toggle failed"
     xd write build/bsdsocktest C/bsdsocktest || die "xdftool write bsdsocktest failed"
+    xd write build/nc C/nc                     || die "xdftool write nc failed"
+    xd write build/whois C/whois               || die "xdftool write whois failed"
+    xd write build/TolunnetGet C/TolunnetGet   || die "xdftool write TolunnetGet failed"
+    xd write build/ftp C/ftp                   || die "xdftool write ftp failed"
+    xd write build/sntp C/sntp                 || die "xdftool write sntp failed"
+    xd write build/traceroute C/traceroute     || die "xdftool write traceroute failed"
+    xd write build/tftp C/tftp                 || die "xdftool write tftp failed"
     xd write build/usergroup.library Libs/usergroup.library || die "xdftool write usergroup.library failed"
     xd write ci/User-Startup-Conformance S/Conformance-Script || die "xdftool write Conformance-Script failed"
     xd write ci/User-Startup-Boot S/User-Startup || die "xdftool write User-Startup failed"
     xd write Install_Tolunnet.script S/Install_Tolunnet.script || die "xdftool write Install_Tolunnet.script failed"
     xd write "$BENCH_CFG" Devs/tolunnet.config          || die "xdftool write tolunnet.config failed"
-    say "staged: tolunnet + SocketConformance + bsdsocktest + usergroup.library + TolunnetSetup + TolunnetPrefs + Conformance-Script + User-Startup + tolunnet.config -> $HDF_WIN"
+    say "staged: tolunnet + SocketConformance + bsdsocktest + cmds + usergroup.library + TolunnetSetup + TolunnetPrefs + Conformance-Script + User-Startup + tolunnet.config -> $HDF_WIN"
 
     # ---- run headless ---------------------------------------------------
     rm -f "$WORK_DIR/conformance.log" "$WORK_DIR/conformance2.log" "$WORK_DIR/bench-done" "$WORK_DIR/tolunnet-task.log" "$WORK_DIR/bsdsocktest.log" "$WORK_DIR"/wizard-*.iff "$WORK_DIR"/prefs-*.iff
@@ -386,7 +428,7 @@ for cfg in $CONFIGS; do
             c_ext=$(grep -c '# SKIP external' "$OUT/$lg" 2>/dev/null | tr -d '\r' || echo 0)
             echo "$lg: core: $((c_ok - c_ext)) ok / $c_nok not ok; external: $c_ext skipped"
         done
-        echo "bench services: none (suite is loopback-hermetic); DNS_PORT=$BENCH_DNS_PORT"
+        echo "bench services: hermetic slirp host services (ci/netsvc.py); DNS_PORT=$BENCH_DNS_PORT"
     } > "$OUT/README.txt"
     {
         echo "config: ci/tolunnet-$cfg.uae (HDF copy staged from the pristine WB3.0 image)"
@@ -430,6 +472,10 @@ for cfg in $CONFIGS; do
         fi
     done
 done
+
+NET_TODO=$(grep -c 'net_.*# TODO' "$LOG_ROOT/a1200/conformance.log" 2>/dev/null || echo 0)
+echo "net TODO remaining: $NET_TODO" >> "$LOG_ROOT/SUMMARY.txt"
+say "net TODO remaining: $NET_TODO"
 
 echo "$MUFORCE_NOTE" > "$LOG_ROOT/muforce.txt"
 say "logs: $LOG_ROOT"

@@ -38,6 +38,7 @@
 #include "../../src/setup/wifi_mgr.h"
 #include "../../src/setup/stack_detect.h"
 #include <net/if_arp.h>
+#include "netsvc_ports.h"
 
 static struct Library *SocketBase = NULL;
 struct GfxBase *GfxBase = NULL;
@@ -5769,6 +5770,318 @@ static void tc_install_script(void)
     TAP_OK(label);
 }
 
+/* ------------------------------------------------ Phase 1b: net_* test group */
+#define SLIRP_HOST_ADDR 0x0A000202UL /* 10.0.2.2 slirp host */
+
+/* Item 2: Blocking recv on delayed TCP server (Madde 2: ipc_tcp.c:555-558) */
+static void tc_net_tcp_blocking_recv(void)
+{
+    LONG s;
+    struct sockaddr_in sin;
+    char buf[64];
+    LONG n;
+    int i;
+
+    s = call_socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) {
+        tapf("# net_tcp_blocking_recv: socket failed errno=%ld\n", call_errno());
+        TAP_TODO("net_tcp_blocking_recv", "red-baseline 2");
+        return;
+    }
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(NETSVC_TCP_DELAY_PORT);
+    sin.sin_addr.s_addr = htonl(SLIRP_HOST_ADDR);
+
+    if (call_connect(s, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+        tapf("# net_tcp_blocking_recv: connect failed errno=%ld\n", call_errno());
+        call_closesocket(s);
+        TAP_TODO("net_tcp_blocking_recv", "red-baseline 2");
+        return;
+    }
+
+    /* Blocking recv: server delays 1.0 s before sending data.
+     * On HEAD, returns EWOULDBLOCK (-1) immediately instead of blocking. */
+    n = call_recv(s, buf, sizeof(buf) - 1, 0);
+    call_closesocket(s);
+
+    if (n > 0) {
+        buf[n] = '\0';
+        if (strcmp(buf, "TOLUNNET_TCP_DELAYED_OK\n") == 0) {
+            TAP_OK("net_tcp_blocking_recv");
+            return;
+        }
+    }
+    tapf("# net_tcp_blocking_recv: recv got=%ld errno=%ld\n", n, call_errno());
+    TAP_TODO("net_tcp_blocking_recv", "red-baseline 2");
+}
+
+/* Item 3: send() on connected UDP socket (Madde 3: ipc_tcp.c:403-481) */
+static void tc_net_udp_connected_send(void)
+{
+    LONG s;
+    struct sockaddr_in sin;
+    char buf[32];
+    LONG n;
+    int i;
+
+    s = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (s < 0) {
+        tapf("# net_udp_connected_send: socket failed errno=%ld\n", call_errno());
+        TAP_TODO("net_udp_connected_send", "red-baseline 3");
+        return;
+    }
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(NETSVC_ECHO_PORT);
+    sin.sin_addr.s_addr = htonl(SLIRP_HOST_ADDR);
+
+    if (call_connect(s, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+        tapf("# net_udp_connected_send: connect failed errno=%ld\n", call_errno());
+        call_closesocket(s);
+        TAP_TODO("net_udp_connected_send", "red-baseline 3");
+        return;
+    }
+
+    /* On HEAD, send() on SOCK_DGRAM returns EOPNOTSUPP (-1). */
+    n = call_send(s, "ECHO_TEST", 9, 0);
+    if (n == 9) {
+        LONG r = call_recv(s, buf, sizeof(buf) - 1, 0);
+        call_closesocket(s);
+        if (r == 9 && memcmp(buf, "ECHO_TEST", 9) == 0) {
+            TAP_OK("net_udp_connected_send");
+            return;
+        }
+    } else {
+        call_closesocket(s);
+    }
+    tapf("# net_udp_connected_send: send got=%ld errno=%ld\n", n, call_errno());
+    TAP_TODO("net_udp_connected_send", "red-baseline 3");
+}
+
+/* Item 18: nc command /N port parsing (Madde 18: nc.c:32) */
+static void tc_net_cmd_nc(void)
+{
+    BPTR seg = LoadSeg((CONST_STRPTR)"C:nc");
+    char cmdline[64];
+    LONG ret;
+
+    if (seg == (BPTR)0) {
+        tapf("# net_cmd_nc: C:nc missing\n");
+        TAP_TODO("net_cmd_nc", "red-baseline 18");
+        return;
+    }
+    snprintf_safe(cmdline, sizeof(cmdline), "10.0.2.2 %ld TIMEOUT 1\n", (LONG)NETSVC_ECHO_PORT);
+    ret = RunCommand(seg, 32768, (CONST_STRPTR)cmdline, strlen(cmdline));
+    UnLoadSeg(seg);
+
+    if (ret == 0) {
+        TAP_OK("net_cmd_nc");
+    } else {
+        tapf("# net_cmd_nc: RunCommand rc=%ld\n", ret);
+        TAP_TODO("net_cmd_nc", "red-baseline 18");
+    }
+}
+
+/* Item 19: whois command & tn_call_inet_ntoa A0/D0 (Madde 19: cmdlib.c:173, whois.c) */
+static void tc_net_cmd_whois(void)
+{
+    BPTR seg = LoadSeg((CONST_STRPTR)"C:whois");
+    char cmdline[64];
+    LONG ret;
+
+    if (seg == (BPTR)0) {
+        tapf("# net_cmd_whois: C:whois missing\n");
+        TAP_TODO("net_cmd_whois", "red-baseline 19");
+        return;
+    }
+    snprintf_safe(cmdline, sizeof(cmdline), "example.com 10.0.2.2\n");
+    ret = RunCommand(seg, 32768, (CONST_STRPTR)cmdline, strlen(cmdline));
+    UnLoadSeg(seg);
+
+    if (ret == 0) {
+        TAP_OK("net_cmd_whois");
+    } else {
+        tapf("# net_cmd_whois: RunCommand rc=%ld\n", ret);
+        TAP_TODO("net_cmd_whois", "red-baseline 19");
+    }
+}
+
+/* Item 21: TolunnetGet (wget) resume Range & stack FIB (Madde 21: TolunnetGet.c:239-247) */
+static void tc_net_cmd_wget(void)
+{
+    BPTR seg = LoadSeg((CONST_STRPTR)"C:TolunnetGet");
+    BPTR fh;
+    LONG ret;
+    char cmdline[96];
+
+    if (seg == (BPTR)0) {
+        tapf("# net_cmd_wget: C:TolunnetGet missing\n");
+        TAP_TODO("net_cmd_wget", "red-baseline 21");
+        return;
+    }
+    /* Pre-create output file to trigger unwanted resume Range logic */
+    fh = Open((CONST_STRPTR)"T:wget_test.bin", MODE_NEWFILE);
+    if (fh != (BPTR)0) {
+        Write(fh, (CONST APTR)"12345", 5);
+        Close(fh);
+    }
+    snprintf_safe(cmdline, sizeof(cmdline), "http://10.0.2.2:%ld/test TO T:wget_test.bin QUIET\n", (LONG)NETSVC_HTTP_PORT);
+    ret = RunCommand(seg, 32768, (CONST_STRPTR)cmdline, strlen(cmdline));
+    UnLoadSeg(seg);
+    DeleteFile((CONST_STRPTR)"T:wget_test.bin");
+
+    if (ret == 0) {
+        TAP_OK("net_cmd_wget");
+    } else {
+        tapf("# net_cmd_wget: RunCommand rc=%ld\n", ret);
+        TAP_TODO("net_cmd_wget", "red-baseline 21");
+    }
+}
+
+/* Item 21: ftp command PASV & /N port (Madde 21: ftp.c:110,220,323) */
+static void tc_net_cmd_ftp(void)
+{
+    BPTR seg = LoadSeg((CONST_STRPTR)"C:ftp");
+    BPTR fh;
+    LONG ret;
+    char cmdline[96];
+
+    if (seg == (BPTR)0) {
+        tapf("# net_cmd_ftp: C:ftp missing\n");
+        TAP_TODO("net_cmd_ftp", "red-baseline 21");
+        return;
+    }
+    fh = Open((CONST_STRPTR)"T:ftp.cmd", MODE_NEWFILE);
+    if (fh != (BPTR)0) {
+        Write(fh, (CONST APTR)"quit\n", 5);
+        Close(fh);
+    }
+    snprintf_safe(cmdline, sizeof(cmdline), "10.0.2.2 %ld SCRIPT T:ftp.cmd QUIET\n", (LONG)NETSVC_FTP_PORT);
+    ret = RunCommand(seg, 32768, (CONST_STRPTR)cmdline, strlen(cmdline));
+    UnLoadSeg(seg);
+    DeleteFile((CONST_STRPTR)"T:ftp.cmd");
+
+    if (ret == 0) {
+        TAP_OK("net_cmd_ftp");
+    } else {
+        tapf("# net_cmd_ftp: RunCommand rc=%ld\n", ret);
+        TAP_TODO("net_cmd_ftp", "red-baseline 21");
+    }
+}
+
+/* Item 18: sntp command /N & send() on UDP (Madde 18: sntp.c:67,94) */
+static void tc_net_cmd_sntp(void)
+{
+    BPTR seg = LoadSeg((CONST_STRPTR)"C:sntp");
+    LONG ret;
+    char cmdline[64];
+
+    if (seg == (BPTR)0) {
+        tapf("# net_cmd_sntp: C:sntp missing\n");
+        TAP_TODO("net_cmd_sntp", "red-baseline 18");
+        return;
+    }
+    snprintf_safe(cmdline, sizeof(cmdline), "10.0.2.2 OFFSET 0\n");
+    ret = RunCommand(seg, 32768, (CONST_STRPTR)cmdline, strlen(cmdline));
+    UnLoadSeg(seg);
+
+    if (ret == 0) {
+        TAP_OK("net_cmd_sntp");
+    } else {
+        tapf("# net_cmd_sntp: RunCommand rc=%ld (expected 0)\n", ret);
+        TAP_TODO("net_cmd_sntp", "red-baseline 18");
+    }
+}
+
+/* Item 18: traceroute UDP probe socket send() (Madde 18: traceroute.c:58,114) */
+static void tc_net_cmd_traceroute(void)
+{
+    LONG udp_fd = call_socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in dst;
+    LONG sent;
+    int i;
+
+    if (udp_fd < 0) {
+        TAP_TODO("net_cmd_traceroute", "red-baseline 18");
+        return;
+    }
+    for (i = 0; i < (int)sizeof(dst); i++) ((char *)&dst)[i] = 0;
+    dst.sin_len = sizeof(dst);
+    dst.sin_family = AF_INET;
+    dst.sin_addr.s_addr = htonl(SLIRP_HOST_ADDR);
+    dst.sin_port = htons(33434);
+
+    if (call_connect(udp_fd, (struct sockaddr *)&dst, sizeof(dst)) != 0) {
+        call_closesocket(udp_fd);
+        TAP_TODO("net_cmd_traceroute", "red-baseline 18");
+        return;
+    }
+
+    sent = call_send(udp_fd, "probe", 5, 0);
+    call_closesocket(udp_fd);
+
+    if (sent == 5) {
+        TAP_OK("net_cmd_traceroute");
+    } else {
+        tapf("# net_cmd_traceroute: UDP probe send errno=%ld\n", call_errno());
+        TAP_TODO("net_cmd_traceroute", "red-baseline 18");
+    }
+}
+
+/* Item 20: tftp RRQ & unset d2/a2 in recvfrom (Madde 20: tftp.c:34-43) */
+static void tc_net_cmd_tftp(void)
+{
+    LONG s;
+    struct sockaddr_in sin, from;
+    socklen_t fromlen = sizeof(from);
+    char rrq[] = "\x00\x01" "testfile" "\x00" "octet" "\x00";
+    char rxbuf[64];
+    LONG n;
+    int i;
+    fd_set rfds;
+    struct timeval tv;
+
+    s = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (s < 0) {
+        TAP_TODO("net_cmd_tftp", "red-baseline 20");
+        return;
+    }
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(NETSVC_TFTP_PORT);
+    sin.sin_addr.s_addr = htonl(SLIRP_HOST_ADDR);
+
+    n = call_sendto(s, rrq, sizeof(rrq) - 1, 0, (struct sockaddr *)&sin, sizeof(sin));
+    if (n != (LONG)(sizeof(rrq) - 1)) {
+        tapf("# net_cmd_tftp: sendto RRQ failed errno=%ld\n", call_errno());
+        call_closesocket(s);
+        TAP_TODO("net_cmd_tftp", "red-baseline 20");
+        return;
+    }
+
+    FD_ZERO(&rfds);
+    FD_SET(s, &rfds);
+    tv.tv_secs = 1;
+    tv.tv_micro = 0;
+    if (call_waitselect(s + 1, &rfds, NULL, NULL, &tv, NULL) <= 0) {
+        tapf("# net_cmd_tftp: wait timeout\n");
+        call_closesocket(s);
+        TAP_TODO("net_cmd_tftp", "red-baseline 20");
+        return;
+    }
+
+    n = call_recvfrom(s, rxbuf, sizeof(rxbuf), 0, (struct sockaddr *)&from, &fromlen);
+    call_closesocket(s);
+
+    /* On HEAD, tftp's broken wrapper or unhandled state gives failure */
+    tapf("# net_cmd_tftp: recvfrom got=%ld\n", n);
+    TAP_TODO("net_cmd_tftp", "red-baseline 20");
+}
+
 /* Bench plumbing (not a TAP case): ask the daemon to exit so the bench can
  * prove the TNET-059/060 restart cycle. Mirrors TolunnetPrefs' Stop logic. */
 static void request_daemon_stop(void)
@@ -5900,6 +6213,15 @@ int main(int argc, char *argv[])
     TN_RUN(tc_cmd_route);
     TN_RUN(tc_usergroup);
     TN_RUN(tc_install_script);
+    TN_RUN(tc_net_tcp_blocking_recv);
+    TN_RUN(tc_net_udp_connected_send);
+    TN_RUN(tc_net_cmd_nc);
+    TN_RUN(tc_net_cmd_whois);
+    TN_RUN(tc_net_cmd_wget);
+    TN_RUN(tc_net_cmd_ftp);
+    TN_RUN(tc_net_cmd_sntp);
+    TN_RUN(tc_net_cmd_traceroute);
+    TN_RUN(tc_net_cmd_tftp);
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
