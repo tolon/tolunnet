@@ -1,14 +1,15 @@
 # tolunnet — Status
 
-_Last updated: 2026-09-23 · HEAD `0bb9d93` · version string `1.2.0-rc3` (`include/version.h`)_
+_Last updated: 2026-09-23 · version string `1.2.0-rc4` (`include/version.h`)_
 
 ## Release state
 
 | Item | State |
 |---|---|
-| Latest release candidate | **1.2.0-rc3** (commit `7f87caf`) |
-| Changes after rc3 (not yet in a release) | `usergroup.library` (`d016809`), AutoIP + mDNS responder (`8b767c5`) |
-| Package | `make package` → `build/tolunnet-<version>.lha` + `build/tolunnet.adf` |
+| Latest release candidate | **1.2.0-rc4** |
+| Changes in rc4 | All 12 items from Phase 1 (full 33-command set, installer backup/undo, wizard layout overhaul, usergroup.library v4.1, AutoIP/mDNS optional, verbatim GPL-3 licence) |
+| Package LHA | `build/tolunnet-1.2.0-rc4.lha` (`da6fb0a47eda9eca4b5407d95ae84c17bc7bdbbdd50f5145b8895c8c8c3cb72f`) |
+| Package ADF | `build/tolunnet.adf` (`55d7ebc3b0b5e914cfc458abfdfa92e9dad03918df0c67fe47ec56e52846d8b3`) |
 | TX pipelining | `TX_QUEUE=0` (synchronous `DoIO`) is the release default. The TX pool is proven in the bench with `TX_QUEUE=4`; the real-hardware default is still to be decided. |
 
 ## Library coverage
@@ -24,7 +25,7 @@ _Last updated: 2026-09-23 · HEAD `0bb9d93` · version string `1.2.0-rc3` (`incl
 |---|---|---|
 | Host unit tests (`make test-host`) | 20 programs, ASan/UBSan | run locally before every commit |
 | Emulated conformance bench, rc3 tree | **ALL-GREEN**: 58/58 in both cycles on both profiles (a1200 + 68000); bsdsocktest **126/142** | bench `20260921-135938-51196ec` (in git history up to `7f87caf`) |
-| Emulated conformance bench, post-rc3 work | **ALL-GREEN**: 60/60 in both cycles on both profiles (a1200 + 68000); bsdsocktest **126/142** | bench `20260923-080728-v1.2.0-rc3-24-g0bb9d93` |
+| Emulated conformance bench, post-rc3 work | **ALL-GREEN**: 60/60 in both cycles on both profiles (a1200 + 68000); bsdsocktest **126/142** | bench `20260923-082158-v1.2.0-rc3-25-gdb29de8` |
 | Session-profile soak | **PASS**: 12 cycles (3 h 20 m, a1200, `TX_QUEUE=4`), 0 Gurus, 0 `not ok`, Chip RAM drift 0 B, Fast RAM −1200 B (cycle 1 → 11) | bench `20260922-144257-soak-842cc1f` (in git history up to `7f87caf`) |
 | MuForce / Enforcer | **SKIP**: the tool image is not part of the bench | `muforce.txt` in each bench run |
 | RTG (Picasso96) wizard layout | **SKIP**: no RTG drivers in the bench image. PAL 640×256 and NTSC 640×200 are verified; RTG is retested by the owner on PiStorm. | — |

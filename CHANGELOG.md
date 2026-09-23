@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.2.0-rc4 (2026-09-23)
+
+### Fixed
+- **Traceroute TTL propagation**: `traceroute` now configures socket TTL per hop via `setsockopt(IP_TTL)` and `tc_cmd_traceroute` verifies propagation.
+- **Installer startup line & config**: `Install_Tolunnet` emits config-driven `Run <NIL: >NIL: C:tolunnet` and writes `DEVS:tolunnet.config` directly.
+- **Installer stack collision protection**: `Install_Tolunnet` detects existing network stacks, backs up `LIBS:bsdsocket.library.<stack>`, comments existing startup lines, and emits an `S:tolunnet-undo` restoration script.
+- **Installer payload**: installs the full 33-command suite and updates documentation/prompts to "68000 or higher".
+- **Documentation automation**: `README.guide` and `tolunnet.readme` are generated automatically from `include/version.h` and `LICENSE`.
+- **ARP command cleanup**: removed unimplemented `FLUSH/S` switch from template and documentation.
+- **Soak audit strictness**: soak benchmark calculates PASS/FAIL status directly from thresholds (zero Gurus, zero not ok, cycles match expected, drift <= 8 KB).
+- **Setup wizard layout**: font-metric-driven layout on PAL (640×256) and NTSC (640×200), eliminating gadget and text overlaps.
+- **Preferences window handling**: `TolunnetPrefs` properly attaches to public screens using `WA_PubScreen`.
+- **Default network services**: `AUTOIP=NO` and `MDNS=NO` by default, eliminating unsolicited network traffic on vintage setups.
+
+### Added
+- **`usergroup.library` v4.1**: resident identity and credentials library (39 LVOs) with in-memory database and disk file fallback.
+- **Setup wizard screenshots**: 6 reference screenshots embedded in `README.md` and automated via `make screenshots`.
+- **License clarity**: verbatim GPL-3.0 `LICENSE` and `SPDX-License-Identifier: GPL-3.0-or-later` in all source files.
+
+## 1.2.0-rc3 (2026-09-22)
+
+### Fixed
+- **TNET-151**: restored signal masks (`sig_int`, `sig_io`, `sig_urg`) around the LVO sweep in conformance tests, resolving `WaitSelect` insta-EINTR.
+- **TNET-152**: daemon teardown and restart rewritten using `TN_IPC_CMD_STOP`; fixed `MakeLibrary`/`FreeMem` Exec library deallocation bug in `bsdsocket.library` teardown.
+
 ## 1.2.0-rc2 (2026-09-20)
 
 ### Fixed
