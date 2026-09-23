@@ -1,0 +1,26 @@
+[2026-09-23 14:33:21] [main] starting hermetic slirp host services
+[2026-09-23 14:33:21] [udp_echo] listening on UDP 15007
+[2026-09-23 14:33:21] [sntp] listening on UDP 15123
+[2026-09-23 14:33:21] [tcp_delay] listening on TCP 15009
+[2026-09-23 14:33:21] [tftp] listening on UDP 15069
+[2026-09-23 14:33:21] [main] all 7 service threads started, ready for traffic
+[2026-09-23 14:33:21] [whois] listening on TCP 15043
+[2026-09-23 14:33:21] [ftp] listening on TCP 15021 (PASV port: 15020)
+[2026-09-23 14:33:21] [http] listening on TCP 15080
+[2026-09-23 14:33:21] [tcp_delay] accepted from ('127.0.0.1', 19377), sleeping 1.0 s before reply
+[2026-09-23 14:33:21] [ftp] connected from ('127.0.0.1', 19378)
+[2026-09-23 14:33:21] [ftp] session error: [WinError 10053] Kurulan bir bağlantı, ana makinenizdeki yazılım tarafından iptal edildi
+[2026-09-23 14:33:21] [whois] query '' from ('127.0.0.1', 19379)
+[2026-09-23 14:33:21] [http] request '' from ('127.0.0.1', 19380)
+[2026-09-23 14:35:04] [tcp_delay] accepted from ('127.0.0.1', 8184), sleeping 1.0 s before reply
+[2026-09-23 14:35:27] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 5966)
+[2026-09-23 14:35:50] [tftp] RRQ for testfile (octet) from ('127.0.0.1', 55214)
+[2026-09-23 14:36:39] [tcp_delay] accepted from ('127.0.0.1', 56316), sleeping 1.0 s before reply
+[2026-09-23 14:37:03] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 4479)
+[2026-09-23 14:37:25] [tftp] RRQ for testfile (octet) from ('127.0.0.1', 64602)
+[2026-09-23 14:41:12] [tcp_delay] accepted from ('127.0.0.1', 38976), sleeping 1.0 s before reply
+[2026-09-23 14:41:37] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 59647)
+[2026-09-23 14:42:00] [tftp] RRQ for testfile (octet) from ('127.0.0.1', 61950)
+[2026-09-23 14:43:20] [tcp_delay] accepted from ('127.0.0.1', 39426), sleeping 1.0 s before reply
+[2026-09-23 14:43:44] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 47523)
+[2026-09-23 14:44:08] [tftp] RRQ for testfile (octet) from ('127.0.0.1', 49953)
