@@ -47,6 +47,8 @@ struct Library       *GadToolsBase  = NULL;
 struct Library       *IconBase      = NULL;
 struct DosLibrary    *DOSBase       = NULL;
 
+unsigned long __stack = 32768;
+
 /* Gadget IDs */
 #define GID_DEVICE      1
 #define GID_UNIT        2
@@ -376,6 +378,8 @@ int main(int argc, char *argv[])
     TnPrefs prefs;
     CONST_STRPTR pubscreen_name = NULL;
 
+    FindTask(NULL)->tc_Node.ln_Name = (char *)"TolunnetPrefs";
+
     DOSBase = (struct DosLibrary *)OpenLibrary((CONST_STRPTR)"dos.library", 36);
     if (!DOSBase) return 20;
 
@@ -441,11 +445,24 @@ int main(int argc, char *argv[])
     /* Load persistent preferences */
     tn_prefs_load(&prefs);
 
+    BOOL owns_screen = FALSE;
     if (pubscreen_name != NULL) {
         scr = LockPubScreen(pubscreen_name);
     }
     if (!scr) {
         scr = LockPubScreen(NULL);
+    }
+    if (!scr) {
+        scr = OpenScreenTags(NULL,
+                             SA_Depth, 2,
+                             SA_DisplayID, DEFAULT_MONITOR_ID | HIRES_KEY,
+                             SA_Title, (ULONG)"tolunnet Network Preferences",
+                             SA_Type, CUSTOMSCREEN,
+                             TAG_END);
+        if (scr) {
+            owns_screen = TRUE;
+            PubScreenStatus(scr, 0);
+        }
     }
     if (!scr) goto cleanup;
 
@@ -674,7 +691,7 @@ int main(int argc, char *argv[])
                                            WFLG_ACTIVATE | WFLG_SMART_REFRESH,
                          WA_Gadgets,       (ULONG)glist,
                          WA_Title,         (ULONG)"tolunnet Network Preferences",
-                         WA_PubScreen,     (ULONG)scr,
+                         owns_screen ? WA_CustomScreen : WA_PubScreen, (ULONG)scr,
                          TAG_END);
 
     if (!win) goto cleanup;
@@ -702,7 +719,8 @@ int main(int argc, char *argv[])
 
     /* Event Message Loop (TNET-079: non-blocking timer in Wait mask) */
     while (running) {
-        ULONG sigs = Wait((1UL << win->UserPort->mp_SigBit) | timer_sig);
+        ULONG sigs = Wait((1UL << win->UserPort->mp_SigBit) | timer_sig | SIGBREAKF_CTRL_C);
+        if (sigs & SIGBREAKF_CTRL_C) break;
 
         if (timer_active && (sigs & timer_sig)) {
             WaitIO((struct IORequest *)timer_io);
@@ -848,7 +866,12 @@ cleanup:
     if (win) CloseWindow(win);
     if (glist) FreeGadgets(glist);
     if (vi) FreeVisualInfo(vi);
-    if (scr) UnlockPubScreen(NULL, scr);
+    if (owns_screen && scr) {
+        PubScreenStatus(scr, PSNF_PRIVATE);
+        CloseScreen(scr);
+    } else if (scr) {
+        UnlockPubScreen(NULL, scr);
+    }
 
     if (IconBase) CloseLibrary(IconBase);
     if (GadToolsBase) CloseLibrary(GadToolsBase);

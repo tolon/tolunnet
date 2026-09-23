@@ -3257,17 +3257,15 @@ static void tc_wizard_wired(void)
 /* ----------------------------------------------------------------------- */
 /* TNET-110 part 3: NTSC fit proof + page screenshots.                      */
 
-/* Find the screen the wizard lives on: its own custom screen (bench boots
- * before Workbench) by title, else the default public screen. Sets
- * *from_publock when the screen must be UnlockPubScreen'd. */
-static struct Screen *find_wizard_screen(BOOL *from_publock)
+/* Find a screen by title, else fallback to the default public screen */
+static struct Screen *find_named_screen(const char *title, BOOL *from_publock)
 {
     struct Screen *s = NULL;
     *from_publock = FALSE;
     Forbid();
     for (s = IntuitionBase->FirstScreen; s; s = s->NextScreen) {
-        if (s->Title != NULL &&
-            strcmp((const char *)s->Title, "tolunnet Network Setup") == 0) {
+        if (s->Title != NULL && title != NULL &&
+            strcmp((const char *)s->Title, title) == 0) {
             Permit();
             return s;
         }
@@ -3276,6 +3274,11 @@ static struct Screen *find_wizard_screen(BOOL *from_publock)
     s = LockPubScreen(NULL);
     if (s) *from_publock = TRUE;
     return s;
+}
+
+static struct Screen *find_wizard_screen(BOOL *from_publock)
+{
+    return find_named_screen("tolunnet Network Setup", from_publock);
 }
 
 static struct Window *find_wizard_window(struct Screen *scr)
@@ -3294,14 +3297,13 @@ static struct Window *find_wizard_window(struct Screen *scr)
     return NULL;
 }
 
-/* IFF ILBM dumper: the wizard's screen, uncompressed planar.
+/* IFF ILBM dumper: the screen, uncompressed planar.
  * Best-effort artifact for the bench log (PAL + NTSC page shots). */
 #define IFF_PUT32(b, o, v) do { ULONG _v = (ULONG)(v); memcpy((b) + (o), &_v, 4); (o) += 4; } while (0)
 #define IFF_PUT16(b, o, v) do { UWORD _v = (UWORD)(v); memcpy((b) + (o), &_v, 2); (o) += 2; } while (0)
 
-static BOOL write_iff_screen(const char *path)
+static BOOL write_iff_screen_struct(const char *path, struct Screen *scr)
 {
-    struct Screen *scr;
     struct BitMap *bm;
     UBYTE *buf = NULL;
     ULONG *rgb = NULL;
@@ -3310,12 +3312,8 @@ static BOOL write_iff_screen(const char *path)
     UWORD w, h, bpr, row, row_bytes;
     UBYTE depth, plane;
     BOOL ok = FALSE;
-    BOOL locked = FALSE;
 
-    if (!IntuitionBase || !GfxBase) return FALSE;
-
-    scr = find_wizard_screen(&locked);
-    if (!scr) return FALSE;
+    if (!scr || !GfxBase) return FALSE;
 
     bm = &scr->BitMap;
     if (bm->Depth < 1 || bm->Depth > 8 || bm->Planes[0] == NULL ||
@@ -3392,8 +3390,29 @@ static BOOL write_iff_screen(const char *path)
 out:
     if (buf) FreeVec(buf);
     if (rgb) FreeVec(rgb);
+    return ok;
+}
+
+static BOOL write_iff_named_screen(const char *path, const char *title)
+{
+    struct Screen *scr;
+    BOOL ok = FALSE;
+    BOOL locked = FALSE;
+
+    if (!IntuitionBase || !GfxBase) return FALSE;
+
+    scr = find_named_screen(title, &locked);
+    if (!scr) return FALSE;
+
+    ok = write_iff_screen_struct(path, scr);
+
     if (locked) UnlockPubScreen(NULL, scr);
     return ok;
+}
+
+static BOOL write_iff_screen(const char *path)
+{
+    return write_iff_named_screen(path, "tolunnet Network Setup");
 }
 
 /* The wizard writes its layout self-report after every page rebuild */
@@ -3495,76 +3514,130 @@ static void tc_wizard_ntsc(void)
         return;
     }
 
-    for (i = 0; i < 5 && !fail; i++) {
-        char cmd[16], shot[48];
-        snprintf(cmd, sizeof(cmd), "PAGE %d", i);
-        if (!wizard_msg(wizard_port, reply_port, cmd)) {
-            fail = "no reply to PAGE";
-            break;
-        }
-        LONG pane_l = 0, pane_t = 0, pane_w = 0, pane_h = 0, pagebottom = 0, pen_bg = 0;
-        if (!wizard_geom_read(&page, &winw, &winh, &wintop,
-                              &scrw, &scrh, &maxbottom, &compact,
-                              &pane_l, &pane_t, &pane_w, &pane_h,
-                              &pagebottom, &pen_bg)) {
-            fail = "geometry report missing";
-            break;
-        }
-        if (page != i) {
-            fail = "geometry page mismatch";
-            break;
-        }
-        if (winw > scrw || winh > scrh) {
-            fail = "window larger than screen";
-            break;
-        }
-        if (wintop < 0 || wintop + maxbottom >= scrh) {
-            fail = "gadget below the screen";
-            break;
-        }
-        if (maxbottom >= winh) {
-            fail = "gadget below the window";
-            break;
-        }
-        if (compact != ((scrh < 240) ? 1 : 0)) {
-            fail = "compact flag wrong for screen height";
+    int mode;
+    for (mode = 0; mode <= 1 && !fail; mode++) {
+        char mcmd[16];
+        snprintf(mcmd, sizeof(mcmd), "IPMODE %d", mode);
+        if (!wizard_msg(wizard_port, reply_port, mcmd)) {
+            fail = "no reply to IPMODE";
             break;
         }
 
-        /* SEC item 4: assert per page that the pane region outside gadgets is pen_bg */
-        {
-            BOOL publock = FALSE;
-            struct Screen *scr = find_wizard_screen(&publock);
-            if (scr) {
-                struct Window *win = find_wizard_window(scr);
-                if (win && win->RPort) {
-                    LONG y_start = pagebottom + 4;
-                    LONG y_end   = pane_t + pane_h - 2;
-                    LONG x_start = pane_l + 4;
-                    LONG x_end   = pane_l + pane_w - 4;
-                    if (y_end > y_start && x_end > x_start) {
-                        LONG y, x;
-                        LONG non_bg = 0;
-                        for (y = y_start; y <= y_end; y++) {
-                            for (x = x_start; x <= x_end; x++) {
-                                if (ReadPixel(win->RPort, x, y) != (ULONG)pen_bg) {
-                                    non_bg++;
+        for (i = 0; i < 5 && !fail; i++) {
+            char cmd[16], shot[48];
+            snprintf(cmd, sizeof(cmd), "PAGE %d", i);
+            if (!wizard_msg(wizard_port, reply_port, cmd)) {
+                fail = "no reply to PAGE";
+                break;
+            }
+            LONG pane_l = 0, pane_t = 0, pane_w = 0, pane_h = 0, pagebottom = 0, pen_bg = 0;
+            if (!wizard_geom_read(&page, &winw, &winh, &wintop,
+                                  &scrw, &scrh, &maxbottom, &compact,
+                                  &pane_l, &pane_t, &pane_w, &pane_h,
+                                  &pagebottom, &pen_bg)) {
+                fail = "geometry report missing";
+                break;
+            }
+            if (page != i) {
+                fail = "geometry page mismatch";
+                break;
+            }
+            if (winw > scrw || winh > scrh) {
+                fail = "window larger than screen";
+                break;
+            }
+            /* TN-plan item 9: Window = full screen on PAL/NTSC */
+            if (scrw <= 640 && scrh <= 256) {
+                if (winw != scrw || winh != scrh || wintop != 0) {
+                    fail = "window does not fill PAL/NTSC screen";
+                    break;
+                }
+            }
+            if (wintop < 0 || wintop + maxbottom >= scrh) {
+                fail = "gadget below the screen";
+                break;
+            }
+            if (maxbottom >= winh) {
+                fail = "gadget below the window";
+                break;
+            }
+            if (compact != ((scrh < 240) ? 1 : 0)) {
+                fail = "compact flag wrong for screen height";
+                break;
+            }
+
+            LONG pane_r = pane_l + pane_w;
+            LONG pane_b = pane_t + pane_h;
+
+            if (pagebottom > pane_b) {
+                fail = "pagebottom exceeds pane_b";
+                break;
+            }
+
+            /* TN-plan item 9: every gadget LeftEdge+Width <= pane_r, TopEdge+Height <= pane_b */
+            {
+                BOOL publock = FALSE;
+                struct Screen *scr = find_wizard_screen(&publock);
+                if (scr) {
+                    struct Window *win = find_wizard_window(scr);
+                    if (win) {
+                        const struct Gadget *g;
+                        for (g = win->FirstGadget; g; g = g->NextGadget) {
+                            if (g->TopEdge >= pane_t && g->TopEdge < pane_b) {
+                                if (g->TopEdge + g->Height > pane_b) {
+                                    fail = "gadget TopEdge+Height > pane_b";
+                                    break;
+                                }
+                                if (g->LeftEdge + g->Width > pane_r) {
+                                    fail = "gadget LeftEdge+Width > pane_r";
+                                    break;
+                                }
+                                if (g->GadgetText && g->GadgetText->IText) {
+                                    LONG t_r = g->LeftEdge + g->GadgetText->LeftEdge +
+                                               (LONG)strlen((const char *)g->GadgetText->IText) * 8;
+                                    if (t_r > pane_r) {
+                                        fail = "gadget text past pane_r";
+                                        break;
+                                    }
                                 }
                             }
                         }
-                        if (non_bg > 0) {
-                            fail = "pane region outside gadgets is not pen_bg";
+
+                        /* TN-plan item 9: status row pen_bg except its text
+                         * The gap between pane_b and the status gadget must be clean pen_bg */
+                        if (!fail && win->RPort) {
+                            LONG y_start = pane_b;
+                            LONG y_end   = pane_b + 2;
+                            LONG x_start = pane_l + 4;
+                            LONG x_end   = pane_r - 4;
+                            if (y_end > y_start && x_end > x_start) {
+                                LONG y, x;
+                                for (y = y_start; y <= y_end; y++) {
+                                    for (x = x_start; x <= x_end; x++) {
+                                        if (ReadPixel(win->RPort, x, y) != (ULONG)pen_bg) {
+                                            fail = "status row margin is not pen_bg";
+                                            break;
+                                        }
+                                    }
+                                    if (fail) break;
+                                }
+                            }
                         }
                     }
+                    if (publock) UnlockPubScreen(NULL, scr);
                 }
-                if (publock) UnlockPubScreen(NULL, scr);
             }
-        }
-        if (fail) break;
+            if (fail) break;
 
-        snprintf(shot, sizeof(shot), "WORK:wizard-%d-%s.iff",
-                 i, (scrh == 200) ? "ntsc" : "pal");
-        write_iff_screen(shot);
+            if (mode == 0) {
+                snprintf(shot, sizeof(shot), "WORK:wizard-%d-%s.iff",
+                         i, (scrh == 200) ? "ntsc" : "pal");
+            } else {
+                snprintf(shot, sizeof(shot), "WORK:wizard-%d-%s-static.iff",
+                         i, (scrh == 200) ? "ntsc" : "pal");
+            }
+            write_iff_screen(shot);
+        }
     }
 
     wizard_msg(wizard_port, reply_port, "CANCEL");
@@ -3579,6 +3652,70 @@ static void tc_wizard_ntsc(void)
         Permit();
     }
 
+    /* Dump TolunnetPrefs screenshot for the profile */
+    if (!fail) {
+        LONG rc_prefs = SystemTags((CONST_STRPTR)"C:TolunnetPrefs",
+                                   SYS_Asynch, TRUE,
+                                   SYS_Input, (BPTR)0,
+                                   SYS_Output, (BPTR)0,
+                                   NP_StackSize, 32768,
+                                   TAG_END);
+        tapf("# tc_wizard_ntsc: SystemTags TolunnetPrefs rc=%ld\n", rc_prefs);
+
+        struct Window *pwin = NULL;
+        struct Screen *pscr = NULL;
+        int pwait;
+        for (pwait = 0; pwait < 60; pwait++) {
+            Delay(5);
+            Forbid();
+            for (pscr = IntuitionBase->FirstScreen; pscr; pscr = pscr->NextScreen) {
+                for (pwin = pscr->FirstWindow; pwin; pwin = pwin->NextWindow) {
+                    if (pwin->Title != NULL &&
+                        strstr((const char *)pwin->Title, "Network Preferences") != NULL) {
+                        break;
+                    }
+                }
+                if (pwin) break;
+            }
+            Permit();
+            if (pwin) break;
+        }
+        tapf("# tc_wizard_ntsc: pwait=%d pwin=%lx pscr=%lx\n", pwait, (ULONG)pwin, (ULONG)pscr);
+
+        if (pwin && pscr) {
+            Delay(10);
+            char pref_shot[48];
+            snprintf(pref_shot, sizeof(pref_shot), "WORK:prefs-%s.iff",
+                     (scrh == 200) ? "ntsc" : "pal");
+            BOOL shot_ok = write_iff_screen_struct(pref_shot, pscr);
+            tapf("# tc_wizard_ntsc: prefs shot (%s) ok=%d\n", pref_shot, (int)shot_ok);
+            struct Task *ptask = (pwin->UserPort != NULL) ? pwin->UserPort->mp_SigTask : NULL;
+            if (!ptask) {
+                Forbid();
+                ptask = FindTask((CONST_STRPTR)"TolunnetPrefs");
+                Permit();
+            }
+            if (ptask != NULL) {
+                Signal(ptask, SIGBREAKF_CTRL_C);
+                for (pwait = 0; pwait < 40; pwait++) {
+                    Delay(5);
+                    BOOL still_open = FALSE;
+                    Forbid();
+                    struct Screen *s;
+                    for (s = IntuitionBase->FirstScreen; s; s = s->NextScreen) {
+                        struct Window *w;
+                        for (w = s->FirstWindow; w; w = w->NextWindow) {
+                            if (w == pwin) { still_open = TRUE; break; }
+                        }
+                        if (still_open) break;
+                    }
+                    Permit();
+                    if (!still_open) break;
+                }
+            }
+        }
+    }
+
     DeleteMsgPort(reply_port);
     CloseLibrary((struct Library *)GfxBase);
     CloseLibrary((struct Library *)IntuitionBase);
@@ -3587,8 +3724,8 @@ static void tc_wizard_ntsc(void)
 
     if (fail) {
         snprintf(reason, sizeof(reason),
-                 "%s (page %d: win %dx%d top %d scr %dx%d maxbottom %d compact %d)",
-                 fail, page, (int)winw, (int)winh, (int)wintop,
+                 "%s (mode %d page %d: win %dx%d top %d scr %dx%d maxbottom %d compact %d)",
+                 fail, mode, page, (int)winw, (int)winh, (int)wintop,
                  (int)scrw, (int)scrh, (int)maxbottom, compact);
         TAP_NOTOK("tc_wizard_ntsc", reason);
         return;

@@ -293,6 +293,7 @@ for cfg in $CONFIGS; do
     xd delete C/TolunnetControl >/dev/null 2>&1
     xd delete C/SocketConformance >/dev/null 2>&1
     xd delete C/TolunnetSetup   >/dev/null 2>&1
+    xd delete C/TolunnetPrefs   >/dev/null 2>&1
     xd delete C/S2Toggle        >/dev/null 2>&1
     xd delete C/bsdsocktest     >/dev/null 2>&1
     xd delete Libs/usergroup.library >/dev/null 2>&1
@@ -304,6 +305,7 @@ for cfg in $CONFIGS; do
     xd write build/TolunnetControl C/TolunnetControl || die "xdftool write TolunnetControl failed"
     xd write build/SocketConformance C/SocketConformance || die "xdftool write conformance failed"
     xd write build/TolunnetSetup C/TolunnetSetup || die "xdftool write TolunnetSetup failed"
+    xd write build/TolunnetPrefs C/TolunnetPrefs || die "xdftool write TolunnetPrefs failed"
     xd write build/S2Toggle C/S2Toggle || die "xdftool write S2Toggle failed"
     xd write build/bsdsocktest C/bsdsocktest || die "xdftool write bsdsocktest failed"
     xd write build/usergroup.library Libs/usergroup.library || die "xdftool write usergroup.library failed"
@@ -311,10 +313,10 @@ for cfg in $CONFIGS; do
     xd write ci/User-Startup-Boot S/User-Startup || die "xdftool write User-Startup failed"
     xd write Install_Tolunnet.script S/Install_Tolunnet.script || die "xdftool write Install_Tolunnet.script failed"
     xd write "$BENCH_CFG" Devs/tolunnet.config          || die "xdftool write tolunnet.config failed"
-    say "staged: tolunnet + SocketConformance + bsdsocktest + usergroup.library + TolunnetSetup + Conformance-Script + User-Startup + tolunnet.config -> $HDF_WIN"
+    say "staged: tolunnet + SocketConformance + bsdsocktest + usergroup.library + TolunnetSetup + TolunnetPrefs + Conformance-Script + User-Startup + tolunnet.config -> $HDF_WIN"
 
     # ---- run headless ---------------------------------------------------
-    rm -f "$WORK_DIR/conformance.log" "$WORK_DIR/conformance2.log" "$WORK_DIR/bench-done" "$WORK_DIR/tolunnet-task.log" "$WORK_DIR/bsdsocktest.log" "$WORK_DIR"/wizard-*.iff
+    rm -f "$WORK_DIR/conformance.log" "$WORK_DIR/conformance2.log" "$WORK_DIR/bench-done" "$WORK_DIR/tolunnet-task.log" "$WORK_DIR/bsdsocktest.log" "$WORK_DIR"/wizard-*.iff "$WORK_DIR"/prefs-*.iff
     CFG_WIN=$(cygpath -w "$REPO_ROOT/ci/tolunnet-$cfg.uae")
     say "launching WinUAE headless ($CFG_WIN), timeout ${TIMEOUT_SECS}s"
     "$WINUAE" -f "$CFG_WIN" >/dev/null 2>&1 &
@@ -352,6 +354,7 @@ for cfg in $CONFIGS; do
     cp "$WORK_DIR/tolunnet-crash2.log" "$OUT/" 2>/dev/null || true
     # TNET-110: wizard page screenshots (PAL + NTSC) from tc_wizard_ntsc
     cp "$WORK_DIR"/wizard-*.iff "$OUT/" 2>/dev/null || true
+    cp "$WORK_DIR"/prefs-*.iff  "$OUT/" 2>/dev/null || true
     # ANX-01: third-party bsdsocktest log (does not gate the bench)
     cp "$WORK_DIR/bsdsocktest.log" "$OUT/" 2>/dev/null \
         || echo "(missing)" > "$OUT/bsdsocktest.log"

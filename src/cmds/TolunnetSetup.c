@@ -319,84 +319,108 @@ static void setup_font(int argc, char **argv)
 
 static void derive_metrics(struct Screen *scr)
 {
-    memset(&g_m, 0, sizeof(g_m));
-    g_m.compact = (scr->Height < 240);
+    int font_attempt;
+    for (font_attempt = 0; font_attempt < 2; font_attempt++) {
+        memset(&g_m, 0, sizeof(g_m));
+        g_m.compact = (scr->Height < 240);
 
-    if (g_font_spec_set) {
-        g_font = OpenDiskFont(&g_gui_font);
-    } else {
-        /* default: follow the screen font (TNET-110 / TN-note-AG4); do not force topaz */
-        if (scr->Font && scr->Font->ta_Name) {
-            g_font = OpenFont(scr->Font);
+        if (font_attempt == 0) {
+            if (g_font_spec_set) {
+                g_font = OpenDiskFont(&g_gui_font);
+            } else {
+                /* default: follow the screen font (TNET-110 / TN-note-AG4); do not force topaz */
+                if (scr->Font && scr->Font->ta_Name) {
+                    g_font = OpenFont(scr->Font);
+                }
+                if (g_font == NULL && GfxBase && GfxBase->DefaultFont) {
+                    g_font = GfxBase->DefaultFont;
+                }
+            }
+        } else {
+            /* Fallback to topaz/8 when candidate font does not fit pane_h (TN-plan item 9) */
+            if (g_font && g_font != GfxBase->DefaultFont) {
+                CloseFont(g_font);
+            }
+            g_gui_font.ta_Name  = (STRPTR)"topaz.font";
+            g_gui_font.ta_YSize = 8;
+            g_gui_font.ta_Style = FS_NORMAL;
+            g_gui_font.ta_Flags = FPF_ROMFONT;
+            g_font = OpenFont(&g_gui_font);
         }
-        if (g_font == NULL && GfxBase && GfxBase->DefaultFont) {
-            g_font = GfxBase->DefaultFont;
+
+        if (g_font == NULL) {
+            g_gui_font.ta_Name  = (STRPTR)"topaz.font";
+            g_gui_font.ta_YSize = 8;
+            g_gui_font.ta_Style = FS_NORMAL;
+            g_gui_font.ta_Flags = FPF_ROMFONT;
+            g_font = OpenFont(&g_gui_font);
+        }
+
+        if (g_font != NULL) {
+            g_gui_font.ta_Name  = (STRPTR)g_font->tf_Message.mn_Node.ln_Name;
+            g_gui_font.ta_YSize = g_font->tf_YSize;
+            g_gui_font.ta_Style = g_font->tf_Style;
+            g_gui_font.ta_Flags = g_font->tf_Flags;
+            g_m.fx = g_font->tf_XSize;
+            g_m.fy = g_font->tf_YSize;
+        } else {
+            g_m.fx = 8;
+            g_m.fy = 8;
+        }
+
+        /* readability floor: pitch >= fy + 6, compact >= 14 */
+        g_m.pitch = g_m.fy + 6;
+        if (g_m.compact && g_m.pitch < 14) g_m.pitch = 14;
+
+        /* Rule 1: step column width = longest step label + 2 chars */
+        {
+            LONG max_step_chars = 0;
+            int p;
+            for (p = 0; g_page_names[p] != NULL; p++) {
+                LONG len = (LONG)strlen((const char *)g_page_names[p]);
+                if (len > max_step_chars) max_step_chars = len;
+            }
+            g_m.rail_w = (max_step_chars + 2) * g_m.fx;
+        }
+
+        g_m.btn_h = g_m.fy + 6;
+
+        /* Rule 2: Window size = full screen on PAL/NTSC, min(screen, ideal) only when larger */
+        LONG border_t = scr->WBorTop + (scr->Font ? scr->Font->ta_YSize : g_m.fy) + 1;
+        LONG border_b = scr->WBorBottom + 2;
+        LONG title_h  = border_t + 1;
+
+        LONG ideal_w = g_m.rail_w + 8 + 14 + (60 * g_m.fx) + 14 + 8;
+        LONG ideal_h = title_h + (g_m.compact ? 3 : 6) + 4 + g_m.pitch + (5 * g_m.pitch + 6) +
+                       (g_m.pitch / 2) + (g_m.fy + 6) + 4 + 4 + (g_m.fy + 6) + 3 + g_m.btn_h + border_b + 3;
+
+        if (scr->Width <= 640 && scr->Height <= 256) {
+            /* TN-plan item 9: window = full screen on PAL/NTSC */
+            g_m.win_w = scr->Width;
+            g_m.win_h = scr->Height;
+        } else {
+            LONG vis_w = scr->Width - 8;
+            LONG vis_h = scr->Height - 4;
+            g_m.win_w = (ideal_w < vis_w) ? ideal_w : vis_w;
+            g_m.win_h = (ideal_h < vis_h) ? ideal_h : vis_h;
+            if (g_m.win_w < 520 && vis_w >= 520) g_m.win_w = 520;
+        }
+
+        g_m.pane_l   = g_m.rail_w + 8;
+        g_m.pane_w   = g_m.win_w - g_m.pane_l - 8;
+        g_m.pane_t   = title_h + (g_m.compact ? 3 : 6);
+        g_m.btn_t    = g_m.win_h - border_b - g_m.btn_h - 3;
+        g_m.status_t = g_m.btn_t - g_m.fy - 6;
+        g_m.pane_h   = g_m.status_t - g_m.pane_t - 4;
+
+        /* Page height budget = pane_h: tallest page is ~8.5 * pitch.
+         * If it does not fit and we haven't tried topaz/8, switch to smaller font. */
+        int test_rows = g_m.compact ? 3 : 5;
+        LONG req_h = 4 + (test_rows + 4) * g_m.pitch;
+        if (req_h <= g_m.pane_h || font_attempt > 0 || (g_m.fy <= 8 && strcmp((char *)g_gui_font.ta_Name, "topaz.font") == 0)) {
+            break;
         }
     }
-    if (g_font == NULL) {
-        g_gui_font.ta_Name = (STRPTR)"topaz.font";
-        g_gui_font.ta_YSize = 8;
-        g_gui_font.ta_Style = FS_NORMAL;
-        g_gui_font.ta_Flags = FPF_ROMFONT;
-        g_font = OpenFont(&g_gui_font);
-    }
-
-    if (g_font != NULL) {
-        g_gui_font.ta_Name  = (STRPTR)g_font->tf_Message.mn_Node.ln_Name;
-        g_gui_font.ta_YSize = g_font->tf_YSize;
-        g_gui_font.ta_Style = g_font->tf_Style;
-        g_gui_font.ta_Flags = g_font->tf_Flags;
-        g_m.fx = g_font->tf_XSize;
-        g_m.fy = g_font->tf_YSize;
-    } else {
-        g_m.fx = 8;
-        g_m.fy = 8;
-    }
-
-    /* readability floor: pitch >= fy + 6, compact >= 14 */
-    g_m.pitch = g_m.fy + 6;
-    if (g_m.compact && g_m.pitch < 14) g_m.pitch = 14;
-
-    /* Rule 1: step column width = longest step label + 2 chars */
-    {
-        LONG max_step_chars = 0;
-        int p;
-        for (p = 0; g_page_names[p] != NULL; p++) {
-            LONG len = (LONG)strlen((const char *)g_page_names[p]);
-            if (len > max_step_chars) max_step_chars = len;
-        }
-        g_m.rail_w = (max_step_chars + 2) * g_m.fx;
-    }
-
-    g_m.btn_h = g_m.fy + 6;
-
-    /* Rule 2: Window size = min(screen visible size, ideal)
-     * where ideal = what font needs for tallest page (5) with 2-column grid */
-    LONG border_t = scr->WBorTop + (scr->Font ? scr->Font->ta_YSize : g_m.fy) + 1;
-    LONG border_b = scr->WBorBottom + 2;
-    LONG title_h  = border_t + 1;
-
-    LONG ideal_w = g_m.rail_w + 8 + 14 + (60 * g_m.fx) + 14 + 8;
-    LONG ideal_h = title_h + (g_m.compact ? 3 : 6) + 4 + g_m.pitch + (5 * g_m.pitch + 6) +
-                   (g_m.pitch / 2) + (g_m.fy + 6) + 4 + 4 + (g_m.fy + 6) + 3 + g_m.btn_h + border_b + 3;
-
-    LONG vis_w = scr->Width - 8;
-    LONG vis_h = scr->Height - 4;
-
-    g_m.win_w = ideal_w;
-    if (g_m.win_w > vis_w) g_m.win_w = vis_w;
-    if (g_m.win_w < 520 && vis_w >= 520) g_m.win_w = 520;
-
-    g_m.win_h = ideal_h;
-    if (g_m.win_h > vis_h) g_m.win_h = vis_h;
-    if (g_m.compact && g_m.win_h > 176) g_m.win_h = 176;
-
-    g_m.pane_l   = g_m.rail_w + 8;
-    g_m.pane_w   = g_m.win_w - g_m.pane_l - 8;
-    g_m.pane_t   = title_h + (g_m.compact ? 3 : 6);
-    g_m.btn_t    = g_m.win_h - border_b - g_m.btn_h - 3;
-    g_m.status_t = g_m.btn_t - g_m.fy - 6;
-    g_m.pane_h   = g_m.status_t - g_m.pane_t - 4;
 
     if (g_dri) {
         g_m.pen_text     = g_dri->dri_Pens[TEXTPEN];
@@ -1103,22 +1127,22 @@ static void draw_page_content(void)
     if (!g_win) return;
     if (g_ws.current_page != WIZARD_PAGE_ADDRESS) return;
 
-    /* Step SEC item 2 / TN-note-AG4: DHCP note starts one pitch below Mode gadget bottom edge */
+    /* Step SEC item 2 / TN-note-AG4 / TN-plan item 9:
+     * DHCP note occupies Row 1 and Row 2, never overlapping DNS 2 on Row 3 */
     if (g_ws.ip_mode == 0) {
         struct RastPort *rp = g_win->RPort;
         const char *l1 = "DHCP obtains IP address, netmask, gateway";
         const char *l2 = "and DNS servers automatically.";
         LONG ct = g_m.pane_t + 4 + g_m.pitch;
-        LONG note_y = ct + g_m.btn_h + g_m.pitch;
 
         SetAPen(rp, g_m.pen_bg);
-        RectFill(rp, g_m.pane_l + 14, note_y - g_m.fy,
-                 g_m.pane_l + g_m.pane_w - 14, note_y + g_m.pitch + 2);
+        RectFill(rp, g_m.pane_l + 14, ct + g_m.pitch - 2,
+                 g_m.pane_l + g_m.pane_w - 14, ct + 3 * g_m.pitch - 2);
         SetAPen(rp, g_m.pen_text);
         SetFont(rp, g_font ? g_font : rp->Font);
-        Move(rp, g_m.pane_l + 14, note_y);
+        Move(rp, g_m.pane_l + 14, ct + g_m.pitch + g_m.fy - 1);
         Text(rp, (CONST_STRPTR)l1, (WORD)strlen(l1));
-        Move(rp, g_m.pane_l + 14, note_y + g_m.pitch);
+        Move(rp, g_m.pane_l + 14, ct + 2 * g_m.pitch + g_m.fy - 1);
         Text(rp, (CONST_STRPTR)l2, (WORD)strlen(l2));
     }
 }
@@ -1141,12 +1165,12 @@ static void rebuild_page_gadgets(void)
         g_page_glist = NULL;
     }
 
-    /* Step SEC item 1: clear entire pane area and refresh window frame */
+    /* Step SEC item 1 / TN-plan item 9: clear entire pane area up to status row */
     {
         struct RastPort *rp = g_win->RPort;
         SetAPen(rp, g_m.pen_bg);
         RectFill(rp, g_m.pane_l, g_m.pane_t,
-                 g_m.pane_l + g_m.pane_w - 1, g_m.pane_t + g_m.pane_h - 1);
+                 g_m.pane_l + g_m.pane_w - 1, g_m.status_t - 1);
         RefreshWindowFrame(g_win);
     }
 
@@ -1269,7 +1293,7 @@ static void rebuild_page_gadgets(void)
     }
 
     case WIZARD_PAGE_WIFI: {
-        int rows = g_m.compact ? 4 : 6;
+        int rows = g_m.compact ? 3 : 5;
         int i;
         int shown = 0;
         NewList(&g_wifi_list);
@@ -1419,7 +1443,7 @@ static void rebuild_page_gadgets(void)
 
         if (g_ws.ip_mode == 1) {
             /* Row 1: IP + Mask */
-            ng.ng_TopEdge    = ct + 2 * g_m.pitch;
+            ng.ng_TopEdge    = ct + 1 * g_m.pitch;
             ng.ng_Width      = col_w;
             ng.ng_Height     = g_m.fy + 6;
             ng.ng_Flags      = PLACETEXT_LEFT;
@@ -1443,7 +1467,7 @@ static void rebuild_page_gadgets(void)
             ng.ng_GadgetText = (STRPTR)"Gateway:";
             ng.ng_LeftEdge   = col1_x;
             ng.ng_Width      = col_w;
-            ng.ng_TopEdge    = ct + 3 * g_m.pitch;
+            ng.ng_TopEdge    = ct + 2 * g_m.pitch;
             prev = CreateGadget(STRING_KIND, prev, &ng,
                                 GTST_String, (ULONG)g_ws.gw_str,
                                 GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
@@ -1457,8 +1481,8 @@ static void rebuild_page_gadgets(void)
                                 GTST_MaxChars, 15, GA_TabCycle, TRUE, TAG_END);
         }
 
-        /* DNS 2 + MTU row */
-        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1 ? 4 : 3) * g_m.pitch;
+        /* DNS 2 + MTU row: Row 3 in both DHCP and Static modes */
+        ng.ng_TopEdge    = ct + 3 * g_m.pitch;
         ng.ng_Width      = col_w;
         ng.ng_Height     = g_m.fy + 6;
         ng.ng_Flags      = PLACETEXT_LEFT;
@@ -1477,8 +1501,8 @@ static void rebuild_page_gadgets(void)
                             GTST_String, (ULONG)g_ws.mtu_str,
                             GTST_MaxChars, 5, GA_TabCycle, TRUE, TAG_END);
 
-        /* Host + Domain share row 5 (static) / row 4 (DHCP) */
-        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1 ? 5 : 4) * g_m.pitch;
+        /* Host + Domain share row 4 in both modes */
+        ng.ng_TopEdge    = ct + 4 * g_m.pitch;
         ng.ng_Width      = col_w;
         ng.ng_Height     = g_m.fy + 6;
         ng.ng_Flags      = PLACETEXT_LEFT;
@@ -1502,7 +1526,7 @@ static void rebuild_page_gadgets(void)
         /* Advanced… button placed on right edge of Host/Domain row */
         LONG adv_w       = g_m.pane_w * 20 / 100;
         ng.ng_LeftEdge   = cl + cw - adv_w;
-        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1 ? 5 : 4) * g_m.pitch;
+        ng.ng_TopEdge    = ct + 4 * g_m.pitch;
         ng.ng_Width      = adv_w;
         ng.ng_Height     = g_m.btn_h;
         ng.ng_GadgetText = (STRPTR)"Adv_anced...";
@@ -1514,10 +1538,10 @@ static void rebuild_page_gadgets(void)
 
         /* Roadshow checkbox */
         ng.ng_LeftEdge   = cl;
-        ng.ng_TopEdge    = ct + (g_ws.ip_mode == 1 ? 6 : 5) * g_m.pitch + g_m.pitch / 2;
+        ng.ng_TopEdge    = ct + 5 * g_m.pitch + g_m.pitch / 2;
         ng.ng_Width      = 26;
         ng.ng_Height     = g_m.fy + 6;
-        ng.ng_GadgetText = (STRPTR)"Also write _Roadshow DEVS:NetInterfaces/ for other tools";
+        ng.ng_GadgetText = (STRPTR)"Also write _Roadshow DEVS:NetInterfaces/";
         ng.ng_GadgetID   = GID_P4_ROADSHOW_CHK;
         ng.ng_Flags      = PLACETEXT_RIGHT;
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
@@ -1595,8 +1619,11 @@ static void rebuild_page_gadgets(void)
                             TAG_END);
 
         ng.ng_LeftEdge   = cl + g_m.pane_w * 35 / 100;
+        ng.ng_Width      = 26;
+        ng.ng_Height     = g_m.fy + 6;
         ng.ng_GadgetText = (STRPTR)"Open _Prefs after finish";
         ng.ng_GadgetID   = GID_P5_PREFS_CHK;
+        ng.ng_Flags      = PLACETEXT_RIGHT;
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
                             GTCB_Checked, g_ws.open_prefs_after_finish,
                             TAG_END);
@@ -1836,7 +1863,10 @@ int main(int argc, char **argv)
                                  SA_Title, (ULONG)"tolunnet Network Setup",
                                  SA_Type, CUSTOMSCREEN,
                                  TAG_END);
-            if (scr) owns_screen = TRUE;
+            if (scr) {
+                owns_screen = TRUE;
+                PubScreenStatus(scr, 0);
+            }
         }
     }
 
@@ -1898,13 +1928,17 @@ int main(int argc, char **argv)
                                 TAG_END);
             g_gad_status = prev;
 
-            WORD win_left = (scr->Width - g_m.win_w) / 2;
-            WORD win_top  = (scr->Height - g_m.win_h) / 2;
-            WORD top_bar  = scr->WBorTop + (scr->Font ? scr->Font->ta_YSize : g_m.fy) + 1;
-            if (win_top < top_bar) win_top = top_bar;
-            if (win_top + g_m.win_h > scr->Height) win_top = scr->Height - g_m.win_h;
-            if (win_left < 0) win_left = 0;
-            if (win_left + g_m.win_w > scr->Width) win_left = scr->Width - g_m.win_w;
+            WORD win_left = 0;
+            WORD win_top  = 0;
+            if (scr->Width > 640 || scr->Height > 256) {
+                win_left = (scr->Width - g_m.win_w) / 2;
+                win_top  = (scr->Height - g_m.win_h) / 2;
+                WORD top_bar  = scr->WBorTop + (scr->Font ? scr->Font->ta_YSize : g_m.fy) + 1;
+                if (win_top < top_bar) win_top = top_bar;
+                if (win_top + g_m.win_h > scr->Height) win_top = scr->Height - g_m.win_h;
+                if (win_left < 0) win_left = 0;
+                if (win_left + g_m.win_w > scr->Width) win_left = scr->Width - g_m.win_w;
+            }
 
             wlog("building gadgets");
             g_win = OpenWindowTags(NULL,
@@ -2249,6 +2283,7 @@ int main(int argc, char **argv)
     }
 
     if (owns_screen && scr) {
+        PubScreenStatus(scr, PSNF_PRIVATE);
         CloseScreen(scr);
     }
 

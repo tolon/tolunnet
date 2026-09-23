@@ -108,6 +108,11 @@ void tn_setup_rexx_process(struct MsgPort *port, WizardState *ws, void (*on_refr
                         ws->current_page = arg_num;
                     }
                     if (on_refresh) on_refresh();
+                } else if (strcasecmp(verb, "IPMODE") == 0) {
+                    if (arg_num == 0 || arg_num == 1) {
+                        ws->ip_mode = arg_num;
+                    }
+                    if (on_refresh) on_refresh();
                 } else if (strcasecmp(verb, "SELECT") == 0) {
                     if (ws->current_page == WIZARD_PAGE_HW) {
                         if (arg_num >= 0 && arg_num < ws->hw_count) {
