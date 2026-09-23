@@ -449,7 +449,15 @@ BPTR tn_lib_close(struct Library *lib)
 /* --------------------------------------------------------------- LIB_EXPUNGE */
 BPTR tn_lib_expunge(struct Library *lib)
 {
-    (void)lib;
+    if (lib != NULL) {
+        Forbid();
+        if (lib->lib_Node.ln_Succ != NULL && lib->lib_Node.ln_Pred != NULL) {
+            Remove(&lib->lib_Node);
+            lib->lib_Node.ln_Succ = NULL;
+            lib->lib_Node.ln_Pred = NULL;
+        }
+        Permit();
+    }
     return (BPTR)0;
 }
 
@@ -612,9 +620,15 @@ LONG tn_lvo_setsockopt(LONG sock, LONG level, LONG optname, const void *optval,
     if (base == NULL || sock < 0) return -1;
     /* TNET-122..127: SO_EVENTMASK filter lives client-side so the event
      * recording path can AND against it without an IPC round-trip. */
-    if (level == SOL_SOCKET && optname == SO_EVENTMASK &&
-        optval != NULL && optlen >= (LONG)sizeof(ULONG)) {
-        base->event_masks[sock] = *(const ULONG *)optval;
+    if (level == SOL_SOCKET && optname == SO_EVENTMASK) {
+        ULONG mask;
+        if (optval == NULL || optlen < (LONG)sizeof(ULONG) ||
+            sock >= base->dtablesize || base->event_masks == NULL) {
+            tn_set_errno_val(base, EINVAL);
+            return -1;
+        }
+        memcpy(&mask, optval, sizeof(ULONG));
+        base->event_masks[sock] = mask;
         return 0;
     }
     base->ipc_msg.args[0] = sock;

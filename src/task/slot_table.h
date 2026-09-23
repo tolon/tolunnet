@@ -35,6 +35,9 @@ void tn_rx_queue_drain(TnSocketSlot *slot);
 
 int tn_accept_queue_push(TnSocketSlot *slot, struct tcp_pcb *new_pcb);
 struct tcp_pcb *tn_accept_queue_pop(TnSocketSlot *slot);
+TnAcceptEntry *tn_accept_queue_pop_entry(TnSocketSlot *slot);
+void tn_accept_queue_remove(TnSocketSlot *slot, TnAcceptEntry *ent);
+void tn_accept_entry_free(TnAcceptEntry *ent, BOOL abort_pcb);
 void tn_accept_queue_drain(TnSocketSlot *slot);
 
 void tn_record_socket_event(TnDaemon *d, TnSocketSlot *slot, ULONG event_mask);
@@ -43,5 +46,6 @@ int tn_slot_live_count(const TnDaemon *d);
 int tn_slot_park_recv(TnDaemon *d, TnSocketSlot *slot, TnIpcMsg *imsg);
 void tn_slot_check_recv_timeouts(TnDaemon *d);
 void tn_recv_cancel_for_base(TnDaemon *d, TnSocketBase *base);
+void tn_slot_clear_owner_base(TnDaemon *d, const TnSocketBase *base);
 
 #endif /* TOLUNNET_SLOT_TABLE_H */

@@ -3,16 +3,22 @@
  * tolunnet — timer.device management and real hardware time/random helpers for lwIP.
  *
  * Master prompt §6, AUDIT-2 TNET-013 (Entropy/PRNG), TNET-014 (Precise sys_now),
- * and TNET-026 (Dedicated IORequest for sys_now to prevent collisions with in-flight ticks).
+ * TNET-026 (Dedicated IORequest for sys_now to prevent collisions with in-flight ticks),
+ * and Item 10 (Monotonic sys_now via ReadEClock).
  */
 
 #include "timers.h"
-#include "../common/log.h"
 
+#ifdef __AMIGA__
+#include "../common/log.h"
 #include <proto/exec.h>
 #include <exec/memory.h>
+#include <proto/timer.h>
 
+struct Device *TimerBase = NULL;
 static TnTimer *g_active_timer = NULL;
+#endif
+
 static uint32_t g_rand_state   = 0;
 
 /* 32-bit Integer Hash (Murmur3 finalizer) */
@@ -26,6 +32,7 @@ static inline uint32_t hash32(uint32_t x)
     return x;
 }
 
+#ifdef __AMIGA__
 BOOL tn_timer_init(TnTimer *tm)
 {
     BYTE err;
@@ -38,6 +45,9 @@ BOOL tn_timer_init(TnTimer *tm)
     tm->time_io = NULL;
     tm->boot_time.tv_secs = 0;
     tm->boot_time.tv_micro = 0;
+    tm->boot_eclock.ev_hi = 0;
+    tm->boot_eclock.ev_lo = 0;
+    tm->eclock_freq = 0;
     tm->open = FALSE;
     tm->armed = FALSE;
     tm->sig_mask = 0;
@@ -69,6 +79,15 @@ BOOL tn_timer_init(TnTimer *tm)
         return FALSE;
     }
 
+    /* Assign TimerBase from opened device node */
+    TimerBase = (struct Device *)tm->io->tr_node.io_Device;
+
+    /* Read baseline monotonic E-Clock (Item 10) */
+    tm->eclock_freq = ReadEClock(&tm->boot_eclock);
+    if (tm->eclock_freq == 0) {
+        tm->eclock_freq = 709379UL; /* Standard PAL E-Clock fallback */
+    }
+
     /* 2. Dedicated Time Query Port & IORequest for sys_now() (TNET-026) */
     tm->time_port = CreateMsgPort();
     if (tm->time_port != NULL) {
@@ -89,7 +108,7 @@ BOOL tn_timer_init(TnTimer *tm)
         }
     }
 
-    /* Record baseline boot timestamp for precision uptime calculations */
+    /* Record baseline boot timestamp for wall-clock start time reporting */
     if (tm->time_io != NULL) {
         tm->time_io->tr_node.io_Command = TR_GETSYSTIME;
         DoIO((struct IORequest *)tm->time_io);
@@ -110,11 +129,14 @@ BOOL tn_timer_init(TnTimer *tm)
 void tn_rand_init(TnTimer *tm, const UBYTE mac[6])
 {
     struct timeval cur;
+    struct EClockVal ev;
     ULONG chip_mem, fast_mem;
     uint32_t seed = 0;
 
     cur.tv_secs = 0;
     cur.tv_micro = 0;
+    ev.ev_hi = 0;
+    ev.ev_lo = 0;
 
     if (tm != NULL && tm->open) {
         struct timerequest *req = (tm->time_io != NULL) ? tm->time_io : tm->io;
@@ -122,6 +144,9 @@ void tn_rand_init(TnTimer *tm, const UBYTE mac[6])
             req->tr_node.io_Command = TR_GETSYSTIME;
             DoIO((struct IORequest *)req);
             cur = req->tr_time;
+        }
+        if (TimerBase != NULL) {
+            ReadEClock(&ev);
         }
     }
 
@@ -131,6 +156,7 @@ void tn_rand_init(TnTimer *tm, const UBYTE mac[6])
     /* Fold hardware entropy into seed */
     seed ^= hash32(cur.tv_secs);
     seed ^= hash32(cur.tv_micro ^ 0x9e3779b9UL);
+    seed ^= hash32(ev.ev_lo);
     seed ^= hash32(chip_mem);
     seed ^= hash32(fast_mem);
 
@@ -213,38 +239,64 @@ void tn_timer_fini(TnTimer *tm)
     if (g_active_timer == tm) {
         g_active_timer = NULL;
     }
+    TimerBase = NULL;
+}
+#endif /* __AMIGA__ */
+
+/* Pure calculation helper: E-Clock ticks to elapsed milliseconds (Item 10) */
+uint32_t tn_eclock_to_ms(const struct EClockVal *cur, const struct EClockVal *boot, uint32_t freq)
+{
+    uint64_t cur_ticks, boot_ticks, diff_ticks;
+
+    if (cur == NULL || boot == NULL) {
+        return 0;
+    }
+    if (freq == 0) {
+        freq = 709379UL;
+    }
+
+    cur_ticks = ((uint64_t)cur->ev_hi << 32) | cur->ev_lo;
+    boot_ticks = ((uint64_t)boot->ev_hi << 32) | boot->ev_lo;
+
+    if (cur_ticks < boot_ticks) {
+        return 0;
+    }
+
+    diff_ticks = cur_ticks - boot_ticks;
+
+    return (uint32_t)((diff_ticks * 1000ULL) / freq);
+}
+
+#ifdef __AMIGA__
+uint32_t sys_now(void)
+{
+    struct EClockVal cur;
+    ULONG freq;
+
+    if (g_active_timer == NULL || !g_active_timer->open || TimerBase == NULL) {
+        return 0;
+    }
+
+    freq = ReadEClock(&cur);
+    if (freq == 0) {
+        freq = g_active_timer->eclock_freq ? g_active_timer->eclock_freq : 709379UL;
+    }
+
+    return tn_eclock_to_ms(&cur, &g_active_timer->boot_eclock, freq);
+}
+#else
+static uint32_t g_host_now_ms = 0;
+
+void mock_set_sys_now(uint32_t ms)
+{
+    g_host_now_ms = ms;
 }
 
 uint32_t sys_now(void)
 {
-    struct timeval cur;
-    int32_t d_sec, d_micro;
-    struct timerequest *req;
-
-    if (g_active_timer == NULL || !g_active_timer->open) {
-        return 0;
-    }
-
-    req = (g_active_timer->time_io != NULL) ? g_active_timer->time_io : g_active_timer->io;
-    if (req == NULL) return 0;
-
-    /* Issue TR_GETSYSTIME synchronously on dedicated channel */
-    req->tr_node.io_Command = TR_GETSYSTIME;
-    DoIO((struct IORequest *)req);
-    cur = req->tr_time;
-
-    d_sec = (int32_t)(cur.tv_secs - g_active_timer->boot_time.tv_secs);
-    d_micro = (int32_t)(cur.tv_micro - g_active_timer->boot_time.tv_micro);
-
-    if (d_micro < 0) {
-        d_sec -= 1;
-        d_micro += 1000000;
-    }
-
-    if (d_sec < 0) return 0;
-
-    return (uint32_t)(d_sec * 1000 + d_micro / 1000);
+    return g_host_now_ms;
 }
+#endif
 
 /* Fast 32-bit xorshift PRNG */
 uint32_t tn_rand(void)

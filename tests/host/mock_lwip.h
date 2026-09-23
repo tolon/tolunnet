@@ -95,6 +95,8 @@ struct tcp_pcb {
     uint8_t   tos;
     uint8_t   ttl;
     void     *callback_arg;
+    void     *recv_cb;
+    void     *err_cb;
 };
 
 struct udp_pcb {
@@ -196,6 +198,80 @@ err_t tcp_write(struct tcp_pcb *pcb, const void *arg, u16_t len, u8_t apiflags);
 err_t tcp_output(struct tcp_pcb *pcb);
 err_t udp_sendto(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_ip, u16_t dst_port);
 err_t raw_sendto(struct raw_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_ip);
+err_t udp_connect(struct udp_pcb *pcb, const ip_addr_t *ip, u16_t port);
+err_t raw_connect(struct raw_pcb *pcb, const ip_addr_t *ip);
+err_t raw_send(struct raw_pcb *pcb, struct pbuf *p);
+err_t tcp_connect(struct tcp_pcb *pcb, const ip_addr_t *ip, u16_t port, void *connected);
+void tcp_sent(struct tcp_pcb *pcb, void *func);
+err_t tcp_shutdown(struct tcp_pcb *pcb, int shut_rx, int shut_tx);
+err_t tcp_bind(struct tcp_pcb *pcb, const ip_addr_t *ip, u16_t port);
+err_t udp_bind(struct udp_pcb *pcb, const ip_addr_t *ip, u16_t port);
+err_t raw_bind(struct raw_pcb *pcb, const ip_addr_t *ip);
+struct pbuf *pbuf_clone(uint8_t layer, uint8_t type, struct pbuf *p);
+struct tcp_pcb *tcp_listen_with_backlog(struct tcp_pcb *pcb, u8_t backlog);
+err_t igmp_joingroup(const ip4_addr_t *ifaddr, const ip4_addr_t *groupaddr);
+err_t igmp_leavegroup(const ip4_addr_t *ifaddr, const ip4_addr_t *groupaddr);
+
+
+#ifndef pbuf_take
+#define pbuf_take(buf, dataptr, len) pbuf_take_at((buf), (dataptr), (len), 0)
+#endif
+#ifndef PBUF_RAW
+#define PBUF_RAW 2
+#endif
+#ifndef tcp_nagle_disable
+#define tcp_nagle_disable(pcb) ((void)(pcb))
+#endif
+#ifndef tcp_nagle_enable
+#define tcp_nagle_enable(pcb) ((void)(pcb))
+#endif
+#ifndef SOF_REUSEADDR
+#define SOF_REUSEADDR 0x04
+#endif
+#ifndef SOF_KEEPALIVE
+#define SOF_KEEPALIVE 0x08
+#endif
+#ifndef SOF_BROADCAST
+#define SOF_BROADCAST 0x20
+#endif
+#ifndef ip_set_option
+#define ip_set_option(pcb, opt) ((void)0)
+#endif
+#ifndef ip_reset_option
+#define ip_reset_option(pcb, opt) ((void)0)
+#endif
+#ifndef raw_set_flags
+#define raw_set_flags(pcb, flag) ((void)0)
+#endif
+#ifndef raw_clear_flags
+#define raw_clear_flags(pcb, flag) ((void)0)
+#endif
+#ifndef udp_set_flags
+#define udp_set_flags(pcb, flag) ((void)0)
+#endif
+#ifndef udp_clear_flags
+#define udp_clear_flags(pcb, flag) ((void)0)
+#endif
+#ifndef UDP_FLAGS_MULTICAST_LOOP
+#define UDP_FLAGS_MULTICAST_LOOP 0x04
+#endif
+#ifndef RAW_FLAGS_HDRINCL
+#define RAW_FLAGS_HDRINCL 0x01
+#endif
+#ifndef FD_ACCEPT
+#define FD_ACCEPT 0x01
+#define FD_CONNECT 0x02
+#define FD_OOB 0x04
+#define FD_READ 0x08
+#define FD_WRITE 0x10
+#define FD_ERROR 0x20
+#define FD_CLOSE 0x40
+#endif
+#ifndef TN_LOG_OFF
+#define TN_LOG_OFF 0
+#define TN_LOG_BASIC 1
+#define TN_LOG_VERBOSE 2
+#endif
 
 /* AmigaOS Stubs */
 #ifndef MEMF_PUBLIC
@@ -219,5 +295,17 @@ void mock_signal(void *task, uint32_t sigs);
 #ifndef Signal
 #define Signal(task, sigs) mock_signal((task), (sigs))
 #endif
+
+#ifndef _ECLOCKVAL_DEFINED
+#define _ECLOCKVAL_DEFINED
+struct EClockVal {
+    uint32_t ev_hi;
+    uint32_t ev_lo;
+};
+#endif
+
+uint32_t tn_eclock_to_ms(const struct EClockVal *cur, const struct EClockVal *boot, uint32_t freq);
+uint32_t sys_now(void);
+void mock_set_sys_now(uint32_t ms);
 
 #endif /* TOLUNNET_MOCK_LWIP_H */

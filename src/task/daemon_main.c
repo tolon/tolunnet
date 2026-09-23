@@ -504,7 +504,9 @@ static int tn_task_real_main(int argc, char *argv[])
     tn_log(TN_LOG_BASIC, "tolunnet: network task running (Press Ctrl-C to stop)\n");
     g_daemon.running = TRUE;
 
-    /* 10. Main Task Loop */
+    /* 10. Main Task Loop (re-entered from the shutdown gate while
+     * live clients still hold the library - TNET-059) */
+tn_main_loop:
     while (g_daemon.running) {
         ULONG sigs = Wait(wait_mask);
 
@@ -621,18 +623,53 @@ static int tn_task_real_main(int argc, char *argv[])
         }
     }
 
-    /* 11. Clean Shutdown Sequence */
+    /* 11. Clean Shutdown Sequence (Item 11)
+     * Under Forbid: re-check open count (reap dead clients), RemLibrary, RemPort,
+     * then reply every queued IPC message ENETDOWN.
+     */
+    tn_log(TN_LOG_BASIC, "tolunnet: initiating shutdown sequence...\n");
+
+    /* Re-check open count: reap any dead client tasks before entering Forbid */
     if (g_daemon.bsd_lib != NULL) {
-        if (g_daemon.bsd_lib->lib_OpenCnt > 0) {
-            tn_logf(TN_LOG_BASIC, "tolunnet: warning: bsdsocket.library has %lu open client(s) at shutdown\n",
-                    (ULONG)g_daemon.bsd_lib->lib_OpenCnt);
+        tn_reap_dead_clients(&g_daemon);
+    }
+
+    Forbid();
+    if (g_daemon.bsd_lib != NULL && g_daemon.bsd_lib->lib_OpenCnt > 0) {
+        /* TNET-059 (restored): removing the library under a live client
+         * unloads this task's code segment from under it -> Guru on the
+         * client's next call. Refuse, and go back to servicing IPC until
+         * the last client closes. */
+        Permit();
+        tn_logf(TN_LOG_BASIC,
+                "tolunnet: shutdown deferred - %lu live client(s) hold bsdsocket.library; returning to service\n",
+                (ULONG)g_daemon.bsd_lib->lib_OpenCnt);
+        g_daemon.running = TRUE;
+        goto tn_main_loop;
+    }
+    if (g_daemon.bsd_lib != NULL) {
+        RemLibrary(g_daemon.bsd_lib);
+    }
+    if (g_daemon.ipc_port != NULL) {
+        RemPort(g_daemon.ipc_port);
+    }
+    if (g_daemon.ipc_port != NULL) {
+        struct Message *msg;
+        while ((msg = GetMsg(g_daemon.ipc_port)) != NULL) {
+            TnIpcMsg *imsg = (TnIpcMsg *)msg;
+            imsg->result = -1;
+            imsg->err_no = ENETDOWN;
+            ReplyMsg(msg);
         }
-        tn_log(TN_LOG_BASIC, "tolunnet: removing bsdsocket.library...\n");
+    }
+    Permit();
+
+    if (g_daemon.bsd_lib != NULL) {
         tn_lib_destroy(g_daemon.bsd_lib);
         g_daemon.bsd_lib = NULL;
     }
 
-    /* TNET-152: Release SANA-II device and network BEFORE removing IPC port or replying
+    /* TNET-152: Release SANA-II device and network BEFORE deleting IPC port or replying
      * to stop message, ensuring device is fully closed and free for restart. */
     tn_log(TN_LOG_BASIC, "tolunnet: closing SANA-II device...\n");
     tn_s2_offline_close(&prim->s2if);
@@ -658,17 +695,17 @@ static int tn_task_real_main(int argc, char *argv[])
     tn_log(TN_LOG_BASIC, "tolunnet: closing timer.device...\n");
     tn_timer_fini(&g_daemon.timer);
 
-    /* TNET-152: Remove port from Exec's Public Port list BEFORE waking the stop caller */
-    tn_log(TN_LOG_BASIC, "tolunnet: deleting IPC port...\n");
-    RemPort(g_daemon.ipc_port);
-
-    /* Reply to parked stop message (if stopped via IPC) now that port and hardware are 100% free */
+    /* Reply to parked stop message (if stopped via IPC) now that hardware and sockets are 100% free */
     if (g_daemon.stop_msg != NULL) {
         ReplyMsg((struct Message *)g_daemon.stop_msg);
         g_daemon.stop_msg = NULL;
     }
 
-    DeleteMsgPort(g_daemon.ipc_port);
+    if (g_daemon.ipc_port != NULL) {
+        tn_log(TN_LOG_BASIC, "tolunnet: deleting IPC port...\n");
+        DeleteMsgPort(g_daemon.ipc_port);
+        g_daemon.ipc_port = NULL;
+    }
 
     /* Restore original task priority */
     tn_log(TN_LOG_BASIC, "tolunnet: restoring task priority...\n");

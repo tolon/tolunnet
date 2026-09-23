@@ -261,14 +261,21 @@ int tn_ipc_cmd_accept(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     }
 
     if (slot->accept_head != NULL) {
-        struct tcp_pcb *new_pcb = tn_accept_queue_pop(slot);
+        TnAcceptEntry *ent = tn_accept_queue_pop_entry(slot);
+        if (ent == NULL) {
+            imsg->result = -1;
+            imsg->err_no = EWOULDBLOCK;
+            return 0;
+        }
+
+        struct tcp_pcb *new_pcb = ent->new_pcb;
         int new_fd = -1;
         int new_slot_idx = -1;
         TnSocketSlot *new_slot;
 
         new_slot = tn_slot_alloc(d, base, imsg->client_task, AF_INET, SOCK_STREAM, 0, &new_slot_idx);
         if (new_slot == NULL) {
-            tcp_abort(new_pcb);
+            tn_accept_entry_free(ent, TRUE);
             imsg->result = -1;
             imsg->err_no = ENFILE;
             return 0;
@@ -283,14 +290,25 @@ int tn_ipc_cmd_accept(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
         if (new_fd < 0) {
             tn_slot_free(d, new_slot_idx);
-            tcp_abort(new_pcb);
+            tn_accept_entry_free(ent, TRUE);
             imsg->result = -1;
             imsg->err_no = EMFILE;
             return 0;
         }
 
-        new_slot->tcp_state = TN_TCP_STATE_ESTABLISHED;
+        new_slot->tcp_state = ent->peer_closed ? TN_TCP_STATE_PEER_CLOSED : TN_TCP_STATE_ESTABLISHED;
         new_slot->tcp_pcb   = new_pcb;
+
+        /* Transfer early data queue */
+        new_slot->rx_head  = ent->early_rx_head;
+        new_slot->rx_tail  = ent->early_rx_tail;
+        new_slot->rx_count = ent->early_rx_count;
+
+        /* Prevent double-freeing packets upon freeing ent */
+        ent->early_rx_head = NULL;
+        ent->early_rx_tail = NULL;
+        ent->early_rx_count = 0;
+        ent->new_pcb = NULL; /* Ownership transferred */
 
         /* TNET-115: disable Nagle on accepted connections (accept queue path) */
         tcp_nagle_disable(new_pcb);
@@ -308,6 +326,15 @@ int tn_ipc_cmd_accept(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         }
 
         tn_record_socket_event(d, new_slot, FD_WRITE);
+        if (new_slot->rx_count > 0 || new_slot->tcp_state == TN_TCP_STATE_PEER_CLOSED) {
+            tn_record_socket_event(d, new_slot, FD_READ);
+            if (new_slot->tcp_state == TN_TCP_STATE_PEER_CLOSED) {
+                tn_record_socket_event(d, new_slot, FD_CLOSE);
+            }
+        }
+
+        FreeVec(ent);
+
         imsg->result = new_fd;
         imsg->err_no = 0;
         return 0;
@@ -422,15 +449,22 @@ int tn_ipc_cmd_send(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         return 0;
     }
 
-    if (slot->type == SOCK_STREAM && slot->tcp_pcb != NULL) {
+    if (slot->type == SOCK_STREAM) {
         err_t werr;
         u16_t send_len;
         u16_t snd_buf;
 
-        if (slot->tcp_state != TN_TCP_STATE_ESTABLISHED) {
+        if (slot->tcp_pcb == NULL) {
             imsg->result = -1;
-            imsg->err_no = (slot->tcp_state == TN_TCP_STATE_ERROR) ? ECONNRESET
-                         : (slot->tcp_state == TN_TCP_STATE_PEER_CLOSED) ? EPIPE
+            imsg->err_no = ENOTCONN;
+            return 0;
+        }
+
+        if (slot->shut_wr || slot->tcp_state != TN_TCP_STATE_ESTABLISHED) {
+            imsg->result = -1;
+            imsg->err_no = (slot->shut_wr ||
+                            slot->tcp_state == TN_TCP_STATE_ERROR ||
+                            slot->tcp_state == TN_TCP_STATE_PEER_CLOSED) ? EPIPE
                          : ENOTCONN;
             return 0;
         }
@@ -460,11 +494,48 @@ int tn_ipc_cmd_send(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         imsg->result = (LONG)send_len;
         imsg->err_no = 0;
         return 0;
+    } else if (slot->type == SOCK_DGRAM && slot->udp_pcb != NULL) {
+        struct pbuf *p;
+        u16_t send_len;
+
+        /* [auto] 4.4BSD udp_output returns ENOTCONN when sending on an unconnected
+         * datagram socket; Roadshow behaves identically (POSIX EDESTADDRREQ is rejected). */
+        if (ip_addr_get_ip4_u32(&slot->udp_pcb->remote_ip) == 0 || slot->udp_pcb->remote_port == 0) {
+            imsg->result = -1;
+            imsg->err_no = ENOTCONN;
+            return 0;
+        }
+
+        send_len = (len > 0xFFFF) ? 0xFFFF : (u16_t)len;
+        p = pbuf_alloc(PBUF_TRANSPORT, send_len, PBUF_RAM);
+        if (p == NULL) {
+            imsg->result = -1;
+            imsg->err_no = ENOBUFS;
+            return 0;
+        }
+
+        pbuf_take(p, buf, send_len);
+        udp_sendto(slot->udp_pcb, p, &slot->udp_pcb->remote_ip, slot->udp_pcb->remote_port);
+        pbuf_free(p);
+        tn_drain_loopback();
+
+        imsg->result = (LONG)send_len;
+        imsg->err_no = 0;
+        return 0;
     } else if (slot->type == SOCK_RAW && slot->raw_pcb != NULL) {
         struct pbuf *p;
-        u16_t send_len = (len > 0xFFFF) ? 0xFFFF : (u16_t)len;
+        u16_t send_len;
         err_t serr;
 
+        /* [auto] 4.4BSD rip_usrreq returns ENOTCONN when sending on an unconnected
+         * raw socket without destination address. */
+        if (ip_addr_get_ip4_u32(&slot->raw_pcb->remote_ip) == 0) {
+            imsg->result = -1;
+            imsg->err_no = ENOTCONN;
+            return 0;
+        }
+
+        send_len = (len > 0xFFFF) ? 0xFFFF : (u16_t)len;
         p = pbuf_alloc(PBUF_IP, send_len, PBUF_RAM);
         if (p == NULL) {
             imsg->result = -1;
@@ -511,14 +582,15 @@ int tn_ipc_cmd_recv(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     }
 
     if (slot->type == SOCK_STREAM) {
+        u16_t req_len = (len > 0xFFFF) ? 0xFFFF : (u16_t)len;
         if (slot->rx_head != NULL) {
             if (flags & MSG_PEEK) {
                 TnRxPacket *cur = slot->rx_head;
                 u16_t copied = 0;
-                while (cur != NULL && copied < (u16_t)len) {
+                while (cur != NULL && copied < req_len) {
                     u16_t off = (cur == slot->rx_head) ? cur->offset : 0;
                     u16_t avail = cur->p->tot_len - off;
-                    u16_t chunk = (avail < ((u16_t)len - copied)) ? avail : ((u16_t)len - copied);
+                    u16_t chunk = (avail < (req_len - copied)) ? avail : (req_len - copied);
                     pbuf_copy_partial(cur->p, (char *)buf + copied, chunk, off);
                     copied += chunk;
                     cur = cur->next;
@@ -529,7 +601,7 @@ int tn_ipc_cmd_recv(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             } else {
                 TnRxPacket *pkt = slot->rx_head;
                 u16_t avail = pkt->p->tot_len - pkt->offset;
-                u16_t to_copy = (avail < (u16_t)len) ? avail : (u16_t)len;
+                u16_t to_copy = (avail < req_len) ? avail : req_len;
 
                 pbuf_copy_partial(pkt->p, buf, to_copy, pkt->offset);
                 pkt->offset += to_copy;
@@ -554,7 +626,7 @@ int tn_ipc_cmd_recv(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                 imsg->err_no = 0;
                 return 0;
             }
-        } else if (slot->tcp_state == TN_TCP_STATE_PEER_CLOSED) {
+        } else if (slot->shut_rd || slot->tcp_state == TN_TCP_STATE_PEER_CLOSED) {
             imsg->result = 0; /* EOF */
             imsg->err_no = 0;
             return 0;
@@ -572,9 +644,10 @@ int tn_ipc_cmd_recv(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         }
     } else if (slot->type == SOCK_DGRAM || slot->type == SOCK_RAW) {
         if (slot->rx_head != NULL) {
+            u16_t req_len = (len > 0xFFFF) ? 0xFFFF : (u16_t)len;
             TnRxPacket *pkt = slot->rx_head;
             u16_t avail = pkt->p->tot_len;
-            u16_t to_copy = (avail < (u16_t)len) ? avail : (u16_t)len;
+            u16_t to_copy = (avail < req_len) ? avail : req_len;
 
             pbuf_copy_partial(pkt->p, buf, to_copy, 0);
 
@@ -624,10 +697,10 @@ int tn_ipc_cmd_shutdown(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     shut_rx = (how == 0 || how == 2) ? 1 : 0;
     shut_tx = (how == 1 || how == 2) ? 1 : 0;
 
+    if (shut_rx) slot->shut_rd = TRUE;
+    if (shut_tx) slot->shut_wr = TRUE;
+
     if (slot->tcp_state == TN_TCP_STATE_CLOSED) {
-        if (shut_tx) {
-            slot->tcp_state = TN_TCP_STATE_PEER_CLOSED;
-        }
         imsg->result = 0;
         imsg->err_no = 0;
         return 0;
@@ -640,8 +713,15 @@ int tn_ipc_cmd_shutdown(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         return 0;
     }
 
-    if (shut_tx) {
-        slot->tcp_state = TN_TCP_STATE_PEER_CLOSED;
+    if (shut_rx && shut_tx) {
+        /* In lwIP, tcp_shutdown(1, 1) frees the PCB via tcp_close(pcb).
+         * Clear callbacks and clear slot->tcp_pcb so it is not a dangling pointer. */
+        tcp_arg(slot->tcp_pcb, NULL);
+        tcp_recv(slot->tcp_pcb, NULL);
+        tcp_sent(slot->tcp_pcb, NULL);
+        tcp_err(slot->tcp_pcb, NULL);
+        slot->tcp_pcb = NULL;
+        slot->tcp_state = TN_TCP_STATE_CLOSED;
     }
 
     imsg->result = 0;

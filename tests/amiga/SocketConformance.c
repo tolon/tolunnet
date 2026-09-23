@@ -5829,7 +5829,7 @@ static void tc_net_udp_connected_send(void)
     s = call_socket(AF_INET, SOCK_DGRAM, 0);
     if (s < 0) {
         tapf("# net_udp_connected_send: socket failed errno=%ld\n", call_errno());
-        TAP_TODO("net_udp_connected_send", "red-baseline 3");
+        TAP_NOTOK("net_udp_connected_send", "socket failed");
         return;
     }
     for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
@@ -5841,11 +5841,10 @@ static void tc_net_udp_connected_send(void)
     if (call_connect(s, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
         tapf("# net_udp_connected_send: connect failed errno=%ld\n", call_errno());
         call_closesocket(s);
-        TAP_TODO("net_udp_connected_send", "red-baseline 3");
+        TAP_NOTOK("net_udp_connected_send", "connect failed");
         return;
     }
 
-    /* On HEAD, send() on SOCK_DGRAM returns EOPNOTSUPP (-1). */
     n = call_send(s, "ECHO_TEST", 9, 0);
     if (n == 9) {
         LONG r = call_recv(s, buf, sizeof(buf) - 1, 0);
@@ -5858,7 +5857,259 @@ static void tc_net_udp_connected_send(void)
         call_closesocket(s);
     }
     tapf("# net_udp_connected_send: send got=%ld errno=%ld\n", n, call_errno());
-    TAP_TODO("net_udp_connected_send", "red-baseline 3");
+    TAP_NOTOK("net_udp_connected_send", "send failed or content mismatch");
+}
+
+/* send() on unconnected UDP socket returns -1, ENOTCONN */
+static void tc_net_udp_unconnected_send(void)
+{
+    LONG s;
+    LONG n;
+
+    s = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (s < 0) {
+        tapf("# net_udp_unconnected_send: socket failed errno=%ld\n", call_errno());
+        TAP_NOTOK("net_udp_unconnected_send", "socket failed");
+        return;
+    }
+
+    n = call_send(s, "TEST", 4, 0);
+    if (n == -1 && call_errno() == ENOTCONN) {
+        TAP_OK("net_udp_unconnected_send");
+    } else {
+        tapf("# net_udp_unconnected_send: got n=%ld errno=%ld (expected -1/ENOTCONN)\n", n, call_errno());
+        TAP_NOTOK("net_udp_unconnected_send", "expected -1 ENOTCONN");
+    }
+    call_closesocket(s);
+}
+
+/* sendto() with to != NULL on connected UDP socket returns -1, EISCONN */
+static void tc_net_udp_connected_sendto_eisconn(void)
+{
+    LONG s;
+    struct sockaddr_in sin;
+    LONG n;
+    int i;
+
+    s = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (s < 0) {
+        tapf("# net_udp_connected_sendto_eisconn: socket failed errno=%ld\n", call_errno());
+        TAP_NOTOK("net_udp_connected_sendto_eisconn", "socket failed");
+        return;
+    }
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(NETSVC_ECHO_PORT);
+    sin.sin_addr.s_addr = htonl(SLIRP_HOST_ADDR);
+
+    if (call_connect(s, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+        tapf("# net_udp_connected_sendto_eisconn: connect failed errno=%ld\n", call_errno());
+        call_closesocket(s);
+        TAP_NOTOK("net_udp_connected_sendto_eisconn", "connect failed");
+        return;
+    }
+
+    n = call_sendto(s, "TEST", 4, 0, (struct sockaddr *)&sin, sizeof(sin));
+    if (n == -1 && call_errno() == EISCONN) {
+        TAP_OK("net_udp_connected_sendto_eisconn");
+    } else {
+        tapf("# net_udp_connected_sendto_eisconn: got n=%ld errno=%ld (expected -1/EISCONN)\n", n, call_errno());
+        TAP_NOTOK("net_udp_connected_sendto_eisconn", "expected -1 EISCONN");
+    }
+    call_closesocket(s);
+}
+
+/* recvfrom() on unconnected TCP socket returns -1, ENOTCONN */
+static void tc_net_tcp_unconnected_recvfrom(void)
+{
+    LONG s;
+    struct sockaddr_in from;
+    socklen_t fromlen = sizeof(from);
+    char buf[32];
+    LONG n;
+
+    s = call_socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) {
+        tapf("# net_tcp_unconnected_recvfrom: socket failed errno=%ld\n", call_errno());
+        TAP_NOTOK("net_tcp_unconnected_recvfrom", "socket failed");
+        return;
+    }
+
+    n = call_recvfrom(s, buf, sizeof(buf), 0, (struct sockaddr *)&from, &fromlen);
+    if (n == -1 && call_errno() == ENOTCONN) {
+        TAP_OK("net_tcp_unconnected_recvfrom");
+    } else {
+        tapf("# net_tcp_unconnected_recvfrom: got n=%ld errno=%ld (expected -1/ENOTCONN)\n", n, call_errno());
+        TAP_NOTOK("net_tcp_unconnected_recvfrom", "expected -1 ENOTCONN");
+    }
+    call_closesocket(s);
+}
+
+/* recvfrom() on connected TCP socket: from untouched, *fromlen = 0 */
+static void tc_net_tcp_connected_recvfrom(void)
+{
+    LONG s;
+    struct sockaddr_in sin;
+    struct sockaddr_in from;
+    socklen_t fromlen;
+    char buf[64];
+    LONG n;
+    int i;
+
+    s = call_socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) {
+        tapf("# net_tcp_connected_recvfrom: socket failed errno=%ld\n", call_errno());
+        TAP_NOTOK("net_tcp_connected_recvfrom", "socket failed");
+        return;
+    }
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(NETSVC_TCP_DELAY_PORT);
+    sin.sin_addr.s_addr = htonl(SLIRP_HOST_ADDR);
+
+    if (call_connect(s, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+        tapf("# net_tcp_connected_recvfrom: connect failed errno=%ld\n", call_errno());
+        call_closesocket(s);
+        TAP_NOTOK("net_tcp_connected_recvfrom", "connect failed");
+        return;
+    }
+
+    for (i = 0; i < (int)sizeof(from); i++) ((char *)&from)[i] = (char)0x55;
+    fromlen = sizeof(from);
+
+    n = call_recvfrom(s, buf, sizeof(buf) - 1, 0, (struct sockaddr *)&from, &fromlen);
+    call_closesocket(s);
+
+    if (n > 0) {
+        int untouched = 1;
+        for (i = 0; i < (int)sizeof(from); i++) {
+            if (((unsigned char *)&from)[i] != 0x55) {
+                untouched = 0;
+                break;
+            }
+        }
+        if (fromlen == 0 && untouched) {
+            TAP_OK("net_tcp_connected_recvfrom");
+            return;
+        }
+        tapf("# net_tcp_connected_recvfrom: fromlen=%lu untouched=%d\n", (unsigned long)fromlen, untouched);
+    }
+    tapf("# net_tcp_connected_recvfrom: recv got=%ld errno=%ld\n", n, call_errno());
+    TAP_NOTOK("net_tcp_connected_recvfrom", "recvfrom semantics mismatch");
+}
+
+/* sendto() on unconnected TCP socket returns -1, ENOTCONN */
+static void tc_net_tcp_unconnected_sendto(void)
+{
+    LONG s;
+    struct sockaddr_in to;
+    LONG n;
+    int i;
+
+    s = call_socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) {
+        TAP_NOTOK("net_tcp_unconnected_sendto", "socket failed");
+        return;
+    }
+    for (i = 0; i < (int)sizeof(to); i++) ((char *)&to)[i] = 0;
+    to.sin_len = sizeof(to);
+    to.sin_family = AF_INET;
+    to.sin_port = htons(80);
+    to.sin_addr.s_addr = htonl(SLIRP_HOST_ADDR);
+
+    n = call_sendto(s, "TEST", 4, 0, (struct sockaddr *)&to, sizeof(to));
+    call_closesocket(s);
+
+    if (n == -1 && call_errno() == ENOTCONN) {
+        TAP_OK("net_tcp_unconnected_sendto");
+    } else {
+        tapf("# net_tcp_unconnected_sendto: got n=%ld errno=%ld (expected -1/ENOTCONN)\n", n, call_errno());
+        TAP_NOTOK("net_tcp_unconnected_sendto", "expected -1 ENOTCONN");
+    }
+}
+
+/* sendto() on connected TCP socket ignores address in to and writes to stream */
+static void tc_net_tcp_connected_sendto_ignored_to(void)
+{
+    LONG s;
+    struct sockaddr_in sin;
+    struct sockaddr_in to;
+    LONG n;
+    int i;
+
+    s = call_socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) {
+        TAP_NOTOK("net_tcp_connected_sendto_ignored_to", "socket failed");
+        return;
+    }
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(NETSVC_ECHO_PORT);
+    sin.sin_addr.s_addr = htonl(SLIRP_HOST_ADDR);
+
+    if (call_connect(s, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+        tapf("# net_tcp_connected_sendto_ignored_to: connect failed errno=%ld\n", call_errno());
+        call_closesocket(s);
+        TAP_NOTOK("net_tcp_connected_sendto_ignored_to", "connect failed");
+        return;
+    }
+
+    for (i = 0; i < (int)sizeof(to); i++) ((char *)&to)[i] = 0;
+    to.sin_len = sizeof(to);
+    to.sin_family = AF_INET;
+    to.sin_port = htons(9999);
+    to.sin_addr.s_addr = htonl(0x7F000001);
+
+    n = call_sendto(s, "ECHO_TCP", 8, 0, (struct sockaddr *)&to, sizeof(to));
+    call_closesocket(s);
+
+    if (n == 8) {
+        TAP_OK("net_tcp_connected_sendto_ignored_to");
+    } else {
+        tapf("# net_tcp_connected_sendto_ignored_to: got n=%ld errno=%ld (expected 8)\n", n, call_errno());
+        TAP_NOTOK("net_tcp_connected_sendto_ignored_to", "sendto failed");
+    }
+}
+
+/* sendto() after shutdown(how=1) returns -1, EPIPE */
+static void tc_net_tcp_shutdown_sendto_epipe(void)
+{
+    LONG s;
+    struct sockaddr_in sin;
+    LONG n;
+    int i;
+
+    s = call_socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) {
+        TAP_NOTOK("net_tcp_shutdown_sendto_epipe", "socket failed");
+        return;
+    }
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(NETSVC_ECHO_PORT);
+    sin.sin_addr.s_addr = htonl(SLIRP_HOST_ADDR);
+
+    if (call_connect(s, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+        tapf("# net_tcp_shutdown_sendto_epipe: connect failed errno=%ld\n", call_errno());
+        call_closesocket(s);
+        TAP_NOTOK("net_tcp_shutdown_sendto_epipe", "connect failed");
+        return;
+    }
+
+    call_shutdown(s, 1 /* SHUT_WR */);
+    n = call_sendto(s, "AFTER_SHUT", 10, 0, NULL, 0);
+    call_closesocket(s);
+
+    if (n == -1 && call_errno() == EPIPE) {
+        TAP_OK("net_tcp_shutdown_sendto_epipe");
+    } else {
+        tapf("# net_tcp_shutdown_sendto_epipe: got n=%ld errno=%ld (expected -1/EPIPE)\n", n, call_errno());
+        TAP_NOTOK("net_tcp_shutdown_sendto_epipe", "expected -1 EPIPE");
+    }
 }
 
 /* Item 18: nc command /N port parsing (Madde 18: nc.c:32) */
@@ -6215,6 +6466,13 @@ int main(int argc, char *argv[])
     TN_RUN(tc_install_script);
     TN_RUN(tc_net_tcp_blocking_recv);
     TN_RUN(tc_net_udp_connected_send);
+    TN_RUN(tc_net_udp_unconnected_send);
+    TN_RUN(tc_net_udp_connected_sendto_eisconn);
+    TN_RUN(tc_net_tcp_unconnected_recvfrom);
+    TN_RUN(tc_net_tcp_connected_recvfrom);
+    TN_RUN(tc_net_tcp_unconnected_sendto);
+    TN_RUN(tc_net_tcp_connected_sendto_ignored_to);
+    TN_RUN(tc_net_tcp_shutdown_sendto_epipe);
     TN_RUN(tc_net_cmd_nc);
     TN_RUN(tc_net_cmd_whois);
     TN_RUN(tc_net_cmd_wget);

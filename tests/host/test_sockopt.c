@@ -29,6 +29,7 @@
 #endif
 
 #include "../../src/task/ipc_getsockopt.c"
+#include "../../src/task/ipc_setsockopt.c"
 
 TN_TEST(getsockopt_null_checks)
 {
@@ -312,6 +313,232 @@ TN_TEST(getsockopt_ipproto_ip_bounds)
     }
 }
 
+TN_TEST(setsockopt_null_checks)
+{
+    TnSocketSlot slot;
+    memset(&slot, 0, sizeof(slot));
+    slot.type = SOCK_STREAM;
+
+    TnIpcMsg msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.args[1] = SOL_SOCKET;
+    msg.args[2] = SO_REUSEADDR;
+    msg.args[3] = sizeof(int);
+
+    int val = 1;
+
+    /* slot == NULL -> EBADF */
+    msg.ptrs[0] = &val;
+    tn_ipc_cmd_setsockopt(NULL, &msg, NULL);
+    TN_ASSERT_EQ(msg.result, -1);
+    TN_ASSERT_EQ(msg.err_no, EBADF);
+
+    /* optval == NULL -> EBADF */
+    msg.ptrs[0] = NULL;
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, -1);
+    TN_ASSERT_EQ(msg.err_no, EBADF);
+}
+
+TN_TEST(setsockopt_sol_socket_int_bounds)
+{
+    TnSocketSlot slot;
+    memset(&slot, 0, sizeof(slot));
+    slot.type = SOCK_STREAM;
+
+    LONG opts[] = { SO_REUSEADDR, SO_KEEPALIVE, SO_BROADCAST,
+                    SO_OOBINLINE, SO_SNDBUF, SO_RCVBUF };
+    int num_opts = (int)(sizeof(opts) / sizeof(opts[0]));
+
+    for (int i = 0; i < num_opts; i++) {
+        TnIpcMsg msg;
+        memset(&msg, 0, sizeof(msg));
+        msg.args[1] = SOL_SOCKET;
+        msg.args[2] = opts[i];
+
+        int val = 1;
+
+        /* optlen < sizeof(int) -> EINVAL */
+        msg.ptrs[0] = &val;
+        msg.args[3] = sizeof(int) - 1;
+        tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+        TN_ASSERT_EQ(msg.result, -1);
+        TN_ASSERT_EQ(msg.err_no, EINVAL);
+
+        /* optlen >= sizeof(int) -> 0 */
+        msg.args[3] = sizeof(int);
+        tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+        TN_ASSERT_EQ(msg.result, 0);
+        TN_ASSERT_EQ(msg.err_no, 0);
+    }
+}
+
+TN_TEST(setsockopt_so_linger_bounds)
+{
+    TnSocketSlot slot;
+    memset(&slot, 0, sizeof(slot));
+    slot.type = SOCK_STREAM;
+
+    TnIpcMsg msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.args[1] = SOL_SOCKET;
+    msg.args[2] = SO_LINGER;
+
+    struct linger l;
+    l.l_onoff = 1;
+    l.l_linger = 10;
+    msg.ptrs[0] = &l;
+
+    /* optlen < sizeof(struct linger) -> EINVAL */
+    msg.args[3] = sizeof(struct linger) - 1;
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, -1);
+    TN_ASSERT_EQ(msg.err_no, EINVAL);
+
+    /* optlen == sizeof(struct linger) -> 0, verifies slot updated */
+    msg.args[3] = sizeof(struct linger);
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, 0);
+    TN_ASSERT_EQ(msg.err_no, 0);
+    TN_ASSERT_EQ(slot.opt_linger.l_onoff, 1);
+    TN_ASSERT_EQ(slot.opt_linger.l_linger, 10);
+}
+
+TN_TEST(setsockopt_timeo_bounds)
+{
+    TnSocketSlot slot;
+    memset(&slot, 0, sizeof(slot));
+    slot.type = SOCK_STREAM;
+
+    TnIpcMsg msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.args[1] = SOL_SOCKET;
+    msg.args[2] = SO_RCVTIMEO;
+
+    int ms = 2500;
+    msg.ptrs[0] = &ms;
+
+    /* optlen < sizeof(int) -> EINVAL */
+    msg.args[3] = sizeof(int) - 1;
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, -1);
+    TN_ASSERT_EQ(msg.err_no, EINVAL);
+
+    /* optlen == sizeof(int) (integer ms form) -> 0 */
+    msg.args[3] = sizeof(int);
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, 0);
+    TN_ASSERT_EQ(msg.err_no, 0);
+    TN_ASSERT_EQ(slot.opt_rcvtimeo.tv_secs, 2u);
+    TN_ASSERT_EQ(slot.opt_rcvtimeo.tv_micro, 500000u);
+
+    /* optlen == sizeof(struct timeval) -> 0 */
+    struct timeval tv;
+    tv.tv_secs = 5;
+    tv.tv_micro = 12345;
+    msg.ptrs[0] = &tv;
+    msg.args[3] = sizeof(tv);
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, 0);
+    TN_ASSERT_EQ(msg.err_no, 0);
+    TN_ASSERT_EQ(slot.opt_rcvtimeo.tv_secs, 5u);
+    TN_ASSERT_EQ(slot.opt_rcvtimeo.tv_micro, 12345u);
+}
+
+TN_TEST(setsockopt_ipproto_tcp_ip_bounds)
+{
+    TnSocketSlot slot;
+    memset(&slot, 0, sizeof(slot));
+    slot.type = SOCK_STREAM;
+
+    TnIpcMsg msg;
+    int val = 1;
+
+    /* TCP_NODELAY with optlen < sizeof(int) -> EINVAL */
+    memset(&msg, 0, sizeof(msg));
+    msg.args[1] = IPPROTO_TCP;
+    msg.args[2] = TCP_NODELAY;
+    msg.args[3] = sizeof(int) - 1;
+    msg.ptrs[0] = &val;
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, -1);
+    TN_ASSERT_EQ(msg.err_no, EINVAL);
+
+    /* IP_TTL with optlen < sizeof(int) -> EINVAL */
+    memset(&msg, 0, sizeof(msg));
+    msg.args[1] = IPPROTO_IP;
+    msg.args[2] = IP_TTL;
+    msg.args[3] = sizeof(int) - 1;
+    msg.ptrs[0] = &val;
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, -1);
+    TN_ASSERT_EQ(msg.err_no, EINVAL);
+
+    /* IP_MULTICAST_TTL with optlen < 1 -> EINVAL */
+    memset(&msg, 0, sizeof(msg));
+    msg.args[1] = IPPROTO_IP;
+    msg.args[2] = IP_MULTICAST_TTL;
+    msg.args[3] = 0;
+    msg.ptrs[0] = &val;
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, -1);
+    TN_ASSERT_EQ(msg.err_no, EINVAL);
+
+    /* 1-byte optlen works for IP_MULTICAST_TTL */
+    unsigned char mttl = 42;
+    msg.args[3] = 1;
+    msg.ptrs[0] = &mttl;
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, 0);
+    TN_ASSERT_EQ(msg.err_no, 0);
+    TN_ASSERT_EQ(slot.opt_multicast_ttl, 42);
+}
+
+TN_TEST(setsockopt_unaligned_buffer)
+{
+    /* TNET-139 / Item 8: Verify that unaligned client buffer never causes
+     * address misalignment fault under ASan/UBSan or 68000. */
+    TnSocketSlot slot;
+    memset(&slot, 0, sizeof(slot));
+    slot.type = SOCK_STREAM;
+
+    char raw_buf[32];
+    void *odd_ptr = &raw_buf[1]; /* Guaranteed unaligned */
+    int test_val = 0x12345678;
+    memcpy(odd_ptr, &test_val, sizeof(int));
+
+    TnIpcMsg msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.args[1] = SOL_SOCKET;
+    msg.args[2] = SO_SNDBUF;
+    msg.args[3] = sizeof(int);
+    msg.ptrs[0] = odd_ptr;
+
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, 0);
+    TN_ASSERT_EQ(msg.err_no, 0);
+    TN_ASSERT_EQ(slot.opt_sndbuf, test_val);
+
+    /* Unaligned SO_LINGER */
+    void *odd_linger_ptr = &raw_buf[3];
+    struct linger l;
+    l.l_onoff = 1;
+    l.l_linger = 300;
+    memcpy(odd_linger_ptr, &l, sizeof(struct linger));
+
+    memset(&msg, 0, sizeof(msg));
+    msg.args[1] = SOL_SOCKET;
+    msg.args[2] = SO_LINGER;
+    msg.args[3] = sizeof(struct linger);
+    msg.ptrs[0] = odd_linger_ptr;
+
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, 0);
+    TN_ASSERT_EQ(msg.err_no, 0);
+    TN_ASSERT_EQ(slot.opt_linger.l_onoff, 1);
+    TN_ASSERT_EQ(slot.opt_linger.l_linger, 300);
+}
+
 int main(void)
 {
     TN_TEST_RUN(getsockopt_null_checks);
@@ -321,6 +548,13 @@ int main(void)
     TN_TEST_RUN(getsockopt_timeo_bounds);
     TN_TEST_RUN(getsockopt_ipproto_tcp_bounds);
     TN_TEST_RUN(getsockopt_ipproto_ip_bounds);
+    TN_TEST_RUN(setsockopt_null_checks);
+    TN_TEST_RUN(setsockopt_sol_socket_int_bounds);
+    TN_TEST_RUN(setsockopt_so_linger_bounds);
+    TN_TEST_RUN(setsockopt_timeo_bounds);
+    TN_TEST_RUN(setsockopt_ipproto_tcp_ip_bounds);
+    TN_TEST_RUN(setsockopt_unaligned_buffer);
     TN_TEST_PLAN();
     return tn_test_failures();
 }
+

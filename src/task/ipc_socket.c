@@ -12,8 +12,10 @@
 #include "slot_table.h"
 #include "../common/sockaddr_util.h"
 #include "../common/tn_arp.h"
+#if defined(__AMIGA__) || defined(__amigaos__) || defined(TN_AMIGA_BUILD)
 #include <lwip/etharp.h>
 #include <net/if_arp.h>
+#endif
 #include <string.h>
 
 int tn_ipc_cmd_open(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
@@ -96,6 +98,7 @@ int tn_ipc_cmd_close(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             }
         }
         tn_selector_disarm_all_for_base(d, base);
+        tn_slot_clear_owner_base(d, base);
     }
 
     imsg->result = 0;
@@ -419,338 +422,8 @@ int tn_ipc_cmd_obtainsocket(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     return 0;
 }
 
-int tn_ipc_cmd_setsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
-{
-    LONG level = imsg->args[1];
-    LONG optname = imsg->args[2];
-    LONG optlen_arg = imsg->args[3];
-    const void *optval = (const void *)imsg->ptrs[0];
-    (void)d;
+/* setsockopt with Roadshow optlen validation (compiled in ipc_setsockopt.c) */
 
-    if (slot == NULL || optval == NULL) {
-        imsg->result = -1;
-        imsg->err_no = EBADF;
-        return 0;
-    }
-
-    if (level == SOL_SOCKET) {
-        switch (optname) {
-        case SO_BROADCAST:
-            slot->opt_broadcast = (*(const int *)optval != 0);
-            if (slot->udp_pcb != NULL) {
-                if (slot->opt_broadcast) {
-                    ip_set_option(slot->udp_pcb, SOF_BROADCAST);
-                } else {
-                    ip_reset_option(slot->udp_pcb, SOF_BROADCAST);
-                }
-            }
-            break;
-
-        case SO_KEEPALIVE:
-            slot->opt_keepalive = (*(const int *)optval != 0);
-            if (slot->tcp_pcb != NULL) {
-                if (slot->opt_keepalive) {
-                    ip_set_option(slot->tcp_pcb, SOF_KEEPALIVE);
-                } else {
-                    ip_reset_option(slot->tcp_pcb, SOF_KEEPALIVE);
-                }
-            }
-            break;
-
-        case SO_REUSEADDR:
-            slot->opt_reuseaddr = (*(const int *)optval != 0);
-            if (slot->tcp_pcb != NULL) {
-                if (slot->opt_reuseaddr) {
-                    ip_set_option(slot->tcp_pcb, SOF_REUSEADDR);
-                } else {
-                    ip_reset_option(slot->tcp_pcb, SOF_REUSEADDR);
-                }
-            }
-            if (slot->udp_pcb != NULL) {
-                if (slot->opt_reuseaddr) {
-                    ip_set_option(slot->udp_pcb, SOF_REUSEADDR);
-                } else {
-                    ip_reset_option(slot->udp_pcb, SOF_REUSEADDR);
-                }
-            }
-            break;
-
-        case SO_LINGER:
-            if (optlen_arg < (LONG)sizeof(struct linger)) {
-                imsg->result = -1;
-                imsg->err_no = EINVAL;
-                return 0;
-            }
-            {
-                const struct linger *l = (const struct linger *)optval;
-                slot->opt_linger.l_onoff  = l->l_onoff;
-                slot->opt_linger.l_linger = l->l_linger;
-            }
-            break;
-
-        case SO_SNDBUF:
-            slot->opt_sndbuf = *(const int *)optval;
-            break;
-
-        case SO_RCVBUF:
-            slot->opt_rcvbuf = *(const int *)optval;
-            break;
-
-        case SO_OOBINLINE:
-            slot->opt_oobinline = (*(const int *)optval != 0);
-            break;
-
-        case SO_RCVTIMEO:
-            if (optlen_arg >= (LONG)sizeof(struct timeval)) {
-                slot->opt_rcvtimeo = *(const struct timeval *)optval;
-            } else if (optlen_arg >= (LONG)sizeof(int)) {
-                int ms = *(const int *)optval;
-                slot->opt_rcvtimeo.tv_secs  = ms / 1000;
-                slot->opt_rcvtimeo.tv_micro = (ms % 1000) * 1000;
-            } else {
-                imsg->result = -1;
-                imsg->err_no = EINVAL;
-                return 0;
-            }
-            if (slot->pending_recv_msg != NULL) {
-                if (slot->opt_rcvtimeo.tv_secs > 0 || slot->opt_rcvtimeo.tv_micro > 0) {
-                    uint32_t ms = (uint32_t)slot->opt_rcvtimeo.tv_secs * 1000 +
-                                  (uint32_t)(slot->opt_rcvtimeo.tv_micro + 999) / 1000;
-                    uint32_t ticks = (ms + 99) / 100;
-                    if (ticks == 0) ticks = 1;
-                    slot->recv_deadline_tick = (d != NULL) ? (d->mainloop_ticks + ticks) : 0;
-                } else {
-                    slot->recv_deadline_tick = 0;
-                }
-            }
-            break;
-
-        case SO_SNDTIMEO:
-            if (optlen_arg >= (LONG)sizeof(struct timeval)) {
-                slot->opt_sndtimeo = *(const struct timeval *)optval;
-            } else if (optlen_arg >= (LONG)sizeof(int)) {
-                int ms = *(const int *)optval;
-                slot->opt_sndtimeo.tv_secs  = ms / 1000;
-                slot->opt_sndtimeo.tv_micro = (ms % 1000) * 1000;
-            } else {
-                imsg->result = -1;
-                imsg->err_no = EINVAL;
-                return 0;
-            }
-            break;
-
-        case SO_ERROR:
-        case SO_TYPE:
-            imsg->result = -1;
-            imsg->err_no = ENOPROTOOPT;
-            return 0;
-
-        case SO_EVENTMASK:
-            /* TNET-122..127: per-fd event filter stored client-side. The
-             * setsockopt IPC carries the client fd in args[4] (marshalled by
-             * the LVO), so the daemon just validates and returns OK — the
-             * actual mask write happens in the LVO before the IPC call. */
-            if (optval == NULL || optlen_arg < (LONG)sizeof(ULONG)) {
-                imsg->result = -1;
-                imsg->err_no = EINVAL;
-                return 0;
-            }
-            break;
-
-        default:
-            imsg->result = -1;
-            imsg->err_no = ENOPROTOOPT;
-            return 0;
-        }
-
-        imsg->result = 0;
-        imsg->err_no = 0;
-        return 0;
-    } else if (level == IPPROTO_TCP) {
-        if (slot->type != SOCK_STREAM) {
-            imsg->result = -1;
-            imsg->err_no = ENOPROTOOPT;
-            return 0;
-        }
-
-        switch (optname) {
-        case TCP_NODELAY:
-            slot->opt_nodelay = (*(const int *)optval != 0);
-            if (slot->tcp_pcb != NULL) {
-                if (slot->opt_nodelay) {
-                    tcp_nagle_disable(slot->tcp_pcb);
-                } else {
-                    tcp_nagle_enable(slot->tcp_pcb);
-                }
-            }
-            break;
-
-        case TCP_MAXSEG:
-            {
-                int mss = *(const int *)optval;
-                if (mss > 0 && slot->tcp_pcb != NULL) {
-                    slot->tcp_pcb->mss = (u16_t)mss;
-                }
-            }
-            break;
-
-        case TCP_KEEPIDLE:
-            {
-                int val = *(const int *)optval;
-                slot->opt_keepidle = val;
-                if (slot->tcp_pcb != NULL) {
-                    slot->tcp_pcb->keep_idle = (u32_t)val * 1000UL;
-                }
-            }
-            break;
-
-        case TCP_KEEPINTVL:
-            {
-                int val = *(const int *)optval;
-                slot->opt_keepintvl = val;
-                if (slot->tcp_pcb != NULL) {
-                    slot->tcp_pcb->keep_intvl = (u32_t)val * 1000UL;
-                }
-            }
-            break;
-
-        case TCP_KEEPCNT:
-            {
-                int val = *(const int *)optval;
-                slot->opt_keepcnt = val;
-                if (slot->tcp_pcb != NULL) {
-                    slot->tcp_pcb->keep_cnt = (u32_t)val;
-                }
-            }
-            break;
-
-        default:
-            imsg->result = -1;
-            imsg->err_no = ENOPROTOOPT;
-            return 0;
-        }
-
-        imsg->result = 0;
-        imsg->err_no = 0;
-        return 0;
-    } else if (level == IPPROTO_IP) {
-        switch (optname) {
-        case IP_TOS:
-            {
-                u8_t tos = (u8_t)*(const int *)optval;
-                slot->opt_tos = tos;
-                if (slot->tcp_pcb != NULL) slot->tcp_pcb->tos = tos;
-                if (slot->udp_pcb != NULL) slot->udp_pcb->tos = tos;
-                if (slot->raw_pcb != NULL) slot->raw_pcb->tos = tos;
-            }
-            break;
-
-        case IP_TTL:
-            {
-                u8_t ttl = (u8_t)*(const int *)optval;
-                slot->opt_ttl = ttl;
-                if (slot->tcp_pcb != NULL) slot->tcp_pcb->ttl = ttl;
-                if (slot->udp_pcb != NULL) slot->udp_pcb->ttl = ttl;
-                if (slot->raw_pcb != NULL) slot->raw_pcb->ttl = ttl;
-            }
-            break;
-
-        case IP_HDRINCL:
-            if (slot->type != SOCK_RAW) {
-                imsg->result = -1;
-                imsg->err_no = ENOPROTOOPT;
-                return 0;
-            }
-            slot->opt_hdrincl = (*(const int *)optval != 0);
-            if (slot->raw_pcb != NULL) {
-                if (slot->opt_hdrincl) {
-                    raw_set_flags(slot->raw_pcb, RAW_FLAGS_HDRINCL);
-                } else {
-                    raw_clear_flags(slot->raw_pcb, RAW_FLAGS_HDRINCL);
-                }
-            }
-            break;
-
-        case IP_MULTICAST_TTL:
-            {
-                u8_t mttl = (u8_t)*(const int *)optval;
-                slot->opt_multicast_ttl = mttl;
-                if (slot->udp_pcb != NULL) slot->udp_pcb->mcast_ttl = mttl;
-                if (slot->raw_pcb != NULL) slot->raw_pcb->mcast_ttl = mttl;
-            }
-            break;
-
-        case IP_MULTICAST_LOOP:
-            {
-                u8_t mloop = (*(const int *)optval != 0) ? 1 : 0;
-                slot->opt_multicast_loop = mloop;
-                if (slot->udp_pcb != NULL) {
-                    if (mloop) {
-                        udp_set_flags(slot->udp_pcb, UDP_FLAGS_MULTICAST_LOOP);
-                    } else {
-                        udp_clear_flags(slot->udp_pcb, UDP_FLAGS_MULTICAST_LOOP);
-                    }
-                }
-            }
-            break;
-
-        case IP_ADD_MEMBERSHIP:
-            if (optlen_arg < (LONG)sizeof(struct ip_mreq)) {
-                imsg->result = -1;
-                imsg->err_no = EINVAL;
-                return 0;
-            }
-            {
-                const struct ip_mreq *mreq = (const struct ip_mreq *)optval;
-                ip4_addr_t grp, ifa;
-                err_t err;
-                grp.addr = mreq->imr_multiaddr.s_addr;
-                ifa.addr = mreq->imr_interface.s_addr;
-                err = igmp_joingroup(&ifa, &grp);
-                if (err != ERR_OK) {
-                    imsg->result = -1;
-                    imsg->err_no = (err == ERR_MEM) ? ENOBUFS : EINVAL;
-                    return 0;
-                }
-            }
-            break;
-
-        case IP_DROP_MEMBERSHIP:
-            if (optlen_arg < (LONG)sizeof(struct ip_mreq)) {
-                imsg->result = -1;
-                imsg->err_no = EINVAL;
-                return 0;
-            }
-            {
-                const struct ip_mreq *mreq = (const struct ip_mreq *)optval;
-                ip4_addr_t grp, ifa;
-                err_t err;
-                grp.addr = mreq->imr_multiaddr.s_addr;
-                ifa.addr = mreq->imr_interface.s_addr;
-                err = igmp_leavegroup(&ifa, &grp);
-                if (err != ERR_OK) {
-                    imsg->result = -1;
-                    imsg->err_no = (err == ERR_MEM) ? ENOBUFS : EINVAL;
-                    return 0;
-                }
-            }
-            break;
-
-        default:
-            imsg->result = -1;
-            imsg->err_no = ENOPROTOOPT;
-            return 0;
-        }
-
-        imsg->result = 0;
-        imsg->err_no = 0;
-        return 0;
-    } else {
-        imsg->result = -1;
-        imsg->err_no = EINVAL;
-        return 0;
-    }
-}
 
 /* SEC item 7: getsockopt with Roadshow optlen validation (compiled in ipc_getsockopt.c) */
 
@@ -788,6 +461,7 @@ int tn_ipc_cmd_ioctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         *(int *)argp = 0;
         imsg->result = 0;
         imsg->err_no = 0;
+#if defined(__AMIGA__) || defined(__amigaos__) || defined(TN_AMIGA_BUILD)
     } else if (req == TN_SIOCGARP) {
         /* TNET-141: ARP entry query (arp SHOW). The IPv4 address is read
          * from arp_pa byte-wise (client struct, no alignment guarantee),
@@ -961,6 +635,7 @@ int tn_ipc_cmd_ioctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             imsg->result = 0;
             imsg->err_no = 0;
         }
+#endif
     } else {
         imsg->result = -1;
         imsg->err_no = EINVAL;

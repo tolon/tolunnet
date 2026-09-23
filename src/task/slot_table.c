@@ -369,6 +369,114 @@ void tn_rx_queue_drain(TnSocketSlot *slot)
     slot->rx_count = 0;
 }
 
+static err_t tn_tcp_queued_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
+{
+    TnAcceptEntry *ent = (TnAcceptEntry *)arg;
+    (void)err;
+
+    if (ent == NULL || ent->new_pcb != pcb) {
+        if (p != NULL) pbuf_free(p);
+        return ERR_OK;
+    }
+
+    if (p == NULL) {
+        /* Peer closed connection (FIN) before accept() */
+        ent->peer_closed = TRUE;
+        return ERR_OK;
+    }
+
+    if (ent->early_rx_count >= TN_MAX_RX_QUEUE_PER_SOCKET) {
+        /* Queue full: hold pbuf in lwIP without freeing */
+        return ERR_MEM;
+    }
+
+    TnRxPacket *pkt = tn_rxpkt_get();
+    if (pkt == NULL) {
+        return ERR_MEM;
+    }
+
+    pkt->p = p;
+    pkt->offset = 0;
+    pkt->src_port = 0;
+    pkt->next = NULL;
+
+    if (ent->early_rx_tail != NULL) {
+        ent->early_rx_tail->next = pkt;
+    } else {
+        ent->early_rx_head = pkt;
+    }
+    ent->early_rx_tail = pkt;
+    ent->early_rx_count++;
+    return ERR_OK;
+}
+
+static void tn_tcp_queued_err_cb(void *arg, err_t err)
+{
+    TnAcceptEntry *ent = (TnAcceptEntry *)arg;
+    (void)err;
+
+    if (ent == NULL) return;
+
+    /* lwIP frees the PCB right after/during err callback.
+     * We MUST NOT call tcp_abort or touch new_pcb further. */
+    ent->new_pcb = NULL;
+
+    if (ent->listening_slot != NULL) {
+        tn_accept_queue_remove(ent->listening_slot, ent);
+    } else {
+        tn_accept_entry_free(ent, FALSE);
+    }
+}
+
+void tn_accept_entry_free(TnAcceptEntry *ent, BOOL abort_pcb)
+{
+    if (ent == NULL) return;
+    if (abort_pcb && ent->new_pcb != NULL) {
+        tcp_arg(ent->new_pcb, NULL);
+        tcp_recv(ent->new_pcb, NULL);
+        tcp_err(ent->new_pcb, NULL);
+        tcp_abort(ent->new_pcb);
+        ent->new_pcb = NULL;
+    }
+    while (ent->early_rx_head != NULL) {
+        TnRxPacket *pkt = ent->early_rx_head;
+        ent->early_rx_head = pkt->next;
+        if (pkt->p != NULL) {
+            pbuf_free(pkt->p);
+        }
+        tn_rxpkt_put(pkt);
+    }
+    ent->early_rx_tail = NULL;
+    ent->early_rx_count = 0;
+    FreeVec(ent);
+}
+
+void tn_accept_queue_remove(TnSocketSlot *slot, TnAcceptEntry *ent)
+{
+    TnAcceptEntry *prev = NULL;
+    TnAcceptEntry *curr;
+    if (slot == NULL || ent == NULL) return;
+
+    for (curr = slot->accept_head; curr != NULL; prev = curr, curr = curr->next) {
+        if (curr == ent) {
+            if (prev != NULL) {
+                prev->next = curr->next;
+            } else {
+                slot->accept_head = curr->next;
+            }
+            if (slot->accept_tail == curr) {
+                slot->accept_tail = prev;
+            }
+            if (slot->accept_count > 0) {
+                slot->accept_count--;
+            }
+            curr->next = NULL;
+            tn_accept_entry_free(curr, FALSE);
+            break;
+        }
+    }
+}
+
 int tn_accept_queue_push(TnSocketSlot *slot, struct tcp_pcb *new_pcb)
 {
     TnAcceptEntry *ent;
@@ -377,6 +485,11 @@ int tn_accept_queue_push(TnSocketSlot *slot, struct tcp_pcb *new_pcb)
     if (ent == NULL) return -1;
 
     ent->new_pcb = new_pcb;
+    ent->listening_slot = slot;
+    ent->early_rx_head = NULL;
+    ent->early_rx_tail = NULL;
+    ent->early_rx_count = 0;
+    ent->peer_closed = FALSE;
     ent->next = NULL;
 
     if (slot->accept_tail != NULL) {
@@ -386,13 +499,16 @@ int tn_accept_queue_push(TnSocketSlot *slot, struct tcp_pcb *new_pcb)
     }
     slot->accept_tail = ent;
     slot->accept_count++;
+
+    tcp_arg(new_pcb, ent);
+    tcp_recv(new_pcb, tn_tcp_queued_recv_cb);
+    tcp_err(new_pcb, tn_tcp_queued_err_cb);
     return 0;
 }
 
-struct tcp_pcb *tn_accept_queue_pop(TnSocketSlot *slot)
+TnAcceptEntry *tn_accept_queue_pop_entry(TnSocketSlot *slot)
 {
     TnAcceptEntry *ent;
-    struct tcp_pcb *pcb;
     if (slot == NULL || !slot->in_use || slot->accept_head == NULL) return NULL;
     ent = slot->accept_head;
     slot->accept_head = ent->next;
@@ -402,8 +518,21 @@ struct tcp_pcb *tn_accept_queue_pop(TnSocketSlot *slot)
     if (slot->accept_count > 0) {
         slot->accept_count--;
     }
-    pcb = ent->new_pcb;
-    FreeVec(ent);
+    ent->next = NULL;
+    return ent;
+}
+
+struct tcp_pcb *tn_accept_queue_pop(TnSocketSlot *slot)
+{
+    TnAcceptEntry *ent = tn_accept_queue_pop_entry(slot);
+    if (ent == NULL) return NULL;
+    struct tcp_pcb *pcb = ent->new_pcb;
+    if (pcb != NULL) {
+        tcp_arg(pcb, NULL);
+        tcp_recv(pcb, NULL);
+        tcp_err(pcb, NULL);
+    }
+    tn_accept_entry_free(ent, FALSE);
     return pcb;
 }
 
@@ -413,10 +542,8 @@ void tn_accept_queue_drain(TnSocketSlot *slot)
     while (slot->accept_head != NULL) {
         TnAcceptEntry *ent = slot->accept_head;
         slot->accept_head = ent->next;
-        if (ent->new_pcb != NULL) {
-            tcp_abort(ent->new_pcb);
-        }
-        FreeVec(ent);
+        ent->next = NULL;
+        tn_accept_entry_free(ent, TRUE);
     }
     slot->accept_tail = NULL;
     slot->accept_count = 0;
@@ -512,6 +639,18 @@ void tn_recv_cancel_for_base(TnDaemon *d, TnSocketBase *base)
                 rmsg->err_no = ECONNABORTED;
                 ReplyMsg((struct Message *)rmsg);
             }
+        }
+    }
+}
+
+void tn_slot_clear_owner_base(TnDaemon *d, const TnSocketBase *base)
+{
+    int i;
+    if (d == NULL || base == NULL) return;
+    for (i = 0; i < TN_MAX_GLOBAL_SOCKETS; i++) {
+        if (d->sockets[i].in_use && d->sockets[i].owner_base == base) {
+            d->sockets[i].owner_base = NULL;
+            d->sockets[i].owner_task = NULL;
         }
     }
 }

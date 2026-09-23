@@ -82,6 +82,7 @@ TASK_OBJS   = $(BUILD)/src/task/daemon_main.o \
               $(BUILD)/src/task/ipc_dispatch.o \
               $(BUILD)/src/task/ipc_socket.o \
               $(BUILD)/src/task/ipc_getsockopt.o \
+              $(BUILD)/src/task/ipc_setsockopt.o \
               $(BUILD)/src/task/ipc_tcp.o \
               $(BUILD)/src/task/ipc_dgram.o \
               $(BUILD)/src/task/ipc_msg.o \
@@ -155,7 +156,8 @@ HOST_UNITS   = src/common/inet_parse.c src/common/config_text.c \
                src/setup/stack_detect.c src/setup/wifi_mgr.c \
                src/setup/net_test.c src/setup/hw_detect.c \
                tests/host/mock_lwip.c src/task/slot_table.c \
-               src/task/route.c src/common/ifreader.c
+               src/task/route.c src/common/ifreader.c \
+               src/task/timers.c
 HOST_TESTS   = $(wildcard tests/host/test_*.c)
 HOST_BINS    = $(patsubst tests/host/%.c,$(BUILD)/host/%,$(HOST_TESTS))
 

@@ -473,6 +473,48 @@ TN_TEST(recv_parking_and_rcvtimeo_lifecycle)
     TN_ASSERT_EQ(msg1.err_no, EBADF);
 }
 
+TN_TEST(dead_base_clear_on_close)
+{
+    TnDaemon d;
+    TnSocketBase base1, base2;
+    int idx0 = -1, idx1 = -1, idx2 = -1;
+
+    tn_slot_table_init(&d);
+    memset(&base1, 0, sizeof(base1));
+    memset(&base2, 0, sizeof(base2));
+
+    TnSocketSlot *s0 = tn_slot_alloc(&d, &base1, (struct Task *)0x1111, AF_INET, SOCK_STREAM, IPPROTO_TCP, &idx0);
+    TnSocketSlot *s1 = tn_slot_alloc(&d, &base1, (struct Task *)0x1111, AF_INET, SOCK_DGRAM, IPPROTO_UDP, &idx1);
+    TnSocketSlot *s2 = tn_slot_alloc(&d, &base2, (struct Task *)0x2222, AF_INET, SOCK_STREAM, IPPROTO_TCP, &idx2);
+
+    TN_ASSERT_TRUE(s0 != NULL && s1 != NULL && s2 != NULL);
+    TN_ASSERT_EQ(s0->owner_base, &base1);
+    TN_ASSERT_EQ(s0->owner_task, (struct Task *)0x1111);
+    TN_ASSERT_EQ(s1->owner_base, &base1);
+    TN_ASSERT_EQ(s1->owner_task, (struct Task *)0x1111);
+    TN_ASSERT_EQ(s2->owner_base, &base2);
+    TN_ASSERT_EQ(s2->owner_task, (struct Task *)0x2222);
+
+    /* Item 6: closing base1 must clear owner pointers across all its slots */
+    tn_slot_clear_owner_base(&d, &base1);
+
+    TN_ASSERT_TRUE(s0->owner_base == NULL);
+    TN_ASSERT_TRUE(s0->owner_task == NULL);
+    TN_ASSERT_TRUE(s1->owner_base == NULL);
+    TN_ASSERT_TRUE(s1->owner_task == NULL);
+    TN_ASSERT_EQ(s2->owner_base, &base2);
+    TN_ASSERT_EQ(s2->owner_task, (struct Task *)0x2222);
+
+    /* Subsequent event recording must be completely safe with NULL base */
+    int sig_count_before = mock_lwip_call_count(MOCK_CALL_SIGNAL);
+    tn_record_socket_event(&d, s0, 0x01);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_SIGNAL), sig_count_before);
+
+    tn_slot_free(&d, idx0);
+    tn_slot_free(&d, idx1);
+    tn_slot_free(&d, idx2);
+}
+
 int main(void)
 {
     TN_TEST_RUN(selector_table_grow);
@@ -485,7 +527,9 @@ int main(void)
     TN_TEST_RUN(accept_queue_operations);
     TN_TEST_RUN(event_signaling);
     TN_TEST_RUN(recv_parking_and_rcvtimeo_lifecycle);
+    TN_TEST_RUN(dead_base_clear_on_close);
 
     TN_TEST_PLAN();
     return tn_test_failures();
 }
+

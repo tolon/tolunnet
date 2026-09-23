@@ -45,21 +45,30 @@ struct Library *tn_lib_create(void)
 void tn_lib_destroy(struct Library *lib)
 {
     struct ExecBase *SysBase = *(struct ExecBase **)4UL;
+    LONG cnt;
 
     if (lib == NULL) return;
 
     Forbid();
-    if (lib->lib_OpenCnt > 0) {
-        LONG cnt = lib->lib_OpenCnt;
+    cnt = lib->lib_OpenCnt;
+    if (cnt > 0) {
+        /* TNET-059 (restored): an open client's clone jumps into this
+         * task's code segment. Neither Remove (new opens vanish, live
+         * clones lose their library node) nor FreeMem (code unloaded
+         * under the client = Guru) is safe until the last close. The
+         * daemon-side shutdown gate re-checks under Forbid and returns
+         * to service instead of calling us here. */
         Permit();
-        /* TNET-140: log AFTER Permit — tn_logf calls DOS which may
-         * schedule, which is forbidden under Forbid. */
-        tn_logf(TN_LOG_BASIC, "tolunnet: cannot destroy bsdsocket.library (OpenCnt=%d)\n",
+        tn_logf(TN_LOG_BASIC,
+                "tolunnet: bsdsocket.library destroy REFUSED - %d client(s) still open\n",
                 (int)cnt);
         return;
     }
-
-    Remove(&lib->lib_Node);
+    if (lib->lib_Node.ln_Succ != NULL && lib->lib_Node.ln_Pred != NULL) {
+        Remove(&lib->lib_Node);
+        lib->lib_Node.ln_Succ = NULL;
+        lib->lib_Node.ln_Pred = NULL;
+    }
     Permit();
 
     FreeMem((UBYTE *)lib - lib->lib_NegSize, (ULONG)(lib->lib_NegSize + lib->lib_PosSize));

@@ -249,7 +249,8 @@ int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                     u16_t off = (cur == slot->rx_head) ? cur->offset : 0;
                     u16_t avail = cur->p->tot_len - off;
                     while (avail > 0 && cur_iov < msg->msg_iovlen) {
-                        u16_t space = (u16_t)(msg->msg_iov[cur_iov].iov_len - iov_offset);
+                        ULONG rem_space = msg->msg_iov[cur_iov].iov_len - iov_offset;
+                        u16_t space = (rem_space > 0xFFFF) ? 0xFFFF : (u16_t)rem_space;
                         if (space == 0) {
                             cur_iov++;
                             iov_offset = 0;
@@ -270,7 +271,8 @@ int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                     u16_t avail = pkt->p->tot_len - pkt->offset;
                     u16_t pkt_copied = 0;
                     while (avail > 0 && cur_iov < msg->msg_iovlen) {
-                        u16_t space = (u16_t)(msg->msg_iov[cur_iov].iov_len - iov_offset);
+                        ULONG rem_space = msg->msg_iov[cur_iov].iov_len - iov_offset;
+                        u16_t space = (rem_space > 0xFFFF) ? 0xFFFF : (u16_t)rem_space;
                         if (space == 0) {
                             cur_iov++;
                             iov_offset = 0;
@@ -332,7 +334,8 @@ int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             ULONG total_copied = 0;
 
             while (cur_iov < msg->msg_iovlen && pkt_offset < avail) {
-                u16_t space = (u16_t)(msg->msg_iov[cur_iov].iov_len - iov_offset);
+                ULONG rem_space = msg->msg_iov[cur_iov].iov_len - iov_offset;
+                u16_t space = (rem_space > 0xFFFF) ? 0xFFFF : (u16_t)rem_space;
                 if (space == 0) {
                     cur_iov++;
                     iov_offset = 0;

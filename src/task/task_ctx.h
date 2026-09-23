@@ -109,6 +109,11 @@ typedef struct TnRxPacket {
 typedef struct TnAcceptEntry {
     struct TnAcceptEntry *next;
     struct tcp_pcb       *new_pcb;
+    struct TnRxPacket    *early_rx_head;
+    struct TnRxPacket    *early_rx_tail;
+    ULONG                 early_rx_count;
+    struct TnSocketSlot  *listening_slot;
+    BOOL                  peer_closed;
 } TnAcceptEntry;
 
 /* Internal socket descriptor representation */
@@ -121,6 +126,8 @@ typedef struct TnSocketSlot {
     int             protocol;
     TnTcpState      tcp_state;
     BOOL            is_nonblocking;
+    BOOL            shut_wr;
+    BOOL            shut_rd;
 
     /* Level SOL_SOCKET options */
     BOOL            opt_broadcast;

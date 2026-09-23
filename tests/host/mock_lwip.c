@@ -154,11 +154,13 @@ void tcp_arg(struct tcp_pcb *pcb, void *arg)
 void tcp_recv(struct tcp_pcb *pcb, void *func)
 {
     mock_lwip_record(MOCK_CALL_TCP_RECV, pcb, func, 0, 0);
+    if (pcb) pcb->recv_cb = func;
 }
 
 void tcp_err(struct tcp_pcb *pcb, void *func)
 {
     mock_lwip_record(MOCK_CALL_TCP_ERR, pcb, func, 0, 0);
+    if (pcb) pcb->err_cb = func;
 }
 
 void tcp_accept(struct tcp_pcb *pcb, void *func)
@@ -207,6 +209,88 @@ err_t raw_sendto(struct raw_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_ip)
     return ERR_OK;
 }
 
+err_t udp_connect(struct udp_pcb *pcb, const ip_addr_t *ip, u16_t port)
+{
+    if (pcb != NULL) {
+        if (ip != NULL) pcb->remote_ip = *ip;
+        else pcb->remote_ip.addr = 0;
+        pcb->remote_port = port;
+    }
+    return ERR_OK;
+}
+
+err_t raw_connect(struct raw_pcb *pcb, const ip_addr_t *ip)
+{
+    if (pcb != NULL) {
+        if (ip != NULL) pcb->remote_ip = *ip;
+        else pcb->remote_ip.addr = 0;
+    }
+    return ERR_OK;
+}
+
+err_t raw_send(struct raw_pcb *pcb, struct pbuf *p)
+{
+    if (pcb != NULL) {
+        return raw_sendto(pcb, p, &pcb->remote_ip);
+    }
+    return ERR_VAL;
+}
+
+err_t tcp_connect(struct tcp_pcb *pcb, const ip_addr_t *ip, u16_t port, void *connected)
+{
+    (void)connected;
+    if (pcb != NULL) {
+        if (ip != NULL) pcb->remote_ip = *ip;
+        pcb->remote_port = port;
+    }
+    return ERR_OK;
+}
+
+void tcp_sent(struct tcp_pcb *pcb, void *func)
+{
+    (void)pcb; (void)func;
+}
+
+err_t tcp_shutdown(struct tcp_pcb *pcb, int shut_rx, int shut_tx)
+{
+    (void)pcb; (void)shut_rx; (void)shut_tx;
+    return ERR_OK;
+}
+
+err_t tcp_bind(struct tcp_pcb *pcb, const ip_addr_t *ip, u16_t port)
+{
+    (void)pcb; (void)ip; (void)port;
+    return ERR_OK;
+}
+
+err_t udp_bind(struct udp_pcb *pcb, const ip_addr_t *ip, u16_t port)
+{
+    (void)pcb; (void)ip; (void)port;
+    return ERR_OK;
+}
+
+err_t raw_bind(struct raw_pcb *pcb, const ip_addr_t *ip)
+{
+    (void)pcb; (void)ip;
+    return ERR_OK;
+}
+
+struct pbuf *pbuf_clone(uint8_t layer, uint8_t type, struct pbuf *p)
+{
+    (void)layer; (void)type;
+    if (p == NULL) return NULL;
+    struct pbuf *q = mock_pbuf_alloc(p->tot_len);
+    if (q == NULL) return NULL;
+    pbuf_copy_partial(p, q->payload, p->tot_len, 0);
+    return q;
+}
+
+struct tcp_pcb *tcp_listen_with_backlog(struct tcp_pcb *pcb, u8_t backlog)
+{
+    (void)backlog;
+    return pcb;
+}
+
 /* AllocVec registry: daemon-side tables (selector table, TNET-108) are
  * process-lifetime allocations in the host harness — the Amiga daemon frees
  * them explicitly at shutdown, but the tests exit without teardown. Holding
@@ -249,3 +333,18 @@ void mock_signal(void *task, uint32_t sigs)
 {
     mock_lwip_record(MOCK_CALL_SIGNAL, task, NULL, sigs, 0);
 }
+
+err_t igmp_joingroup(const ip4_addr_t *ifaddr, const ip4_addr_t *groupaddr)
+{
+    (void)ifaddr;
+    (void)groupaddr;
+    return ERR_OK;
+}
+
+err_t igmp_leavegroup(const ip4_addr_t *ifaddr, const ip4_addr_t *groupaddr)
+{
+    (void)ifaddr;
+    (void)groupaddr;
+    return ERR_OK;
+}
+
