@@ -65,8 +65,8 @@ typedef struct TnPrefs {
                                * this to outlive the daemon's DNS attempt. */
     char  font[24];           /* FONT=name/size for TolunnetSetup; empty = screen font */
     ULONG diag;              /* DIAG=YES: trap handler + crash log + step logging (TNET-139) */
-    BOOL  autoip;            /* AUTOIP=YES/NO (default TRUE): RFC 3927 link-local fallback */
-    BOOL  mdns;              /* MDNS=YES/NO (default TRUE): Zeroconf mDNS responder */
+    BOOL  autoip;            /* AUTOIP=YES/NO (default FALSE): RFC 3927 link-local fallback */
+    BOOL  mdns;              /* MDNS=YES/NO (default FALSE): Zeroconf mDNS responder */
 } TnPrefs;
 
 /* TNET-064: Amiga Prefs convention.

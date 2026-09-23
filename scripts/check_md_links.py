@@ -5,8 +5,8 @@ import sys
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BENCH_LOGS_DIR = os.path.join(REPO_ROOT, "docs", "bench-logs")
 
-# Matches specific bench log directories like 20260905-183850-3082b59 or 20260908-012128-e1d1752-dirty
-LOG_PATTERN = re.compile(r"docs/bench-logs/([0-9]{8}-[0-9]{6}-[a-zA-Z0-9_-]+)")
+# Matches specific bench log directories like 20260905-183850-3082b59, 20260908-012128-e1d1752-dirty, or 20260923-072936-v1.2.0-rc3-22-gb23c91b
+LOG_PATTERN = re.compile(r"docs/bench-logs/([0-9]{8}-[0-9]{6}-[a-zA-Z0-9_.-]+)")
 
 def main():
     missing = []
@@ -29,7 +29,7 @@ def main():
                 continue
 
             for match in LOG_PATTERN.finditer(content):
-                target_dir = match.group(1)
+                target_dir = match.group(1).rstrip(".")
                 full_target = os.path.join(BENCH_LOGS_DIR, target_dir)
                 checked += 1
                 if not os.path.isdir(full_target):

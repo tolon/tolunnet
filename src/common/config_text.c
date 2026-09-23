@@ -39,8 +39,8 @@ void tn_prefs_default(TnPrefs *prefs)
     prefs->diag = FALSE;       /* TNET-139: crash diagnostics off by default */
     prefs->tx_queue = 0;        /* TNET-106: absent = synchronous DoIO */
     prefs->font[0] = '\0';      /* empty = TolunnetSetup uses the screen font */
-    prefs->autoip = TRUE;       /* default: RFC 3927 link-local fallback active */
-    prefs->mdns = TRUE;         /* default: Zeroconf mDNS responder active */
+    prefs->autoip = FALSE;      /* optional: RFC 3927 link-local fallback disabled by default */
+    prefs->mdns = FALSE;        /* optional: Zeroconf mDNS responder disabled by default */
 }
 
 
@@ -431,11 +431,11 @@ int tn_config_format(const TnPrefs *prefs, char *buf, int buf_size)
     if (prefs->font[0] != '\0') {
         tn_cfg_put_kv_str(&o, "FONT=", prefs->font);
     }
-    if (!prefs->autoip) {
-        tn_cfg_put(&o, "AUTOIP=NO\n");
+    if (prefs->autoip) {
+        tn_cfg_put(&o, "AUTOIP=YES\n");
     }
-    if (!prefs->mdns) {
-        tn_cfg_put(&o, "MDNS=NO\n");
+    if (prefs->mdns) {
+        tn_cfg_put(&o, "MDNS=YES\n");
     }
 
     if (o.overflow) {

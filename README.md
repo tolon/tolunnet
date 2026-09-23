@@ -34,8 +34,8 @@ Classic AmigaOS has long lacked an actively maintained, production-grade, 100% o
   - It has a built-in in-memory database: users `root`, `amiga`, `nobody`; groups `wheel`, `staff`, `nobody`.
   - The first `passwd`/`group` file found in `AmiTCP:db/`, `DEVS:Internet/` or `DEVS:tolunnet/` overrides that database.
   - Partial implementations are listed under [Known limitations](STATUS.md#known-limitations).
-- **AutoIP (RFC 3927):** when no DHCP server answers, the stack falls back to a link-local `169.254.x.x/16` address with Address Conflict Detection (lwIP DHCP/AutoIP cooperation, about 3–4 s). On by default; `AUTOIP=NO` disables it.
-- **mDNS responder (RFC 6762):** answers `<hostname>.local` on `224.0.0.251:5353` and publishes a `_workstation._tcp` DNS-SD service (`model=Amiga`, `os=AmigaOS`, `stack=tolunnet`). On by default; `MDNS=NO` disables it.
+- **AutoIP (RFC 3927):** optional link-local `169.254.x.x/16` address fallback with Address Conflict Detection (lwIP DHCP/AutoIP cooperation, about 3–4 s). Off by default; `AUTOIP=YES` enables it.
+- **mDNS responder (RFC 6762):** optional Zeroconf responder that answers `<hostname>.local` on `224.0.0.251:5353` and publishes a `_workstation._tcp` DNS-SD service (`model=Amiga`, `os=AmigaOS`, `stack=tolunnet`). Off by default; `MDNS=YES` enables it.
 - **Workbench GUI:**
   - `TolunnetSetup`: first-run wizard whose layout is computed from font metrics (`TextLength()`, `tf_YSize`). The bench verifies it on 640×200 NTSC and 640×256 PAL. The same code supports RTG screens, but the bench image has no RTG drivers to test them.
   - `TolunnetPrefs`: GadTools preferences editor with non-blocking daemon Start/Stop, ToolTypes (`TOOLPRI`, `PUBSCREEN`) and WBStartup support.
@@ -110,7 +110,7 @@ The release archive ships the following programs, in `C/` unless noted. The inst
 | `IP`, `NETMASK`, `GATEWAY` | static addressing (aliases `IP_ADDR`, `MASK`, `GW`) |
 | `DNS`, `DNS2` | resolvers (aliases `DNS1`, `NAMESERVER`) |
 | `HOSTNAME`, `MTU` | host name, interface MTU |
-| `AUTOIP`, `MDNS` | link-local fallback and mDNS responder (both default on) |
+| `AUTOIP`, `MDNS` | optional link-local fallback and mDNS responder (default `NO`; enable with `AUTOIP=YES`, `MDNS=YES`) |
 | `TX_QUEUE` | TX request pool depth (`0` = synchronous, the release default) |
 | `LOG`, `LOGLEVEL`, `DEBUG`, `SYSLOG` | logging |
 | `PRIORITY`, `SELECTORS`, `STATS`, `S2EVENTS`, `DATABASE_ORDER` | daemon tuning |
