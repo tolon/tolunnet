@@ -630,7 +630,7 @@ int main(int argc, char *argv[])
     ng.ng_Width      = lo.btn_w;
     ng.ng_GadgetText = (STRPTR)"Save";
     ng.ng_GadgetID   = GID_SAVE;
-    gad = CreateGadget(BUTTON_KIND, gad_host, &ng, TAG_END);
+    gad = CreateGadget(BUTTON_KIND, gad_largetext, &ng, TAG_END);
     if (!gad) goto cleanup;
 
     ng.ng_LeftEdge  += (WORD)(lo.btn_w + 6);
@@ -691,7 +691,7 @@ int main(int argc, char *argv[])
                                            WFLG_ACTIVATE | WFLG_SMART_REFRESH,
                          WA_Gadgets,       (ULONG)glist,
                          WA_Title,         (ULONG)"tolunnet Network Preferences",
-                         owns_screen ? WA_CustomScreen : WA_PubScreen, (ULONG)scr,
+                         WA_PubScreen,     (ULONG)scr,
                          TAG_END);
 
     if (!win) goto cleanup;

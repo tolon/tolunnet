@@ -194,6 +194,10 @@ python-checks:
 align-check:
 	@sh scripts/check_cast_align.sh
 
+.PHONY: screenshots
+screenshots:
+	python3 scripts/convert_screenshots.py
+
 $(BUILD):
 	mkdir -p $(BUILD)
 

@@ -42,6 +42,25 @@ Classic AmigaOS has long lacked an actively maintained, production-grade, 100% o
 
 ---
 
+## Setup Wizard
+
+The first-run wizard (`TolunnetSetup`) guides network configuration with automatic hardware detection and responsive layout adaptation across PAL and NTSC screens:
+
+- **Welcome & replacement:** detects existing TCP/IP stacks (Roadshow, Miami, AmiTCP) and backs them up cleanly before proceeding.
+  ![Page 1: Welcome & Stack Replacement](docs/screenshots/wizard-0-pal.png)
+- **Hardware detection:** scans installed SANA-II device drivers and configures unit selection.
+  ![Page 2: Hardware](docs/screenshots/wizard-1-pal.png)
+- **Wireless networks:** scans available Wi-Fi networks (SSID, signal strength, security) and stores passphrases.
+  ![Page 3: Wireless Setup](docs/screenshots/wizard-2-pal.png)
+- **Address mode (DHCP):** automated dynamic host configuration and hostname assignment.
+  ![Page 4: Address (DHCP)](docs/screenshots/wizard-3-pal.png)
+- **Address mode (Static):** manual configuration of static IP address, subnet mask, gateway, and DNS servers.
+  ![Page 4: Address (Static)](docs/screenshots/wizard-3-pal-static.png)
+- **Connection test & finish:** verifies network operations and saves configuration with User-Startup integration.
+  ![Page 5: Test & Finish](docs/screenshots/wizard-4-pal.png)
+
+---
+
 ## Commands
 
 The release archive ships the following programs, in `C/` unless noted. The installer (`Install_Tolunnet`) installs the complete command set, companion tools and libraries to `SYS:C/`, `SYS:Prefs/` and `SYS:Libs/`.

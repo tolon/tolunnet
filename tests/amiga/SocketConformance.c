@@ -3651,6 +3651,7 @@ static void tc_wizard_ntsc(void)
         }
         Permit();
     }
+    Delay(10);
 
     /* Dump TolunnetPrefs screenshot for the profile */
     if (!fail) {
@@ -3665,7 +3666,7 @@ static void tc_wizard_ntsc(void)
         struct Window *pwin = NULL;
         struct Screen *pscr = NULL;
         int pwait;
-        for (pwait = 0; pwait < 60; pwait++) {
+        for (pwait = 0; pwait < 100; pwait++) {
             Delay(5);
             Forbid();
             for (pscr = IntuitionBase->FirstScreen; pscr; pscr = pscr->NextScreen) {
