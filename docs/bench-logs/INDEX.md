@@ -19,6 +19,11 @@ Per-commit evidence dirs. The newest full run per commit is the citable one;
   item 1: the bench for b4231da covers both (its race-honor guard was
   committed pre-bench, the break-path mirror landed before the SAME bench
   ran — verified in the d960d6a→b4231da diff). No code followed the bench.
+- **"break bit preserved" claims in 171f5fd / 3fb5bf9 / 0538677 and logs
+  4fc7c00 / 7a55958 were FALSE** — the test printed "CTRL_C was CLEARED
+  (bug)" and still reported ok (fixed in the step-7 honesty commit; the
+  underlying signal behavior is fixed by the SetSignal(bits,bits) +
+  end-of-path re-assert series).
 - **`…145035…g2461b7b` was RED, not green** — the suite stopped after test 3
   on both profiles (3 ok rows, conformance2 empty, TODO 0: the net rows were
   never reached). The stack-CANCEL corruption froze the suite right after a

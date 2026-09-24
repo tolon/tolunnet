@@ -1750,13 +1750,13 @@ static void tc_waitselect_badf(void)
     tv_zero.tv_secs = 0;
     tv_zero.tv_micro = 0;
 
-    /* 1. nfds > fd_set width (64, z.ai step 6 item 4): -1 EINVAL
-     * (check order: wider-than-set is EINVAL; EBADF is unreachable
-     * because set width == table width now). */
-    res = call_waitselect(65, NULL, NULL, NULL, &tv_zero, NULL);
-    if (res != -1 || call_errno() != EINVAL) {
-        tapf("# nfds=65 res=%ld errno=%ld (expected -1, EINVAL)\n", res, call_errno());
-        TAP_NOTOK("tc_waitselect_badf", "nfds > table did not return EINVAL");
+    /* 1. z.ai step 7 item 0: 4.4BSD select clamps nd to the table size;
+     * nfds=FD_SETSIZE must be accepted (0 returned on the zero timeout).
+     * EBADF is asserted separately below for a closed fd. */
+    res = call_waitselect(FD_SETSIZE, NULL, NULL, NULL, &tv_zero, NULL);
+    if (res != 0) {
+        tapf("# nfds=FD_SETSIZE res=%ld errno=%ld (expected 0)\n", res, call_errno());
+        TAP_NOTOK("tc_waitselect_badf", "nfds=FD_SETSIZE not accepted");
         return;
     }
 
@@ -6628,6 +6628,7 @@ static void tc_net_recv_ctrlc(void)
                 tapf("# net_recv_ctrlc: CTRL_C still set after EINTR (correct)\n");
             } else {
                 tapf("# net_recv_ctrlc: CTRL_C was CLEARED by the library (bug)\n");
+                TAP_NOTOK("net_recv_ctrlc", "break bit not preserved after EINTR");
             }
         }
         DateStamp(&ds);
@@ -6677,7 +6678,7 @@ static void tc_lib_expunge_survives(void)
     if (big != (APTR)0) {
         FreeMem(big, 0x7ffffff0);
         tapf("# tc_lib_expunge_survives: huge alloc SUCCEEDED (unexpected)\n");
-        TAP_OK("tc_lib_expunge_survives");
+        TAP_OK("tc_lib_expunge_survives"); /* no pressure in this env: vacuous pass */
         return;
     }
 
