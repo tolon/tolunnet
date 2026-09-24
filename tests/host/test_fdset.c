@@ -26,15 +26,17 @@ TN_TEST(nfds_out_of_table_is_ebadf)
     TN_ASSERT_EQ(tn_fdset_check_nfds(0), 0);
     TN_ASSERT_EQ(tn_fdset_check_nfds(1), 0);
     TN_ASSERT_EQ(tn_fdset_check_nfds(32), 0);    /* fds 0..31: valid */
-    TN_ASSERT_EQ(tn_fdset_check_nfds(33), TN_EBADF); /* fd 32 out of table */
-    TN_ASSERT_EQ(tn_fdset_check_nfds(64), TN_EBADF);
+    /* z.ai step 7 item 2: 4.4BSD clamps nd; 0..FD_SETSIZE accepted */
+    TN_ASSERT_EQ(tn_fdset_check_nfds(33), 0);
+    TN_ASSERT_EQ(tn_fdset_check_nfds(64), 0);
+    TN_ASSERT_EQ(tn_fdset_check_nfds(65), 0);    /* FD_SETSIZE is 256 */
+    TN_ASSERT_EQ(tn_fdset_check_nfds(-1), TN_EINVAL);
 }
 
 TN_TEST(nfds_invalid_is_einval)
 {
     TN_ASSERT_EQ(tn_fdset_check_nfds(-1), TN_EINVAL);
-    TN_ASSERT_EQ(tn_fdset_check_nfds(65), TN_EINVAL); /* > FD_SETSIZE(64) */
-    TN_ASSERT_EQ(tn_fdset_check_nfds(1000), TN_EINVAL);
+    TN_ASSERT_EQ(tn_fdset_check_nfds(1000), 0); /* > FD_SETSIZE: clamped */
 }
 
 TN_TEST(timeout_conversion)

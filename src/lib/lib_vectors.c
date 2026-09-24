@@ -1131,10 +1131,12 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
                 base->ipc_msg.ptrs[0] = (APTR)read_fds;
                 base->ipc_msg.ptrs[1] = (APTR)write_fds;
                 base->ipc_msg.ptrs[2] = (APTR)except_fds;
-                if (tn_ipc_call(base, TN_IPC_CMD_SELECT_ARM) >= 0) {
-                    continue;
+                {
+                    LONG arm_res = tn_ipc_call(base, TN_IPC_CMD_SELECT_ARM);
+                    if (arm_res > 0) return arm_res; /* already ready */
+                    if (arm_res < 0) return 0;
                 }
-                return 0;
+                continue;
             }
             if (elapsed + 3UL >= budget_ticks) {
                 /* genuine timeout (3-tick measurement slack) */
@@ -1143,7 +1145,19 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
                 if (except_fds) { except_fds->fds_bits[0] = 0; except_fds->fds_bits[1] = 0; }
                 base->dbg_wait_fired = 0x7; return 0;
             }
-            /* timer lied or spurious wake - retry with remaining budget */
+            /* timer lied or spurious wake - re-ARM (disarmed on wake) and
+             * retry with the remaining budget (z.ai step 7 item 2c). */
+            base->ipc_msg.args[0] = nfds;
+            base->ipc_msg.args[1] = orig_r;
+            base->ipc_msg.args[2] = orig_w;
+            base->ipc_msg.args[3] = orig_e;
+            base->ipc_msg.ptrs[0] = (APTR)read_fds;
+            base->ipc_msg.ptrs[1] = (APTR)write_fds;
+            base->ipc_msg.ptrs[2] = (APTR)except_fds;
+            {
+                LONG arm_res = tn_ipc_call(base, TN_IPC_CMD_SELECT_ARM);
+                if (arm_res > 0) return arm_res;
+            }
         }
     }
 }

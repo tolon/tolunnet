@@ -7,9 +7,8 @@
 
 int tn_fdset_check_nfds(int nfds)
 {
-    if (nfds < 0 || nfds > TN_FD_SETSIZE) return TN_EINVAL;
-    if (nfds > TN_FD_TABLE_SIZE) return TN_EBADF; /* fd >= table size is out of range */
-    return 0;
+    if (nfds < 0) return TN_EINVAL;
+    return 0; /* nfds is clamped to dtablesize by the callers (4.4BSD select) */
 }
 
 uint32_t tn_waitselect_timeout_ms(uint32_t secs, uint32_t micros)

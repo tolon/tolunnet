@@ -6532,8 +6532,9 @@ static void tc_waitselect_fd40(void)
     FD_SET(a, &rfds);
     tv.tv_secs = 3;
     tv.tv_micro = 0;
+    FD_SET(33, &rfds); /* z.ai step 7 item 2: idle fd 33 must stay clear */
     rc = call_waitselect(41, &rfds, NULL, NULL, &tv, NULL);
-    if (rc == 1 && FD_ISSET(a, &rfds)) {
+    if (rc == 1 && FD_ISSET(a, &rfds) && !FD_ISSET(33, &rfds)) {
         TAP_OK("tc_waitselect_fd40");
     } else {
         tapf("# tc_waitselect_fd40: rc=%ld bit40=%ld\n", rc,

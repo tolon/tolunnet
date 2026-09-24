@@ -27,10 +27,11 @@ static inline void tn_fd_clr(uint64_t *set, int fd)      { *set &= ~((uint64_t)1
 static inline int  tn_fd_isset(uint64_t set, int fd)     { return (int)((set >> fd) & 1u); }
 
 /*
- * Validate an nfds argument: 0..TN_FD_TABLE_SIZE is valid; descriptors at or
- * above the per-opener table size fail with EBADF (target semantics for
- * WaitSelect/socket calls — the current daemon clamps instead; adoption in
- * §C11). Returns 0 when valid, else the errno code.
+ * z.ai step 7 item 2: validate an nfds argument per 4.4BSD select — nd is
+ * clamped to the table size, so 0..FD_SETSIZE is ACCEPTED (the daemon
+ * ignores descriptors >= dtablesize); only a negative nfds is EINVAL.
+ * EBADF is decided per-set-bit by the caller (a set bit on a closed or
+ * out-of-table descriptor).
  */
 int tn_fdset_check_nfds(int nfds);
 

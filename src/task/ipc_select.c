@@ -177,7 +177,8 @@ int tn_ipc_cmd_select_arm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
      * rides args[1..3]; the HI word is read from / written to the client
      * fd_set memory directly (fds_bits[1]). */
     {
-        ULONG hi_r = 0, hi_w = 0, hi_e = 0;
+        ULONG hi_r = 0, hi_w = 0, hi_e = 0;      /* input (client request) */
+        ULONG hi_out_r = 0, hi_out_w = 0, hi_out_e = 0; /* readiness output */
         if (nfds > 32) {
             if (rfds) hi_r = rfds[1];
             if (wfds) hi_w = wfds[1];
@@ -213,23 +214,24 @@ int tn_ipc_cmd_select_arm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                     imsg->err_no = EBADF;
                     return 0;
                 }
-                if ((hi_r & m2) && tn_select_can_read(s))  { hi_r |= m2; ready_cnt++; }
-                if ((hi_w & m2) && tn_select_can_write(s)) { hi_w |= m2; ready_cnt++; }
-                if ((hi_e & m2) && tn_select_has_except(s)) { hi_e |= m2; ready_cnt++; }
+                if ((hi_r & m2) && tn_select_can_read(s))  { hi_out_r |= m2; ready_cnt++; }
+                if ((hi_w & m2) && tn_select_can_write(s)) { hi_out_w |= m2; ready_cnt++; }
+                if ((hi_e & m2) && tn_select_has_except(s)) { hi_out_e |= m2; ready_cnt++; }
             }
         }
 
         /* If descriptors are already ready, return count and sets immediately */
         if (ready_cnt > 0) {
-            if (rfds) { rfds[0] = out_r; if (nfds > 32) rfds[1] = hi_r; }
-            if (wfds) { wfds[0] = out_w; if (nfds > 32) wfds[1] = hi_w; }
-            if (efds) { efds[0] = out_e; if (nfds > 32) efds[1] = hi_e; }
+            if (rfds) { rfds[0] = out_r; if (nfds > 32) rfds[1] = hi_out_r; }
+            if (wfds) { wfds[0] = out_w; if (nfds > 32) wfds[1] = hi_out_w; }
+            if (efds) { efds[0] = out_e; if (nfds > 32) efds[1] = hi_out_e; }
             imsg->result = ready_cnt;
             imsg->err_no = 0;
             return 0;
         }
 
-        /* remember the HI masks on the armed selector */
+        /* remember the HI request masks on the armed selector (wake scan
+         * compares requests, not readiness) */
         arm_hi_r = hi_r;
         arm_hi_w = hi_w;
         arm_hi_e = hi_e;
@@ -361,7 +363,8 @@ int tn_ipc_cmd_waitselect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     }
 
     /* z.ai step 6 item 4: HI word (fds 32-63) read from client fd_sets */
-    ULONG hi_r = 0, hi_w = 0, hi_e = 0;
+    ULONG hi_r = 0, hi_w = 0, hi_e = 0;      /* input (client request) */
+    ULONG hi_out_r = 0, hi_out_w = 0, hi_out_e = 0; /* readiness output */
     if (nfds > 32) {
         if (rfds) hi_r = rfds[1];
         if (wfds) hi_w = wfds[1];
@@ -385,30 +388,30 @@ int tn_ipc_cmd_waitselect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             /* Read readiness */
             if (ir & mask) {
                 if (tn_select_can_read(s)) {
-                    if (hi) hi_r |= mask; else out_r |= mask;
+                    if (hi) hi_out_r |= mask; else out_r |= mask;
                     ready_cnt++;
                 }
             }
             /* Write readiness */
             if (iw & mask) {
                 if (tn_select_can_write(s)) {
-                    if (hi) hi_w |= mask; else out_w |= mask;
+                    if (hi) hi_out_w |= mask; else out_w |= mask;
                     ready_cnt++;
                 }
             }
             /* Exception readiness */
             if (ie & mask) {
                 if (tn_select_has_except(s)) {
-                    if (hi) hi_e |= mask; else out_e |= mask;
+                    if (hi) hi_out_e |= mask; else out_e |= mask;
                     ready_cnt++;
                 }
             }
         }
     }
 
-    if (rfds) *rfds = out_r;
-    if (wfds) *wfds = out_w;
-    if (efds) *efds = out_e;
+    if (rfds) { rfds[0] = out_r; if (nfds > 32) rfds[1] = hi_out_r; }
+    if (wfds) { wfds[0] = out_w; if (nfds > 32) wfds[1] = hi_out_w; }
+    if (efds) { efds[0] = out_e; if (nfds > 32) efds[1] = hi_out_e; }
 
     imsg->result = ready_cnt;
     imsg->err_no = 0;
