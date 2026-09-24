@@ -18,7 +18,7 @@
  * frees its message storage, so no late callback may touch these). The
  * lwIP DNS entry itself stays (no removal API in 2.2); its callback finds
  * no pending record and bails. Host-testable. */
-void tn_dns_cancel_for_base(TnDaemon *d, TnSocketBase *base)
+void tn_dns_cancel_for_base2(TnDaemon *d, TnSocketBase *base, int reply)
 {
     int p;
     for (p = 0; p < TN_DNS_PENDING_MAX; p++) {
@@ -40,10 +40,18 @@ void tn_dns_cancel_for_base(TnDaemon *d, TnSocketBase *base)
             if (pending != NULL) {
                 pending->result = 0;
                 pending->err_no = ECONNABORTED;
-                ReplyMsg((struct Message *)pending);
+                if (reply) {
+                    ReplyMsg((struct Message *)pending);
+                }
             }
         }
     }
+}
+
+/* Legacy entry: the CLOSE path (live client) replies. */
+void tn_dns_cancel_for_base(TnDaemon *d, TnSocketBase *base)
+{
+    tn_dns_cancel_for_base2(d, base, 1);
 }
 
 /* DNS callback from lwIP when asynchronous host lookup completes.

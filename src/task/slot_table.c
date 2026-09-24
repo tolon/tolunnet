@@ -649,7 +649,11 @@ void tn_slot_check_recv_timeouts(TnDaemon *d)
     }
 }
 
-void tn_recv_cancel_for_base(TnDaemon *d, TnSocketBase *base)
+/* z.ai step 5 item 2: when reap walks a DEAD client, the reply port
+ * belongs to a task that no longer exists - Signal() to it is UB.
+ * reply=0 clears pending state silently (reap path); reply=1 replies
+ * ECONNABORTED (the healthy CLOSE path). */
+void tn_recv_cancel_for_base2(TnDaemon *d, TnSocketBase *base, int reply)
 {
     int i;
     if (d == NULL || base == NULL) return;
@@ -662,10 +666,18 @@ void tn_recv_cancel_for_base(TnDaemon *d, TnSocketBase *base)
                 slot->recv_deadline_tick = 0;
                 rmsg->result = -1;
                 rmsg->err_no = ECONNABORTED;
-                ReplyMsg((struct Message *)rmsg);
+                if (reply) {
+                    ReplyMsg((struct Message *)rmsg);
+                }
             }
         }
     }
+}
+
+/* Legacy entry: the CLOSE path (live client) replies. */
+void tn_recv_cancel_for_base(TnDaemon *d, TnSocketBase *base)
+{
+    tn_recv_cancel_for_base2(d, base, 1);
 }
 
 void tn_slot_clear_owner_base(TnDaemon *d, const TnSocketBase *base)

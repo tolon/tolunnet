@@ -197,7 +197,51 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
             return -1;
         }
     } else {
-        WaitPort(base->reply_port);
+        /* z.ai step 5 item 1: blocking calls wake on the break mask
+         * (Roadshow semantics): SBTC_BREAKMASK (default SIGBREAKF_CTRL_C)
+         * -> -1 EINTR, and the in-flight parked/pending request is
+         * cancelled daemon-side via TN_IPC_CMD_CANCEL so it can never
+         * complete later into a freed message. */
+        ULONG break_mask = base->sig_int ? base->sig_int : SIGBREAKF_CTRL_C;
+        ULONG reply_sig = 1UL << base->reply_port->mp_SigBit;
+        ULONG fired2 = Wait(reply_sig | break_mask);
+        if (fired2 & break_mask) {
+            SetSignal(0, fired2 & break_mask);
+            {
+                /* CANCEL: args[0] = the in-flight message pointer */
+                TnIpcMsg cancel;
+                struct Message *early;
+                memset(&cancel, 0, sizeof(cancel));
+                cancel.msg.mn_Node.ln_Type = NT_MESSAGE;
+                cancel.msg.mn_ReplyPort = base->reply_port;
+                cancel.msg.mn_Length = sizeof(TnIpcMsg);
+                cancel.cmd = TN_IPC_CMD_CANCEL;
+                cancel.client_task = base->owner_task;
+                cancel.socket_base = (APTR)base;
+                cancel.args[0] = (LONG)(intptr_t)msg;
+                PutMsg(base->tolunnet_port, (struct Message *)&cancel);
+                /* wait for BOTH replies: ours (EINTR) and the CANCEL ack */
+                for (;;) {
+                    WaitPort(base->reply_port);
+                    early = GetMsg(base->reply_port);
+                    if (early == NULL) continue;
+                    if ((TnIpcMsg *)early == msg) {
+                        msg->result = -1;
+                        msg->err_no = EINTR;
+                    }
+                    /* the CANCEL ack (or an unexpected reply) is consumed
+                     * and dropped; loop until OUR message came back */
+                    if (early->mn_Node.ln_Type == NT_REPLYMSG &&
+                        (TnIpcMsg *)early != msg &&
+                        ((TnIpcMsg *)early)->cmd == TN_IPC_CMD_CANCEL) {
+                        continue; /* keep waiting for ours */
+                    }
+                    if ((TnIpcMsg *)early == msg) break;
+                }
+            }
+            tn_set_errno_val(base, EINTR);
+            return -1;
+        }
     }
     {
         /* The reply we GetMsg must be the message THIS call sent. A stale

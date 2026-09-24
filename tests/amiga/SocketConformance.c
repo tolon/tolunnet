@@ -133,6 +133,16 @@ static void snprintf_safe(char *buf, int size, const char *fmt, ...)
     va_end(ap);
 }
 
+static uintptr_t strtoul_ptr(const char *s)
+{
+    uintptr_t v = 0;
+    while (*s >= '0' && *s <= '9') {
+        v = v * 10 + (uintptr_t)(*s - '0');
+        s++;
+    }
+    return v;
+}
+
 static LONG parse_long(const char *s)
 {
     LONG res = 0;
@@ -6472,6 +6482,106 @@ static void tc_net_cmd_tftp(void)
     TAP_TODO("net_cmd_tftp", "red-baseline 20");
 }
 
+/* z.ai step 5 item 1: a recv parked on a silent TCP connection is
+ * interrupted by CTRL-C (break mask) within 2 s: -1/EINTR, and the
+ * daemon cancelled the parked message (a follow-up recv works). A
+ * helper child Signals the parent after 1 s. */
+static void tc_net_recv_ctrlc(void)
+{
+    LONG lst = -1, cli = -1, conn = -1;
+    struct sockaddr_in sin;
+    struct sockaddr_in from;
+    socklen_t fromlen = sizeof(from);
+    char buf[32];
+    LONG n;
+    int i;
+
+    /* listener on the loopback: accept, then never send */
+    lst = call_socket(AF_INET, SOCK_STREAM, 0);
+    if (lst < 0) { TAP_NOTOK("net_recv_ctrlc", "no listener"); return; }
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(23477);
+    sin.sin_addr.s_addr = htonl(0x7F000001UL);
+    if (call_bind(lst, (struct sockaddr *)&sin, sizeof(sin)) != 0 ||
+        call_listen(lst, 1) != 0) {
+        call_closesocket(lst);
+        TAP_NOTOK("net_recv_ctrlc", "bind/listen failed");
+        return;
+    }
+    cli = call_socket(AF_INET, SOCK_STREAM, 0);
+    if (cli < 0 || call_connect(cli, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+        call_closesocket(lst);
+        if (cli >= 0) call_closesocket(cli);
+        TAP_NOTOK("net_recv_ctrlc", "connect failed");
+        return;
+    }
+    conn = call_accept(lst, (struct sockaddr *)&from, &fromlen);
+    if (conn < 0) {
+        call_closesocket(lst); call_closesocket(cli);
+        TAP_NOTOK("net_recv_ctrlc", "accept failed");
+        return;
+    }
+    /* peer sends one byte so the parked recv has a live circuit but
+     * no full message; then it goes silent (never sends again) */
+    call_send(conn, "x", 1, 0);
+    if (!tc_cmd_wait_readable(cli)) {
+        call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+        TAP_NOTOK("net_recv_ctrlc", "seed byte lost");
+        return;
+    }
+    (void)call_recv(cli, buf, 1, 0);
+
+    /* helper child: Signal CTRL_C to us after ~1 s */
+    {
+        struct Task *me = FindTask((CONST_STRPTR)NULL);
+        char cmd[96];
+        LONG ret;
+        struct DateStamp ds;
+        ULONG t0, t1;
+        snprintf_safe(cmd, sizeof(cmd),
+                      "C:SocketConformance break_helper %ld", (LONG)(intptr_t)me);
+        SystemTags((CONST_STRPTR)cmd,
+                   SYS_Asynch, TRUE,
+                   SYS_Input, (BPTR)0,
+                   SYS_Output, (BPTR)0,
+                   TAG_END);
+        DateStamp(&ds);
+        t0 = (ULONG)ds.ds_Days * 86400UL * 50UL + (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
+        n = call_recv(cli, buf, sizeof(buf), 0);
+        DateStamp(&ds);
+        t1 = (ULONG)ds.ds_Days * 86400UL * 50UL + (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
+        ret = call_errno();
+        tapf("# net_recv_ctrlc: recv rc=%ld errno=%ld after %ld ticks\n", n, ret, (LONG)(t1 - t0));
+        if (n == -1 && ret == EINTR && (t1 - t0) <= 150UL) {
+            TAP_OK("net_recv_ctrlc");
+        } else {
+            TAP_NOTOK("net_recv_ctrlc", "expected -1/EINTR within ~2 s");
+        }
+    }
+
+    /* the daemon cancelled the parked message: a fresh recv must work */
+    {
+        LONG s2 = call_socket(AF_INET, SOCK_DGRAM, 0);
+        if (s2 < 0) {
+            TAP_NOTOK("net_recv_ctrlc", "post-CANCEL socket failed");
+        } else {
+            call_closesocket(s2);
+            tapf("# net_recv_ctrlc: post-CANCEL socket OK\n");
+        }
+    }
+    call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+}
+
+/* helper child mode: Signal CTRL_C to the parent after ~1 s */
+static void tc_break_helper_child(char *taskp)
+{
+    struct Task *t = (struct Task *)(unsigned long)strtoul_ptr(taskp);
+    Delay(50);
+    if (t != NULL) Signal(t, SIGBREAKF_CTRL_C);
+}
+
 /* z.ai step 4 item 4: Expunge must NOT remove the live library. Flush-
  * class AllocMem fails with a live daemon holding the library, so the
  * observable contract is: after a refused huge allocation, the library
@@ -6524,6 +6634,15 @@ int main(int argc, char *argv[])
 
     if (DOSBase == NULL) return 20;
 
+    /* child mode: break helper for net_recv_ctrlc */
+    if (argc >= 3 && strcmp(argv[1], "break_helper") == 0) {
+        struct Task *t = (struct Task *)(uintptr_t)strtoul_ptr(argv[2]);
+        Delay(50);
+        if (t != NULL) Signal(t, SIGBREAKF_CTRL_C);
+        CloseLibrary(DOSBase);
+        return 0;
+    }
+
     /* Child mode for cross-process obtain test */
     if (argc >= 3 && strcmp(argv[1], "child_obtain") == 0) {        LONG target_id = parse_long(argv[2]);
         BPTR out_fh;
@@ -6575,6 +6694,7 @@ int main(int argc, char *argv[])
     tapf("# tolunnet SocketConformance (Round 3 §B.2)\n");
     TN_RUN(tc_lib_open_close);
     TN_RUN(tc_lib_expunge_survives);
+    TN_RUN(tc_net_recv_ctrlc);
     TN_RUN(tc_socket_types);
     TN_RUN(tc_bind_udp);
     TN_RUN(tc_bind_reuse);

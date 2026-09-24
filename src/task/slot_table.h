@@ -47,6 +47,7 @@ int tn_slot_live_count(const TnDaemon *d);
 int tn_slot_park_recv(TnDaemon *d, TnSocketSlot *slot, TnIpcMsg *imsg);
 void tn_slot_check_recv_timeouts(TnDaemon *d);
 void tn_recv_cancel_for_base(TnDaemon *d, TnSocketBase *base);
+void tn_recv_cancel_for_base2(TnDaemon *d, TnSocketBase *base, int reply); /* z.ai step 5 item 2 */
 void tn_slot_clear_owner_base(TnDaemon *d, const TnSocketBase *base);
 
 #endif /* TOLUNNET_SLOT_TABLE_H */

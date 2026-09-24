@@ -29,6 +29,7 @@ def load_ports(path=DEFAULT_PORTS_FILE):
     ports = {
         "ECHO_PORT": 15007,
         "TCP_DELAY_PORT": 15009,
+        "SILENT_PORT": 15011,   # z.ai step 5: accepts, never sends
         "FTP_PORT": 15021,
         "FTP_PASV_PORT": 15020,
         "WHOIS_PORT": 15043,
@@ -171,6 +172,29 @@ def run_tcp_echo(port):
 
         t = threading.Thread(target=handler, args=(conn, addr), daemon=True)
         t.start()
+    srv.close()
+
+# ---------------------------------------------------------------------------
+# 2c. Silent TCP Server (z.ai step 5: accepts connections and never
+# sends - lets the suite prove Ctrl-C interrupts a parked recv)
+# ---------------------------------------------------------------------------
+def run_tcp_silent(port):
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("0.0.0.0", port))
+    srv.listen(8)
+    srv.settimeout(1.0)
+    log("tcp_silent", f"listening on TCP {port}")
+
+    while g_running:
+        try:
+            conn, addr = srv.accept()
+        except socket.timeout:
+            continue
+        except Exception:
+            break
+        log("tcp_silent", f"accepted from {a}, staying silent")
+        # hold the connection open, never send
     srv.close()
 
 # ---------------------------------------------------------------------------
@@ -491,7 +515,7 @@ def run_http(port):
 def check_ports_free(ports):
     busy = []
     # Check TCP
-    for name in ("TCP_DELAY_PORT", "FTP_PORT", "FTP_PASV_PORT", "WHOIS_PORT", "HTTP_PORT", "ECHO_PORT"):
+    for name in ("TCP_DELAY_PORT", "FTP_PORT", "FTP_PASV_PORT", "WHOIS_PORT", "HTTP_PORT", "ECHO_PORT", "SILENT_PORT"):
         p = ports[name]
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
@@ -520,7 +544,7 @@ def check_ports_free(ports):
 
 def probe_readiness(ports, timeout=5.0):
     start = time.time()
-    tcp_ports = [ports["TCP_DELAY_PORT"], ports["FTP_PORT"], ports["WHOIS_PORT"], ports["HTTP_PORT"], ports["ECHO_PORT"]]
+    tcp_ports = [ports["TCP_DELAY_PORT"], ports["FTP_PORT"], ports["WHOIS_PORT"], ports["HTTP_PORT"], ports["ECHO_PORT"], ports["SILENT_PORT"]]
     while time.time() - start < timeout:
         all_ok = True
         for p in tcp_ports:
@@ -585,6 +609,7 @@ def main():
         threading.Thread(target=run_tcp_delay, args=(ports["TCP_DELAY_PORT"],), daemon=True),
         threading.Thread(target=run_udp_echo, args=(ports["ECHO_PORT"],), daemon=True),
         threading.Thread(target=run_tcp_echo, args=(ports["ECHO_PORT"],), daemon=True),
+        threading.Thread(target=run_tcp_silent, args=(ports["SILENT_PORT"],), daemon=True),
         threading.Thread(target=run_sntp, args=(ports["SNTP_PORT"],), daemon=True),
         threading.Thread(target=run_tftp, args=(ports["TFTP_PORT"],), daemon=True),
         threading.Thread(target=run_ftp, args=(ports["FTP_PORT"], ports["FTP_PASV_PORT"]), daemon=True),

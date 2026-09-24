@@ -112,7 +112,9 @@ static int tn_reap_dead_clients(TnDaemon *d)
                     base->owner_task);
             memset(&fake, 0, sizeof(fake));
             fake.socket_base = (APTR)base;
-            tn_ipc_cmd_close(d, &fake, NULL); /* cancels DNS, unrefs, disarms, unregisters */
+            tn_dns_cancel_for_base2(d, base, 0);  /* dead client: NO ReplyMsg (z.ai step 5 item 2) */
+            tn_recv_cancel_for_base2(d, base, 0); /* " */
+            tn_ipc_cmd_close(d, &fake, NULL); /* unrefs fds, disarms selectors, unregisters */
             Forbid();
             if (d->bsd_lib != NULL && d->bsd_lib->lib_OpenCnt > 0) {
                 d->bsd_lib->lib_OpenCnt--;

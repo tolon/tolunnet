@@ -260,6 +260,68 @@ int tn_ipc_cmd_stop(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     return TN_IPC_DEFER;
 }
 
+/* z.ai step 5 item 1: cancel an in-flight request. args[0] = the client's
+ * TnIpcMsg pointer. Searches every pending bucket; the found message is
+ * replied EINTR, then the CANCEL itself is replied so the client can
+ * safely free both. */
+int tn_ipc_cmd_cancel(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
+{
+    TnIpcMsg *target;
+    int s;
+
+    (void)slot;
+    if (d == NULL || imsg == NULL) return TN_IPC_REPLY_NOW;
+    target = (TnIpcMsg *)(unsigned long)imsg->args[0];
+
+    for (s = 0; s < TN_MAX_GLOBAL_SOCKETS; s++) {
+        TnSocketSlot *sl = &d->sockets[s];
+        if (!sl->in_use) continue;
+        if (sl->pending_recv_msg == target) {
+            sl->pending_recv_msg = NULL;
+            target->result = -1;
+            target->err_no = EINTR;
+            ReplyMsg((struct Message *)target);
+            goto done;
+        }
+        if (sl->pending_connect_msg == target) {
+            sl->pending_connect_msg = NULL;
+            target->result = -1;
+            target->err_no = EINTR;
+            ReplyMsg((struct Message *)target);
+            goto done;
+        }
+        if (sl->pending_accept_msg == target) {
+            sl->pending_accept_msg = NULL;
+            target->result = -1;
+            target->err_no = EINTR;
+            ReplyMsg((struct Message *)target);
+            goto done;
+        }
+    }
+    /* DNS pending bucket */
+    {
+        int p;
+        for (p = 0; p < TN_DNS_PENDING_MAX; p++) {
+            if (d->dns_pending[p].in_use && d->dns_pending[p].imsg == target) {
+                d->dns_pending[p].in_use = 0;
+                d->dns_pending[p].imsg = NULL;
+                d->dns_pending[p].base = NULL;
+                if (d->dns_pending_count > 0) d->dns_pending_count--;
+                target->result = -1;
+                target->err_no = EINTR;
+                ReplyMsg((struct Message *)target);
+                goto done;
+            }
+        }
+    }
+    /* Not found: it completed between the client's break and the CANCEL.
+     * The client already has (or will drain) the real reply; just ack. */
+done:
+    imsg->result = 0;
+    imsg->err_no = 0;
+    return TN_IPC_REPLY_NOW;
+}
+
 int tn_ipc_cmd_enumsockets(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
     LONG max_entries = imsg->args[0];

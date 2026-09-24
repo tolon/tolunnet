@@ -105,7 +105,8 @@ typedef enum TnIpcCmd {
     TN_IPC_CMD_GETSTATS,        /* Query stack telemetry and statistics (§F) */
     TN_IPC_CMD_ROUTECTL,        /* CLOSE §B.5: static route SHOW/ADD/DELETE (route) */
     TN_IPC_CMD_IFCTL,           /* CLOSE §B.7: interface LIST/UP/DOWN/SET (AddNetInterface/Online/Offline) */
-    TN_IPC_CMD_STOP             /* RC3/TNET-152: robust daemon stop (signal path is unreliable in exec) */
+    TN_IPC_CMD_STOP,            /* RC3/TNET-152: robust daemon stop (signal path is unreliable in exec) */
+    TN_IPC_CMD_CANCEL           /* z.ai step 5 item 1: cancel an in-flight parked/pending msg (args[0]=msg ptr) */
 } TnIpcCmd;
 
 /* Interface row for TN_IPC_CMD_IFCTL LIST replies (CLOSE §B.7).
