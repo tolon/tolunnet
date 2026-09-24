@@ -221,8 +221,9 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
                         ULONG break_mask2 = base->sig_int ? base->sig_int : SIGBREAKF_CTRL_C;
                         fired = Wait(reply_sig | tm_sig | break_mask2);
                         if (fired & break_mask2) {
-                            /* [auto] same Roadshow rule: leave the break
-                             * bit set for the application's CheckSignal. */
+                            /* Wait() cleared the wake bits; restore the
+                             * break bits (same Roadshow rule). */
+                            SetSignal(fired & break_mask2, 0);
                             tn_ipc_cancel_inflight(base, msg);
                             if (heap_msg != NULL) {
                                 FreeVec(heap_msg); /* replied to us; safe now */
@@ -276,6 +277,9 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
         ULONG reply_sig = 1UL << base->reply_port->mp_SigBit;
         ULONG fired2 = Wait(reply_sig | break_mask);
         if (fired2 & break_mask) {
+            /* Exec Wait() clears the bits it wakes on — re-set the break
+             * bits so CheckSignal() still sees them (see [auto] below). */
+            SetSignal(fired2 & break_mask, 0);
             /* [auto] z.ai step 6 item 3 — Roadshow SDK 1.8 autodoc,
              * SocketBaseTags/SBTC_BREAKMASK: "specifies the signal that is
              * used to abort a blocking library call" — the library ABORTS
