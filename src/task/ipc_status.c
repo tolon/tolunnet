@@ -240,11 +240,19 @@ int tn_ipc_cmd_stop(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     imsg->result = 0;
     imsg->err_no = 0;
     if (d->bsd_lib != NULL && d->bsd_lib->lib_OpenCnt > 0) {
-        /* TNET-059 semantics preserved: refuse while clients are open.
-         * The refusal is reported so callers can reap/close first. */
-        imsg->result = -1;
-        imsg->err_no = EBUSY;
-        return TN_IPC_REPLY_NOW;
+        /* z.ai step 7 item 6: reap dead clients FIRST; a genuinely live
+         * holder still refuses with EBUSY — and the refusal is replied
+         * immediately (never left parked), so a repeated STOP cannot
+         * overwrite or orphan the first stop_msg. */
+        {
+            extern int tn_reap_dead_clients_public(TnDaemon *d); /* daemon_main.c */
+            tn_reap_dead_clients_public(d);
+        }
+        if (d->bsd_lib != NULL && d->bsd_lib->lib_OpenCnt > 0) {
+            imsg->result = -1;
+            imsg->err_no = EBUSY;
+            return TN_IPC_REPLY_NOW;
+        }
     }
     /* TNET-152: defer the reply until after RemPort and SANA-II CloseDevice,
      * so the caller only wakes up when hardware and ports are 100% released.

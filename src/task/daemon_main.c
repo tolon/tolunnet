@@ -93,6 +93,7 @@ static BOOL tn_task_alive(struct Task *t)
 /* TNET-150 item 6: name every live holder; run the CLOSE path (cancel
  * pending DNS, unref fds, disarm selectors) for bases whose task is gone
  * and decrement the root open count. Returns the number reaped. */
+int tn_reap_dead_clients_clients_shim(void);
 static int tn_reap_dead_clients(TnDaemon *d)
 {
     int b, reaped = 0;
@@ -114,6 +115,19 @@ static int tn_reap_dead_clients(TnDaemon *d)
             fake.socket_base = (APTR)base;
             tn_dns_cancel_for_base2(d, base, 0);  /* dead client: NO ReplyMsg (z.ai step 5 item 2) */
             tn_recv_cancel_for_base2(d, base, 0); /* " */
+            /* z.ai step 7 item 6: parked accept/connect messages are also
+             * cleared silently — their reply ports belong to the dead task. */
+            {
+                int si;
+                for (si = 0; si < TN_MAX_GLOBAL_SOCKETS; si++) {
+                    TnSocketSlot *sl = &d->sockets[si];
+                    if (sl->in_use && sl->owner_base == base) {
+                        sl->pending_connect_msg = NULL;
+                        sl->pending_accept_msg = NULL;
+                        sl->pending_recv_msg = NULL;
+                    }
+                }
+            }
             tn_ipc_cmd_close(d, &fake, NULL); /* unrefs fds, disarms selectors, unregisters */
             Forbid();
             if (d->bsd_lib != NULL && d->bsd_lib->lib_OpenCnt > 0) {
@@ -125,6 +139,12 @@ static int tn_reap_dead_clients(TnDaemon *d)
     }
     return reaped;
 }
+/* z.ai step 7 item 6: public entry for the IPC STOP handler. */
+int tn_reap_dead_clients_public(TnDaemon *d)
+{
+    return tn_reap_dead_clients(d);
+}
+
 
 /* Real lwIP autoip_start declared without macro expansion */
 err_t (autoip_start)(struct netif *netif);
@@ -1075,11 +1095,51 @@ int main(int argc, char *argv[])
             }
         }
 
-        g_cli_device  = (const char *)opts[OPT_DEVICE];
-        g_cli_unit    = (const LONG *)opts[OPT_UNIT];
-        g_cli_ip      = (const char *)opts[OPT_IP];
-        g_cli_netmask = (const char *)opts[OPT_NETMASK];
-        g_cli_gateway = (const char *)opts[OPT_GATEWAY];
+        /* z.ai step 7 item 6: FreeArgs invalidates the opts[] string
+         * pointers — copy the values into static storage BEFORE freeing,
+         * otherwise the later tn_task_real_main reads freed memory. */
+        {
+            static char cli_dev_buf[40];
+            static char cli_ip_buf[24];
+            static char cli_nm_buf[24];
+            static char cli_gw_buf[24];
+            static LONG cli_unit_val;
+            const char *dsrc = (const char *)opts[OPT_DEVICE];
+            if (dsrc != NULL) {
+                int k = 0;
+                while (dsrc[k] != 0 && k < (int)sizeof(cli_dev_buf) - 1) {
+                    cli_dev_buf[k] = dsrc[k];
+                    k++;
+                }
+                cli_dev_buf[k] = 0;
+                g_cli_device = cli_dev_buf;
+            }
+            if (opts[OPT_UNIT] != NULL) {
+                cli_unit_val = *(const LONG *)opts[OPT_UNIT];
+                g_cli_unit = &cli_unit_val;
+            }
+            if (opts[OPT_IP] != NULL) {
+                int k = 0;
+                const char *v = (const char *)opts[OPT_IP];
+                while (v[k] != 0 && k < (int)sizeof(cli_ip_buf) - 1) { cli_ip_buf[k] = v[k]; k++; }
+                cli_ip_buf[k] = 0;
+                g_cli_ip = cli_ip_buf;
+            }
+            if (opts[OPT_NETMASK] != NULL) {
+                int k = 0;
+                const char *v = (const char *)opts[OPT_NETMASK];
+                while (v[k] != 0 && k < (int)sizeof(cli_nm_buf) - 1) { cli_nm_buf[k] = v[k]; k++; }
+                cli_nm_buf[k] = 0;
+                g_cli_netmask = cli_nm_buf;
+            }
+            if (opts[OPT_GATEWAY] != NULL) {
+                int k = 0;
+                const char *v = (const char *)opts[OPT_GATEWAY];
+                while (v[k] != 0 && k < (int)sizeof(cli_gw_buf) - 1) { cli_gw_buf[k] = v[k]; k++; }
+                cli_gw_buf[k] = 0;
+                g_cli_gateway = cli_gw_buf;
+            }
+        }
 
         FreeArgs(rdargs);
     } else {
