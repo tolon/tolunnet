@@ -1,0 +1,120 @@
+# tolunnet SocketConformance (Round 3 §B.2)
+ok 1 - tc_lib_open_close
+ok 2 - tc_lib_expunge_survives
+# net_recv_ctrlc: CTRL_C was CLEARED by the library (bug)
+# net_recv_ctrlc: recv rc=-1 errno=4 after 62 ticks
+ok 3 - net_recv_ctrlc
+# net_recv_ctrlc: post-CANCEL socket OK
+ok 4 - tc_socket_types
+ok 5 - tc_bind_udp
+ok 6 - tc_bind_reuse
+ok 7 - tc_sockopt_matrix
+ok 8 - tc_multicast_join
+ok 9 - tc_ioctl_ifconf
+ok 10 - tc_ioctl_fionread
+ok 11 - tc_listen_accept_loopback
+ok 12 - tc_connect_refused
+# TIMEOUT: ipc watchdog fired during tc_connect_refused
+# tc_nonblock_connect: rc=-1 errno=36 EINPROGRESS=36
+# tc_nonblock_connect: calling waitselect s=1
+# tc_nonblock_connect: waitselect returned 1 errno=36
+ok 13 - tc_nonblock_connect
+ok 14 - tc_shutdown_wr
+ok 15 - tc_getpeername
+ok 16 - tc_dns_a # SKIP external
+ok 17 - tc_dns_local
+ok 18 - tc_dns_fail
+ok 19 - tc_errno_ptr
+ok 20 - tc_dup2
+ok 21 - tc_waitselect_timeout
+ok 22 - tc_waitselect_eintr
+ok 23 - tc_waitselect_badf
+ok 24 - tc_waitselect_no_sigio
+ok 25 - tc_sigio
+ok 26 - tc_icmp_raw
+ok 27 - tc_sendmsg_iov
+# control: send=100 waitselect=1 recv=100
+# waitselect_rc=1 recv_rc=100 errno=45 retries=1
+ok 28 - tc_tcp_scatter_tnet115
+ok 29 - tc_recv_peek
+ok 30 - tc_socket_events
+ok 31 - tc_sbtc_full
+ok 32 - tc_release_obtain
+ok 33 - tc_every_vector_callable
+ok 34 - tc_stats_counters
+ok 35 - tc_wizard_wired
+# tc_wizard_ntsc: SystemTags TolunnetPrefs rc=0
+# tc_wizard_ntsc: pwait=100 pwin=0 pscr=0
+ok 36 - tc_wizard_ntsc
+ok 37 - tc_wifi_scan_parse
+ok 38 - tc_reconfig_rc
+ok 39 - tc_probe_after_wizard_wired
+ok 40 - tc_probe_after_wizard_ntsc
+ok 41 - tc_probe_after_wifi_scan
+ok 42 - tc_probe_after_reconfig
+ok 43 - tc_link_events # SKIP link flip not enabled for this driver (create WORK:linktest-on)
+ok 44 - tc_cmd_hostname
+ok 45 - tc_cmd_nslookup
+ok 46 - tc_cmd_whois
+ok 47 - tc_cmd_traceroute
+ok 48 - tc_cmd_nc
+ok 49 - tc_cmd_sntp
+ok 50 - tc_cmd_telnet
+ok 51 - tc_cmd_tftp
+ok 52 - tc_cmd_ftp
+# tc_cmd_arp: gateway ARP resolves here: yes
+ok 53 - tc_cmd_arp
+ok 54 - tc_cmd_shownetstatus
+ok 55 - tc_cmd_tolunnetcontrol
+ok 56 - tc_cmd_getnetstatus
+# iperf loopback: 492912 bytes in ~2s = 4930 KB/s
+ok 57 - tc_iperf_loopback
+ok 58 - tc_cmd_ifctl
+ok 59 - tc_cmd_netshutdown
+ok 60 - tc_cmd_route
+ok 61 - tc_usergroup
+ok 62 - tc_install_script
+ok 63 - net_tcp_blocking_recv
+ok 64 - net_udp_connected_send
+ok 65 - net_udp_unconnected_send
+ok 66 - net_udp_connected_sendto_eisconn
+ok 67 - net_tcp_unconnected_recvfrom
+ok 68 - net_tcp_connected_recvfrom
+ok 69 - net_tcp_unconnected_sendto
+ok 70 - net_tcp_connected_sendto_ignored_to
+ok 71 - net_tcp_shutdown_sendto_epipe
+nc: invalid port
+# net_cmd_nc: RunCommand rc=20
+not ok 72 - net_cmd_nc # TODO red-baseline 18
+Connecting to 10.0.2.2...
+whois: connect failed (errno=61)
+# net_cmd_whois: RunCommand rc=10
+not ok 73 - net_cmd_whois # TODO red-baseline 19
+# net_cmd_telnet: C:telnet missing
+not ok 74 - net_cmd_telnet # TODO red-baseline 18
+# net_inet_ntoa: C:nslookup missing
+not ok 75 - net_inet_ntoa # TODO red-baseline 19
+# net_cmd_wget: content mismatch len=17 (want 18)
+not ok 76 - net_cmd_wget # TODO red-baseline 21
+ftp: connect failed
+# net_cmd_ftp: content mismatch len=-1 (want 17)
+not ok 77 - net_cmd_ftp # TODO red-baseline 21
+sntp: querying 10.0.2.2...
+sntp: send failed (errno=39)
+# net_cmd_sntp: RunCommand rc=10 (expected 0)
+not ok 78 - net_cmd_sntp # TODO red-baseline 18
+ok 79 - net_cmd_traceroute
+# net_cmd_tftp: recvfrom got=21
+not ok 80 - net_cmd_tftp # TODO red-baseline 20
+TolunnetControl: STOP...
+# tc_cmd_stop_start: post-refusal TCP loopback OK (timers alive)
+tolunnet: cannot stop daemon: clients still open (EBUSY)
+TolunnetControl: STOP...
+tolunnet: daemon stopped
+TolunnetControl: starting C:tolunnet...
+tolunnet: daemon started in background (32 KB stack)
+TolunnetControl: STOP...
+ok 81 - tc_cmd_stop_start
+tolunnet: daemon stopped
+1..81
+# bench: asking daemon to stop (restart-cycle proof)
