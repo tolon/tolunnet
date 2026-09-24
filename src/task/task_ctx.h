@@ -142,6 +142,7 @@ typedef struct TnSocketSlot {
 
     /* Level IPPROTO_TCP options */
     BOOL            opt_nodelay;
+    u16_t           opt_mss;            /* z.ai step 7 item 5: slot-stored MSS (listening pcbs) */
     int             opt_keepidle;
     int             opt_keepintvl;
     int             opt_keepcnt;

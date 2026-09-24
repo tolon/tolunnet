@@ -143,6 +143,7 @@ static void tn_init_socket_slot(TnSocketSlot *s, TnSocketBase *base, struct Task
 
     /* Level IPPROTO_TCP options */
     s->opt_nodelay         = FALSE;
+    s->opt_mss             = 0;    /* z.ai step 7 item 5: 0 = not set */
     s->opt_keepidle        = 7200;
     s->opt_keepintvl       = 75;
     s->opt_keepcnt         = 9;

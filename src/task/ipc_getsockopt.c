@@ -150,19 +150,23 @@ int tn_ipc_cmd_getsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             break;
 
         case TCP_MAXSEG:
-            WRITE_OPT_INT((slot->tcp_pcb != NULL) ? (int)slot->tcp_pcb->mss : TCP_MSS);
+            if (slot->tcp_state == TN_TCP_STATE_LISTENING) {
+                WRITE_OPT_INT(slot->opt_mss ? (int)slot->opt_mss : TCP_MSS);
+            } else {
+                WRITE_OPT_INT((slot->tcp_pcb != NULL) ? (int)slot->tcp_pcb->mss : TCP_MSS);
+            }
             break;
 
         case TCP_KEEPIDLE:
-            WRITE_OPT_INT((slot->tcp_pcb != NULL) ? (int)(slot->tcp_pcb->keep_idle / 1000UL) : slot->opt_keepidle);
+            WRITE_OPT_INT((slot->tcp_state != TN_TCP_STATE_LISTENING && slot->tcp_pcb != NULL) ? (int)(slot->tcp_pcb->keep_idle / 1000UL) : slot->opt_keepidle);
             break;
 
         case TCP_KEEPINTVL:
-            WRITE_OPT_INT((slot->tcp_pcb != NULL) ? (int)(slot->tcp_pcb->keep_intvl / 1000UL) : slot->opt_keepintvl);
+            WRITE_OPT_INT((slot->tcp_state != TN_TCP_STATE_LISTENING && slot->tcp_pcb != NULL) ? (int)(slot->tcp_pcb->keep_intvl / 1000UL) : slot->opt_keepintvl);
             break;
 
         case TCP_KEEPCNT:
-            WRITE_OPT_INT((slot->tcp_pcb != NULL) ? (int)slot->tcp_pcb->keep_cnt : slot->opt_keepcnt);
+            WRITE_OPT_INT((slot->tcp_state != TN_TCP_STATE_LISTENING && slot->tcp_pcb != NULL) ? (int)slot->tcp_pcb->keep_cnt : slot->opt_keepcnt);
             break;
 
         default:

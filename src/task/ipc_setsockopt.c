@@ -208,7 +208,11 @@ int tn_ipc_cmd_setsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                 return 0;
             }
             slot->opt_nodelay = (tn_load_opt_int(optval) != 0);
-            if (slot->tcp_pcb != NULL) {
+            /* z.ai step 7 item 5: while LISTENING, slot->tcp_pcb is a
+             * tcp_pcb_listen — Nagle flags exist there, but keep the rule
+             * uniform: pcb application happens on accepted connections
+             * (passive-open copies slot options via the new_pcb path). */
+            if (slot->tcp_state != TN_TCP_STATE_LISTENING && slot->tcp_pcb != NULL) {
                 if (slot->opt_nodelay) {
                     tcp_nagle_disable(slot->tcp_pcb);
                 } else {
@@ -225,7 +229,13 @@ int tn_ipc_cmd_setsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             }
             {
                 int mss = tn_load_opt_int(optval);
-                if (mss > 0 && slot->tcp_pcb != NULL) {
+                if (mss > 0) {
+                    slot->opt_mss = (u16_t)mss;
+                }
+                /* z.ai step 7 item 5: never write mss into a LISTEN pcb —
+                 * tcp_pcb_listen has no mss field (out-of-bounds). */
+                if (mss > 0 && slot->tcp_pcb != NULL &&
+                    slot->tcp_state != TN_TCP_STATE_LISTENING) {
                     slot->tcp_pcb->mss = (u16_t)mss;
                 }
             }

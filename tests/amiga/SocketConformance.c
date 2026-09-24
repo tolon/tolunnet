@@ -6489,6 +6489,73 @@ static void tc_net_cmd_tftp(void)
     TAP_TODO("net_cmd_tftp", "red-baseline 20");
 }
 
+/* z.ai step 7 item 5: options on a LISTENING socket must be stored in
+ * the slot only (the listen pcb has no mss/keep fields) and accepted
+ * connections must still work end to end afterwards. */
+static void tc_listen_setsockopt(void)
+{
+    LONG lst = call_socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in sin;
+    int one = 1;
+    int mss = 512;
+    LONG conn = -1, cli = -1;
+    int i;
+
+    if (lst < 0) { TAP_NOTOK("tc_listen_setsockopt", "no socket"); return; }
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(23591);
+    sin.sin_addr.s_addr = htonl(0x7F000001UL);
+    if (call_bind(lst, (struct sockaddr *)&sin, sizeof(sin)) != 0 ||
+        call_listen(lst, 1) != 0) {
+        call_closesocket(lst);
+        TAP_NOTOK("tc_listen_setsockopt", "bind/listen failed");
+        return;
+    }
+    /* options ON the listening socket: TCP_NODELAY + TCP_MAXSEG */
+    if (call_setsockopt(lst, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)) != 0 ||
+        call_setsockopt(lst, IPPROTO_TCP, TCP_MAXSEG, &mss, sizeof(mss)) != 0) {
+        call_closesocket(lst);
+        TAP_NOTOK("tc_listen_setsockopt", "setsockopt on listening socket failed");
+        return;
+    }
+    /* accepted connection works end to end afterwards */
+    cli = call_socket(AF_INET, SOCK_STREAM, 0);
+    if (cli < 0 || call_connect(cli, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+        call_closesocket(lst);
+        if (cli >= 0) call_closesocket(cli);
+        TAP_NOTOK("tc_listen_setsockopt", "connect failed");
+        return;
+    }
+    {
+        struct sockaddr_in from;
+        socklen_t fromlen = sizeof(from);
+        conn = call_accept(lst, (struct sockaddr *)&from, &fromlen);
+    }
+    if (conn < 0) {
+        call_closesocket(lst); call_closesocket(cli);
+        TAP_NOTOK("tc_listen_setsockopt", "accept failed");
+        return;
+    }
+    if (call_send(cli, "ok", 2, 0) != 2 || !tc_cmd_wait_readable(conn) ||
+        call_recv(conn, (void *)0, 0, 0) != 0) {
+        /* recv probe: only readability matters here */
+    }
+    {
+        char pbuf[4];
+        LONG got = call_recv(conn, pbuf, sizeof(pbuf), 0);
+        if (got != 2) {
+            tapf("# tc_listen_setsockopt: data got=%ld errno=%ld\n", got, call_errno());
+            call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+            TAP_NOTOK("tc_listen_setsockopt", "data path broken after listen setsockopt");
+            return;
+        }
+    }
+    call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+    TAP_OK("tc_listen_setsockopt");
+}
+
 /* z.ai step 6 item 4: WaitSelect must see fds beyond bit 31. Open 40
  * UDP dummies (fds 0-39), then a bound pair on fd 40/41; select on the
  * fd 40 socket (nfds=41) after data arrives -> 1 with bit 40 set. */
@@ -6786,6 +6853,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_lib_open_close);
     TN_RUN(tc_lib_expunge_survives);
     TN_RUN(tc_waitselect_fd40);
+    TN_RUN(tc_listen_setsockopt);
     TN_RUN(tc_net_recv_ctrlc);
     TN_RUN(tc_socket_types);
     TN_RUN(tc_bind_udp);
