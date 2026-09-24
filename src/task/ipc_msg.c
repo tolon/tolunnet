@@ -122,10 +122,18 @@ int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
          * data can flow. Multiple output+drain rounds ensure the full
          * exchange (data → server recv → ACK → client) completes. */
         {
+            /* z.ai step 7 item 4: re-check the pcb each round — the drain
+             * can RST the connection and NULL slot->tcp_pcb. */
             int flush_i;
             for (flush_i = 0; flush_i < 4; flush_i++) {
+                if (slot->tcp_pcb == NULL) break;
                 tcp_output(slot->tcp_pcb);
                 tn_drain_loopback();
+            }
+            if (slot->tcp_pcb == NULL) {
+                imsg->result = -1;
+                imsg->err_no = ECONNRESET;
+                return 0;
             }
         }
         imsg->result = (LONG)sent_bytes;

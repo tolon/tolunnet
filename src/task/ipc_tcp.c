@@ -508,9 +508,22 @@ int tn_ipc_cmd_send(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
         tcp_output(slot->tcp_pcb);
         tn_drain_loopback();
+        /* z.ai step 7 item 4: the drain can RST the pcb (slot->tcp_pcb
+         * becomes NULL via the error callback) — re-check before the
+         * second output. */
+        if (slot->tcp_pcb == NULL) {
+            imsg->result = -1;
+            imsg->err_no = ECONNRESET;
+            return 0;
+        }
         /* TNET-115: second output after drain clears Nagle blocks */
         tcp_output(slot->tcp_pcb);
         tn_drain_loopback();
+        if (slot->tcp_pcb == NULL) {
+            imsg->result = -1;
+            imsg->err_no = ECONNRESET;
+            return 0;
+        }
         imsg->result = (LONG)send_len;
         imsg->err_no = 0;
         return 0;
