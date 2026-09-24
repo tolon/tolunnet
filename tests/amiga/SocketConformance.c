@@ -242,6 +242,11 @@ static ULONG tc_cfg_ip(const char *key, ULONG def)
  * reply fails the blocked call with ETIMEDOUT and is flagged here. */
 #define TN_RUN(tc) do { \
     uint32_t tn_wd0 = (SocketBase != NULL) ? ((TnSocketBase *)SocketBase)->ipc_timeouts : 0; \
+    if ((SetSignal(0, 0) & SIGBREAKF_CTRL_C) != 0) { \
+        g_count++; g_not_ok_count++; \
+        tapf("not ok %d - %s # stray CTRL_C before test\n", g_count, #tc); \
+        SetSignal(0, SIGBREAKF_CTRL_C); \
+    } \
     tc(); \
     if (SocketBase != NULL && ((TnSocketBase *)SocketBase)->ipc_timeouts > tn_wd0) { \
         tapf("# TIMEOUT: ipc watchdog fired during %s\n", #tc); \
@@ -6632,6 +6637,10 @@ static void tc_net_recv_ctrlc(void)
                 TAP_NOTOK("net_recv_ctrlc", "break bit not preserved after EINTR");
             }
         }
+        /* z.ai step 7b item 1: clear CTRL_C after the assertions so the
+         * pending bit does not leak into later tests (a real program
+         * would consume it via CheckSignal and exit). */
+        SetSignal(0, SIGBREAKF_CTRL_C);
         DateStamp(&ds);
         t1 = (ULONG)ds.ds_Days * 86400UL * 50UL + (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
         ret = call_errno();
