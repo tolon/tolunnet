@@ -171,7 +171,41 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
                 tm->tr_time.tv_micro   = (budget_ms % 1000) * 1000;
                 SendIO((struct IORequest *)tm);
 
-                fired = Wait(reply_sig | tm_sig);
+                /* z.ai step 5 item 1: the break mask wakes the watchdog
+                 * wait too (conformance arms ipc_timeout_ms, so parked
+                 * recvs live HERE, not in the WaitPort branch). */
+                {
+                    ULONG break_mask2 = base->sig_int ? base->sig_int : SIGBREAKF_CTRL_C;
+                    fired = Wait(reply_sig | tm_sig | break_mask2);
+                    if (fired & break_mask2) {
+                        SetSignal(0, fired & break_mask2);
+                        {
+                            TnIpcMsg cancel;
+                            struct Message *early;
+                            memset(&cancel, 0, sizeof(cancel));
+                            cancel.msg.mn_Node.ln_Type = NT_MESSAGE;
+                            cancel.msg.mn_ReplyPort = base->reply_port;
+                            cancel.msg.mn_Length = sizeof(TnIpcMsg);
+                            cancel.cmd = TN_IPC_CMD_CANCEL;
+                            cancel.client_task = base->owner_task;
+                            cancel.socket_base = (APTR)base;
+                            cancel.args[0] = (LONG)(intptr_t)msg;
+                            PutMsg(base->tolunnet_port, (struct Message *)&cancel);
+                            for (;;) {
+                                WaitPort(base->reply_port);
+                                early = GetMsg(base->reply_port);
+                                if (early == NULL) continue;
+                                if ((TnIpcMsg *)early == msg) {
+                                    msg->result = -1;
+                                    msg->err_no = EINTR;
+                                    break;
+                                }
+                            }
+                        }
+                        tn_set_errno_val(base, EINTR);
+                        return -1;
+                    }
+                }
 
                 if (!CheckIO((struct IORequest *)tm)) {
                     AbortIO((struct IORequest *)tm);
