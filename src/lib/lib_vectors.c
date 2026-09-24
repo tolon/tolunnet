@@ -75,6 +75,42 @@ static ULONG tn_ticks_now(void)
            (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
 }
 
+static void tn_ipc_cancel_inflight(TnSocketBase *base, TnIpcMsg *msg)
+{
+    TnIpcMsg *cancel;
+    int got_msg = 0, got_cancel = 0;
+
+    if (base->ipc_cancel_msg == NULL) {
+        base->ipc_cancel_msg = AllocVec(sizeof(TnIpcMsg), MEMF_CLEAR | MEMF_PUBLIC);
+    }
+    cancel = (TnIpcMsg *)base->ipc_cancel_msg;
+    if (cancel == NULL) return;
+
+    cancel->msg.mn_Node.ln_Type = NT_MESSAGE;
+    cancel->msg.mn_ReplyPort    = base->reply_port;
+    cancel->msg.mn_Length       = sizeof(TnIpcMsg);
+    cancel->cmd                 = TN_IPC_CMD_CANCEL;
+    cancel->client_task         = base->owner_task;
+    cancel->socket_base         = (APTR)base;
+    cancel->args[0]             = (LONG)(intptr_t)msg;
+    PutMsg(base->tolunnet_port, (struct Message *)cancel);
+
+    while (!got_msg || !got_cancel) {
+        struct Message *early;
+        WaitPort(base->reply_port);
+        early = GetMsg(base->reply_port);
+        if (early == NULL) continue;
+        if ((TnIpcMsg *)early == msg) {
+            msg->result = -1;
+            msg->err_no = EINTR;
+            got_msg = 1;
+        } else if ((TnIpcMsg *)early == cancel) {
+            got_cancel = 1;
+        }
+        /* foreign replies stay dropped: they belong to earlier orphans */
+    }
+}
+
 static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd);
 static BOOL tn_ensure_timer(TnSocketBase *base);
 
@@ -175,37 +211,19 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
                  * wait too (conformance arms ipc_timeout_ms, so parked
                  * recvs live HERE, not in the WaitPort branch). */
                 {
-                    ULONG break_mask2 = base->sig_int ? base->sig_int : SIGBREAKF_CTRL_C;
-                    fired = Wait(reply_sig | tm_sig | break_mask2);
-                    if (fired & break_mask2) {
-                        SetSignal(0, fired & break_mask2);
-                        {
-                            TnIpcMsg cancel;
-                            struct Message *early;
-                            memset(&cancel, 0, sizeof(cancel));
-                            cancel.msg.mn_Node.ln_Type = NT_MESSAGE;
-                            cancel.msg.mn_ReplyPort = base->reply_port;
-                            cancel.msg.mn_Length = sizeof(TnIpcMsg);
-                            cancel.cmd = TN_IPC_CMD_CANCEL;
-                            cancel.client_task = base->owner_task;
-                            cancel.socket_base = (APTR)base;
-                            cancel.args[0] = (LONG)(intptr_t)msg;
-                            PutMsg(base->tolunnet_port, (struct Message *)&cancel);
-                            for (;;) {
-                                WaitPort(base->reply_port);
-                                early = GetMsg(base->reply_port);
-                                if (early == NULL) continue;
-                                if ((TnIpcMsg *)early == msg) {
-                                    msg->result = -1;
-                                    msg->err_no = EINTR;
-                                    break;
-                                }
+                    {
+                        ULONG break_mask2 = base->sig_int ? base->sig_int : SIGBREAKF_CTRL_C;
+                        fired = Wait(reply_sig | tm_sig | break_mask2);
+                        if (fired & break_mask2) {
+                            SetSignal(0, fired & break_mask2);
+                            tn_ipc_cancel_inflight(base, msg);
+                            if (heap_msg != NULL) {
+                                FreeVec(heap_msg); /* replied to us; safe now */
                             }
+                            tn_set_errno_val(base, EINTR);
+                            return -1;
                         }
-                        tn_set_errno_val(base, EINTR);
-                        return -1;
                     }
-                }
 
                 if (!CheckIO((struct IORequest *)tm)) {
                     AbortIO((struct IORequest *)tm);
@@ -220,6 +238,7 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
                 if (elapsed_ms + 40UL >= budget_ms) break; /* genuine timeout */
                 /* timer lied: resume with the full remaining budget */
             }
+        }
         }
 
         if (!(fired & reply_sig)) {
@@ -241,37 +260,9 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
         ULONG fired2 = Wait(reply_sig | break_mask);
         if (fired2 & break_mask) {
             SetSignal(0, fired2 & break_mask);
-            {
-                /* CANCEL: args[0] = the in-flight message pointer */
-                TnIpcMsg cancel;
-                struct Message *early;
-                memset(&cancel, 0, sizeof(cancel));
-                cancel.msg.mn_Node.ln_Type = NT_MESSAGE;
-                cancel.msg.mn_ReplyPort = base->reply_port;
-                cancel.msg.mn_Length = sizeof(TnIpcMsg);
-                cancel.cmd = TN_IPC_CMD_CANCEL;
-                cancel.client_task = base->owner_task;
-                cancel.socket_base = (APTR)base;
-                cancel.args[0] = (LONG)(intptr_t)msg;
-                PutMsg(base->tolunnet_port, (struct Message *)&cancel);
-                /* wait for BOTH replies: ours (EINTR) and the CANCEL ack */
-                for (;;) {
-                    WaitPort(base->reply_port);
-                    early = GetMsg(base->reply_port);
-                    if (early == NULL) continue;
-                    if ((TnIpcMsg *)early == msg) {
-                        msg->result = -1;
-                        msg->err_no = EINTR;
-                    }
-                    /* the CANCEL ack (or an unexpected reply) is consumed
-                     * and dropped; loop until OUR message came back */
-                    if (early->mn_Node.ln_Type == NT_REPLYMSG &&
-                        (TnIpcMsg *)early != msg &&
-                        ((TnIpcMsg *)early)->cmd == TN_IPC_CMD_CANCEL) {
-                        continue; /* keep waiting for ours */
-                    }
-                    if ((TnIpcMsg *)early == msg) break;
-                }
+            tn_ipc_cancel_inflight(base, msg);
+            if (heap_msg != NULL) {
+                FreeVec(heap_msg); /* replied to us; safe now */
             }
             tn_set_errno_val(base, EINTR);
             return -1;
@@ -321,6 +312,14 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
         }
     }
 }
+
+/* z.ai step 5 item 1: cancel the in-flight request 'msg' and drain BOTH
+ * replies (the cancelled request's EINTR and the CANCEL ack) before
+ * returning. The CANCEL message is heap-allocated per base: a stack
+ * cancel would let the daemon's late ReplyMsg write into a dead frame
+ * and corrupt the next call (bench 20260924-145035: suite froze right
+ * after a successful Ctrl-C interrupt). Returns after both replies are
+ * consumed; *msg_out carries the EINTR result. */
 
 /* ------------------------------------------------------------------ LIB_OPEN */
 struct Library *tn_lib_open(struct Library *lib, ULONG version)
@@ -506,6 +505,10 @@ BPTR tn_lib_close(struct Library *lib)
             base->event_masks = NULL;
         }
 
+        if (base->ipc_cancel_msg != NULL) {
+            FreeVec(base->ipc_cancel_msg);
+            base->ipc_cancel_msg = NULL;
+        }
         if (base->reply_port != NULL) {
             DeleteMsgPort(base->reply_port);
             base->reply_port = NULL;

@@ -363,6 +363,7 @@ typedef struct TnSocketBase {
      * drained from the reply port but freed only in tn_lib_close AFTER
      * the CLOSE IPC reply guarantees no further daemon access. */
     APTR            ipc_orphan;
+    APTR            ipc_cancel_msg;         /* z.ai step 5: heap CANCEL msg (replied, never stack) */
     char            inet_ntoa_buf[16];      /* Per-task static buffer for Inet_NtoA */
     char            hostname[32];           /* Per-task hostname */
 
