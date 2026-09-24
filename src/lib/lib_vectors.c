@@ -223,12 +223,12 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
                         if (fired & break_mask2) {
                             /* Wait() cleared the wake bits; restore the
                              * break bits (same Roadshow rule). */
-                            SetSignal(fired & break_mask2, 0);
                             tn_ipc_cancel_inflight(base, msg);
-                            tn_logf(TN_LOG_BASIC,
-                                    "tolunnet: BREAK path fired=0x%lx restored_set=0x%lx now=0x%lx\n",
-                                    fired, (ULONG)(fired & break_mask2),
-                                    (ULONG)SetSignal(0, 0));
+
+                            /* z.ai step 6 item 3: re-assert at the END of
+                             * the path - WaitPort inside the drain can consume
+                             * bits via internal Wait() allocation. */
+                            SetSignal(fired & break_mask2, 0);
                             if (heap_msg != NULL) {
                                 FreeVec(heap_msg); /* replied to us; safe now */
                             }
