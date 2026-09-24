@@ -279,6 +279,10 @@ err_t igmp_leavegroup(const ip4_addr_t *ifaddr, const ip4_addr_t *groupaddr);
 #define MEMF_CLEAR  2
 #endif
 
+extern struct udp_pcb mock_udp_pcb_unconnected;
+extern struct udp_pcb mock_udp_pcb_connected;
+extern struct raw_pcb mock_raw_pcb_connected;
+
 void *mock_allocvec(uint32_t size, uint32_t flags);
 void mock_freevec(void *ptr);
 #ifndef AllocVec

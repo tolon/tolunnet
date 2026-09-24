@@ -540,7 +540,7 @@ TN_TEST(net_udp_raw_send_connected)
     tn_slot_free(&d, raw_idx);
 }
 
-TN_TEST(net_udp_raw_send_unconnected_enotconn)
+TN_TEST(net_udp_raw_send_unconnected_edestaddrreq)
 {
     TnDaemon d;
     TnSocketBase base;
@@ -561,7 +561,7 @@ TN_TEST(net_udp_raw_send_unconnected_enotconn)
     msg.args[1] = 4;
     TN_ASSERT_EQ(tn_ipc_cmd_send(&d, &msg, slot_udp), 0);
     TN_ASSERT_EQ((LONG)msg.result, -1);
-    TN_ASSERT_EQ(msg.err_no, ENOTCONN);
+    TN_ASSERT_EQ(msg.err_no, EDESTADDRREQ); /* z.ai step 4 item 3 correction */
 
     /* 2. RAW socket unconnected: remote_ip == 0 */
     int raw_idx = -1;
@@ -576,7 +576,7 @@ TN_TEST(net_udp_raw_send_unconnected_enotconn)
     msg.args[1] = 4;
     TN_ASSERT_EQ(tn_ipc_cmd_send(&d, &msg, slot_raw), 0);
     TN_ASSERT_EQ((LONG)msg.result, -1);
-    TN_ASSERT_EQ(msg.err_no, ENOTCONN);
+    TN_ASSERT_EQ(msg.err_no, EDESTADDRREQ); /* z.ai step 4 item 3 correction */
 
     tn_slot_free(&d, slot_idx);
     tn_slot_free(&d, raw_idx);
@@ -1320,6 +1320,113 @@ TN_TEST(net_shutdown_shut_rdwr_and_error_order)
     tn_slot_free(&d, slot_idx);
 }
 
+/* z.ai step 4 item 3: EDESTADDRREQ (correction of the earlier ENOTCONN
+ * decision) on unconnected UDP/RAW send/sendto(to=NULL); EISCONN on a
+ * connected RAW with a destination; len>65507 -> EMSGSIZE. */
+TN_TEST(net_send_edestaddrreq_correction)
+{
+    TnDaemon d;
+    TnSocketBase base;
+    TN_TEST_BASE_INIT(base);
+    int slot_idx = -1;
+    TnIpcMsg imsg;
+    struct sockaddr_in to;
+    static unsigned char sbuf[70000];
+
+    memset(&d, 0, sizeof(d));
+    tn_slot_table_init(&d);
+
+    /* A. send() on unconnected UDP -> EDESTADDRREQ */
+    {
+        TnSocketSlot *slot = tn_slot_alloc(&d, &base, NULL, AF_INET, SOCK_DGRAM,
+                                           0, &slot_idx);
+        TN_ASSERT_TRUE(slot != NULL);
+        slot->udp_pcb = &mock_udp_pcb_unconnected;
+        memset(&imsg, 0, sizeof(imsg));
+        imsg.ptrs[0] = sbuf;
+        imsg.args[1] = 4;
+        TN_ASSERT_EQ(tn_ipc_cmd_send(&d, &imsg, slot), 0);
+        TN_ASSERT_EQ(imsg.result, -1);
+        TN_ASSERT_EQ(imsg.err_no, EDESTADDRREQ);
+        slot->udp_pcb = NULL;
+        tn_slot_free(&d, slot_idx);
+    }
+
+    /* B. sendto(to=NULL) on unconnected UDP -> EDESTADDRREQ */
+    {
+        TnSocketSlot *slot = tn_slot_alloc(&d, &base, NULL, AF_INET, SOCK_DGRAM,
+                                           0, &slot_idx);
+        TN_ASSERT_TRUE(slot != NULL);
+        slot->udp_pcb = &mock_udp_pcb_unconnected;
+        memset(&imsg, 0, sizeof(imsg));
+        imsg.ptrs[0] = sbuf;
+        imsg.args[1] = 4;
+        imsg.ptrs[1] = NULL;
+        TN_ASSERT_EQ(tn_ipc_cmd_sendto(&d, &imsg, slot), 0);
+        TN_ASSERT_EQ(imsg.result, -1);
+        TN_ASSERT_EQ(imsg.err_no, EDESTADDRREQ);
+        slot->udp_pcb = NULL;
+        tn_slot_free(&d, slot_idx);
+    }
+
+    /* C. sendto(to=NULL) on unconnected RAW -> EDESTADDRREQ */
+    {
+        TnSocketSlot *slot = tn_slot_alloc(&d, &base, NULL, AF_INET, SOCK_RAW,
+                                           1, &slot_idx);
+        TN_ASSERT_TRUE(slot != NULL);
+        slot->raw_pcb = &mock_raw_pcb_connected;
+        mock_raw_pcb_connected.remote_ip.addr = 0; /* unconnected */
+        memset(&imsg, 0, sizeof(imsg));
+        imsg.ptrs[0] = sbuf;
+        imsg.args[1] = 4;
+        TN_ASSERT_EQ(tn_ipc_cmd_sendto(&d, &imsg, slot), 0);
+        TN_ASSERT_EQ(imsg.result, -1);
+        TN_ASSERT_EQ(imsg.err_no, EDESTADDRREQ);
+        slot->raw_pcb = NULL;
+        tn_slot_free(&d, slot_idx);
+    }
+
+    /* D. connected RAW + to != NULL -> EISCONN */
+    {
+        TnSocketSlot *slot = tn_slot_alloc(&d, &base, NULL, AF_INET, SOCK_RAW,
+                                           1, &slot_idx);
+        TN_ASSERT_TRUE(slot != NULL);
+        ip_addr_set_ip4_u32(&mock_raw_pcb_connected.remote_ip, 0x0A000202UL);
+        slot->raw_pcb = &mock_raw_pcb_connected;
+        memset(&to, 0, sizeof(to));
+        to.sin_family = AF_INET;
+        to.sin_port = htons(7);
+        to.sin_addr.s_addr = htonl(0x0A000202UL);
+        memset(&imsg, 0, sizeof(imsg));
+        imsg.ptrs[0] = sbuf;
+        imsg.args[1] = 4;
+        imsg.ptrs[1] = &to;
+        TN_ASSERT_EQ(tn_ipc_cmd_sendto(&d, &imsg, slot), 0);
+        TN_ASSERT_EQ(imsg.result, -1);
+        TN_ASSERT_EQ(imsg.err_no, EISCONN);
+        slot->raw_pcb = NULL;
+        tn_slot_free(&d, slot_idx);
+    }
+
+    /* E. len > 65507 on UDP -> EMSGSIZE */
+    {
+        TnSocketSlot *slot = tn_slot_alloc(&d, &base, NULL, AF_INET, SOCK_DGRAM,
+                                           0, &slot_idx);
+        TN_ASSERT_TRUE(slot != NULL);
+        ip_addr_set_ip4_u32(&mock_udp_pcb_connected.remote_ip, 0x0A000202UL);
+        mock_udp_pcb_connected.remote_port = htons(7);
+        slot->udp_pcb = &mock_udp_pcb_connected;
+        memset(&imsg, 0, sizeof(imsg));
+        imsg.ptrs[0] = sbuf;
+        imsg.args[1] = 65508;
+        TN_ASSERT_EQ(tn_ipc_cmd_send(&d, &imsg, slot), 0);
+        TN_ASSERT_EQ(imsg.result, -1);
+        TN_ASSERT_EQ(imsg.err_no, EMSGSIZE);
+        slot->udp_pcb = NULL;
+        tn_slot_free(&d, slot_idx);
+    }
+}
+
 int main(void)
 {
     TN_TEST_RUN(rx_pbuf_chain_partial_reads);
@@ -1331,8 +1438,9 @@ int main(void)
     TN_TEST_RUN(send_succeeds_in_peer_closed);
     TN_TEST_RUN(net_recv_unconnected_tcp_enotconn_not_parked);
     TN_TEST_RUN(net_shutdown_shut_rdwr_and_error_order);
+    TN_TEST_RUN(net_send_edestaddrreq_correction);
     TN_TEST_RUN(net_udp_raw_send_connected);
-    TN_TEST_RUN(net_udp_raw_send_unconnected_enotconn);
+    TN_TEST_RUN(net_udp_raw_send_unconnected_edestaddrreq);
     TN_TEST_RUN(net_udp_connected_sendto_eisconn);
     TN_TEST_RUN(net_tcp_recvfrom_unconnected_enotconn);
     TN_TEST_RUN(net_tcp_recvfrom_connected_fromlen_zero);

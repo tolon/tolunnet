@@ -518,11 +518,18 @@ int tn_ipc_cmd_send(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         struct pbuf *p;
         u16_t send_len;
 
-        /* [auto] 4.4BSD udp_output returns ENOTCONN when sending on an unconnected
-         * datagram socket; Roadshow behaves identically (POSIX EDESTADDRREQ is rejected). */
+        /* [auto] z.ai step 4 item 3 - CORRECTION of the earlier decision:
+         * 4.4BSD-Lite sosend() checks 'not connected && !PR_CONNREQUIRED &&
+         * no address -> EDESTADDRREQ' BEFORE udp_output. ENOTCONN was the
+         * wrong errno (that is the TCP/PR_CONNREQUIRED answer). */
         if (ip_addr_get_ip4_u32(&slot->udp_pcb->remote_ip) == 0 || slot->udp_pcb->remote_port == 0) {
             imsg->result = -1;
-            imsg->err_no = ENOTCONN;
+            imsg->err_no = EDESTADDRREQ;
+            return 0;
+        }
+        if (len > 65507) { /* 65535 - 8 UDP - 20 IP */
+            imsg->result = -1;
+            imsg->err_no = EMSGSIZE;
             return 0;
         }
 
@@ -547,11 +554,15 @@ int tn_ipc_cmd_send(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         u16_t send_len;
         err_t serr;
 
-        /* [auto] 4.4BSD rip_usrreq returns ENOTCONN when sending on an unconnected
-         * raw socket without destination address. */
+        /* [auto] z.ai step 4 item 3: EDESTADDRREQ, not ENOTCONN */
         if (ip_addr_get_ip4_u32(&slot->raw_pcb->remote_ip) == 0) {
             imsg->result = -1;
-            imsg->err_no = ENOTCONN;
+            imsg->err_no = EDESTADDRREQ;
+            return 0;
+        }
+        if (len > 65535) {
+            imsg->result = -1;
+            imsg->err_no = EMSGSIZE;
             return 0;
         }
 

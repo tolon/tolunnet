@@ -217,15 +217,20 @@ int tn_ipc_cmd_sendto(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             dst_port = to_port;
         } else {
             if (!is_connected) {
-                /* [auto] 4.4BSD udp_output returns ENOTCONN when unconnected and to == NULL */
+                /* [auto] z.ai step 4 item 3: EDESTADDRREQ, not ENOTCONN */
                 imsg->result = -1;
-                imsg->err_no = ENOTCONN;
+                imsg->err_no = EDESTADDRREQ;
                 return 0;
             }
             dst_ip = slot->udp_pcb->remote_ip;
             dst_port = slot->udp_pcb->remote_port;
         }
 
+        if (len > 65507) { /* 65535 - 8 UDP - 20 IP */
+            imsg->result = -1;
+            imsg->err_no = EMSGSIZE;
+            return 0;
+        }
         p = pbuf_alloc(PBUF_TRANSPORT, send_len, PBUF_RAM);
         if (p == NULL) {
             imsg->result = -1;
@@ -234,9 +239,19 @@ int tn_ipc_cmd_sendto(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         }
 
         pbuf_take(p, buf, send_len);
-        udp_sendto(slot->udp_pcb, p, &dst_ip, dst_port);
-        pbuf_free(p);
-        tn_drain_loopback();
+        {
+            /* [auto] z.ai step 4 item 3: map lwIP err_t -> errno */
+            err_t uerr = udp_sendto(slot->udp_pcb, p, &dst_ip, dst_port);
+            pbuf_free(p);
+            tn_drain_loopback();
+            if (uerr != ERR_OK) {
+                imsg->result = -1;
+                imsg->err_no = (uerr == ERR_MEM) ? ENOBUFS
+                             : (uerr == ERR_RTE) ? EHOSTUNREACH
+                             : EHOSTUNREACH;
+                return 0;
+            }
+        }
 
         imsg->result = (LONG)send_len;
         imsg->err_no = 0;
@@ -249,14 +264,23 @@ int tn_ipc_cmd_sendto(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         int is_connected = (ip_addr_get_ip4_u32(&slot->raw_pcb->remote_ip) != 0);
 
         if (to != NULL) {
-            uint32_t to_addr = 0;
-            tn_sockin_load_bytes(to, NULL, NULL, &to_addr);
-            ip_addr_set_ip4_u32(&dst_ip, to_addr);
+            if (is_connected) {
+                /* [auto] z.ai step 4 item 3: 4.4BSD raw send with a
+                 * destination on an already-connected pcb -> EISCONN */
+                imsg->result = -1;
+                imsg->err_no = EISCONN;
+                return 0;
+            }
+            {
+                uint32_t to_addr = 0;
+                tn_sockin_load_bytes(to, NULL, NULL, &to_addr);
+                ip_addr_set_ip4_u32(&dst_ip, to_addr);
+            }
         } else {
             if (!is_connected) {
-                /* [auto] 4.4BSD rip_usrreq returns ENOTCONN when unconnected and to == NULL */
+                /* [auto] z.ai step 4 item 3: EDESTADDRREQ, not ENOTCONN */
                 imsg->result = -1;
-                imsg->err_no = ENOTCONN;
+                imsg->err_no = EDESTADDRREQ;
                 return 0;
             }
             dst_ip = slot->raw_pcb->remote_ip;
@@ -274,8 +298,11 @@ int tn_ipc_cmd_sendto(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         pbuf_free(p);
 
         if (serr != ERR_OK) {
+            /* [auto] z.ai step 4 item 3: map lwIP err_t -> errno */
             imsg->result = -1;
-            imsg->err_no = (serr == ERR_MEM) ? ENOBUFS : EHOSTUNREACH;
+            imsg->err_no = (serr == ERR_MEM) ? ENOBUFS
+                         : (serr == ERR_RTE) ? EHOSTUNREACH
+                         : EHOSTUNREACH;
             return 0;
         }
 

@@ -8,6 +8,12 @@
 
 TnDaemon g_daemon;
 
+/* z.ai step 4 item 3: pre-fabricated pcbs for the errno-correction tests */
+struct udp_pcb mock_udp_pcb_unconnected;  /* all-zero remote */
+struct udp_pcb mock_udp_pcb_connected;
+struct raw_pcb mock_raw_pcb_connected;
+
+
 static MockCall s_calls[MOCK_MAX_CALLS];
 static int      s_call_count = 0;
 
