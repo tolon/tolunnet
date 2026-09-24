@@ -56,6 +56,11 @@ static const char *g_cli_netmask = NULL;
 static const char *g_cli_gateway = NULL;
 static const UWORD  g_raw_putch[] = { 0x16c0, 0x4e75 }; /* move.b d0,(a3)+ ; rts (aligned) */
 
+BOOL tn_daemon_is_stopping(void)
+{
+    return g_daemon.stopping;
+}
+
 /* TNET-150 item 6: is this task still alive? Walks Exec's task lists under
  * Forbid; a client that died without CloseLibrary leaves its base counted
  * and would block the Ctrl-C stop forever. */
@@ -630,6 +635,7 @@ tn_main_loop:
     tn_log(TN_LOG_BASIC, "tolunnet: initiating shutdown sequence...\n");
 
     /* Re-check open count: reap any dead client tasks before entering Forbid */
+    g_daemon.stopping = TRUE; /* z.ai step 4 item 4: expunge may now act */
     if (g_daemon.bsd_lib != NULL) {
         tn_reap_dead_clients(&g_daemon);
     }

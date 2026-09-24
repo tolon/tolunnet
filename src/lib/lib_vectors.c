@@ -447,10 +447,24 @@ BPTR tn_lib_close(struct Library *lib)
 }
 
 /* --------------------------------------------------------------- LIB_EXPUNGE */
+/* z.ai step 4 item 4: daemon-side hook - TRUE once the shutdown path is
+ * entered (the daemon owns the state; the library does not see TnDaemon). */
+extern BOOL tn_daemon_is_stopping(void);
+
 BPTR tn_lib_expunge(struct Library *lib)
 {
+    /* AvailMem(FLUSH)/low-memory calls Expunge while the daemon runs.
+     * Removing the library from LibList then breaks new OpenLibrary
+     * callers and strands the open count. Refuse with LIBF_DELEXP
+     * (deferred delete at the last close) unless the daemon has actually
+     * entered its shutdown path. */
     if (lib != NULL) {
         Forbid();
+        if (lib->lib_OpenCnt > 0 || !tn_daemon_is_stopping()) {
+            lib->lib_Flags |= LIBF_DELEXP;
+            Permit();
+            return (BPTR)0;
+        }
         if (lib->lib_Node.ln_Succ != NULL && lib->lib_Node.ln_Pred != NULL) {
             Remove(&lib->lib_Node);
             lib->lib_Node.ln_Succ = NULL;

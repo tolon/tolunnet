@@ -229,6 +229,7 @@ typedef struct TnDaemon {
     LONG            next_park_id;
     TnPrefs         prefs;
     BOOL            running;
+    BOOL            stopping;   /* z.ai step 4 item 4: daemon entered the shutdown path */
     TnIpcMsg       *stop_msg;       /* TNET-152: parked stop message replied after RemPort & SANA-II teardown */
     /* TNET-108: selector table is heap-allocated so SELECTORS= can grow it
      * at runtime via RECONFIG (tn_selector_table_grow). */

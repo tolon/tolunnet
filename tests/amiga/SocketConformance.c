@@ -5860,7 +5860,8 @@ static void tc_net_udp_connected_send(void)
     TAP_NOTOK("net_udp_connected_send", "send failed or content mismatch");
 }
 
-/* send() on unconnected UDP socket returns -1, ENOTCONN */
+/* send() on unconnected UDP socket returns -1, EDESTADDRREQ
+ * (z.ai step 4 item 3: 4.4BSD-Lite sosend no-destination answer) */
 static void tc_net_udp_unconnected_send(void)
 {
     LONG s;
@@ -5874,10 +5875,10 @@ static void tc_net_udp_unconnected_send(void)
     }
 
     n = call_send(s, "TEST", 4, 0);
-    if (n == -1 && call_errno() == ENOTCONN) {
+    if (n == -1 && call_errno() == EDESTADDRREQ) {
         TAP_OK("net_udp_unconnected_send");
     } else {
-        tapf("# net_udp_unconnected_send: got n=%ld errno=%ld (expected -1/ENOTCONN)\n", n, call_errno());
+        tapf("# net_udp_unconnected_send: got n=%ld errno=%ld (expected -1/EDESTADDRREQ)\n", n, call_errno());
         TAP_NOTOK("net_udp_unconnected_send", "expected -1 ENOTCONN");
     }
     call_closesocket(s);
@@ -6448,6 +6449,41 @@ static void tc_net_cmd_tftp(void)
     TAP_TODO("net_cmd_tftp", "red-baseline 20");
 }
 
+/* z.ai step 4 item 4: Expunge must NOT remove the live library. Flush-
+ * class AllocMem fails with a live daemon holding the library, so the
+ * observable contract is: after a refused huge allocation, the library
+ * is still openable and usable. (AvailMem(FLUSH)-style pressure cannot
+ * be simulated hermetically; the guard is structural.) */
+static void tc_lib_expunge_survives(void)
+{
+    struct Library *lib;
+    APTR big;
+    LONG s;
+
+    big = AllocMem(0x7ffffff0, MEMF_PUBLIC);
+    if (big != (APTR)0) {
+        FreeMem(big, 0x7ffffff0);
+        tapf("# tc_lib_expunge_survives: huge alloc SUCCEEDED (unexpected)\n");
+        TAP_OK("tc_lib_expunge_survives");
+        return;
+    }
+
+    lib = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
+    if (lib == NULL) {
+        TAP_NOTOK("tc_lib_expunge_survives", "library gone after memory pressure");
+        return;
+    }
+    CloseLibrary(lib);
+
+    s = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (s < 0) {
+        TAP_NOTOK("tc_lib_expunge_survives", "socket() failed after pressure");
+        return;
+    }
+    call_closesocket(s);
+    TAP_OK("tc_lib_expunge_survives");
+}
+
 /* Bench plumbing (not a TAP case): ask the daemon to exit so the bench can
  * prove the TNET-059/060 restart cycle. Mirrors TolunnetPrefs' Stop logic. */
 static void request_daemon_stop(void)
@@ -6515,6 +6551,7 @@ int main(int argc, char *argv[])
 
     tapf("# tolunnet SocketConformance (Round 3 §B.2)\n");
     TN_RUN(tc_lib_open_close);
+    TN_RUN(tc_lib_expunge_survives);
     TN_RUN(tc_socket_types);
     TN_RUN(tc_bind_udp);
     TN_RUN(tc_bind_reuse);
