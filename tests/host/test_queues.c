@@ -1511,6 +1511,34 @@ TN_TEST(net_watchdog_cancel_unparks_recv)
     }
     TN_ASSERT_EQ(tn_ipc_cmd_recv(&d, &imsg2, slot), 0);
     TN_ASSERT_EQ((LONG)imsg2.result, 5);
+
+    /* z.ai step 7b item 3: cancel AFTER the daemon replied with a real
+     * result keeps result AND err_no unchanged; EINTR only when the
+     * reply itself carries EINTR. */
+    {
+        TnIpcMsg imsg3, cancel3;
+        slot->tcp_state = TN_TCP_STATE_ESTABLISHED;
+        memset(&imsg3, 0, sizeof(imsg3));
+        imsg3.ptrs[0] = buf;
+        imsg3.args[1] = sizeof(buf);
+
+        /* case A: daemon replied -1/EINPROGRESS before the CANCEL */
+        imsg3.result = -1;
+        imsg3.err_no = EINPROGRESS;
+        host_cancel_target = &imsg3;
+        memset(&cancel3, 0, sizeof(cancel3));
+        TN_ASSERT_EQ(tn_ipc_cmd_cancel_host(&d, &cancel3, slot), 0);
+        TN_ASSERT_EQ(imsg3.result, -1);
+        TN_ASSERT_EQ(imsg3.err_no, EINPROGRESS); /* unchanged, not EINTR */
+
+        /* case B: daemon replied 9/0 before the CANCEL */
+        imsg3.result = 9;
+        imsg3.err_no = 0;
+        TN_ASSERT_EQ(tn_ipc_cmd_cancel_host(&d, &cancel3, slot), 0);
+        TN_ASSERT_EQ(imsg3.result, 9);
+        TN_ASSERT_EQ(imsg3.err_no, 0);
+        host_cancel_target = NULL;
+    }
     tn_slot_free(&d, slot_idx);
 }
 

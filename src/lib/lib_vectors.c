@@ -100,19 +100,39 @@ static void tn_ipc_cancel_inflight(TnSocketBase *base, TnIpcMsg *msg)
         early = GetMsg(base->reply_port);
         if (early == NULL) continue;
         if ((TnIpcMsg *)early == msg) {
-            /* z.ai step 6 item 2: if the daemon won the race and replied
-             * with a real result (recv got data, connect completed),
-             * KEEP it — data must never be dropped. Only a daemon-side
-             * EINTR reply means the cancellation happened. */
-            if (msg->result < 0 && msg->err_no != 0) {
-                msg->result = -1;
-                msg->err_no = EINTR;
-            }
+            /* z.ai step 7b item 3: if the daemon replied before the CANCEL
+             * took effect, keep its result AND err_no unchanged — only a
+             * reply that itself carries EINTR means the CANCEL hit it.
+             * (A real result like recv data must never be dropped.) */
             got_msg = 1;
         } else if ((TnIpcMsg *)early == cancel) {
             got_cancel = 1;
         }
         /* foreign replies stay dropped: they belong to earlier orphans */
+    }
+}
+
+/* z.ai step 7b item 2: commands whose DAEMON handler can return DEFER —
+ * only these may wait with the break mask. Every other command is answered
+ * immediately by the daemon, so a stray CTRL_C-class bit must not turn
+ * them into EINTR (bench 20260924-234434: the whole net_* block fell to
+ * stray-bit EINTRs when every call waited break-aware). */
+static int tn_cmd_may_park(TnIpcCmd cmd)
+{
+    switch (cmd) {
+    case TN_IPC_CMD_RECV:
+    case TN_IPC_CMD_RECVFROM:
+    case TN_IPC_CMD_RECVMSG:
+    case TN_IPC_CMD_ACCEPT:
+    case TN_IPC_CMD_CONNECT:
+    case TN_IPC_CMD_SEND:          /* snd_buf==0 path parks via retry loop */
+    case TN_IPC_CMD_SENDTO:
+    case TN_IPC_CMD_SENDMSG:
+    case TN_IPC_CMD_GETHOSTBYNAME: /* DNS DEFER */
+    case TN_IPC_CMD_WAITSELECT:
+        return 1;
+    default:
+        return 0;
     }
 }
 
@@ -217,7 +237,11 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
                  * recvs live HERE, not in the WaitPort branch). */
                 {
                     {
-                        ULONG break_mask2 = base->sig_int ? base->sig_int : SIGBREAKF_CTRL_C;
+                        /* z.ai step 7b item 2: break-aware only if the
+                         * command can park (see tn_cmd_may_park table). */
+                        ULONG break_mask2 = tn_cmd_may_park(cmd)
+                            ? (base->sig_int ? base->sig_int : SIGBREAKF_CTRL_C)
+                            : 0;
                         fired = Wait(reply_sig | tm_sig | break_mask2);
                         if (fired & break_mask2) {
                             /* z.ai step 7 item 1: retire the armed timer
@@ -278,12 +302,15 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
             return -1;
         }
     } else {
-        /* z.ai step 5 item 1: blocking calls wake on the break mask
-         * (Roadshow semantics): SBTC_BREAKMASK (default SIGBREAKF_CTRL_C)
-         * -> -1 EINTR, and the in-flight parked/pending request is
-         * cancelled daemon-side via TN_IPC_CMD_CANCEL so it can never
-         * complete later into a freed message. */
-        ULONG break_mask = base->sig_int ? base->sig_int : SIGBREAKF_CTRL_C;
+        /* z.ai step 5 item 1 / z.ai step 7b item 2: blocking calls wake on
+         * the break mask ONLY if the daemon can park this command (recv /
+         * accept / connect / DNS / WaitSelect). Everything else is answered
+         * immediately — waiting break-aware there let stray CTRL_C-class
+         * bits turn trivial calls into EINTR (bench 20260924-234434). */
+        ULONG break_mask = (tn_cmd_may_park(cmd) &&
+                            (base->sig_int ? base->sig_int : SIGBREAKF_CTRL_C) != 0)
+                           ? (base->sig_int ? base->sig_int : SIGBREAKF_CTRL_C)
+                           : 0;
         ULONG reply_sig = 1UL << base->reply_port->mp_SigBit;
         ULONG fired2 = Wait(reply_sig | break_mask);
         if (fired2 & break_mask) {
@@ -300,9 +327,11 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
             if (heap_msg != NULL) {
                 FreeVec(heap_msg); /* replied to us; safe now */
             }
-            /* z.ai step 6 item 2: honor a real daemon result if it
-             * won the race (recv data / connect ok) instead of EINTR */
-            if (msg->result >= 0 || msg->err_no == 0) {
+            /* z.ai step 7b item 3: honor the daemon's full reply (result
+             * AND err_no) if it won the race; EINTR only if the CANCEL
+             * produced the interrupt itself. */
+            if (!(msg->result == -1 && msg->err_no == EINTR)) {
+                tn_set_errno_val(base, msg->err_no);
                 return msg->result;
             }
             tn_set_errno_val(base, EINTR);
