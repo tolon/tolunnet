@@ -15,6 +15,10 @@ Per-commit evidence dirs. The newest full run per commit is the citable one;
 - `…123456…g6df32d9` (netsvc.log only) was a staging leftover where the
   netsvc host services failed their readiness probe before any emulator leg
   started — deleted, not evidence.
+- **item 2 (keep the daemon's winning result) rode in b4231da** alongside
+  item 1: the bench for b4231da covers both (its race-honor guard was
+  committed pre-bench, the break-path mirror landed before the SAME bench
+  ran — verified in the d960d6a→b4231da diff). No code followed the bench.
 - **`…145035…g2461b7b` was RED, not green** — the suite stopped after test 3
   on both profiles (3 ok rows, conformance2 empty, TODO 0: the net rows were
   never reached). The stack-CANCEL corruption froze the suite right after a
