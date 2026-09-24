@@ -80,9 +80,8 @@ static void tn_ipc_cancel_inflight(TnSocketBase *base, TnIpcMsg *msg)
     TnIpcMsg *cancel;
     int got_msg = 0, got_cancel = 0;
 
-    if (base->ipc_cancel_msg == NULL) {
-        base->ipc_cancel_msg = AllocVec(sizeof(TnIpcMsg), MEMF_CLEAR | MEMF_PUBLIC);
-    }
+    /* z.ai step 7 item 1: allocated in tn_lib_open; a NULL here means
+     * open-time alloc failed and the base could not exist. */
     cancel = (TnIpcMsg *)base->ipc_cancel_msg;
     if (cancel == NULL) return;
 
@@ -221,14 +220,21 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
                         ULONG break_mask2 = base->sig_int ? base->sig_int : SIGBREAKF_CTRL_C;
                         fired = Wait(reply_sig | tm_sig | break_mask2);
                         if (fired & break_mask2) {
-                            /* Wait() cleared the wake bits; restore the
-                             * break bits (same Roadshow rule). */
+                            /* z.ai step 7 item 1: retire the armed timer
+                             * request FIRST — the next call would re-send
+                             * an IORequest still queued in timer.device. */
+                            if (!CheckIO((struct IORequest *)tm)) {
+                                AbortIO((struct IORequest *)tm);
+                            }
+                            WaitIO((struct IORequest *)tm);
+                            while ((m = GetMsg(base->timer_port)) != NULL) {}
+                            SetSignal(0, tm_sig);
                             tn_ipc_cancel_inflight(base, msg);
 
                             /* z.ai step 6 item 3: re-assert at the END of
                              * the path - WaitPort inside the drain can consume
                              * bits via internal Wait() allocation. */
-                            SetSignal(fired & break_mask2, 0);
+                            SetSignal(fired & break_mask2, fired & break_mask2);
                             if (heap_msg != NULL) {
                                 FreeVec(heap_msg); /* replied to us; safe now */
                             }
@@ -283,7 +289,7 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
         if (fired2 & break_mask) {
             /* Exec Wait() clears the bits it wakes on — re-set the break
              * bits so CheckSignal() still sees them (see [auto] below). */
-            SetSignal(fired2 & break_mask, 0);
+            SetSignal(fired2 & break_mask, fired2 & break_mask);
             /* [auto] z.ai step 6 item 3 — Roadshow SDK 1.8 autodoc,
              * SocketBaseTags/SBTC_BREAKMASK: "specifies the signal that is
              * used to abort a blocking library call" — the library ABORTS
@@ -404,6 +410,16 @@ struct Library *tn_lib_open(struct Library *lib, ULONG version)
     base->lib_node.lib_OpenCnt = 1;
 
     base->owner_task = SysBase->ThisTask;
+    /* z.ai step 7 item 1: allocate the CANCEL message up front — a lazy
+     * alloc inside the break path can fail exactly when we need it. */
+    base->ipc_cancel_msg = AllocVec(sizeof(TnIpcMsg), MEMF_CLEAR | MEMF_PUBLIC);
+    if (base->ipc_cancel_msg == NULL) {
+        Forbid();
+        lib->lib_OpenCnt--;
+        Permit();
+        FreeVec(raw_mem);
+        return NULL;
+    }
     base->reply_port = CreateMsgPort();
     if (base->reply_port == NULL) {
         Forbid();
@@ -955,7 +971,7 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
         if (!has_timeout || zero_timeout) {
             if (!has_timeout && sig_mask != 0) {
                 ULONG got2 = Wait(sig_mask);
-                SetSignal(got2 & sig_mask, 0); /* leave the bits set */
+                SetSignal(got2 & sig_mask, got2 & sig_mask); /* leave the bits set */
                 if (signals != NULL) *signals = got2 & sig_mask;
                 tn_set_errno_val(base, EINTR);
                 return 0;
