@@ -15,6 +15,12 @@ Per-commit evidence dirs. The newest full run per commit is the citable one;
 - `…123456…g6df32d9` (netsvc.log only) was a staging leftover where the
   netsvc host services failed their readiness probe before any emulator leg
   started — deleted, not evidence.
+- **`…145035…g2461b7b` was RED, not green** — the suite stopped after test 3
+  on both profiles (3 ok rows, conformance2 empty, TODO 0: the net rows were
+  never reached). The stack-CANCEL corruption froze the suite right after a
+  successful Ctrl-C interrupt; fixed by d960d6a. Lesson: a logs commit must
+  quote the real `core:` line from README.txt, never a hand-written summary.
+
 
 ## Intermittent hang watch
 
