@@ -6550,6 +6550,17 @@ static void tc_net_recv_ctrlc(void)
         DateStamp(&ds);
         t0 = (ULONG)ds.ds_Days * 86400UL * 50UL + (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
         n = call_recv(cli, buf, sizeof(buf), 0);
+        /* z.ai step 6 item 3: the break bit must STILL be set after the
+        * EINTR return (the library aborts the call, the application
+        * decides to exit via CheckSignal). */
+        {
+            ULONG pend = SetSignal(0, 0);
+            if (pend & SIGBREAKF_CTRL_C) {
+                tapf("# net_recv_ctrlc: CTRL_C still set after EINTR (correct)\n");
+            } else {
+                tapf("# net_recv_ctrlc: CTRL_C was CLEARED by the library (bug)\n");
+            }
+        }
         DateStamp(&ds);
         t1 = (ULONG)ds.ds_Days * 86400UL * 50UL + (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
         ret = call_errno();
