@@ -225,6 +225,11 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
                              * break bits (same Roadshow rule). */
                             SetSignal(fired & break_mask2, 0);
                             tn_ipc_cancel_inflight(base, msg);
+                            tn_logf(TN_LOG_BASIC,
+                                    "tolunnet: BREAK path fired=0x%lx restored_set=0x%lx now=0x%lx
+",
+                                    fired, (ULONG)(fired & break_mask2),
+                                    (ULONG)SetSignal(0, 0));
                             if (heap_msg != NULL) {
                                 FreeVec(heap_msg); /* replied to us; safe now */
                             }
