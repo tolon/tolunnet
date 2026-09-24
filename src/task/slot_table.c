@@ -415,18 +415,6 @@ static err_t tn_tcp_queued_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *
         return ERR_MEM;
     }
 
-    /* z.ai step 5 item 3: the pcb is not owned by any accepted slot yet;
-     * holding PBUF_POOL pbufs here can starve the pool. Clone to PBUF_RAM
-     * (same treatment as UDP RX) and release the pool pbuf immediately. */
-    {
-        struct pbuf *clone = pbuf_clone(PBUF_RAW, PBUF_RAM, p);
-        if (clone == NULL) {
-            return ERR_MEM;
-        }
-        pbuf_free(p);
-        p = clone;
-    }
-
     /* z.ai step 5 item 3: cap the queue by BYTES against the listening
      * slot's opt_rcvbuf (not just packet count). */
     if (ent->listening_slot != NULL && ent->listening_slot->opt_rcvbuf != 0) {
@@ -436,18 +424,30 @@ static err_t tn_tcp_queued_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *
             if (walk->p != NULL) queued += walk->p->tot_len;
         }
         if (queued + p->tot_len > (ULONG)ent->listening_slot->opt_rcvbuf) {
-            pbuf_free(p);
-            return ERR_MEM; /* hold in lwIP; it will retry */
+            return ERR_MEM; /* hold in lwIP; it will retry — p untouched */
         }
     }
 
     TnRxPacket *pkt = tn_rxpkt_get();
     if (pkt == NULL) {
-        pbuf_free(p);
-        return ERR_MEM;
+        return ERR_MEM; /* p untouched */
     }
 
-    pkt->p = p;
+    /* z.ai step 5 item 3: the pcb is not owned by any accepted slot yet;
+     * holding PBUF_POOL pbufs here can starve the pool. Clone to PBUF_RAM
+     * and release the pool pbuf. AFTER this point the original p is gone —
+     * the function must return ERR_OK (never ERR_MEM, which lwIP reads as
+     * "I still hold p" and would redeliver/free it again = double free). */
+    {
+        struct pbuf *clone = pbuf_clone(PBUF_RAW, PBUF_RAM, p);
+        if (clone == NULL) {
+            /* cannot clone: keep the pool pbuf held in lwIP instead */
+            tn_rxpkt_put(pkt);
+            return ERR_MEM;
+        }
+        pbuf_free(p);
+        pkt->p = clone;
+    }
     pkt->offset = 0;
     pkt->src_port = 0;
     pkt->next = NULL;
@@ -478,6 +478,12 @@ static void tn_tcp_queued_err_cb(void *arg, err_t err)
     } else {
         tn_accept_entry_free(ent, FALSE);
     }
+}
+
+/* z.ai step 7 item 3: host-test entry for the static callback. */
+err_t tn_tcp_queued_recv_cb_test(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
+{
+    return tn_tcp_queued_recv_cb(arg, pcb, p, err);
 }
 
 void tn_accept_entry_free(TnAcceptEntry *ent, BOOL abort_pcb)

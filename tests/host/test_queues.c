@@ -1542,6 +1542,62 @@ TN_TEST(net_watchdog_cancel_unparks_recv)
     tn_slot_free(&d, slot_idx);
 }
 
+/* z.ai step 7 item 3: byte-cap rejection must leave the incoming pbuf
+ * untouched (ERR_MEM with p NOT freed) — the old order cloned first and
+ * freed after the cap check, so a rejection freed the clone while lwIP
+ * still held the original (double free on redelivery). Mock counts
+ * pbuf_free calls: exactly one per accepted enqueue, zero extra on
+ * rejection. */
+TN_TEST(early_rx_cap_reject_leaves_pbuf_alone)
+{
+    TnDaemon d;
+    TnSocketBase base;
+    TN_TEST_BASE_INIT(base);
+    int listen_idx = -1;
+    /* heap-allocated: tn_accept_entry_free() FreeVecs the entry at the end */
+    TnAcceptEntry *ent = (TnAcceptEntry *)calloc(1, sizeof(TnAcceptEntry));
+    struct tcp_pcb lpcb, npcbs[3];
+    struct pbuf *p1, *p2;
+    int frees_before;
+
+    memset(&d, 0, sizeof(d));
+    tn_slot_table_init(&d);
+
+    TnSocketSlot *lslot = tn_slot_alloc(&d, &base, NULL, AF_INET, SOCK_STREAM,
+                                        IPPROTO_TCP, &listen_idx);
+    TN_ASSERT_TRUE(lslot != NULL);
+    lslot->opt_rcvbuf = 8; /* tiny byte cap */
+
+    ent->listening_slot = lslot;
+
+    memset(&lpcb, 0, sizeof(lpcb));
+    memset(npcbs, 0, sizeof(npcbs));
+    ent->new_pcb = &npcbs[0]; /* the cb validates pcb identity */
+
+    /* packet 1: 6 bytes, accepted (queued = 6 <= 8) */
+    p1 = mock_pbuf_alloc(6);
+    TN_ASSERT_TRUE(p1 != NULL);
+    frees_before = mock_lwip_call_count(MOCK_CALL_PBUF_FREE);
+    TN_ASSERT_EQ(tn_tcp_queued_recv_cb_test(ent, &npcbs[0], p1, ERR_OK), ERR_OK);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_PBUF_FREE), frees_before + 1);
+
+    /* packet 2: 6 bytes, exceeds the 8-byte cap -> ERR_MEM; the ORIGINAL
+     * pbuf must be untouched (held in lwIP) — zero extra frees. The old
+     * clone-then-check order freed the clone and returned ERR_MEM, which
+     * lwIP reads as "still held", causing a double free on redelivery. */
+    p2 = mock_pbuf_alloc(6);
+    TN_ASSERT_TRUE(p2 != NULL);
+    frees_before = mock_lwip_call_count(MOCK_CALL_PBUF_FREE);
+    TN_ASSERT_EQ(tn_tcp_queued_recv_cb_test(ent, &npcbs[0], p2, ERR_OK), ERR_MEM);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_PBUF_FREE), frees_before);
+
+    tn_accept_entry_free(ent, FALSE);
+    /* p2 was rejected by the byte cap and never entered the queue: lwIP
+     * holds it in the real stack; here we own it, so free explicitly to
+     * keep LSan clean. */
+    pbuf_free(p2);
+}
+
 int main(void)
 {
     TN_TEST_RUN(rx_pbuf_chain_partial_reads);
@@ -1555,6 +1611,7 @@ int main(void)
     TN_TEST_RUN(net_shutdown_shut_rdwr_and_error_order);
     TN_TEST_RUN(net_send_edestaddrreq_correction);
     TN_TEST_RUN(net_watchdog_cancel_unparks_recv);
+    TN_TEST_RUN(early_rx_cap_reject_leaves_pbuf_alone);
     TN_TEST_RUN(net_udp_raw_send_connected);
     TN_TEST_RUN(net_udp_raw_send_unconnected_edestaddrreq);
     TN_TEST_RUN(net_udp_connected_sendto_eisconn);
