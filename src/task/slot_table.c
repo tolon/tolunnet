@@ -419,12 +419,8 @@ static err_t tn_tcp_queued_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *
      * holding PBUF_POOL pbufs here can starve the pool. Clone to PBUF_RAM
      * (same treatment as UDP RX) and release the pool pbuf immediately. */
     {
-        struct pbuf *clone = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
+        struct pbuf *clone = pbuf_clone(PBUF_RAW, PBUF_RAM, p);
         if (clone == NULL) {
-            return ERR_MEM;
-        }
-        if (pbuf_copy(clone, p) != ERR_OK) {
-            pbuf_free(clone);
             return ERR_MEM;
         }
         pbuf_free(p);
@@ -439,7 +435,7 @@ static err_t tn_tcp_queued_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *
         for (walk = ent->early_rx_head; walk != NULL; walk = walk->next) {
             if (walk->p != NULL) queued += walk->p->tot_len;
         }
-        if (queued + p->tot_len > ent->listening_slot->opt_rcvbuf) {
+        if (queued + p->tot_len > (ULONG)ent->listening_slot->opt_rcvbuf) {
             pbuf_free(p);
             return ERR_MEM; /* hold in lwIP; it will retry */
         }

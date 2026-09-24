@@ -101,8 +101,14 @@ static void tn_ipc_cancel_inflight(TnSocketBase *base, TnIpcMsg *msg)
         early = GetMsg(base->reply_port);
         if (early == NULL) continue;
         if ((TnIpcMsg *)early == msg) {
-            msg->result = -1;
-            msg->err_no = EINTR;
+            /* z.ai step 6 item 2: if the daemon won the race and replied
+             * with a real result (recv got data, connect completed),
+             * KEEP it — data must never be dropped. Only a daemon-side
+             * EINTR reply means the cancellation happened. */
+            if (msg->result < 0 && msg->err_no != 0) {
+                msg->result = -1;
+                msg->err_no = EINTR;
+            }
             got_msg = 1;
         } else if ((TnIpcMsg *)early == cancel) {
             got_cancel = 1;
@@ -220,6 +226,10 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
                             if (heap_msg != NULL) {
                                 FreeVec(heap_msg); /* replied to us; safe now */
                             }
+                            /* z.ai step 6 item 2: keep a real result */
+                            if (msg->result >= 0 || msg->err_no == 0) {
+                                return msg->result;
+                            }
                             tn_set_errno_val(base, EINTR);
                             return -1;
                         }
@@ -242,8 +252,14 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
         }
 
         if (!(fired & reply_sig)) {
+            /* z.ai step 6 item 1: a genuine timeout now CANCELs the
+             * in-flight request daemon-side (unparks recv/accept/connect,
+             * DNS pending) instead of orphaning it — an orphaned parked
+             * recv used to poison the socket with EALREADY forever. The
+             * orphan chain remains only as the fallback if the CANCEL ack
+             * itself never arrives. */
             base->ipc_timeouts++;
-            /* TNET-150: chain onto any earlier orphan; freed at close */
+            tn_ipc_cancel_inflight(base, msg);
             heap_msg->orphan_next = base->ipc_orphan;
             base->ipc_orphan = heap_msg;
             tn_set_errno_val(base, ETIMEDOUT);
@@ -263,6 +279,11 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
             tn_ipc_cancel_inflight(base, msg);
             if (heap_msg != NULL) {
                 FreeVec(heap_msg); /* replied to us; safe now */
+            }
+            /* z.ai step 6 item 2: honor a real daemon result if it
+             * won the race (recv data / connect ok) instead of EINTR */
+            if (msg->result >= 0 || msg->err_no == 0) {
+                return msg->result;
             }
             tn_set_errno_val(base, EINTR);
             return -1;

@@ -19,6 +19,34 @@
 #include "sys/socket.h"
 
 /* TNET-115: exercise the REAL scatter-gather message handlers */
+/* z.ai step 6 item 1: host mirror of the daemon CANCEL handler
+ * (ipc_status.c pulls lwip/stats.h so it cannot be textually included
+ * here). Same semantics: unpark the target and reply EINTR — but the
+ * host harness has no ReplyMsg, so the reply is recorded via the
+ * message fields (as the daemon does before ReplyMsg). */
+/* 64-bit host: args[0] (LONG) cannot hold a pointer, so the target rides
+ * in this file-scope variable. The m68k daemon passes it in args[0],
+ * which is pointer-sized there. */
+static TnIpcMsg *host_cancel_target = NULL;
+int tn_ipc_cmd_cancel_host(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot_unused)
+{
+    TnIpcMsg *target = host_cancel_target;
+    int s2;
+    (void)imsg;
+    (void)slot_unused;
+    for (s2 = 0; s2 < TN_MAX_GLOBAL_SOCKETS; s2++) {
+        TnSocketSlot *sl = &d->sockets[s2];
+        if (!sl->in_use) continue;
+        if (sl->pending_recv_msg == target) {
+            sl->pending_recv_msg = NULL;
+            target->result = -1;
+            target->err_no = EINTR;
+            return 0;
+        }
+    }
+    return 0;
+}
+#define tn_ipc_cmd_cancel tn_ipc_cmd_cancel_host
 #include "../../src/task/ipc_msg.c"
 
 /* the daemon's loopback pump is outside the unit under test */
@@ -1427,6 +1455,65 @@ TN_TEST(net_send_edestaddrreq_correction)
     }
 }
 
+/* z.ai step 6 item 1: watchdog expiry must CANCEL the parked recv
+ * (unparking it), not orphan it — the next recv on the same socket must
+ * work instead of failing EALREADY forever. Exercises tn_ipc_cmd_cancel
+ * through the mock: park -> cancel -> park again. */
+TN_TEST(net_watchdog_cancel_unparks_recv)
+{
+    TnDaemon d;
+    TnSocketBase base;
+    TN_TEST_BASE_INIT(base);
+    int slot_idx = -1;
+    TnIpcMsg imsg1, imsg2, cancel;
+    static char buf[16];
+
+    memset(&d, 0, sizeof(d));
+    tn_slot_table_init(&d);
+
+    TnSocketSlot *slot = tn_slot_alloc(&d, &base, NULL, AF_INET, SOCK_STREAM,
+                                       IPPROTO_TCP, &slot_idx);
+    TN_ASSERT_TRUE(slot != NULL);
+    slot->tcp_state = TN_TCP_STATE_ESTABLISHED;
+
+    /* first recv parks (simulating the watchdog-expired call) */
+    memset(&imsg1, 0, sizeof(imsg1));
+    imsg1.ptrs[0] = buf;
+    imsg1.args[1] = sizeof(buf);
+    TN_ASSERT_EQ(tn_ipc_cmd_recv(&d, &imsg1, slot), 1); /* TN_IPC_DEFER */
+    TN_ASSERT_TRUE(slot->pending_recv_msg == &imsg1);
+
+    /* the client-side watchdog sends CANCEL(args[0]=imsg1) */
+    memset(&cancel, 0, sizeof(cancel));
+    cancel.cmd = TN_IPC_CMD_CANCEL;
+    host_cancel_target = &imsg1;
+    cancel.args[0] = 0; /* unused on the host shim */
+    TN_ASSERT_EQ(tn_ipc_cmd_cancel(&d, &cancel, slot), 0);
+    TN_ASSERT_EQ(cancel.result, 0);
+    TN_ASSERT_TRUE(slot->pending_recv_msg == NULL);
+    TN_ASSERT_EQ(imsg1.result, -1);
+    TN_ASSERT_EQ(imsg1.err_no, EINTR);
+
+    /* the NEXT recv on the same socket must park again cleanly
+     * (pre-fix it got EALREADY forever) */
+    memset(&imsg2, 0, sizeof(imsg2));
+    imsg2.ptrs[0] = buf;
+    imsg2.args[1] = sizeof(buf);
+    TN_ASSERT_EQ(tn_ipc_cmd_recv(&d, &imsg2, slot), 1); /* parks again */
+    TN_ASSERT_TRUE(slot->pending_recv_msg == &imsg2);
+
+    /* and data arrival completes it */
+    {
+        struct pbuf *p = mock_pbuf_alloc(5);
+        TN_ASSERT_TRUE(p != NULL);
+        memcpy(p->payload, "hello", 5);
+        tn_rx_queue_push(slot, p, NULL, 0);
+    }
+    TN_ASSERT_EQ(tn_ipc_cmd_recv(&d, &imsg2, slot), 0);
+    TN_ASSERT_EQ((LONG)imsg2.result, 5);
+    tn_slot_free(&d, slot_idx);
+}
+
 int main(void)
 {
     TN_TEST_RUN(rx_pbuf_chain_partial_reads);
@@ -1439,6 +1526,7 @@ int main(void)
     TN_TEST_RUN(net_recv_unconnected_tcp_enotconn_not_parked);
     TN_TEST_RUN(net_shutdown_shut_rdwr_and_error_order);
     TN_TEST_RUN(net_send_edestaddrreq_correction);
+    TN_TEST_RUN(net_watchdog_cancel_unparks_recv);
     TN_TEST_RUN(net_udp_raw_send_connected);
     TN_TEST_RUN(net_udp_raw_send_unconnected_edestaddrreq);
     TN_TEST_RUN(net_udp_connected_sendto_eisconn);
