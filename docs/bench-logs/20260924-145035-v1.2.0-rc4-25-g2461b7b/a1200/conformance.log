@@ -1,0 +1,5 @@
+# tolunnet SocketConformance (Round 3 §B.2)
+ok 1 - tc_lib_open_close
+ok 2 - tc_lib_expunge_survives
+# net_recv_ctrlc: recv rc=-1 errno=4 after 62 ticks
+ok 3 - net_recv_ctrlc

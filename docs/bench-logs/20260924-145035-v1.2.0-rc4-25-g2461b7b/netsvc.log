@@ -1,0 +1,16 @@
+[2026-09-24 14:50:35] [main] starting hermetic slirp host services
+[2026-09-24 14:50:35] [udp_echo] listening on UDP 15007
+[2026-09-24 14:50:35] [tcp_echo] listening on TCP 15007
+[2026-09-24 14:50:35] [tcp_delay] listening on TCP 15009
+[2026-09-24 14:50:35] [tcp_silent] listening on TCP 15011
+[2026-09-24 14:50:35] [sntp] listening on UDP 15123
+[2026-09-24 14:50:35] [tftp] listening on UDP 15069
+[2026-09-24 14:50:35] [ftp] listening on TCP 15021 (PASV port: 15020)
+[2026-09-24 14:50:35] [main] all 7 service threads started, ready for traffic
+[2026-09-24 14:50:35] [whois] listening on TCP 15043
+[2026-09-24 14:50:35] [http] listening on TCP 15080
+[2026-09-24 14:50:35] [tcp_delay] accepted from ('127.0.0.1', 59828), sleeping 1.0 s before reply
+[2026-09-24 14:50:35] [ftp] connected from ('127.0.0.1', 59829)
+[2026-09-24 14:50:35] [ftp] session error: [WinError 10053] Kurulan bir bağlantı, ana makinenizdeki yazılım tarafından iptal edildi
+[2026-09-24 14:50:35] [whois] query '' from ('127.0.0.1', 59830)
+[2026-09-24 14:50:35] [http] request '' from ('127.0.0.1', 59831)

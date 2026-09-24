@@ -1,0 +1,39 @@
+[2026-09-24 14:11:26] [main] starting hermetic slirp host services
+[2026-09-24 14:11:26] [udp_echo] listening on UDP 15007
+[2026-09-24 14:11:26] [tcp_delay] listening on TCP 15009
+[2026-09-24 14:11:26] [tcp_echo] listening on TCP 15007
+[2026-09-24 14:11:26] [sntp] listening on UDP 15123
+[2026-09-24 14:11:26] [tftp] listening on UDP 15069
+[2026-09-24 14:11:26] [ftp] listening on TCP 15021 (PASV port: 15020)
+[2026-09-24 14:11:26] [main] all 7 service threads started, ready for traffic
+[2026-09-24 14:11:26] [whois] listening on TCP 15043
+[2026-09-24 14:11:26] [http] listening on TCP 15080
+[2026-09-24 14:11:26] [tcp_delay] accepted from ('127.0.0.1', 49919), sleeping 1.0 s before reply
+[2026-09-24 14:11:26] [ftp] connected from ('127.0.0.1', 49920)
+[2026-09-24 14:11:26] [whois] query '' from ('127.0.0.1', 49921)
+[2026-09-24 14:11:26] [ftp] session error: [WinError 10053] Kurulan bir bağlantı, ana makinenizdeki yazılım tarafından iptal edildi
+[2026-09-24 14:11:26] [http] request '' from ('127.0.0.1', 49922)
+[2026-09-24 14:13:59] [tcp_delay] accepted from ('127.0.0.1', 56717), sleeping 1.0 s before reply
+[2026-09-24 14:14:00] [udp_echo] echoing 9 bytes to ('127.0.0.1', 57755)
+[2026-09-24 14:14:00] [tcp_delay] accepted from ('127.0.0.1', 56719), sleeping 1.0 s before reply
+[2026-09-24 14:14:01] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 56720)
+[2026-09-24 14:14:36] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 23301)
+[2026-09-24 14:15:11] [tftp] RRQ for testfile (octet) from ('127.0.0.1', 49460)
+[2026-09-24 14:16:30] [tcp_delay] accepted from ('127.0.0.1', 13865), sleeping 1.0 s before reply
+[2026-09-24 14:16:31] [udp_echo] echoing 9 bytes to ('127.0.0.1', 57769)
+[2026-09-24 14:16:31] [tcp_delay] accepted from ('127.0.0.1', 13866), sleeping 1.0 s before reply
+[2026-09-24 14:16:32] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 13868)
+[2026-09-24 14:17:07] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 13929)
+[2026-09-24 14:17:42] [tftp] RRQ for testfile (octet) from ('127.0.0.1', 62888)
+[2026-09-24 14:22:32] [tcp_delay] accepted from ('127.0.0.1', 54021), sleeping 1.0 s before reply
+[2026-09-24 14:22:33] [udp_echo] echoing 9 bytes to ('127.0.0.1', 65280)
+[2026-09-24 14:22:33] [tcp_delay] accepted from ('127.0.0.1', 54028), sleeping 1.0 s before reply
+[2026-09-24 14:22:34] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 54029)
+[2026-09-24 14:23:06] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 30019)
+[2026-09-24 14:23:37] [tftp] RRQ for testfile (octet) from ('127.0.0.1', 59843)
+[2026-09-24 14:25:39] [tcp_delay] accepted from ('127.0.0.1', 24183), sleeping 1.0 s before reply
+[2026-09-24 14:25:41] [udp_echo] echoing 9 bytes to ('127.0.0.1', 49387)
+[2026-09-24 14:25:41] [tcp_delay] accepted from ('127.0.0.1', 24184), sleeping 1.0 s before reply
+[2026-09-24 14:25:42] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 24186)
+[2026-09-24 14:26:14] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 24242)
+[2026-09-24 14:26:45] [tftp] RRQ for testfile (octet) from ('127.0.0.1', 59552)
