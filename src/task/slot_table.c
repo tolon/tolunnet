@@ -415,8 +415,39 @@ static err_t tn_tcp_queued_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *
         return ERR_MEM;
     }
 
+    /* z.ai step 5 item 3: the pcb is not owned by any accepted slot yet;
+     * holding PBUF_POOL pbufs here can starve the pool. Clone to PBUF_RAM
+     * (same treatment as UDP RX) and release the pool pbuf immediately. */
+    {
+        struct pbuf *clone = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
+        if (clone == NULL) {
+            return ERR_MEM;
+        }
+        if (pbuf_copy(clone, p) != ERR_OK) {
+            pbuf_free(clone);
+            return ERR_MEM;
+        }
+        pbuf_free(p);
+        p = clone;
+    }
+
+    /* z.ai step 5 item 3: cap the queue by BYTES against the listening
+     * slot's opt_rcvbuf (not just packet count). */
+    if (ent->listening_slot != NULL && ent->listening_slot->opt_rcvbuf != 0) {
+        ULONG queued = 0;
+        TnRxPacket *walk;
+        for (walk = ent->early_rx_head; walk != NULL; walk = walk->next) {
+            if (walk->p != NULL) queued += walk->p->tot_len;
+        }
+        if (queued + p->tot_len > ent->listening_slot->opt_rcvbuf) {
+            pbuf_free(p);
+            return ERR_MEM; /* hold in lwIP; it will retry */
+        }
+    }
+
     TnRxPacket *pkt = tn_rxpkt_get();
     if (pkt == NULL) {
+        pbuf_free(p);
         return ERR_MEM;
     }
 
