@@ -1,0 +1,27 @@
+[2026-09-24 11:52:01] [main] starting hermetic slirp host services
+[2026-09-24 11:52:01] [udp_echo] listening on UDP 15007
+[2026-09-24 11:52:01] [sntp] listening on UDP 15123
+[2026-09-24 11:52:01] [tcp_delay] listening on TCP 15009
+[2026-09-24 11:52:01] [tcp_echo] listening on TCP 15007
+[2026-09-24 11:52:01] [tftp] listening on UDP 15069
+[2026-09-24 11:52:01] [ftp] listening on TCP 15021 (PASV port: 15020)
+[2026-09-24 11:52:01] [main] all 7 service threads started, ready for traffic
+[2026-09-24 11:52:01] [whois] listening on TCP 15043
+[2026-09-24 11:52:01] [http] listening on TCP 15080
+[2026-09-24 11:52:02] [tcp_delay] accepted from ('127.0.0.1', 47695), sleeping 1.0 s before reply
+[2026-09-24 11:52:02] [ftp] connected from ('127.0.0.1', 47696)
+[2026-09-24 11:52:02] [whois] query '' from ('127.0.0.1', 47697)
+[2026-09-24 11:52:02] [ftp] session error: [WinError 10053] Kurulan bir bağlantı, ana makinenizdeki yazılım tarafından iptal edildi
+[2026-09-24 11:52:02] [http] request '' from ('127.0.0.1', 47698)
+[2026-09-24 11:54:35] [tcp_delay] accepted from ('127.0.0.1', 65257), sleeping 1.0 s before reply
+[2026-09-24 11:54:36] [udp_echo] echoing 9 bytes to ('127.0.0.1', 63530)
+[2026-09-24 11:54:36] [tcp_delay] accepted from ('127.0.0.1', 65258), sleeping 1.0 s before reply
+[2026-09-24 11:54:37] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 65260)
+[2026-09-24 11:55:12] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 57572)
+[2026-09-24 11:55:48] [tftp] RRQ for testfile (octet) from ('127.0.0.1', 52759)
+[2026-09-24 11:57:07] [tcp_delay] accepted from ('127.0.0.1', 10164), sleeping 1.0 s before reply
+[2026-09-24 11:57:08] [udp_echo] echoing 9 bytes to ('127.0.0.1', 61470)
+[2026-09-24 11:57:08] [tcp_delay] accepted from ('127.0.0.1', 10165), sleeping 1.0 s before reply
+[2026-09-24 11:57:09] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 10166)
+[2026-09-24 11:57:44] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 39265)
+[2026-09-24 11:58:19] [tftp] RRQ for testfile (octet) from ('127.0.0.1', 58596)
