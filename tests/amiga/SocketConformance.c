@@ -6549,7 +6549,9 @@ static void tc_net_recv_ctrlc(void)
                    TAG_END);
         DateStamp(&ds);
         t0 = (ULONG)ds.ds_Days * 86400UL * 50UL + (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
+        tapf("# net_recv_ctrlc: signals BEFORE recv = 0x%lx\n", (unsigned)SetSignal(0, 0));
         n = call_recv(cli, buf, sizeof(buf), 0);
+        tapf("# net_recv_ctrlc: signals AFTER recv = 0x%lx\n", (unsigned)SetSignal(0, 0));
         /* z.ai step 6 item 3: the break bit must STILL be set after the
         * EINTR return (the library aborts the call, the application
         * decides to exit via CheckSignal). */
