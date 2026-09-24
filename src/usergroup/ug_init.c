@@ -16,6 +16,7 @@
 #include <proto/dos.h>
 
 extern const APTR g_ug_vectors[];
+struct UserGroupBase *ug_init_from_table(struct UserGroupBase *base, BPTR seglist, struct ExecBase *sysBase);
 
 /* CLI safety entry point and RomTag */
 __asm__(
@@ -33,32 +34,52 @@ extern struct UserGroupBase *ug_init_lib(BPTR seglist, struct ExecBase *sysBase)
 static const char g_ug_name[] = USERGROUP_LIB_NAME;
 static const char g_ug_id[]   = USERGROUP_ID_STR;
 
+/* z.ai step 7 item 7: RTF_AUTOINIT with a proper init table. The old
+ * non-AUTOINIT RomTag made exec call ug_init_lib as a raw C function; the
+ * compiler-generated prologue read remaining arguments from the stack, so
+ * after an expunge+reload the caller's stack frame produced garbage (crash
+ * on reopen). With RTF_AUTOINIT, exec allocates the library itself and
+ * calls the initializer as (base, seglist, sysBase) — plain C. */
+static const APTR g_ug_init_table[] = {
+    (APTR)sizeof(struct UserGroupBase),
+    (APTR)g_ug_vectors,
+    (APTR)ug_init_from_table,
+    (APTR)NULL
+};
+
 const struct Resident g_ug_romtag = {
     RTC_MATCHWORD,
     (struct Resident *)&g_ug_romtag,
     (APTR)(&g_ug_romtag + 1),
-    0,
+    RTF_AUTOINIT | RTF_AFTERDOS,
     USERGROUP_VER_NUM,
     NT_LIBRARY,
     0,
     (char *)g_ug_name,
     (char *)g_ug_id,
-    (APTR)ug_init_lib
+    (APTR)g_ug_init_table
 };
 
 struct ExecBase   *SysBase;
 struct DosLibrary *DOSBase;
 
+/* RTF_AUTOINIT initializer: exec has already allocated and cleared the
+ * library base of the requested size and set up the vector table. */
+/* Legacy name kept for the vector table / gen files. */
 struct UserGroupBase *ug_init_lib(BPTR seglist, struct ExecBase *sysBase)
 {
-    struct UserGroupBase *base;
+    return ug_init_from_table(NULL, seglist, sysBase);
+}
+
+struct UserGroupBase *ug_init_from_table(struct UserGroupBase *base,
+                                         BPTR seglist,
+                                         struct ExecBase *sysBase)
+{
     (void)sysBase;
 
     SysBase = *(struct ExecBase **)4UL;
     DOSBase = (struct DosLibrary *)OpenLibrary((CONST_STRPTR)"dos.library", 36UL);
 
-    base = (struct UserGroupBase *)MakeLibrary((APTR)g_ug_vectors, NULL, NULL,
-                                               sizeof(struct UserGroupBase), 0UL);
     if (!base) {
         if (DOSBase) CloseLibrary((struct Library *)DOSBase);
         return NULL;
