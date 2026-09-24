@@ -15,7 +15,7 @@
 #include <stdint.h>
 
 #define TN_FD_SETSIZE      64   /* NDK bsdsocket fd_set width in bits */
-#define TN_FD_TABLE_SIZE   32   /* tolunnet descriptors per opener */
+#define TN_FD_TABLE_SIZE   64   /* tolunnet descriptors per opener (matches dtablesize) */
 
 /* errno-style result codes (values per netinclude/sys/errno.h) */
 #define TN_EBADF   9

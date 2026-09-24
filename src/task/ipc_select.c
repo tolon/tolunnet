@@ -76,17 +76,21 @@ void tn_signal_socket(TnDaemon *d, TnSocketSlot *slot)
         BOOL match = FALSE;
         int fd;
         for (fd = 0; fd < sel->nfds && fd < sel->base->dtablesize; fd++) {
+            ULONG mask = (1UL << (fd & 31));
+            int hi = (fd >= 32);
+            ULONG r = hi ? sel->read_mask_hi  : sel->read_mask;
+            ULONG w = hi ? sel->write_mask_hi : sel->write_mask;
+            ULONG e = hi ? sel->except_mask_hi : sel->except_mask;
             if (sel->base->fd_map[fd] == s_idx) {
-                ULONG mask = (1UL << fd);
-                if ((sel->read_mask & mask) && tn_select_can_read(slot)) {
+                if ((r & mask) && tn_select_can_read(slot)) {
                     match = TRUE;
                     break;
                 }
-                if ((sel->write_mask & mask) && tn_select_can_write(slot)) {
+                if ((w & mask) && tn_select_can_write(slot)) {
                     match = TRUE;
                     break;
                 }
-                if ((sel->except_mask & mask) && tn_select_has_except(slot)) {
+                if ((e & mask) && tn_select_has_except(slot)) {
                     match = TRUE;
                     break;
                 }
@@ -131,6 +135,7 @@ int tn_ipc_cmd_select_arm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     LONG nfds;
     ULONG in_r, in_w, in_e;
     ULONG out_r = 0, out_w = 0, out_e = 0;
+    ULONG arm_hi_r = 0, arm_hi_w = 0, arm_hi_e = 0;
     ULONG *rfds;
     ULONG *wfds;
     ULONG *efds;
@@ -168,40 +173,66 @@ int tn_ipc_cmd_select_arm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         return 0;
     }
 
-    /* Validate descriptors and evaluate immediate readiness */
-    for (i = 0; i < nfds; i++) {
-        ULONG mask = (1UL << i);
-        if ((in_r | in_w | in_e) & mask) {
-            int slot_idx;
-            TnSocketSlot *s = tn_slot_lookup(d, base, i, &slot_idx);
-            if (s == NULL) {
-                imsg->result = -1;
-                imsg->err_no = EBADF;
-                return 0;
-            }
-            if ((in_r & mask) && tn_select_can_read(s)) {
-                out_r |= mask;
-                ready_cnt++;
-            }
-            if ((in_w & mask) && tn_select_can_write(s)) {
-                out_w |= mask;
-                ready_cnt++;
-            }
-            if ((in_e & mask) && tn_select_has_except(s)) {
-                out_e |= mask;
-                ready_cnt++;
+    /* z.ai step 6 item 4: fd_set carries TWO words (64 fds). The LO word
+     * rides args[1..3]; the HI word is read from / written to the client
+     * fd_set memory directly (fds_bits[1]). */
+    {
+        ULONG hi_r = 0, hi_w = 0, hi_e = 0;
+        if (nfds > 32) {
+            if (rfds) hi_r = rfds[1];
+            if (wfds) hi_w = wfds[1];
+            if (efds) hi_e = efds[1];
+        }
+
+        /* Validate descriptors and evaluate immediate readiness */
+        for (i = 0; i < nfds; i++) {
+            ULONG mask = (1UL << (i & 31));
+            ULONG *lo;
+            if (i < 32) {
+                lo = &in_r; if ((in_r | in_w | in_e) & mask) {
+                    int slot_idx;
+                    TnSocketSlot *s = tn_slot_lookup(d, base, i, &slot_idx);
+                    if (s == NULL) {
+                        imsg->result = -1;
+                        imsg->err_no = EBADF;
+                        return 0;
+                    }
+                    if ((in_r & mask) && tn_select_can_read(s)) { out_r |= mask; ready_cnt++; }
+                    if ((in_w & mask) && tn_select_can_write(s)) { out_w |= mask; ready_cnt++; }
+                    if ((in_e & mask) && tn_select_has_except(s)) { out_e |= mask; ready_cnt++; }
+                }
+                (void)lo;
+            } else {
+                ULONG g = (ULONG)i - 32;
+                ULONG m2 = (1UL << g);
+                if (((hi_r | hi_w | hi_e) & m2) == 0) continue;
+                int slot_idx;
+                TnSocketSlot *s = tn_slot_lookup(d, base, i, &slot_idx);
+                if (s == NULL) {
+                    imsg->result = -1;
+                    imsg->err_no = EBADF;
+                    return 0;
+                }
+                if ((hi_r & m2) && tn_select_can_read(s))  { hi_r |= m2; ready_cnt++; }
+                if ((hi_w & m2) && tn_select_can_write(s)) { hi_w |= m2; ready_cnt++; }
+                if ((hi_e & m2) && tn_select_has_except(s)) { hi_e |= m2; ready_cnt++; }
             }
         }
-    }
 
-    /* If descriptors are already ready, return count and sets immediately */
-    if (ready_cnt > 0) {
-        if (rfds) *rfds = out_r;
-        if (wfds) *wfds = out_w;
-        if (efds) *efds = out_e;
-        imsg->result = ready_cnt;
-        imsg->err_no = 0;
-        return 0;
+        /* If descriptors are already ready, return count and sets immediately */
+        if (ready_cnt > 0) {
+            if (rfds) { rfds[0] = out_r; if (nfds > 32) rfds[1] = hi_r; }
+            if (wfds) { wfds[0] = out_w; if (nfds > 32) wfds[1] = hi_w; }
+            if (efds) { efds[0] = out_e; if (nfds > 32) efds[1] = hi_e; }
+            imsg->result = ready_cnt;
+            imsg->err_no = 0;
+            return 0;
+        }
+
+        /* remember the HI masks on the armed selector */
+        arm_hi_r = hi_r;
+        arm_hi_w = hi_w;
+        arm_hi_e = hi_e;
     }
 
     /* Check if base already has an armed selector; otherwise find empty slot */
@@ -241,6 +272,9 @@ int tn_ipc_cmd_select_arm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     d->selectors[sel_slot].read_mask   = in_r;
     d->selectors[sel_slot].write_mask  = in_w;
     d->selectors[sel_slot].except_mask = in_e;
+    d->selectors[sel_slot].read_mask_hi   = arm_hi_r;
+    d->selectors[sel_slot].write_mask_hi  = arm_hi_w;
+    d->selectors[sel_slot].except_mask_hi = arm_hi_e;
 
     tn_logf(TN_LOG_VERBOSE, "tolunnet: select_arm sel_slot=%d task=0x%p sig=0x%lx nfds=%ld w=0x%lx\n",
             sel_slot, imsg->client_task, base->sig_select, nfds, in_w);
@@ -326,9 +360,21 @@ int tn_ipc_cmd_waitselect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         return 0; /* TN_IPC_REPLY_NOW */
     }
 
+    /* z.ai step 6 item 4: HI word (fds 32-63) read from client fd_sets */
+    ULONG hi_r = 0, hi_w = 0, hi_e = 0;
+    if (nfds > 32) {
+        if (rfds) hi_r = rfds[1];
+        if (wfds) hi_w = wfds[1];
+        if (efds) hi_e = efds[1];
+    }
+
     for (i = 0; i < nfds; i++) {
-        ULONG mask = (1UL << i);
-        if ((in_r | in_w | in_e) & mask) {
+        ULONG mask = (1UL << (i & 31));
+        int hi = (i >= 32);
+        ULONG ir = hi ? hi_r : in_r;
+        ULONG iw = hi ? hi_w : in_w;
+        ULONG ie = hi ? hi_e : in_e;
+        if ((ir | iw | ie) & mask) {
             int slot_idx;
             TnSocketSlot *s = tn_slot_lookup(d, base, i, &slot_idx);
             if (s == NULL) {
@@ -337,23 +383,23 @@ int tn_ipc_cmd_waitselect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                 return 0; /* TN_IPC_REPLY_NOW */
             }
             /* Read readiness */
-            if (in_r & mask) {
+            if (ir & mask) {
                 if (tn_select_can_read(s)) {
-                    out_r |= mask;
+                    if (hi) hi_r |= mask; else out_r |= mask;
                     ready_cnt++;
                 }
             }
             /* Write readiness */
-            if (in_w & mask) {
+            if (iw & mask) {
                 if (tn_select_can_write(s)) {
-                    out_w |= mask;
+                    if (hi) hi_w |= mask; else out_w |= mask;
                     ready_cnt++;
                 }
             }
             /* Exception readiness */
-            if (in_e & mask) {
+            if (ie & mask) {
                 if (tn_select_has_except(s)) {
-                    out_e |= mask;
+                    if (hi) hi_e |= mask; else out_e |= mask;
                     ready_cnt++;
                 }
             }

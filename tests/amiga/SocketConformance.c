@@ -6482,6 +6482,71 @@ static void tc_net_cmd_tftp(void)
     TAP_TODO("net_cmd_tftp", "red-baseline 20");
 }
 
+/* z.ai step 6 item 4: WaitSelect must see fds beyond bit 31. Open 40
+ * UDP dummies (fds 0-39), then a bound pair on fd 40/41; select on the
+ * fd 40 socket (nfds=41) after data arrives -> 1 with bit 40 set. */
+static void tc_waitselect_fd40(void)
+{
+    LONG dummies[40];
+    LONG a = -1, b = -1;
+    struct sockaddr_in sin;
+    fd_set rfds;
+    struct timeval tv;
+    int i;
+    LONG rc;
+
+    for (i = 0; i < 40; i++) {
+        dummies[i] = call_socket(AF_INET, SOCK_DGRAM, 0);
+        if (dummies[i] < 0) break;
+    }
+    if (i < 40) {
+        TAP_NOTOK("tc_waitselect_fd40", "cannot open 40 dummies");
+        goto out;
+    }
+    a = call_socket(AF_INET, SOCK_DGRAM, 0);
+    b = call_socket(AF_INET, SOCK_DGRAM, 0);
+    if (a < 0 || b < 0) {
+        TAP_NOTOK("tc_waitselect_fd40", "pair sockets failed");
+        goto out;
+    }
+    /* a is now fd 40; bind it to a private loopback port */
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(23581);
+    sin.sin_addr.s_addr = htonl(0x7F000001UL);
+    {
+        if (call_bind(a, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
+            TAP_NOTOK("tc_waitselect_fd40", "bind failed");
+            goto out;
+        }
+    }
+    if (call_sendto(b, "x", 1, 0, (struct sockaddr *)&sin, sizeof(sin)) != 1) {
+        TAP_NOTOK("tc_waitselect_fd40", "sendto failed");
+        goto out;
+    }
+
+    FD_ZERO(&rfds);
+    FD_SET(a, &rfds);
+    tv.tv_secs = 3;
+    tv.tv_micro = 0;
+    rc = call_waitselect(41, &rfds, NULL, NULL, &tv, NULL);
+    if (rc == 1 && FD_ISSET(a, &rfds)) {
+        TAP_OK("tc_waitselect_fd40");
+    } else {
+        tapf("# tc_waitselect_fd40: rc=%ld bit40=%ld\n", rc,
+             (long)FD_ISSET(a, &rfds));
+        TAP_NOTOK("tc_waitselect_fd40", "fd 40 not visible to WaitSelect");
+    }
+
+out:
+    for (i = 0; i < 40; i++) {
+        if (dummies[i] >= 0) call_closesocket(dummies[i]);
+    }
+    if (a >= 0) call_closesocket(a);
+    if (b >= 0) call_closesocket(b);
+}
+
 /* z.ai step 5 item 1: a recv parked on a silent TCP connection is
  * interrupted by CTRL-C (break mask) within 2 s: -1/EINTR, and the
  * daemon cancelled the parked message (a follow-up recv works). A
@@ -6707,6 +6772,7 @@ int main(int argc, char *argv[])
     tapf("# tolunnet SocketConformance (Round 3 §B.2)\n");
     TN_RUN(tc_lib_open_close);
     TN_RUN(tc_lib_expunge_survives);
+    TN_RUN(tc_waitselect_fd40);
     TN_RUN(tc_net_recv_ctrlc);
     TN_RUN(tc_socket_types);
     TN_RUN(tc_bind_udp);

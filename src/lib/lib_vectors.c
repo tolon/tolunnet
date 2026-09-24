@@ -949,8 +949,17 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
             base->dbg_wait_fired = 0x4; return 0;
         }
     } else {
-        /* nfds == 0: pure select-based sleep */
+        /* nfds == 0: pure select-based sleep. z.ai step 6 item 4: with no
+         * timeout this is a Wait(sig_mask) replacement — block until a
+         * signal arrives, not return at once. */
         if (!has_timeout || zero_timeout) {
+            if (!has_timeout && sig_mask != 0) {
+                ULONG got2 = Wait(sig_mask);
+                SetSignal(got2 & sig_mask, 0); /* leave the bits set */
+                if (signals != NULL) *signals = got2 & sig_mask;
+                tn_set_errno_val(base, EINTR);
+                return 0;
+            }
             if (signals != NULL) *signals = 0;
             return 0;
         }
@@ -991,9 +1000,17 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
         tm_sig = 1UL << base->timer_port->mp_SigBit;
 
         if (has_timeout) {
-            ULONG micros = (ULONG)timeout->tv_secs * 1000000UL + (ULONG)timeout->tv_micro;
-            budget_ticks = (micros + 19999UL) / 20000UL; /* 1 tick = 20 ms */
-            if (budget_ticks == 0) budget_ticks = 1;
+            /* z.ai step 6 item 4: compute directly in 1/50 s ticks with
+             * saturation — secs*1e6 overflows ULONG past ~4295 s. */
+            if (timeout->tv_secs > (0xFFFFFFFFUL / 50UL)) {
+                budget_ticks = 0xFFFFFFFFUL;
+            } else {
+                ULONG t_from_secs = timeout->tv_secs * 50UL;
+                ULONG t_from_micros = timeout->tv_micro / 20000UL;
+                budget_ticks = t_from_secs + t_from_micros;
+                if (budget_ticks < t_from_secs) budget_ticks = 0xFFFFFFFFUL; /* wrapped */
+                if (budget_ticks == 0) budget_ticks = 1;
+            }
         }
 
         for (attempt = 0; ; attempt++) {
@@ -1017,16 +1034,22 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
                 ULONG remain_ticks = (gone - t0 >= budget_ticks) ? 0 : budget_ticks - (gone - t0);
                 if (remain_ticks == 0) {
                     /* budget already spent */
-                    if (read_fds)   read_fds->fds_bits[0] = 0;
-                    if (write_fds)  write_fds->fds_bits[0] = 0;
-                    if (except_fds) except_fds->fds_bits[0] = 0;
+                    if (read_fds)   { read_fds->fds_bits[0] = 0; read_fds->fds_bits[1] = 0; }
+                    if (write_fds)  { write_fds->fds_bits[0] = 0; write_fds->fds_bits[1] = 0; }
+                    if (except_fds) { except_fds->fds_bits[0] = 0; except_fds->fds_bits[1] = 0; }
                     if (signals != NULL) *signals = 0;
                     if (nfds > 0) tn_ipc_call(base, TN_IPC_CMD_SELECT_DISARM);
                     base->dbg_wait_fired = 0x5; return 0;
                 }
                 tm->tr_node.io_Command = TR_ADDREQUEST;
-                tm->tr_time.tv_secs  = (remain_ticks * 20000UL) / 1000000UL;
-                tm->tr_time.tv_micro = (remain_ticks * 20000UL) % 1000000UL;
+                {
+                    ULONG micros2 = remain_ticks * 20000UL;
+                    if (remain_ticks != 0 && micros2 / 20000UL != remain_ticks) {
+                        micros2 = 0xFFFFFFFFUL; /* saturate */
+                    }
+                    tm->tr_time.tv_secs  = micros2 / 1000000UL;
+                    tm->tr_time.tv_micro = micros2 % 1000000UL;
+                }
                 SendIO((struct IORequest *)tm);
             }
 
@@ -1051,9 +1074,9 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
                 ULONG received_sigs = fired & sig_mask;
                 SetSignal(0, received_sigs);
                 if (signals != NULL) *signals = received_sigs;
-                if (read_fds)   read_fds->fds_bits[0] = 0;
-                if (write_fds)  write_fds->fds_bits[0] = 0;
-                if (except_fds) except_fds->fds_bits[0] = 0;
+                if (read_fds)   { read_fds->fds_bits[0] = 0; read_fds->fds_bits[1] = 0; }
+                if (write_fds)  { write_fds->fds_bits[0] = 0; write_fds->fds_bits[1] = 0; }
+                if (except_fds) { except_fds->fds_bits[0] = 0; except_fds->fds_bits[1] = 0; }
                 base->dbg_wait_fired = 0x6;
                 tn_set_errno_val(base, EINTR);
                 return 0;
@@ -1082,15 +1105,26 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
             if (res != 0) { base->dbg_wait_fired = 0x8; return res; }
 
             if (!has_timeout) {
-                /* infinite wait returned empty - spurious; retry */
-                if (attempt >= 3) return 0;
-                continue;
+                /* z.ai step 6 item 4: infinite wait NEVER returns 0 on a
+                 * spurious wake — the selector was disarmed on wake, so
+                 * re-ARM (via the same fast-path call) and keep waiting. */
+                base->ipc_msg.args[0] = nfds;
+                base->ipc_msg.args[1] = orig_r;
+                base->ipc_msg.args[2] = orig_w;
+                base->ipc_msg.args[3] = orig_e;
+                base->ipc_msg.ptrs[0] = (APTR)read_fds;
+                base->ipc_msg.ptrs[1] = (APTR)write_fds;
+                base->ipc_msg.ptrs[2] = (APTR)except_fds;
+                if (tn_ipc_call(base, TN_IPC_CMD_SELECT_ARM) >= 0) {
+                    continue;
+                }
+                return 0;
             }
             if (elapsed + 3UL >= budget_ticks) {
                 /* genuine timeout (3-tick measurement slack) */
-                if (read_fds)   read_fds->fds_bits[0] = 0;
-                if (write_fds)  write_fds->fds_bits[0] = 0;
-                if (except_fds) except_fds->fds_bits[0] = 0;
+                if (read_fds)   { read_fds->fds_bits[0] = 0; read_fds->fds_bits[1] = 0; }
+                if (write_fds)  { write_fds->fds_bits[0] = 0; write_fds->fds_bits[1] = 0; }
+                if (except_fds) { except_fds->fds_bits[0] = 0; except_fds->fds_bits[1] = 0; }
                 base->dbg_wait_fired = 0x7; return 0;
             }
             /* timer lied or spurious wake - retry with remaining budget */

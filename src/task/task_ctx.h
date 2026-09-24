@@ -204,6 +204,9 @@ typedef struct TnSelector {
     ULONG         read_mask;
     ULONG         write_mask;
     ULONG         except_mask;
+    ULONG         read_mask_hi;   /* z.ai step 6 item 4: fds 32-63 */
+    ULONG         write_mask_hi;
+    ULONG         except_mask_hi;
 } TnSelector;
 
 /* Daemon Singleton State */
