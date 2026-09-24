@@ -650,6 +650,18 @@ tn_main_loop:
         tn_logf(TN_LOG_BASIC,
                 "tolunnet: shutdown deferred - %lu live client(s) hold bsdsocket.library; returning to service\n",
                 (ULONG)g_daemon.bsd_lib->lib_OpenCnt);
+        /* z.ai step 4 item 5: the timer request may be mid-flight after
+         * the aborted shutdown (acked but not re-armed) - lwIP timers
+         * and TCP retransmit starve otherwise. Normalize: drain any
+         * pending completion, then re-arm the 100 ms tick. */
+        if (g_daemon.timer.io != NULL) {
+            if (!CheckIO((struct IORequest *)g_daemon.timer.io)) {
+                AbortIO((struct IORequest *)g_daemon.timer.io);
+            }
+            WaitIO((struct IORequest *)g_daemon.timer.io);
+            g_daemon.timer.armed = FALSE;
+        }
+        tn_timer_arm(&g_daemon.timer, 100000);
         g_daemon.running = TRUE;
         goto tn_main_loop;
     }

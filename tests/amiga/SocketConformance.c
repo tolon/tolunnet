@@ -4949,6 +4949,29 @@ static void tc_cmd_stop_start(void)
         }
     }
 
+    /* z.ai step 4 item 5: after the refused STOP the daemon must still be
+     * fully alive - the shutdown gate re-arms its timer before returning to
+     * service. A TCP loopback send/recv proves lwIP timers (and the 100 ms
+     * tick) are running again. */
+    {
+        LONG lst, cli, conn;
+        char pbuf[8];
+        if (tc_cmd_tcp_pair(23561, &lst, &cli, &conn)) {
+            if (call_send(cli, "alive", 5, 0) == 5 &&
+                tc_cmd_wait_readable(conn) &&
+                call_recv(conn, pbuf, sizeof(pbuf), 0) == 5 &&
+                memcmp(pbuf, "alive", 5) == 0) {
+                tapf("# tc_cmd_stop_start: post-refusal TCP loopback OK (timers alive)\n");
+            } else {
+                tapf("# tc_cmd_stop_start: post-refusal TCP loopback DEAD\n");
+                call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+                TAP_NOTOK("tc_cmd_stop_start", "daemon timers dead after refused STOP");
+                return;
+            }
+            call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+        }
+    }
+
     /* 2. Close our library base so no open clients remain */
     CloseLibrary(SocketBase);
     SocketBase = NULL;

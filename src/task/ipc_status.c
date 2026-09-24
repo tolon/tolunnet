@@ -247,7 +247,14 @@ int tn_ipc_cmd_stop(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         return TN_IPC_REPLY_NOW;
     }
     /* TNET-152: defer the reply until after RemPort and SANA-II CloseDevice,
-     * so the caller only wakes up when hardware and ports are 100% released. */
+     * so the caller only wakes up when hardware and ports are 100% released.
+     * z.ai step 4 item 5: a SECOND STOP while one is already parked must
+     * not overwrite the first (the parked message would never be replied). */
+    if (d->stop_msg != NULL) {
+        imsg->result = -1;
+        imsg->err_no = EALREADY;
+        return TN_IPC_REPLY_NOW;
+    }
     d->stop_msg = imsg;
     d->running = FALSE;
     return TN_IPC_DEFER;
