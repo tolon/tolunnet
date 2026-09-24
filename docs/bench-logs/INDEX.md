@@ -15,6 +15,15 @@ Per-commit evidence dirs. The newest full run per commit is the citable one;
 - `…123456…g6df32d9` (netsvc.log only) was a staging leftover where the
   netsvc host services failed their readiness probe before any emulator leg
   started — deleted, not evidence.
+- **Step-7/7b bench dir ledger** (kept): `…204554…g0538677` item-3
+  completion ALL-GREEN; `…213647…gaa07f5d` item-4 first (fd40 ok, badf
+  EINVAL expected fail); `…215439…g1e0019f` MEMP_NUM_UDP_PCB 48 (badf
+  still EINVAL); `…230644…gfd6915e` step-7 item-0 honesty red (expected);
+  `…232508…ga7cc13f` item-1 break-bit fix bench. **Deleted:** `…201206…`
+  and `…203058…` (87e75f2 debug-commit duplicates), `…204237…` (netsvc
+  port-conflict dead run, netsvc.log only), `…210232…` (2281561 diag
+  duplicate). STOP-REPORT.md deleted in this commit's sibling logs commit
+  (the step-7b red was fixed by 13d9c30).
 - **item 2 (keep the daemon's winning result) rode in b4231da** alongside
   item 1: the bench for b4231da covers both (its race-honor guard was
   committed pre-bench, the break-path mirror landed before the SAME bench
