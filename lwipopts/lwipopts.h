@@ -68,7 +68,7 @@
 #define PBUF_POOL_SIZE       32
 #define MEMP_NUM_TCP_PCB     64  /* TNET-131: dtablesize-1 concurrent sockets */
 #define MEMP_NUM_TCP_PCB_LISTEN 8
-#define MEMP_NUM_UDP_PCB     16
+#define MEMP_NUM_UDP_PCB     48  /* z.ai step 6 item 4: fd40 test opens 42+ UDP pcbs */
 #define MEMP_NUM_RAW_PCB     8
 #define MEMP_NUM_TCP_SEG     64
 #define DNS_MAX_SERVERS      2

@@ -1750,10 +1750,10 @@ static void tc_waitselect_badf(void)
     tv_zero.tv_secs = 0;
     tv_zero.tv_micro = 0;
 
-    /* 1. nfds > table size (32) must return -1 with EBADF */
-    res = call_waitselect(33, NULL, NULL, NULL, &tv_zero, NULL);
+    /* 1. nfds > table size (64, z.ai step 6 item 4) must return -1 EBADF */
+    res = call_waitselect(65, NULL, NULL, NULL, &tv_zero, NULL);
     if (res != -1 || call_errno() != EBADF) {
-        tapf("# nfds=33 res=%ld errno=%ld (expected -1, EBADF)\n", res, call_errno());
+        tapf("# nfds=65 res=%ld errno=%ld (expected -1, EBADF)\n", res, call_errno());
         TAP_NOTOK("tc_waitselect_badf", "nfds > table did not return EBADF");
         return;
     }
