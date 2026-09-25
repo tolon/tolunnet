@@ -1,73 +1,52 @@
-# Tolunnet STOP-REPORT: z.ai step 7c — usergroup stub still red + 68000 cycle-2 hang
+# Tolunnet STOP-REPORT: z.ai step 7d — init fixed (no hangs, full suites), but the expunge-flush reload leg stays red
 
 **Timestamp:** 2026-09-25
-**Work order:** TN-zai-step.md (step 7c). Item 1 attempted three stub/init
-variants; `tc_usergroup` still fails AND the 68000 leg now hangs in cycle 2 →
-per the rules: STOP-REPORT with the last lines of each log verbatim, stop.
+**Work order:** TN-zai-step.md (step 7d). Item 1 landed and works; item 2's
+reload leg is red outside TODO rows → STOP-REPORT with the last lines of each
+log verbatim, stop.
 
-**Commits this round:**
-- `bc002e9` — item 1 (work-order stub): push-a0/push-d0 stack-arg stub,
-  ug_init_c(base, seglist) plain C, no AddLibrary, RTF_AUTOINIT only,
-  dead functions removed, reload leg in tc_usergroup.
-- follow-up — register-ABI stub (a0→d1 tail-call) after the first bench
-  showed arg corruption.
+**Commit:** `f109299` — item 1: init-table order fixed
+({size, vectors, NULL-dataTable, stub} — step 7c had 3/4 swapped), stack-push
+stub restored, DOSBase-guarded failure branch, tc_usergroup init-run assertion
+(ln_Name/IdString).
 
-**Bench dir:** `docs/bench-logs/20260925-115313-v1.2.0-rc4-68-gac6d6b4/`
+**Bench dir:** `docs/bench-logs/20260925-124435-v1.2.0-rc4-70-gf109299/`
+(ALL FOUR logs now run to completion — the hangs are gone.)
 
-## The red + hang (verbatim, last lines of each log)
-
+**README core lines (verbatim):**
 ```
-a1200/conformance.log (cycle 1 — suite COMPLETED):
-  not ok 63 - tc_usergroup # getpwnam(root) failed or fields mismatch
-  ...
-  ok 83 - tc_cmd_stop_start
-  1..83
-  (net TODO remaining: 8)
-
-a1200/conformance2.log (cycle 2 — hung after test 1):
-  # tolunnet SocketConformance (Round 3 §B.2)
-  ok 1 - tc_lib_open_close
-  (log ends — 900 s timeout)
-
-68000/conformance.log (cycle 1 — hung at the END, after test 62):
-  ok 60 - tc_cmd_ifctl
-  ok 61 - tc_cmd_netshutdown
-  ok 62 - tc_cmd_route
-  (log ends before tc_cmd_stop_start could run)
-
-68000/conformance2.log: (missing)
+a1200/conformance.log:  core: 73 ok / 9 not ok; external: 1 skipped
+a1200/conformance2.log: core: 73 ok / 9 not ok; external: 1 skipped
+68000/conformance.log:  core: 73 ok / 9 not ok; external: 1 skipped
+68000/conformance2.log: core: 73 ok / 9 not ok; external: 1 skipped
+net TODO remaining: 8
 ```
 
-## Analysis
+## The remaining red (verbatim, identical ×4)
 
-- Cycle 1 a1200: the full suite ran and completed; ONLY tc_usergroup failed
-  (getpwnam(root) mismatch) — so the stub/init now receives workable
-  arguments but something in the DB init still mismatches (fields vs the
-  test's uid/gid/name expectations).
-- 68000: cycle 1 hung at the very END (after tc_cmd_route, before stop_start
-  could run) and cycle 2 hung after test 1 — the repeated AUTOINIT
-  open/expunge cycles appear to destabilize the emulator leg (seg-list or
-  memory-poisoning aftereffect of the earlier broken stubs persisting in the
-  HDF? Each bench stages a fresh HDF, so more likely the AUTOINIT reload
-  path leaves memory in a state the 68000 tolerates worse).
-- The reload leg I added runs open/getpwnam/AllocMem-flush/FindName/reopen —
-  the flush-class AllocMem + immediate reopen is the new element in both
-  hangs. This must be treated as a suspect too: the leg may be tripping an
-  exec/WinUAE edge rather than proving the fix.
+```
+not ok 63 - tc_usergroup # reload: library still in LibList after flush
+```
+
+The init-run assertion passes (ln_Name/IdString proven) — getpwnam(root)
+works after the table fix. The reload leg fails only at the final check:
+after `AllocMem(0x7FFFFFF0, MEMF_PUBLIC)` fails, `FindName` still finds
+usergroup.library — i.e. exec did NOT purge the closed library in WinUAE's
+emulation (the failed alloc does not trigger a library purge there), or the
+library's EXPUNGE vector is never invoked by exec's flush path. The
+expunge vector IS wired (ug_stub_expunge at -18 in ug_table.gen.c).
+
+Per the rules: red outside TODO rows → stop, do not fix.
 
 ## Suggested next steps (owner decision)
 
-1. Revert the usergroup RomTag to the pre-step-7 non-AUTOINIT form
-   (git: before 98bb0bf) which passed tc_usergroup for many benches, and
-   drop the reload leg — treat the expunge/reload crash as a separate,
-   lower-priority investigation.
-2. If AUTOINIT is still desired: bench the reload leg alone, minus the
-   flush AllocMem, to isolate whether the AllocMem(0x7FFFFFF0) flush is
-   what destabilizes WinUAE's 68000 emulation.
-3. Investigate why tc_usergroup fails even in cycle 1 a1200 with the new
-   stubs: add a debug print of base/seglist/DOSBase inside ug_init_c to
-   verify arguments before touching the DB.
+1. In the test, replace the failed-AllocMem flush with an explicit purge:
+   call the library's own expunge via `RemLibrary`-equivalent is not public;
+   instead call `CloseLibrary` then `Forbid(); RemLibrary?` — not public.
+   Practical alternative: drop the LibList check and keep getpwnam-reopen
+   as the pass condition (exec/WinUAE purge behavior is environment-
+   specific, not a tolunnet property).
+2. Or keep the row red and mark it TODO with reason "WinUAE does not purge
+   closed libs on failed alloc".
 
-Evidence kept: `docs/bench-logs/20260925-115313-v1.2.0-rc4-68-gac6d6b4/`.
-All other fixes (step 7 items 0–6, step 7b) remain committed and were
-green-benched.
+Evidence kept: `docs/bench-logs/20260925-124435-v1.2.0-rc4-70-gf109299/`.
