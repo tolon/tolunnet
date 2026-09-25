@@ -208,10 +208,9 @@ int tn_ipc_cmd_setsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                 return 0;
             }
             slot->opt_nodelay = (tn_load_opt_int(optval) != 0);
-            /* z.ai step 7 item 5: while LISTENING, slot->tcp_pcb is a
-             * tcp_pcb_listen — Nagle flags exist there, but keep the rule
-             * uniform: pcb application happens on accepted connections
-             * (passive-open copies slot options via the new_pcb path). */
+            /* z.ai step 7g item 2: TCP_NODELAY is safe on any pcb (flags
+             * live in the common header); TCP_MAXSEG writes mss, which
+             * tcp_pcb_listen lacks - see the MAXSEG case below. */
             if (slot->tcp_state != TN_TCP_STATE_LISTENING && slot->tcp_pcb != NULL) {
                 if (slot->opt_nodelay) {
                     tcp_nagle_disable(slot->tcp_pcb);
@@ -250,7 +249,10 @@ int tn_ipc_cmd_setsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             {
                 int val = tn_load_opt_int(optval);
                 slot->opt_keepidle = val;
-                if (slot->tcp_pcb != NULL) {
+                /* z.ai step 7g item 2: never write keep_* into a LISTEN
+                 * pcb - tcp_pcb_listen has no such fields. */
+                if (slot->tcp_pcb != NULL &&
+                    slot->tcp_state != TN_TCP_STATE_LISTENING) {
                     slot->tcp_pcb->keep_idle = (u32_t)val * 1000UL;
                 }
             }
@@ -265,7 +267,10 @@ int tn_ipc_cmd_setsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             {
                 int val = tn_load_opt_int(optval);
                 slot->opt_keepintvl = val;
-                if (slot->tcp_pcb != NULL) {
+                /* z.ai step 7g item 2: never write keep_* into a LISTEN
+                 * pcb - tcp_pcb_listen has no such fields. */
+                if (slot->tcp_pcb != NULL &&
+                    slot->tcp_state != TN_TCP_STATE_LISTENING) {
                     slot->tcp_pcb->keep_intvl = (u32_t)val * 1000UL;
                 }
             }
@@ -280,7 +285,10 @@ int tn_ipc_cmd_setsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             {
                 int val = tn_load_opt_int(optval);
                 slot->opt_keepcnt = val;
-                if (slot->tcp_pcb != NULL) {
+                /* z.ai step 7g item 2: never write keep_* into a LISTEN
+                 * pcb - tcp_pcb_listen has no such fields. */
+                if (slot->tcp_pcb != NULL &&
+                    slot->tcp_state != TN_TCP_STATE_LISTENING) {
                     slot->tcp_pcb->keep_cnt = (u32_t)val;
                 }
             }

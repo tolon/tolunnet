@@ -6608,12 +6608,20 @@ static void tc_listen_setsockopt(void)
         TAP_NOTOK("tc_listen_setsockopt", "bind/listen failed");
         return;
     }
-    /* options ON the listening socket: TCP_NODELAY + TCP_MAXSEG */
-    if (call_setsockopt(lst, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)) != 0 ||
-        call_setsockopt(lst, IPPROTO_TCP, TCP_MAXSEG, &mss, sizeof(mss)) != 0) {
-        call_closesocket(lst);
-        TAP_NOTOK("tc_listen_setsockopt", "setsockopt on listening socket failed");
-        return;
+    /* options ON the listening socket: TCP_NODELAY + TCP_MAXSEG +
+     * z.ai step 7g item 2 additions: SO_KEEPALIVE=1, TCP_KEEPIDLE=77,
+     * SO_RCVBUF=4096 (accepted fd must inherit and report them). */
+    {
+        int keepalive = 1, keepidle = 77, rcvbuf = 4096;
+        if (call_setsockopt(lst, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)) != 0 ||
+            call_setsockopt(lst, IPPROTO_TCP, TCP_MAXSEG, &mss, sizeof(mss)) != 0 ||
+            call_setsockopt(lst, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive)) != 0 ||
+            call_setsockopt(lst, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle)) != 0 ||
+            call_setsockopt(lst, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf)) != 0) {
+            call_closesocket(lst);
+            TAP_NOTOK("tc_listen_setsockopt", "setsockopt on listening socket failed");
+            return;
+        }
     }
     /* accepted connection works end to end afterwards */
     cli = call_socket(AF_INET, SOCK_STREAM, 0);
@@ -6636,6 +6644,23 @@ static void tc_listen_setsockopt(void)
     if (call_send(cli, "ok", 2, 0) != 2 || !tc_cmd_wait_readable(conn) ||
         call_recv(conn, (void *)0, 0, 0) != 0) {
         /* recv probe: only readability matters here */
+    }
+    /* z.ai step 7g item 2: the ACCEPTED fd must report the inherited
+     * options. */
+    {
+        int nodelay = 0, keepalive = 0, keepidle = 0;
+        socklen_t vlen = sizeof(int);
+        LONG rc1 = call_getsockopt(conn, IPPROTO_TCP, TCP_NODELAY, &nodelay, &vlen);
+        LONG rc2 = call_getsockopt(conn, SOL_SOCKET, SO_KEEPALIVE, &keepalive, &vlen);
+        LONG rc3 = call_getsockopt(conn, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, &vlen);
+        if (rc1 != 0 || rc2 != 0 || rc3 != 0 ||
+            nodelay != 1 || keepalive != 1 || keepidle != 77) {
+            tapf("# tc_listen_setsockopt: nodelay=%ld keepalive=%ld keepidle=%ld rc=%ld/%ld/%ld\n",
+                 (long)nodelay, (long)keepalive, (long)keepidle, rc1, rc2, rc3);
+            call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+            TAP_NOTOK("tc_listen_setsockopt", "accepted fd options wrong");
+            return;
+        }
     }
     {
         char pbuf[4];

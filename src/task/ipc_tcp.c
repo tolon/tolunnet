@@ -177,6 +177,30 @@ err_t tn_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
 
         /* TNET-115: disable Nagle on accepted connections too */
         tcp_nagle_disable(newpcb);
+        new_slot->opt_nodelay = TRUE;
+
+        /* z.ai step 7g item 2: inherit listener slot options here too */
+        new_slot->opt_keepalive = slot->opt_keepalive;
+        new_slot->opt_linger    = slot->opt_linger;
+        new_slot->opt_sndbuf    = slot->opt_sndbuf;
+        new_slot->opt_rcvbuf    = slot->opt_rcvbuf;
+        new_slot->opt_oobinline = slot->opt_oobinline;
+        new_slot->opt_mss       = slot->opt_mss;
+        new_slot->opt_keepidle  = slot->opt_keepidle;
+        new_slot->opt_keepintvl = slot->opt_keepintvl;
+        new_slot->opt_keepcnt   = slot->opt_keepcnt;
+        if (slot->opt_keepidle > 0) {
+            newpcb->keep_idle  = (u32_t)slot->opt_keepidle * 1000UL;
+        }
+        if (slot->opt_keepintvl > 0) {
+            newpcb->keep_intvl = (u32_t)slot->opt_keepintvl * 1000UL;
+        }
+        if (slot->opt_keepcnt > 0) {
+            newpcb->keep_cnt   = (u32_t)slot->opt_keepcnt;
+        }
+        if (slot->opt_mss > 0 && (u16_t)slot->opt_mss < newpcb->mss) {
+            newpcb->mss = (u16_t)slot->opt_mss;
+        }
 
         tcp_arg(newpcb, (void *)(intptr_t)new_slot_idx);
         tcp_recv(newpcb, tn_tcp_recv_cb);
@@ -312,6 +336,32 @@ int tn_ipc_cmd_accept(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
         /* TNET-115: disable Nagle on accepted connections (accept queue path) */
         tcp_nagle_disable(new_pcb);
+        new_slot->opt_nodelay = TRUE;
+
+        /* z.ai step 7g item 2: inherit the LISTENING slot's stored socket
+         * options (em dash) accepted pcbs come from tcp_pcb_listen which never
+ * got the keep-star and mss writes (out of bounds there). */
+        new_slot->opt_keepalive = slot->opt_keepalive;
+        new_slot->opt_linger    = slot->opt_linger;
+        new_slot->opt_sndbuf    = slot->opt_sndbuf;
+        new_slot->opt_rcvbuf    = slot->opt_rcvbuf;
+        new_slot->opt_oobinline = slot->opt_oobinline;
+        new_slot->opt_mss       = slot->opt_mss;
+        new_slot->opt_keepidle  = slot->opt_keepidle;
+        new_slot->opt_keepintvl = slot->opt_keepintvl;
+        new_slot->opt_keepcnt   = slot->opt_keepcnt;
+        if (slot->opt_keepidle > 0) {
+            new_pcb->keep_idle  = (u32_t)slot->opt_keepidle * 1000UL;
+        }
+        if (slot->opt_keepintvl > 0) {
+            new_pcb->keep_intvl = (u32_t)slot->opt_keepintvl * 1000UL;
+        }
+        if (slot->opt_keepcnt > 0) {
+            new_pcb->keep_cnt   = (u32_t)slot->opt_keepcnt;
+        }
+        if (slot->opt_mss > 0 && (u16_t)slot->opt_mss < new_pcb->mss) {
+            new_pcb->mss = (u16_t)slot->opt_mss;
+        }
 
         tcp_arg(new_pcb, (void *)(intptr_t)new_slot_idx);
         tcp_recv(new_pcb, tn_tcp_recv_cb);
