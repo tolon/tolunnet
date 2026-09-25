@@ -32,10 +32,8 @@ __asm__(
     "    .even\n"
     "    .globl _ug_autoinit_stub\n"
     "_ug_autoinit_stub:\n"
-    "    move.l  %a0, -(%sp)\n"
-    "    move.l  %d0, -(%sp)\n"
+    "    move.l  %a0, %d1\n"
     "    jsr     _ug_init_c\n"
-    "    addq.l  #8, %sp\n"
     "    rts\n"
 );
 
