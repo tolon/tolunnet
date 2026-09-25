@@ -1,52 +1,64 @@
-# Tolunnet STOP-REPORT: z.ai step 7d — init fixed (no hangs, full suites), but the expunge-flush reload leg stays red
+# Tolunnet STOP-REPORT: z.ai step 7e — tc_usergroup reload leg passes, but the flush freezes the suite tail and cycle 2
 
 **Timestamp:** 2026-09-25
-**Work order:** TN-zai-step.md (step 7d). Item 1 landed and works; item 2's
-reload leg is red outside TODO rows → STOP-REPORT with the last lines of each
-log verbatim, stop.
+**Work order:** TN-zai-step.md (step 7e item 1). The item-1 change works as
+specified (close before flush; LibList empty; bsdsocket survives; reload +
+getpwnam green) — but the flush freezes the rest of the suite and cycle 2.
+Log ends early → per the rules: STOP-REPORT with the last lines verbatim,
+stop.
 
-**Commit:** `f109299` — item 1: init-table order fixed
-({size, vectors, NULL-dataTable, stub} — step 7c had 3/4 swapped), stack-push
-stub restored, DOSBase-guarded failure branch, tc_usergroup init-run assertion
-(ln_Name/IdString).
+**Commit:** `3b47584` — `test(usergroup): reload leg closes before flush; bsdsocket survives flush`
+**Bench dir:** `docs/bench-logs/20260925-131139-v1.2.0-rc4-72-g3b47584/`
+**Host:** 20 binaries, 0 not ok (before bench).
 
-**Bench dir:** `docs/bench-logs/20260925-124435-v1.2.0-rc4-70-gf109299/`
-(ALL FOUR logs now run to completion — the hangs are gone.)
-
-**README core lines (verbatim):**
-```
-a1200/conformance.log:  core: 73 ok / 9 not ok; external: 1 skipped
-a1200/conformance2.log: core: 73 ok / 9 not ok; external: 1 skipped
-68000/conformance.log:  core: 73 ok / 9 not ok; external: 1 skipped
-68000/conformance2.log: core: 73 ok / 9 not ok; external: 1 skipped
-net TODO remaining: 8
-```
-
-## The remaining red (verbatim, identical ×4)
+## What works now (verbatim from both profiles' cycle 1)
 
 ```
-not ok 63 - tc_usergroup # reload: library still in LibList after flush
+ok 62 - tc_cmd_route
+# tc_usergroup: bsdsocket survived flush (socket ok)
+ok 63 - tc_usergroup
 ```
 
-The init-run assertion passes (ln_Name/IdString proven) — getpwnam(root)
-works after the table fix. The reload leg fails only at the final check:
-after `AllocMem(0x7FFFFFF0, MEMF_PUBLIC)` fails, `FindName` still finds
-usergroup.library — i.e. exec did NOT purge the closed library in WinUAE's
-emulation (the failed alloc does not trigger a library purge there), or the
-library's EXPUNGE vector is never invoked by exec's flush path. The
-expunge vector IS wired (ug_stub_expunge at -18 in ug_table.gen.c).
+The reload leg proves the full contract: close → flush AllocMem →
+usergroup.library gone from LibList → bsdsocket.library still present →
+socket()+CloseSocket still work → reopen → getpwnam(root) → close.
 
-Per the rules: red outside TODO rows → stop, do not fix.
+## The regression (log ends early — all four logs, identical)
+
+```
+a1200/conformance.log : 63 ok rows, ends at "ok 63 - tc_usergroup"; no 1..N plan line
+68000/conformance.log : identical
+a1200/68000 conformance2.log : "(missing)" / empty — cycle 2 never started
+```
+
+The freeze happens at the test immediately following tc_usergroup, in BOTH
+profiles and BOTH... cycle 2 never even began. The daemon task log ends on
+normal socket activity (fd 0 open/close — the next test's first IPC), so the
+client/daemon pair wedges right after the reload leg's flush allocation.
+
+## Analysis
+
+The reload leg's `AllocMem(0x7FFFFFF0, MEMF_PUBLIC)` failure triggers
+exec-wide memory purge: expungeable CLOSED libraries get thrown away
+system-wide. Something the remaining suite (or the daemon) needs was among
+the purged/corrupted state — the wedging is deterministic in both profiles.
+The step-7d item-2 wording anticipated exactly this ("reload leg closes
+before flush; **bsdsocket survives flush**") — bsdsocket does survive, but
+the following test still wedges, so the purge damage is wider than LibList
+(likely pool pbufs or another closed library's data the daemon still
+references).
 
 ## Suggested next steps (owner decision)
 
-1. In the test, replace the failed-AllocMem flush with an explicit purge:
-   call the library's own expunge via `RemLibrary`-equivalent is not public;
-   instead call `CloseLibrary` then `Forbid(); RemLibrary?` — not public.
-   Practical alternative: drop the LibList check and keep getpwnam-reopen
-   as the pass condition (exec/WinUAE purge behavior is environment-
-   specific, not a tolunnet property).
-2. Or keep the row red and mark it TODO with reason "WinUAE does not purge
-   closed libs on failed alloc".
+1. Replace the flush AllocMem with `RemLibrary`-free approach: make the
+   reload leg best-effort — reopen WITHOUT the flush and assert only the
+   reopen+getpwnam; move the expunge proof to a dedicated later row that
+   runs LAST (after tc_cmd_stop_start can no longer be affected), or
+2. Run the reload leg inside a dedicated child process (like dns_resp /
+   break_helper) so any purge damage cannot affect the main suite; or
+3. Investigate what exactly the purge removes: log LibList before/after the
+   flush from the suite.
 
-Evidence kept: `docs/bench-logs/20260925-124435-v1.2.0-rc4-70-gf109299/`.
+Evidence kept: `docs/bench-logs/20260925-131139-v1.2.0-rc4-72-g3b47584/`.
+Item 1's spec-compliance is proven (close-before-flush, LibList empty,
+bsdsocket survives); only the suite-tail freeze blocks an ALL-GREEN run.
