@@ -16,7 +16,6 @@
 #include <proto/dos.h>
 
 extern const APTR g_ug_vectors[];
-struct UserGroupBase *ug_init_from_table(struct UserGroupBase *base, BPTR seglist, struct ExecBase *sysBase);
 
 /* CLI safety entry point and RomTag */
 __asm__(
@@ -40,6 +39,12 @@ static const char g_ug_id[]   = USERGROUP_ID_STR;
  * after an expunge+reload the caller's stack frame produced garbage (crash
  * on reopen). With RTF_AUTOINIT, exec allocates the library itself and
  * calls the initializer as (base, seglist, sysBase) — plain C. */
+/* Exec AUTOINIT calls this with d0=segList, a0=libBase, a6=ExecBase */
+struct UserGroupBase *ug_init_from_table(
+    struct UserGroupBase *base     __asm("a0"),
+    BPTR                  seglist  __asm("d0"),
+    struct ExecBase      *sysBase  __asm("a6"));
+
 static const APTR g_ug_init_table[] = {
     (APTR)sizeof(struct UserGroupBase),
     (APTR)g_ug_vectors,
@@ -60,20 +65,12 @@ const struct Resident g_ug_romtag = {
     (APTR)g_ug_init_table
 };
 
-struct ExecBase   *SysBase;
-struct DosLibrary *DOSBase;
-
-/* RTF_AUTOINIT initializer: exec has already allocated and cleared the
- * library base of the requested size and set up the vector table. */
-/* Legacy name kept for the vector table / gen files. */
-struct UserGroupBase *ug_init_lib(BPTR seglist, struct ExecBase *sysBase)
-{
-    return ug_init_from_table(NULL, seglist, sysBase);
-}
-
-struct UserGroupBase *ug_init_from_table(struct UserGroupBase *base,
-                                         BPTR seglist,
-                                         struct ExecBase *sysBase)
+/* Exec AUTOINIT calls this with d0=segList, a0=libBase, a6=ExecBase —
+ * the explicit register binding matches that convention exactly. */
+struct UserGroupBase *ug_init_from_table(
+    struct UserGroupBase *base     __asm("a0"),
+    BPTR                  seglist  __asm("d0"),
+    struct ExecBase      *sysBase  __asm("a6"))
 {
     (void)sysBase;
 
@@ -104,6 +101,18 @@ struct UserGroupBase *ug_init_from_table(struct UserGroupBase *base,
 
     return base;
 }
+
+struct ExecBase   *SysBase;
+struct DosLibrary *DOSBase;
+
+/* RTF_AUTOINIT initializer: exec has already allocated and cleared the
+ * library base of the requested size and set up the vector table. */
+/* Legacy name kept for the vector table / gen files. */
+struct UserGroupBase *ug_init_lib(BPTR seglist, struct ExecBase *sysBase)
+{
+    return ug_init_from_table(NULL, seglist, sysBase);
+}
+
 
 struct Library *ug_lib_open(struct UserGroupBase *base, ULONG version)
 {
