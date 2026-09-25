@@ -108,3 +108,7 @@ Status: `open` · `answered` · `superseded`.
 3. **[auto] Configuration LOG= preservation:** `TolunnetSetup` and `tc_reconfig_rc` preserve the `LOG=` configuration parameter across rewrites so subsequent daemon instances log to `WORK:tolunnet-task.log`.
 4. **[auto] Relaunch proof shape:** `tc_cmd_stop_start` tests user-facing `TolunnetControl STOP` (refused while clients open with RC 5 / EBUSY, then succeeds with RC 0), port disappearance verification (waits up to 100 × 5 ticks), `TolunnetControl START` (RC 0), port appearance and UDP socket roundtrip verification, followed by clean final STOP. Both profiles (68000 and A1200) achieved 58/58 ok × 4 in bench `20260921-182756-ccad270` with multiple "lwIP 2.2.0 initialized" banners in `tolunnet-task.log` (lines 1, 1008, 1032 on both profiles).
 
+
+## Auto-Decisions (z.ai step 8a — 2026-09-24)
+
+5. **[auto] whois/sntp/tftp templates have no PORT option:** The step 8a item 1 rows for whois (template `QUERY/A,SERVER`, port hardcoded 43 vs netsvc 15043), sntp (`HOST,SET/S,OFFSET/N`, port hardcoded 123 vs netsvc 15123) and tftp (`HOST/A,GET/S,PUT/S,FILE/A,LOCAL`, port hardcoded 69 vs netsvc 15069) cannot reach their netsvc mock services with the current binaries, so those rows stay TODO after items 2-5. They need a PORT template option each (candidate for step 8b) before their content assertions can pass; the assertions (whois "Tolunnet Registrar" banner, sntp "Server time"/"offset", tftp byte compare of T:tftp_get.bin) are already in place.
