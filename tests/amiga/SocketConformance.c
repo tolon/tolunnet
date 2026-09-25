@@ -6417,16 +6417,17 @@ static void tc_net_cmd_nc_listen(void)
     int tries, found = 0;
 
     DeleteFile((CONST_STRPTR)"T:nc_listen.out");
-    /* Launch async via Run with shell output redirection (the
-     * tc_wizard-proven token order). TIMEOUT 15 keeps the child inside
-     * this row so tc_cmd_stop_start never meets an open client. */
-    SystemTags((CONST_STRPTR)"Run <NIL: >T:nc_listen.out C:nc 0.0.0.0 LISTEN 15099 TIMEOUT 15",
-               SYS_Asynch, FALSE,
+    /* Async helper process runs nc and captures its stdout (see the
+     * nc_listen_helper child mode). TIMEOUT 12 keeps nc inside this
+     * row so tc_cmd_stop_start never meets an open client. */
+    SystemTags((CONST_STRPTR)"C:SocketConformance nc_listen_helper",
+               SYS_Asynch, TRUE,
                SYS_Input, (BPTR)0,
                SYS_Output, (BPTR)0,
+               NP_StackSize, 20000,
                TAG_END);
 
-    for (tries = 0, s = -1; tries < 50 && s < 0; tries++) {
+    for (tries = 0, s = -1; tries < 40 && s < 0; tries++) {
         Delay(5); /* 0.25 s */
         s = call_socket(AF_INET, SOCK_STREAM, 0);
         memset(&sin, 0, sizeof(sin));
@@ -6451,27 +6452,11 @@ static void tc_net_cmd_nc_listen(void)
         return;
     }
 
-    {
-        r = Open((CONST_STRPTR)"T:nc_listen.out", MODE_OLDFILE);
-        if (r != (BPTR)0) {
-            got = Read(r, out, sizeof(out) - 1);
-            Close(r);
-            hex_dump("nc_listen.pre", out, got);
-        }
-    }
     call_send(s, "x", 1, 0);
     Delay(50); /* let nc receive and print */
-    {
-        r = Open((CONST_STRPTR)"T:nc_listen.out", MODE_OLDFILE);
-        if (r != (BPTR)0) {
-            got = Read(r, out, sizeof(out) - 1);
-            Close(r);
-            hex_dump("nc_listen.sent", out, got);
-        }
-    }
-    /* nc buffers its output and only flushes on exit: close first. */
+    /* nc buffers its stdout; the helper flushes it on exit. */
     call_closesocket(s);
-    for (tries = 0; tries < 60 && !found; tries++) {
+    for (tries = 0; tries < 80 && !found; tries++) {
         Delay(5);
         r = Open((CONST_STRPTR)"T:nc_listen.out", MODE_OLDFILE);
         if (r != (BPTR)0) {
@@ -6480,7 +6465,7 @@ static void tc_net_cmd_nc_listen(void)
             if (got > 0) {
                 out[got] = 0;
                 if (strchr(out, (int)'x') != NULL) found = 1;
-                else if (tries == 59) hex_dump("nc_listen.fin", out, got);
+                else if (tries == 79) hex_dump("nc_listen.fin", out, got);
             }
         }
     }
@@ -7067,6 +7052,35 @@ int main(int argc, char *argv[])
         }
         CloseLibrary(DOSBase);
         return 0;
+    }
+
+    /* z.ai step 8b item 1: nc LISTEN helper. Run/SYS_Output child
+     * redirection does not reach the child on this system (bench hex
+     * evidence: only Run's banner lands in the file), so the helper
+     * runs nc through the suite's proven run_cmd plumbing and copies
+     * the captured stdout to a known file. */
+    if (argc >= 2 && strcmp(argv[1], "nc_listen_helper") == 0) {
+        char out[256];
+        char rc_line[48];
+        BPTR out_fh;
+        LONG ret = run_cmd("C:nc", "0.0.0.0 LISTEN 15099 TIMEOUT 12", NULL,
+                           out, sizeof(out));
+        out_fh = Open((CONST_STRPTR)"T:nc_listen.out", MODE_NEWFILE);
+        if (out_fh != 0) {
+            LONG olen = 0;
+            while (out[olen]) olen++;
+            if (olen > 0) Write(out_fh, (CONST APTR)out, olen);
+            snprintf_safe(rc_line, sizeof(rc_line),
+                          "# nc rc=%ld\n", ret);
+            {
+                LONG rlen = 0;
+                while (rc_line[rlen]) rlen++;
+                Write(out_fh, (CONST APTR)rc_line, rlen);
+            }
+            Close(out_fh);
+        }
+        CloseLibrary(DOSBase);
+        return (int)ret;
     }
 
     g_log_dos = DOSBase;
