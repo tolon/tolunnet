@@ -564,6 +564,16 @@ static LONG call_waitselect(LONG nfds, APTR rfds, APTR wfds, APTR efds, struct t
     return d0;
 }
 
+/* z.ai step 8b item 1: local IP for loopback connects (LVO -288) */
+static ULONG call_gethostid(void)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register ULONG d0 __asm__("d0");
+    __asm__ __volatile__ ("jsr -288(%%a6)" : "=r"(d0)
+        : "r"(a6) : "a0", "a1", "memory");
+    return d0;
+}
+
 static VOID call_setsocketsignals(ULONG int_mask, ULONG io_mask, ULONG urg_mask)
 {
     register struct Library *a6 __asm__("a6") = SocketBase;
@@ -6315,17 +6325,16 @@ static LONG run_cmd(const char *path, const char *args,
 static void tc_net_cmd_nc(void)
 {
     char out[256];
-    /* netsvc tcp_delay (15009) sends one line after 1s then closes: nc
-     * receives content and exits on close (the echo server at 15007 never
-     * closes and nc has no half-close/EOF exit - 8b). TIMEOUT 3 keeps the
-     * first waitselect alive long enough for the delayed reply. */
-    LONG ret = run_cmd("C:nc", "10.0.2.2 15009 TIMEOUT 3", "hello\n",
+    /* z.ai step 8b item 1: back on the real contract - 15007 echo.
+     * File stdin is pumped with Read(); at EOF nc half-closes and the
+     * echo server closes, so nc drains "hello" and exits 0. */
+    LONG ret = run_cmd("C:nc", "10.0.2.2 15007 TIMEOUT 3", "hello\n",
                        out, sizeof(out));
-    if (ret == 0 && strstr(out, "TOLUNNET_TCP_DELAYED_OK") != NULL) {
+    if (ret == 0 && strstr(out, "hello") != NULL) {
         TAP_OK("net_cmd_nc");
     } else {
         tapf("# net_cmd_nc: rc=%ld out=%s\n", ret, out);
-        TAP_NOTOK("net_cmd_nc", "no delayed content or nonzero rc");
+        TAP_NOTOK("net_cmd_nc", "no echo content or nonzero rc");
     }
 }
 
@@ -6357,6 +6366,100 @@ static void tc_net_inet_ntoa(void)
     } else {
         tapf("# net_inet_ntoa: rc=%ld out=%s\n", ret, out);
         TAP_NOTOK("net_inet_ntoa", "Inet_NtoA output mismatch");
+    }
+}
+
+/* z.ai step 8b item 1: UDP mode - nc connects its UDP socket, so plain
+ * send/recv work; the netsvc UDP echo answers and TIMEOUT ends the idle
+ * drain (the UDP echo never closes). */
+static void tc_net_cmd_nc_udp(void)
+{
+    char out[256];
+    LONG ret = run_cmd("C:nc", "10.0.2.2 15007 UDP TIMEOUT 2", "hello\n",
+                       out, sizeof(out));
+    if (ret == 0 && strstr(out, "hello") != NULL) {
+        TAP_OK("net_cmd_nc_udp");
+    } else {
+        tapf("# net_cmd_nc_udp: rc=%ld out=%s\n", ret, out);
+        TAP_NOTOK("net_cmd_nc_udp", "no udp echo content or nonzero rc");
+    }
+}
+
+/* z.ai step 8b item 1: LISTEN - real bind+listen+accept. nc is started
+ * async with SystemTags writing its stdout to T:nc_listen.out; the test
+ * connects to the guest's own IP (lwIP NETIF_LOOPBACK delivers to the
+ * local listener), sends "x" and waits for it in the output file. */
+static void tc_net_cmd_nc_listen(void)
+{
+    BPTR out_fh, in_fh, r;
+    LONG s;
+    struct sockaddr_in sin;
+    char out[256];
+    LONG got;
+    int tries, found = 0;
+
+    DeleteFile((CONST_STRPTR)"T:nc_listen.out");
+    out_fh = Open((CONST_STRPTR)"T:nc_listen.out", MODE_NEWFILE);
+    in_fh = Open((CONST_STRPTR)"NIL:", MODE_OLDFILE);
+    if (out_fh == (BPTR)0 || in_fh == (BPTR)0) {
+        if (out_fh != (BPTR)0) Close(out_fh);
+        if (in_fh != (BPTR)0) Close(in_fh);
+        tapf("# net_cmd_nc_listen: cannot open T:nc_listen.out\n");
+        TAP_NOTOK("net_cmd_nc_listen", "files");
+        return;
+    }
+    /* Handles pass to the async process; it closes them on exit. */
+    SystemTags((CONST_STRPTR)"C:nc LISTEN 15099 TIMEOUT 25",
+               SYS_Input,  (LONG)in_fh,
+               SYS_Output, (LONG)out_fh,
+               SYS_Asynch, TRUE,
+               TAG_DONE);
+
+    for (tries = 0, s = -1; tries < 50 && s < 0; tries++) {
+        Delay(5); /* 0.5 s */
+        s = call_socket(AF_INET, SOCK_STREAM, 0);
+        memset(&sin, 0, sizeof(sin));
+        sin.sin_len = sizeof(sin);
+        sin.sin_family = AF_INET;
+        sin.sin_port = htons(15099);
+        sin.sin_addr.s_addr = call_gethostid();
+        if (call_connect(s, (struct sockaddr *)&sin, sizeof(sin)) == 0) break;
+        call_closesocket(s);
+        s = -1;
+    }
+    if (s < 0) {
+        r = Open((CONST_STRPTR)"T:nc_listen.out", MODE_OLDFILE);
+        got = -1;
+        if (r != (BPTR)0) {
+            got = Read(r, out, sizeof(out) - 1);
+            Close(r);
+            if (got > 0) out[got] = 0; else out[0] = 0;
+        }
+        tapf("# net_cmd_nc_listen: connect to listener failed, out=%s\n", out);
+        TAP_NOTOK("net_cmd_nc_listen", "no listener");
+        return;
+    }
+
+    call_send(s, "x", 1, 0);
+    for (tries = 0; tries < 40 && !found; tries++) {
+        Delay(5);
+        r = Open((CONST_STRPTR)"T:nc_listen.out", MODE_OLDFILE);
+        if (r != (BPTR)0) {
+            got = Read(r, out, sizeof(out) - 1);
+            Close(r);
+            if (got > 0) {
+                out[got] = 0;
+                if (strchr(out, 'x') != NULL) found = 1;
+            }
+        }
+    }
+    call_closesocket(s); /* nc drains the close and exits */
+
+    if (found) {
+        TAP_OK("net_cmd_nc_listen");
+    } else {
+        tapf("# net_cmd_nc_listen: 'x' not seen in output file\n");
+        TAP_NOTOK("net_cmd_nc_listen", "no echo byte");
     }
 }
 
@@ -6999,6 +7102,8 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_tcp_connected_sendto_ignored_to);
     TN_RUN(tc_net_tcp_shutdown_sendto_epipe);
     TN_RUN(tc_net_cmd_nc);
+    TN_RUN(tc_net_cmd_nc_udp);
+    TN_RUN(tc_net_cmd_nc_listen);
     TN_RUN(tc_net_cmd_whois);
     TN_RUN(tc_net_cmd_telnet);
     TN_RUN(tc_net_inet_ntoa);
