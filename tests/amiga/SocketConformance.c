@@ -6409,7 +6409,7 @@ static void tc_net_cmd_nc_listen(void)
         return;
     }
     /* Handles pass to the async process; it closes them on exit. */
-    SystemTags((CONST_STRPTR)"C:nc LISTEN 15099 TIMEOUT 25",
+    SystemTags((CONST_STRPTR)"C:nc \"LISTEN\" 15099 TIMEOUT 25",
                SYS_Input,  (LONG)in_fh,
                SYS_Output, (LONG)out_fh,
                SYS_Asynch, TRUE,
