@@ -6288,7 +6288,9 @@ static LONG run_cmd(const char *path, const char *args,
     out_fh = Open((CONST_STRPTR)"T:cmd.out", MODE_NEWFILE);
     old_in = SelectInput(in_fh);
     old_out = SelectOutput(out_fh);
-    snprintf_safe(cmdline, sizeof(cmdline), "%s", args ? args : "");
+    /* CLI command lines end with a newline: without it RunCommand leaves
+     * the buffer open-ended and ReadArgs /N numeric scans hit garbage. */
+    snprintf_safe(cmdline, sizeof(cmdline), "%s\n", args ? args : "");
     ret = RunCommand(seg, 32768, (CONST_STRPTR)cmdline, strlen(cmdline));
     SelectOutput(old_out);
     SelectInput(old_in);
