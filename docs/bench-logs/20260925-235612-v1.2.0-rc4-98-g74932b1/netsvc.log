@@ -1,0 +1,64 @@
+[2026-09-25 23:56:12] [main] starting hermetic slirp host services
+[2026-09-25 23:56:12] [udp_echo] listening on UDP 15007
+[2026-09-25 23:56:12] [tcp_echo] listening on TCP 15007
+[2026-09-25 23:56:12] [tcp_delay] listening on TCP 15009
+[2026-09-25 23:56:12] [tcp_silent] listening on TCP 15011
+[2026-09-25 23:56:12] [sntp] listening on UDP 15123
+[2026-09-25 23:56:12] [tftp] listening on UDP 15069
+[2026-09-25 23:56:12] [main] all 7 service threads started, ready for traffic
+[2026-09-25 23:56:12] [ftp] listening on TCP 15021 (PASV port: 15020)
+[2026-09-25 23:56:12] [whois] listening on TCP 15043
+[2026-09-25 23:56:12] [http] listening on TCP 15080
+[2026-09-25 23:56:12] [tcp_delay] accepted from ('127.0.0.1', 1231), sleeping 1.0 s before reply
+[2026-09-25 23:56:12] [ftp] connected from ('127.0.0.1', 1232)
+[2026-09-25 23:56:12] [ftp] session error: [WinError 10053] Kurulan bir bağlantı, ana makinenizdeki yazılım tarafından iptal edildi
+[2026-09-25 23:56:12] [whois] query '' from ('127.0.0.1', 1233)
+[2026-09-25 23:56:12] [http] request '' from ('127.0.0.1', 1234)
+[2026-09-25 23:58:02] [tcp_delay] accepted from ('127.0.0.1', 46279), sleeping 1.0 s before reply
+[2026-09-25 23:58:03] [udp_echo] echoing 9 bytes to ('127.0.0.1', 53458)
+[2026-09-25 23:58:03] [tcp_delay] accepted from ('127.0.0.1', 46281), sleeping 1.0 s before reply
+[2026-09-25 23:58:04] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 46282)
+[2026-09-25 23:58:04] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 46284)
+[2026-09-25 23:58:06] [udp_echo] echoing 6 bytes to ('127.0.0.1', 56025)
+[2026-09-26 00:03:38] [tcp_delay] accepted from ('127.0.0.1', 51877), sleeping 1.0 s before reply
+[2026-09-26 00:03:39] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 57239)
+[2026-09-26 00:03:39] [ftp] connected from ('127.0.0.1', 57240)
+[2026-09-26 00:03:39] [ftp] command: USER anonymous
+[2026-09-26 00:03:39] [ftp] command: PASS tolunnet@
+[2026-09-26 00:03:39] [ftp] command: TYPE A
+[2026-09-26 00:03:39] [ftp] command: PASV 
+[2026-09-26 00:03:39] [ftp] command: QUIT 
+[2026-09-26 00:04:36] [tcp_delay] accepted from ('127.0.0.1', 32529), sleeping 1.0 s before reply
+[2026-09-26 00:04:37] [udp_echo] echoing 9 bytes to ('127.0.0.1', 62929)
+[2026-09-26 00:04:37] [tcp_delay] accepted from ('127.0.0.1', 32530), sleeping 1.0 s before reply
+[2026-09-26 00:04:38] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 32531)
+[2026-09-26 00:04:39] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 32533)
+[2026-09-26 00:04:41] [udp_echo] echoing 6 bytes to ('127.0.0.1', 55712)
+[2026-09-26 00:10:12] [tcp_delay] accepted from ('127.0.0.1', 20215), sleeping 1.0 s before reply
+[2026-09-26 00:10:13] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 20216)
+[2026-09-26 00:10:13] [ftp] connected from ('127.0.0.1', 20217)
+[2026-09-26 00:10:13] [ftp] command: USER anonymous
+[2026-09-26 00:10:13] [ftp] command: PASS tolunnet@
+[2026-09-26 00:10:13] [ftp] command: TYPE A
+[2026-09-26 00:10:13] [ftp] command: PASV 
+[2026-09-26 00:10:13] [ftp] command: QUIT 
+[2026-09-26 00:14:15] [tcp_delay] accepted from ('127.0.0.1', 26107), sleeping 1.0 s before reply
+[2026-09-26 00:14:16] [udp_echo] echoing 9 bytes to ('127.0.0.1', 64276)
+[2026-09-26 00:14:17] [tcp_delay] accepted from ('127.0.0.1', 26108), sleeping 1.0 s before reply
+[2026-09-26 00:14:18] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 26109)
+[2026-09-26 00:14:18] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 26111)
+[2026-09-26 00:14:20] [udp_echo] echoing 6 bytes to ('127.0.0.1', 52305)
+[2026-09-26 00:19:54] [tcp_delay] accepted from ('127.0.0.1', 2835), sleeping 1.0 s before reply
+[2026-09-26 00:19:56] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 2836)
+[2026-09-26 00:19:56] [ftp] connected from ('127.0.0.1', 2838)
+[2026-09-26 00:19:56] [ftp] command: USER anonymous
+[2026-09-26 00:19:57] [ftp] command: PASS tolunnet@
+[2026-09-26 00:19:57] [ftp] command: TYPE A
+[2026-09-26 00:19:57] [ftp] command: PASV 
+[2026-09-26 00:19:57] [ftp] command: QUIT 
+[2026-09-26 00:21:28] [tcp_delay] accepted from ('127.0.0.1', 3039), sleeping 1.0 s before reply
+[2026-09-26 00:21:29] [udp_echo] echoing 9 bytes to ('127.0.0.1', 62602)
+[2026-09-26 00:21:29] [tcp_delay] accepted from ('127.0.0.1', 3041), sleeping 1.0 s before reply
+[2026-09-26 00:21:30] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 3042)
+[2026-09-26 00:21:30] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 3044)
+[2026-09-26 00:21:32] [udp_echo] echoing 6 bytes to ('127.0.0.1', 60413)
