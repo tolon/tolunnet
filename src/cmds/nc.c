@@ -29,10 +29,10 @@ int main(int argc, char **argv)
     }
 
     const char *host = (const char *)opts[0];
-    LONG port = opts[1];
+    LONG port = (opts[1] != 0) ? *(LONG *)opts[1] : 0; /* /N is a pointer */
     LONG use_udp = opts[2];
     LONG listen_mode = opts[3];
-    LONG timeout = (opts[4] > 0) ? opts[4] : 0;
+    LONG timeout = (opts[4] != 0 && *(LONG *)opts[4] > 0) ? *(LONG *)opts[4] : 0;
 
     if (port <= 0 || port > 65535) {
         tn_cmd_printf("nc: invalid port\n");

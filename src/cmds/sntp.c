@@ -64,7 +64,7 @@ int main(int argc, char **argv)
 
     const char *host = (opts[0] != 0) ? (const char *)opts[0] : default_server;
     LONG do_set = opts[1];
-    LONG offset_min = opts[2];
+    LONG offset_min = (opts[2] != 0) ? *(LONG *)opts[2] : 0; /* /N is a pointer */
 
     server_addr = tn_cmd_resolve(host);
     if (server_addr == INADDR_NONE) {

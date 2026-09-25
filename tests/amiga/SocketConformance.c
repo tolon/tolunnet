@@ -6313,13 +6313,17 @@ static LONG run_cmd(const char *path, const char *args,
 static void tc_net_cmd_nc(void)
 {
     char out[256];
-    LONG ret = run_cmd("C:nc", "10.0.2.2 15007 TIMEOUT 1", "hello\n",
+    /* netsvc tcp_delay (15009) sends one line after 1s then closes: nc
+     * receives content and exits on close (the echo server at 15007 never
+     * closes and nc has no half-close/EOF exit - 8b). TIMEOUT 3 keeps the
+     * first waitselect alive long enough for the delayed reply. */
+    LONG ret = run_cmd("C:nc", "10.0.2.2 15009 TIMEOUT 3", "hello\n",
                        out, sizeof(out));
-    if (ret == 0 && strstr(out, "hello") != NULL) {
+    if (ret == 0 && strstr(out, "TOLUNNET_TCP_DELAYED_OK") != NULL) {
         TAP_OK("net_cmd_nc");
     } else {
-        tapf("# net_cmd_nc: rc=%ld out=%.200s\n", ret, out);
-        TAP_TODO("net_cmd_nc", "red-baseline 18");
+        tapf("# net_cmd_nc: rc=%ld out=%s\n", ret, out);
+        TAP_NOTOK("net_cmd_nc", "no delayed content or nonzero rc");
     }
 }
 
@@ -6328,13 +6332,15 @@ static void tc_net_cmd_nc(void)
 static void tc_net_cmd_telnet(void)
 {
     char out[256];
-    LONG ret = run_cmd("C:telnet", "10.0.2.2 15007", "ping\n",
+    /* Same netsvc tcp_delay target as nc: connects with the PORT/N arg,
+     * sends stdin, prints the filtered line, exits on server close. */
+    LONG ret = run_cmd("C:telnet", "10.0.2.2 15009", "ping\n",
                        out, sizeof(out));
-    if (ret == 0 && strstr(out, "ping") != NULL) {
+    if (ret == 0 && strstr(out, "TOLUNNET_TCP_DELAYED_OK") != NULL) {
         TAP_OK("net_cmd_telnet");
     } else {
-        tapf("# net_cmd_telnet: rc=%ld out=%.200s\n", ret, out);
-        TAP_TODO("net_cmd_telnet", "red-baseline 18");
+        tapf("# net_cmd_telnet: rc=%ld out=%s\n", ret, out);
+        TAP_NOTOK("net_cmd_telnet", "no delayed content or nonzero rc");
     }
 }
 
@@ -6347,7 +6353,7 @@ static void tc_net_inet_ntoa(void)
     if (ret == 0 && strstr(out, "10.0.2.2") != NULL) {
         TAP_OK("net_inet_ntoa");
     } else {
-        tapf("# net_inet_ntoa: rc=%ld out=%.200s\n", ret, out);
+        tapf("# net_inet_ntoa: rc=%ld out=%s\n", ret, out);
         TAP_NOTOK("net_inet_ntoa", "Inet_NtoA output mismatch");
     }
 }

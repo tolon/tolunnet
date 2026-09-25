@@ -217,7 +217,8 @@ int main(int argc, char **argv)
     }
 
     if (cur_host[0] != '\0') {
-        LONG port = (opts[1] > 0) ? opts[1] : FTP_PORT;
+        LONG port = (opts[1] != 0 && *(LONG *)opts[1] > 0)
+                        ? *(LONG *)opts[1] : FTP_PORT; /* /N is a pointer */
         struct sockaddr_in dst;
 
         srv_addr = tn_cmd_resolve(cur_host);

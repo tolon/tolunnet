@@ -31,7 +31,7 @@ static UWORD in_cksum(const UWORD *buf, LONG len)
 
 int main(int argc, char **argv)
 {
-    LONG opts[5] = { 0, 30, 3, 3, 0 };
+    LONG opts[5] = { 0, 0, 0, 0, 0 }; /* /N slots are pointers: start at 0 */
     struct RDArgs *rdargs;
     int rc = TN_CMD_OK;
     ULONG addr;
@@ -55,9 +55,13 @@ int main(int argc, char **argv)
         return TN_CMD_USAGE;
     }
 
-    LONG maxhops = (opts[1] > 0 && opts[1] < 64) ? opts[1] : 30;
-    LONG queries = (opts[2] > 0 && opts[2] < 10) ? opts[2] : 3;
-    LONG wait_s  = (opts[3] > 0 && opts[3] < 30) ? opts[3] : 3;
+    /* apply defaults after ReadArgs (z.ai step 8a item 3) */
+    LONG maxhops = (opts[1] != 0 && *(LONG *)opts[1] > 0 && *(LONG *)opts[1] < 64)
+                       ? *(LONG *)opts[1] : 30;
+    LONG queries = (opts[2] != 0 && *(LONG *)opts[2] > 0 && *(LONG *)opts[2] < 10)
+                       ? *(LONG *)opts[2] : 3;
+    LONG wait_s  = (opts[3] != 0 && *(LONG *)opts[3] > 0 && *(LONG *)opts[3] < 30)
+                       ? *(LONG *)opts[3] : 3;
     LONG numeric = opts[4];
 
     const char *host = (const char *)opts[0];

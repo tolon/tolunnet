@@ -54,7 +54,11 @@ int main(int argc, char **argv)
     }
 
     const char *host = (const char *)opts[0];
-    port = (opts[1] > 0 && opts[1] < 65536) ? opts[1] : TELNET_PORT;
+    port = TELNET_PORT;
+    if (opts[1] != 0) { /* /N is a pointer */
+        LONG arg = *(LONG *)opts[1];
+        if (arg > 0 && arg < 65536) port = arg;
+    }
 
     addr = tn_cmd_resolve(host);
     if (addr == INADDR_NONE) { FreeArgs(rdargs); tn_cmd_fini(); return TN_CMD_FAIL; }
