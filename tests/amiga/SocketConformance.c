@@ -6400,10 +6400,9 @@ static void tc_net_cmd_nc_listen(void)
     int tries, found = 0;
 
     DeleteFile((CONST_STRPTR)"T:nc_listen.out");
-    /* Launch async via Run with shell output redirection - the proven
-     * pattern (tc_wizard uses it) - instead of SYS_Output handles.
-     * TIMEOUT 15 keeps the child worst-case lifetime inside this row
-     * so tc_cmd_stop_start never meets an open client. */
+    /* Launch async via Run with shell output redirection (the
+     * tc_wizard-proven token order). TIMEOUT 15 keeps the child inside
+     * this row so tc_cmd_stop_start never meets an open client. */
     SystemTags((CONST_STRPTR)"Run <NIL: >T:nc_listen.out C:nc 0.0.0.0 LISTEN 15099 TIMEOUT 15",
                SYS_Asynch, FALSE,
                SYS_Input, (BPTR)0,
@@ -6436,7 +6435,10 @@ static void tc_net_cmd_nc_listen(void)
     }
 
     call_send(s, "x", 1, 0);
-    for (tries = 0; tries < 40 && !found; tries++) {
+    Delay(50); /* let nc receive and print */
+    /* nc buffers its output and only flushes on exit: close first. */
+    call_closesocket(s);
+    for (tries = 0; tries < 60 && !found; tries++) {
         Delay(5);
         r = Open((CONST_STRPTR)"T:nc_listen.out", MODE_OLDFILE);
         if (r != (BPTR)0) {
@@ -6448,12 +6450,11 @@ static void tc_net_cmd_nc_listen(void)
             }
         }
     }
-    call_closesocket(s); /* nc drains the close and exits */
 
     if (found) {
         TAP_OK("net_cmd_nc_listen");
     } else {
-        tapf("# net_cmd_nc_listen: no x in output file\n");
+        tapf("# net_cmd_nc_listen: out=%s\n", out);
         TAP_NOTOK("net_cmd_nc_listen", "no echo byte");
     }
 }
@@ -6482,7 +6483,8 @@ static void tc_net_cmd_wget(void)
     char out[256];
     char args[96];
     /* Pre-create junk so a silent auto-resume would corrupt the body;
-     * without CONTINUE the target must be overwritten wholesale. */
+     * without CONTINUE the target must be overwritten wholesale.
+     * netsvc body is exactly "TOLUNNET_HTTP_OK" + LF = 17 bytes. */
     fh = Open((CONST_STRPTR)"T:wget_test.bin", MODE_NEWFILE);
     if (fh != (BPTR)0) {
         Write(fh, (CONST APTR)"12345", 5);
@@ -6511,8 +6513,8 @@ static void tc_net_cmd_wget(void)
             TAP_NOTOK("net_cmd_wget", "nonzero rc");
             return;
         }
-        if (got_len != 18 || memcmp(got, want, 18) != 0) {
-            tapf("# net_cmd_wget: content mismatch len=%ld (want 18)\n", got_len);
+        if (got_len != 17 || memcmp(got, want, 17) != 0) {
+            tapf("# net_cmd_wget: content mismatch len=%ld (want 17)\n", got_len);
             dump_cmd_out(out);
             TAP_NOTOK("net_cmd_wget", "body mismatch");
             return;
@@ -6554,8 +6556,8 @@ static void tc_net_cmd_wget_continue(void)
             if (got_len > 0) got[got_len] = 0;
         }
         DeleteFile((CONST_STRPTR)"T:wget_cont.bin");
-        if (ret != 0 || got_len != 18 || memcmp(got, want, 18) != 0) {
-            tapf("# net_cmd_wget_continue: rc=%ld len=%ld (want 18)' + NLs + '", ret, got_len);
+        if (ret != 0 || got_len != 17 || memcmp(got, want, 17) != 0) {
+            tapf("# net_cmd_wget_continue: rc=%ld len=%ld (want 17)\n", ret, got_len);
             dump_cmd_out(out);
             TAP_NOTOK("net_cmd_wget_continue", "range resume mismatch");
             return;
