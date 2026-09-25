@@ -1,65 +1,73 @@
-# Tolunnet STOP-REPORT: z.ai step 7 — item 7 (usergroup RTF_AUTOINIT) still red after two fixes
+# Tolunnet STOP-REPORT: z.ai step 7c — usergroup stub still red + 68000 cycle-2 hang
 
 **Timestamp:** 2026-09-25
-**Work order:** TN-zai-step.md. Items 0–6 landed green-benched; item 7 (usergroup
-RTF_AUTOINIT) is red on `tc_usergroup` after two fix attempts → per the rules:
-STOP-REPORT with verbatim not ok, stop.
+**Work order:** TN-zai-step.md (step 7c). Item 1 attempted three stub/init
+variants; `tc_usergroup` still fails AND the 68000 leg now hangs in cycle 2 →
+per the rules: STOP-REPORT with the last lines of each log verbatim, stop.
 
-**Commits this step (all green-benched except item 7):**
-- `fd6915e` — item 0: test honesty (CLEARED branch fails; badf clamp rule; INDEX).
-- `a7cc13f` — item 1: SetSignal(bits,bits) ×3 restore sites; watchdog timer
-  retired (AbortIO/WaitIO/drain) before CANCEL; CANCEL preallocated in
-  tn_lib_open.
-- `26c0875` — item 2: check_nfds clamp rule (0..FD_SETSIZE, only nfds<0 EINVAL);
-  SELECT_ARM/WAITSELECT dual-word with SEPARATE output accumulators and both
-  words written back; retry re-ARMs; infinite wait never returns 0;
-  WaitSelect(0,…,NULL) blocks on the break mask; fd_set zero sites clear both
-  words; fd40 idle-fd-33 assertion.
-- `2fd7a03` — item 4: tcp_output pcb re-checks after drains (ipc_tcp.c,
-  ipc_msg.c).
-- `4c5a14a` — item 5: LISTENING setsockopt/getsockopt slot-only; slot->opt_mss;
-  bench row tc_listen_setsockopt.
-- `95e3a6f` — item 6: CLI args copied before FreeArgs; silent reap of parked
-  accept/connect/recv; STOP reaps then replies EBUSY; stopping=FALSE on the
-  deferred branch; tn_reap_dead_clients_public.
-- `98bb0bf` + `0c70c9a` — item 7: RTF_AUTOINIT + register-ABI initializer
-  (STILL RED — see below).
+**Commits this round:**
+- `bc002e9` — item 1 (work-order stub): push-a0/push-d0 stack-arg stub,
+  ug_init_c(base, seglist) plain C, no AddLibrary, RTF_AUTOINIT only,
+  dead functions removed, reload leg in tc_usergroup.
+- follow-up — register-ABI stub (a0→d1 tail-call) after the first bench
+  showed arg corruption.
 
-**Last all-green bench before item 7:** `docs/bench-logs/20260925-015525-v1.2.0-rc4-60-g4c5a14a/`
-(core 74 ok / 8 not ok = the 8 TODO rows only; item-4 rows green).
-**Red bench:** `docs/bench-logs/20260925-030243-v1.2.0-rc4-65-g0c70c9a/`
-(a1200 == 68000, both cycles).
+**Bench dir:** `docs/bench-logs/20260925-115313-v1.2.0-rc4-68-gac6d6b4/`
 
-## The red (verbatim)
+## The red + hang (verbatim, last lines of each log)
 
 ```
-not ok 63 - tc_usergroup # getpwnam(root) failed or fields mismatch
+a1200/conformance.log (cycle 1 — suite COMPLETED):
+  not ok 63 - tc_usergroup # getpwnam(root) failed or fields mismatch
+  ...
+  ok 83 - tc_cmd_stop_start
+  1..83
+  (net TODO remaining: 8)
+
+a1200/conformance2.log (cycle 2 — hung after test 1):
+  # tolunnet SocketConformance (Round 3 §B.2)
+  ok 1 - tc_lib_open_close
+  (log ends — 900 s timeout)
+
+68000/conformance.log (cycle 1 — hung at the END, after test 62):
+  ok 60 - tc_cmd_ifctl
+  ok 61 - tc_cmd_netshutdown
+  ok 62 - tc_cmd_route
+  (log ends before tc_cmd_stop_start could run)
+
+68000/conformance2.log: (missing)
 ```
-(both profiles, both cycles; every other row green — TODO 8)
 
-## What was attempted for item 7
+## Analysis
 
-1. `98bb0bf`: RomTag switched to RTF_AUTOINIT | RTF_AFTERDOS with
-   g_ug_init_table {sizeof(UserGroupBase), g_ug_vectors, ug_init_from_table,
-   NULL}; ug_init_lib kept as a wrapper.
-2. `0c70c9a`: initializer redeclared with explicit exec register bindings
-   (d0=segList, a0=libBase, a6=ExecBase).
-
-Both still fail `tc_usergroup # getpwnam(root) failed or fields mismatch` —
-so the AUTOINIT initializer either still receives wrong arguments or the DB
-init path (ug_db_init reading files via DOSBase) behaves differently when
-invoked from exec's AutoInit flow instead of the old direct call.
+- Cycle 1 a1200: the full suite ran and completed; ONLY tc_usergroup failed
+  (getpwnam(root) mismatch) — so the stub/init now receives workable
+  arguments but something in the DB init still mismatches (fields vs the
+  test's uid/gid/name expectations).
+- 68000: cycle 1 hung at the very END (after tc_cmd_route, before stop_start
+  could run) and cycle 2 hung after test 1 — the repeated AUTOINIT
+  open/expunge cycles appear to destabilize the emulator leg (seg-list or
+  memory-poisoning aftereffect of the earlier broken stubs persisting in the
+  HDF? Each bench stages a fresh HDF, so more likely the AUTOINIT reload
+  path leaves memory in a state the 68000 tolerates worse).
+- The reload leg I added runs open/getpwnam/AllocMem-flush/FindName/reopen —
+  the flush-class AllocMem + immediate reopen is the new element in both
+  hangs. This must be treated as a suspect too: the leg may be tripping an
+  exec/WinUAE edge rather than proving the fix.
 
 ## Suggested next steps (owner decision)
 
-1. Bench the usergroup library in ISOLATION (minimal CLI: OpenLibrary →
-   getpwnam("root") → print → CloseLibrary) to see which part breaks: open
-   itself, the DB file read, or the field layout.
-2. Consider reverting item 7 to the pre-step-7 RomTag (non-AUTOINIT but with
-   an asm stub entry that preserves d0/a0/a6) — usergroup.library was
-   functional before this step; the regression is contained to this row.
-3. Alternatively keep RTF_AUTOINIT but debug via ROM INFO / seg tracker which
-   arguments arrive in the initializer.
+1. Revert the usergroup RomTag to the pre-step-7 non-AUTOINIT form
+   (git: before 98bb0bf) which passed tc_usergroup for many benches, and
+   drop the reload leg — treat the expunge/reload crash as a separate,
+   lower-priority investigation.
+2. If AUTOINIT is still desired: bench the reload leg alone, minus the
+   flush AllocMem, to isolate whether the AllocMem(0x7FFFFFF0) flush is
+   what destabilizes WinUAE's 68000 emulation.
+3. Investigate why tc_usergroup fails even in cycle 1 a1200 with the new
+   stubs: add a debug print of base/seglist/DOSBase inside ug_init_c to
+   verify arguments before touching the DB.
 
-All earlier fixes (items 0–6) remain committed and green:
-last fully green bench `20260925-015525-v1.2.0-rc4-60-g4c5a14a` (74 ok / 8 TODO).
+Evidence kept: `docs/bench-logs/20260925-115313-v1.2.0-rc4-68-gac6d6b4/`.
+All other fixes (step 7 items 0–6, step 7b) remain committed and were
+green-benched.

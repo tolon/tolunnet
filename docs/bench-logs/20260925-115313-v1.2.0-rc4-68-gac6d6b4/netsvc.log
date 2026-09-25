@@ -1,0 +1,22 @@
+[2026-09-25 11:53:13] [main] starting hermetic slirp host services
+[2026-09-25 11:53:13] [udp_echo] listening on UDP 15007
+[2026-09-25 11:53:13] [tcp_delay] listening on TCP 15009
+[2026-09-25 11:53:13] [tcp_echo] listening on TCP 15007
+[2026-09-25 11:53:13] [tcp_silent] listening on TCP 15011
+[2026-09-25 11:53:13] [sntp] listening on UDP 15123
+[2026-09-25 11:53:13] [tftp] listening on UDP 15069
+[2026-09-25 11:53:13] [ftp] listening on TCP 15021 (PASV port: 15020)
+[2026-09-25 11:53:13] [main] all 7 service threads started, ready for traffic
+[2026-09-25 11:53:13] [whois] listening on TCP 15043
+[2026-09-25 11:53:13] [http] listening on TCP 15080
+[2026-09-25 11:53:13] [tcp_delay] accepted from ('127.0.0.1', 44914), sleeping 1.0 s before reply
+[2026-09-25 11:53:13] [ftp] connected from ('127.0.0.1', 44915)
+[2026-09-25 11:53:13] [ftp] session error: [WinError 10053] Kurulan bir bağlantı, ana makinenizdeki yazılım tarafından iptal edildi
+[2026-09-25 11:53:13] [whois] query '' from ('127.0.0.1', 44916)
+[2026-09-25 11:53:13] [http] request '' from ('127.0.0.1', 44917)
+[2026-09-25 11:54:59] [tcp_delay] accepted from ('127.0.0.1', 46161), sleeping 1.0 s before reply
+[2026-09-25 11:55:00] [udp_echo] echoing 9 bytes to ('127.0.0.1', 63714)
+[2026-09-25 11:55:00] [tcp_delay] accepted from ('127.0.0.1', 46162), sleeping 1.0 s before reply
+[2026-09-25 11:55:01] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 46163)
+[2026-09-25 11:55:23] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 61320)
+[2026-09-25 11:55:46] [tftp] RRQ for testfile (octet) from ('127.0.0.1', 52202)
