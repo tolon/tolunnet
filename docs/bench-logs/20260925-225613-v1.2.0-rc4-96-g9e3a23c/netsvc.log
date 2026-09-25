@@ -1,0 +1,68 @@
+[2026-09-25 22:56:13] [main] starting hermetic slirp host services
+[2026-09-25 22:56:13] [udp_echo] listening on UDP 15007
+[2026-09-25 22:56:13] [tcp_delay] listening on TCP 15009
+[2026-09-25 22:56:13] [tcp_silent] listening on TCP 15011
+[2026-09-25 22:56:13] [tcp_echo] listening on TCP 15007
+[2026-09-25 22:56:13] [sntp] listening on UDP 15123
+[2026-09-25 22:56:13] [tftp] listening on UDP 15069
+[2026-09-25 22:56:13] [main] all 7 service threads started, ready for traffic
+[2026-09-25 22:56:13] [ftp] listening on TCP 15021 (PASV port: 15020)
+[2026-09-25 22:56:13] [whois] listening on TCP 15043
+[2026-09-25 22:56:13] [http] listening on TCP 15080
+[2026-09-25 22:56:13] [tcp_delay] accepted from ('127.0.0.1', 35929), sleeping 1.0 s before reply
+[2026-09-25 22:56:13] [ftp] connected from ('127.0.0.1', 35930)
+[2026-09-25 22:56:13] [ftp] session error: [WinError 10053] Kurulan bir bağlantı, ana makinenizdeki yazılım tarafından iptal edildi
+[2026-09-25 22:56:13] [whois] query '' from ('127.0.0.1', 35931)
+[2026-09-25 22:56:13] [http] request '' from ('127.0.0.1', 35932)
+[2026-09-25 22:58:01] [tcp_delay] accepted from ('127.0.0.1', 38484), sleeping 1.0 s before reply
+[2026-09-25 22:58:02] [udp_echo] echoing 9 bytes to ('127.0.0.1', 56420)
+[2026-09-25 22:58:02] [tcp_delay] accepted from ('127.0.0.1', 38485), sleeping 1.0 s before reply
+[2026-09-25 22:58:03] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 19046)
+[2026-09-25 22:58:03] [tcp_delay] accepted from ('127.0.0.1', 19048), sleeping 1.0 s before reply
+[2026-09-25 22:58:31] [tcp_delay] accepted from ('127.0.0.1', 38698), sleeping 1.0 s before reply
+[2026-09-25 22:58:32] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 38700)
+[2026-09-25 22:58:32] [ftp] connected from ('127.0.0.1', 38701)
+[2026-09-25 22:58:32] [ftp] command: USER anonymous
+[2026-09-25 22:58:32] [ftp] command: PASS tolunnet@
+[2026-09-25 22:58:32] [ftp] command: TYPE A
+[2026-09-25 22:58:32] [ftp] command: PASV 
+[2026-09-25 22:58:32] [ftp] command: QUIT 
+[2026-09-25 22:59:34] [tcp_delay] accepted from ('127.0.0.1', 11676), sleeping 1.0 s before reply
+[2026-09-25 22:59:36] [udp_echo] echoing 9 bytes to ('127.0.0.1', 55842)
+[2026-09-25 22:59:36] [tcp_delay] accepted from ('127.0.0.1', 11677), sleeping 1.0 s before reply
+[2026-09-25 22:59:37] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 11679)
+[2026-09-25 22:59:37] [tcp_delay] accepted from ('127.0.0.1', 11681), sleeping 1.0 s before reply
+[2026-09-25 23:00:02] [tcp_delay] accepted from ('127.0.0.1', 7171), sleeping 1.0 s before reply
+[2026-09-25 23:00:03] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 7172)
+[2026-09-25 23:00:03] [ftp] connected from ('127.0.0.1', 7173)
+[2026-09-25 23:00:03] [ftp] command: USER anonymous
+[2026-09-25 23:00:03] [ftp] command: PASS tolunnet@
+[2026-09-25 23:00:03] [ftp] command: TYPE A
+[2026-09-25 23:00:03] [ftp] command: PASV 
+[2026-09-25 23:00:03] [ftp] command: QUIT 
+[2026-09-25 23:04:07] [tcp_delay] accepted from ('127.0.0.1', 44537), sleeping 1.0 s before reply
+[2026-09-25 23:04:08] [udp_echo] echoing 9 bytes to ('127.0.0.1', 57755)
+[2026-09-25 23:04:08] [tcp_delay] accepted from ('127.0.0.1', 44541), sleeping 1.0 s before reply
+[2026-09-25 23:04:09] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 44543)
+[2026-09-25 23:04:10] [tcp_delay] accepted from ('127.0.0.1', 44545), sleeping 1.0 s before reply
+[2026-09-25 23:04:36] [tcp_delay] accepted from ('127.0.0.1', 44569), sleeping 1.0 s before reply
+[2026-09-25 23:04:38] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 44571)
+[2026-09-25 23:04:38] [ftp] connected from ('127.0.0.1', 44574)
+[2026-09-25 23:04:38] [ftp] command: USER anonymous
+[2026-09-25 23:04:38] [ftp] command: PASS tolunnet@
+[2026-09-25 23:04:38] [ftp] command: TYPE A
+[2026-09-25 23:04:38] [ftp] command: PASV 
+[2026-09-25 23:04:38] [ftp] command: QUIT 
+[2026-09-25 23:06:10] [tcp_delay] accepted from ('127.0.0.1', 1234), sleeping 1.0 s before reply
+[2026-09-25 23:06:12] [udp_echo] echoing 9 bytes to ('127.0.0.1', 54144)
+[2026-09-25 23:06:12] [tcp_delay] accepted from ('127.0.0.1', 1235), sleeping 1.0 s before reply
+[2026-09-25 23:06:13] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 1236)
+[2026-09-25 23:06:13] [tcp_delay] accepted from ('127.0.0.1', 1239), sleeping 1.0 s before reply
+[2026-09-25 23:06:39] [tcp_delay] accepted from ('127.0.0.1', 36494), sleeping 1.0 s before reply
+[2026-09-25 23:06:41] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 36495)
+[2026-09-25 23:06:41] [ftp] connected from ('127.0.0.1', 36496)
+[2026-09-25 23:06:41] [ftp] command: USER anonymous
+[2026-09-25 23:06:41] [ftp] command: PASS tolunnet@
+[2026-09-25 23:06:41] [ftp] command: TYPE A
+[2026-09-25 23:06:41] [ftp] command: PASV 
+[2026-09-25 23:06:41] [ftp] command: QUIT 
