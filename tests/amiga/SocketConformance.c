@@ -5439,6 +5439,9 @@ static void tc_usergroup(void)
 {
     struct tn_passwd *pw;
     struct tn_group *gr;
+    struct Library *gone = NULL, *bsd = NULL;
+    LONG ug_ocnt = -1;
+    ULONG ug_flags = 0;
 
     UserGroupBase = OpenLibrary((CONST_STRPTR)"usergroup.library", 4);
     if (UserGroupBase == NULL) {
@@ -5572,20 +5575,34 @@ static void tc_usergroup(void)
         if (big != 0) {
             FreeMem(big, 0x7FFFFFF0UL);
         }
-        {
-            struct Library *gone = FindName(&SysBase->LibList,
-                                            (CONST_STRPTR)"usergroup.library");
-            if (gone != NULL) {
-                Permit();
-                tapf("# tc_usergroup: ug OpenCnt=%ld Flags=0x%lx still in LibList\n",
-                     (long)gone->lib_OpenCnt, (unsigned)gone->lib_Flags);
-                TAP_NOTOK("tc_usergroup", "reload: library still in LibList after flush");
-                return;
-            }
+        /* z.ai step 7f item 1: each FindName sits in exactly ONE
+         * Forbid/Permit pair; print AFTER Permit. The old code had
+         * no Forbid and three stray Permits (TDNestCnt -3 -> the
+         * suite tail froze: Forbid stopped forbidding). */
+        Forbid();
+        gone = FindName(&SysBase->LibList,
+                        (CONST_STRPTR)"usergroup.library");
+        if (gone != NULL) {
+            ug_ocnt = gone->lib_OpenCnt;
+            ug_flags = gone->lib_Flags;
+            Permit();
+            tapf("# tc_usergroup: ug OpenCnt=%ld Flags=0x%lx still in LibList\n",
+                 (long)ug_ocnt, (unsigned)ug_flags);
+            TAP_NOTOK("tc_usergroup", "reload: library still in LibList after flush");
+            return;
         }
         Permit();
-        Permit();
 
+        Forbid();
+        bsd = FindName(&SysBase->LibList,
+                       (CONST_STRPTR)"bsdsocket.library");
+        Permit();
+        /* bsdsocket stays OPEN (the daemon holds it), so it must
+         * survive the flush in LibList. */
+        if (bsd == NULL) {
+            TAP_NOTOK("tc_usergroup", "bsdsocket did not survive the flush");
+            return;
+        }
         /* z.ai step 7e item 1: bsdsocket.library must survive the same
          * flush (it stays OPEN — daemon holds it — so LibList keeps it). */
         {
