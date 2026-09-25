@@ -1,0 +1,36 @@
+[2026-09-25 21:07:41] [main] starting hermetic slirp host services
+[2026-09-25 21:07:41] [udp_echo] listening on UDP 15007
+[2026-09-25 21:07:41] [tcp_delay] listening on TCP 15009
+[2026-09-25 21:07:41] [tcp_echo] listening on TCP 15007
+[2026-09-25 21:07:41] [tcp_silent] listening on TCP 15011
+[2026-09-25 21:07:41] [sntp] listening on UDP 15123
+[2026-09-25 21:07:41] [tftp] listening on UDP 15069
+[2026-09-25 21:07:41] [ftp] listening on TCP 15021 (PASV port: 15020)
+[2026-09-25 21:07:41] [main] all 7 service threads started, ready for traffic
+[2026-09-25 21:07:41] [whois] listening on TCP 15043
+[2026-09-25 21:07:41] [http] listening on TCP 15080
+[2026-09-25 21:07:41] [tcp_delay] accepted from ('127.0.0.1', 28568), sleeping 1.0 s before reply
+[2026-09-25 21:07:41] [ftp] connected from ('127.0.0.1', 28569)
+[2026-09-25 21:07:41] [ftp] session error: [WinError 10053] Kurulan bir bağlantı, ana makinenizdeki yazılım tarafından iptal edildi
+[2026-09-25 21:07:41] [whois] query '' from ('127.0.0.1', 28570)
+[2026-09-25 21:07:41] [http] request '' from ('127.0.0.1', 28571)
+[2026-09-25 21:09:28] [tcp_delay] accepted from ('127.0.0.1', 39179), sleeping 1.0 s before reply
+[2026-09-25 21:09:29] [udp_echo] echoing 9 bytes to ('127.0.0.1', 50181)
+[2026-09-25 21:09:29] [tcp_delay] accepted from ('127.0.0.1', 39180), sleeping 1.0 s before reply
+[2026-09-25 21:09:30] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 39186)
+[2026-09-25 21:09:52] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 63722)
+[2026-09-25 21:11:32] [tcp_delay] accepted from ('127.0.0.1', 28439), sleeping 1.0 s before reply
+[2026-09-25 21:11:33] [udp_echo] echoing 9 bytes to ('127.0.0.1', 61913)
+[2026-09-25 21:11:33] [tcp_delay] accepted from ('127.0.0.1', 28443), sleeping 1.0 s before reply
+[2026-09-25 21:11:34] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 28446)
+[2026-09-25 21:11:57] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 45193)
+[2026-09-25 21:16:39] [tcp_delay] accepted from ('127.0.0.1', 58818), sleeping 1.0 s before reply
+[2026-09-25 21:16:40] [udp_echo] echoing 9 bytes to ('127.0.0.1', 62494)
+[2026-09-25 21:16:40] [tcp_delay] accepted from ('127.0.0.1', 58821), sleeping 1.0 s before reply
+[2026-09-25 21:16:41] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 58822)
+[2026-09-25 21:17:05] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 1780)
+[2026-09-25 21:19:21] [tcp_delay] accepted from ('127.0.0.1', 19205), sleeping 1.0 s before reply
+[2026-09-25 21:19:22] [udp_echo] echoing 9 bytes to ('127.0.0.1', 64526)
+[2026-09-25 21:19:22] [tcp_delay] accepted from ('127.0.0.1', 19206), sleeping 1.0 s before reply
+[2026-09-25 21:19:23] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 17538)
+[2026-09-25 21:19:47] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 63635)
