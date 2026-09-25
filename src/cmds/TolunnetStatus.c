@@ -163,7 +163,7 @@ int main(int argc, char *argv[])
                     proto_str, sock_list[s].recv_q, sock_list[s].send_q,
                     l_addr, r_addr, state_str);
         }
-        tn_logf(TN_LOG_BASIC, "active socket descriptors: %d\n", (count > 0) ? count : active_socks);
+        tn_logf(TN_LOG_BASIC, "active socket descriptors: %ld\n", (LONG)((count > 0) ? count : active_socks));
         PutStr((CONST_STRPTR)"\nKernel IP routing table:\n");
         PutStr((CONST_STRPTR)"Destination     Gateway         Genmask         Flags Metric Ref    Use Iface\n");
         tn_logf(TN_LOG_BASIC, "default         %-15s 0.0.0.0         UG    0      0        0 %s%lu\n",

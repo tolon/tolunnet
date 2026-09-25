@@ -120,7 +120,7 @@ int main(int argc, char **argv)
             if (clean_line[i] == '=') { eq = i; break; }
         }
         if (eq <= 0) {
-            tn_cmd_printf("LINE %d: not KEY=VALUE: \"%s\"\n", lineno, clean_line);
+            tn_cmd_printf("LINE %ld: not KEY=VALUE: \"%s\"\n", (LONG)lineno, clean_line);
             problems++;
             line = eol;
             continue;
@@ -137,12 +137,12 @@ int main(int argc, char **argv)
         }
 
         if (!tn_config_key_known(key)) {
-            tn_cmd_printf("LINE %d: unknown key \"%s\"\n", lineno, key);
+            tn_cmd_printf("LINE %ld: unknown key \"%s\"\n", (LONG)lineno, key);
             problems++;
         } else {
             int cls = tn_config_value_class(key);
             if (val[0] == '\0') {
-                tn_cmd_printf("LINE %d: empty value for \"%s\"\n", lineno, key);
+                tn_cmd_printf("LINE %ld: empty value for \"%s\"\n", (LONG)lineno, key);
                 problems++;
             } else if (cls == 1) {
                 /* IP-class: dotted quad, or hostname (letters) for
@@ -151,20 +151,20 @@ int main(int argc, char **argv)
                      strncmp(key, "IP", 2) == 0 || strncmp(key, "IP_ADDR", 7) == 0 ||
                      strncmp(key, "GATEWAY", 7) == 0 || strncmp(key, "GW", 2) == 0) &&
                     !looks_like_ip(val)) {
-                    tn_cmd_printf("LINE %d: \"%s\" expects a dotted quad, got \"%s\"\n",
-                                  lineno, key, val);
+                    tn_cmd_printf("LINE %ld: \"%s\" expects a dotted quad, got \"%s\"\n",
+                                  (LONG)lineno, key, val);
                     problems++;
                 }
             } else if (cls == 2 && !looks_like_number(val)) {
-                tn_cmd_printf("LINE %d: \"%s\" expects a number, got \"%s\"\n",
-                              lineno, key, val);
+                tn_cmd_printf("LINE %ld: \"%s\" expects a number, got \"%s\"\n",
+                              (LONG)lineno, key, val);
                 problems++;
             } else if (cls == 3) {
                 if (!(val[0] == 'Y' || val[0] == 'y' || val[0] == 'N' || val[0] == 'n' ||
                       val[0] == '1' || val[0] == '0' || val[0] == 'T' || val[0] == 't' ||
                       val[0] == 'F' || val[0] == 'f' || val[0] == 'O' || val[0] == 'o')) {
-                    tn_cmd_printf("LINE %d: \"%s\" expects YES/NO, got \"%s\"\n",
-                                  lineno, key, val);
+                    tn_cmd_printf("LINE %ld: \"%s\" expects YES/NO, got \"%s\"\n",
+                                  (LONG)lineno, key, val);
                     problems++;
                 }
             }
@@ -173,9 +173,9 @@ int main(int argc, char **argv)
     }
 
     if (problems == 0) {
-        tn_cmd_printf("CheckNetConfig: %s OK (%d lines)\n", path, lineno);
+        tn_cmd_printf("CheckNetConfig: %s OK (%ld lines)\n", path, (LONG)lineno);
     } else {
-        tn_cmd_printf("CheckNetConfig: %d problem(s) in %s\n", problems, path);
+        tn_cmd_printf("CheckNetConfig: %ld problem(s) in %s\n", (LONG)problems, path);
     }
 
     (void)argc; (void)argv;

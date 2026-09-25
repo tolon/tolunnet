@@ -536,8 +536,8 @@ static void render_frames(void)
 /* n / 5 progress in the screen title bar */
 static void update_screen_title(void)
 {
-    snprintf(g_scr_title, sizeof(g_scr_title), "tolunnet Network Setup 1.2 - %d / 5",
-             g_ws.current_page + 1);
+    snprintf(g_scr_title, sizeof(g_scr_title), "tolunnet Network Setup 1.2 - %ld / 5",
+             (LONG)(g_ws.current_page + 1));
     if (g_win) {
         SetWindowTitles(g_win, (CONST_STRPTR)"Network Setup", (CONST_STRPTR)g_scr_title);
     }
@@ -1311,10 +1311,10 @@ static void rebuild_page_gadgets(void)
             sec = (g_ws.wifi[i].encryption == 0) ? "Open"
                 : (g_ws.wifi[i].encryption == 1) ? "WEP" : "WPA";
             snprintf(g_wifi_lines[i], sizeof(g_wifi_lines[i]),
-                     "%c %-24s Ch:%-3d %s [%s]",
+                     "%c %-24s Ch:%-3ld %s [%s]",
                      (i == g_ws.selected_wifi_idx) ? '>' : ' ',
                      g_ws.wifi[i].ssid[0] ? g_ws.wifi[i].ssid : "<hidden>",
-                     (int)g_ws.wifi[i].channel, bars, sec);
+                     (LONG)g_ws.wifi[i].channel, bars, sec);
             memset(&g_wifi_nodes[i], 0, sizeof(struct Node));
             g_wifi_nodes[i].ln_Name = g_wifi_lines[i];
             AddTail(&g_wifi_list, &g_wifi_nodes[i]);
@@ -2116,7 +2116,7 @@ int main(int argc, char **argv)
                     case GID_P2_SCAN_BTN:
                         set_status("Probing adapters...");
                         tn_hw_scan_all(&g_ws);
-                        set_status("Found %d adapter(s)", g_ws.hw_count);
+                        set_status("Found %ld adapter(s)", (LONG)g_ws.hw_count);
                         rebuild_page_gadgets();
                         break;
 
@@ -2128,7 +2128,7 @@ int main(int argc, char **argv)
                         draw_page_content();
                         tn_wifi_scan(&g_ws);
                         snprintf(g_ws.wifi_status_msg, sizeof(g_ws.wifi_status_msg),
-                                 "Scan complete: %d network(s)", g_ws.wifi_count);
+                                 "Scan complete: %ld network(s)", (LONG)g_ws.wifi_count);
                         set_status("%s", g_ws.wifi_status_msg);
                         rebuild_page_gadgets();
                         break;

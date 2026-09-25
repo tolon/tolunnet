@@ -52,7 +52,7 @@ int main(int argc, char **argv)
                 for (i = 0; he->h_addr_list[i] != NULL && i < 4; i++) {
                     struct in_addr a;
                     memcpy(&a, he->h_addr_list[i], 4);
-                    tn_cmd_printf("Address %d:  %s\n", i + 1, tn_call_inet_ntoa(a));
+                    tn_cmd_printf("Address %ld:  %s\n", (LONG)(i + 1), tn_call_inet_ntoa(a));
                 }
                 if (he->h_name != NULL) {
                     tn_cmd_printf("Canonical: %s\n", he->h_name);
