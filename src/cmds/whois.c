@@ -5,14 +5,14 @@
 #include "cmdlib.h"
 #include <string.h>
 
-#define TEMPLATE "QUERY/A,SERVER"
+#define TEMPLATE "QUERY/A,SERVER,PORT/K/N"
 #define WHOIS_PORT 43
 #define WHOIS_DEFAULT_SERVER "whois.iana.org"
 #define RX_BUF 2048
 
 int main(int argc, char **argv)
 {
-    LONG opts[2] = { 0, 0 };
+    LONG opts[3] = { 0, 0, 0 };
     struct RDArgs *rdargs;
     int rc = TN_CMD_OK;
     LONG fd;
@@ -33,6 +33,10 @@ int main(int argc, char **argv)
     const char *q = (const char *)opts[0];
     const char *server = (opts[1] != 0) ? (const char *)opts[1] : WHOIS_DEFAULT_SERVER;
 
+    /* z.ai step 8b item 3: PORT/K/N overrides the default 43 (netsvc
+     * mock listens on 15043). /N slots are pointers. */
+    LONG port = (opts[2] != 0 && *(LONG *)opts[2] > 0) ? *(LONG *)opts[2] : WHOIS_PORT;
+
     addr = tn_cmd_resolve(server);
     if (addr == INADDR_NONE) {
         FreeArgs(rdargs);
@@ -46,7 +50,7 @@ int main(int argc, char **argv)
     memset(&dst, 0, sizeof(dst));
     dst.sin_len = sizeof(dst);
     dst.sin_family = AF_INET;
-    dst.sin_port = htons(WHOIS_PORT);
+    dst.sin_port = htons((UWORD)port);
     dst.sin_addr.s_addr = addr;
 
     tn_cmd_printf("Connecting to %s...\n", server);

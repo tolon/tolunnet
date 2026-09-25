@@ -45,7 +45,7 @@ All commands install to `SYS:C/` (except Prefs tools). Every command is a thin c
 |---------|------------------|-----|-------------|-------------|
 | `hostname` | `HOSTNAME,SAVE/S` | 0/10 | Show system hostname | `tc_cmd_hostname` |
 | `nslookup` | `NAME/A,SERVER` | 0/10 | Forward (A) + reverse (PTR) DNS (reverse via gethostbyaddr: STUB) | `tc_cmd_nslookup` |
-| `whois` | `QUERY/A,SERVER` | 0/5/10 | TCP-43 WHOIS query | `tc_cmd_whois` |
+| `whois` | `QUERY/A,SERVER,PORT/K/N` | 0/5/10 | WHOIS query, default port 43 | `tc_cmd_whois` |
 
 ## Network Probe
 
@@ -59,7 +59,7 @@ All commands install to `SYS:C/` (except Prefs tools). Every command is a thin c
 
 | Command | ReadArgs Template | RC | Description | Conformance |
 |---------|------------------|-----|-------------|-------------|
-| `sntp` | `HOST,SET/S,OFFSET/N` | 0/5/10 | NTP query, UTC date display | `tc_cmd_sntp` |
+| `sntp` | `HOST,PORT/K/N,SET/S,OFFSET/N` | 0/5/10 | NTP query (default port 123), UTC date display | `tc_cmd_sntp` |
 
 ## Remote Access
 

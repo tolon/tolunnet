@@ -6,7 +6,7 @@
 #include "cmdlib.h"
 #include <string.h>
 
-#define TEMPLATE "HOST,SET/S,OFFSET/N"
+#define TEMPLATE "HOST,PORT/K/N,SET/S,OFFSET/N"
 #define NTP_PORT 123
 #define NTP_PKT_LEN 48
 
@@ -40,7 +40,7 @@ struct ntp_pkt {
 
 int main(int argc, char **argv)
 {
-    LONG opts[3] = { 0, 0, 0 };
+    LONG opts[4] = { 0, 0, 0, 0 };
     struct RDArgs *rdargs;
     int rc = TN_CMD_OK;
     LONG fd;
@@ -63,8 +63,11 @@ int main(int argc, char **argv)
     }
 
     const char *host = (opts[0] != 0) ? (const char *)opts[0] : default_server;
-    LONG do_set = opts[1];
-    LONG offset_min = (opts[2] != 0) ? *(LONG *)opts[2] : 0; /* /N is a pointer */
+    /* z.ai step 8b item 3: PORT/K/N overrides the default 123 (netsvc
+     * mock listens on 15123). /N slots are pointers. */
+    LONG port = (opts[1] != 0 && *(LONG *)opts[1] > 0) ? *(LONG *)opts[1] : NTP_PORT;
+    LONG do_set = opts[2];
+    LONG offset_min = (opts[3] != 0) ? *(LONG *)opts[3] : 0;
 
     server_addr = tn_cmd_resolve(host);
     if (server_addr == INADDR_NONE) {
@@ -78,7 +81,7 @@ int main(int argc, char **argv)
     memset(&dst, 0, sizeof(dst));
     dst.sin_len = sizeof(dst);
     dst.sin_family = AF_INET;
-    dst.sin_port = htons(NTP_PORT);
+    dst.sin_port = htons((UWORD)port);
     dst.sin_addr.s_addr = server_addr;
 
     /* Build NTP request */

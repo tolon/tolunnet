@@ -6392,7 +6392,7 @@ static void tc_net_cmd_nc_udp(void)
  * local listener), sends "x" and waits for it in the output file. */
 static void tc_net_cmd_nc_listen(void)
 {
-    BPTR out_fh, in_fh, r;
+    BPTR r;
     LONG s;
     struct sockaddr_in sin;
     char out[256];
@@ -6400,30 +6400,24 @@ static void tc_net_cmd_nc_listen(void)
     int tries, found = 0;
 
     DeleteFile((CONST_STRPTR)"T:nc_listen.out");
-    out_fh = Open((CONST_STRPTR)"T:nc_listen.out", MODE_NEWFILE);
-    in_fh = Open((CONST_STRPTR)"NIL:", MODE_OLDFILE);
-    if (out_fh == (BPTR)0 || in_fh == (BPTR)0) {
-        if (out_fh != (BPTR)0) Close(out_fh);
-        if (in_fh != (BPTR)0) Close(in_fh);
-        tapf("# net_cmd_nc_listen: cannot open T:nc_listen.out\n");
-        TAP_NOTOK("net_cmd_nc_listen", "files");
-        return;
-    }
-    /* Handles pass to the async process; it closes them on exit. */
-    SystemTags((CONST_STRPTR)"C:nc 0.0.0.0 LISTEN 15099 TIMEOUT 25",
-               SYS_Input,  (LONG)in_fh,
-               SYS_Output, (LONG)out_fh,
-               SYS_Asynch, TRUE,
-               TAG_DONE);
+    /* Launch async via Run with shell output redirection - the proven
+     * pattern (tc_wizard uses it) - instead of SYS_Output handles.
+     * TIMEOUT 15 keeps the child worst-case lifetime inside this row
+     * so tc_cmd_stop_start never meets an open client. */
+    SystemTags((CONST_STRPTR)"Run >T:nc_listen.out NIL: C:nc 0.0.0.0 LISTEN 15099 TIMEOUT 15",
+               SYS_Asynch, FALSE,
+               SYS_Input, (BPTR)0,
+               SYS_Output, (BPTR)0,
+               TAG_END);
 
     for (tries = 0, s = -1; tries < 50 && s < 0; tries++) {
-        Delay(5); /* 0.5 s */
+        Delay(5); /* 0.25 s */
         s = call_socket(AF_INET, SOCK_STREAM, 0);
         memset(&sin, 0, sizeof(sin));
         sin.sin_len = sizeof(sin);
         sin.sin_family = AF_INET;
         sin.sin_port = htons(15099);
-        sin.sin_addr.s_addr = call_gethostid();
+        sin.sin_addr.s_addr = htonl(0x7F000001UL); /* proven lwIP loopback */
         if (call_connect(s, (struct sockaddr *)&sin, sizeof(sin)) == 0) break;
         call_closesocket(s);
         s = -1;
@@ -6450,7 +6444,7 @@ static void tc_net_cmd_nc_listen(void)
             Close(r);
             if (got > 0) {
                 out[got] = 0;
-                if (strchr(out, 'x') != NULL) found = 1;
+                if (strchr(out, (int)'x') != NULL) found = 1;
             }
         }
     }
@@ -6459,7 +6453,7 @@ static void tc_net_cmd_nc_listen(void)
     if (found) {
         TAP_OK("net_cmd_nc_listen");
     } else {
-        tapf("# net_cmd_nc_listen: 'x' not seen in output file\n");
+        tapf("# net_cmd_nc_listen: no x in output file\n");
         TAP_NOTOK("net_cmd_nc_listen", "no echo byte");
     }
 }
@@ -6468,13 +6462,15 @@ static void tc_net_cmd_nc_listen(void)
 static void tc_net_cmd_whois(void)
 {
     char out[256];
-    LONG ret = run_cmd("C:whois", "example.com 10.0.2.2", NULL, out, sizeof(out));
+    /* z.ai step 8b item 3: PORT/K/N targets the netsvc whois mock;
+     * the banner proves the full query round trip. */
+    LONG ret = run_cmd("C:whois", "example.com 10.0.2.2 PORT 15043", NULL,
+                       out, sizeof(out));
     if (ret == 0 && strstr(out, "Tolunnet Registrar") != NULL) {
         TAP_OK("net_cmd_whois");
     } else {
-        tapf("# net_cmd_whois: rc=%ld\n", ret);
-        dump_cmd_out(out);
-        TAP_TODO("net_cmd_whois", "red-baseline 19");
+        tapf("# net_cmd_whois: rc=%ld out=%s\n", ret, out);
+        TAP_NOTOK("net_cmd_whois", "no banner or nonzero rc");
     }
 }
 
@@ -6559,17 +6555,16 @@ static void tc_net_cmd_ftp(void)
 static void tc_net_cmd_sntp(void)
 {
     char out[256];
-    /* Template is HOST,SET/S,OFFSET/N - no PORT option exists, so the
-     * tool targets NTP port 123 and cannot reach netsvc on 15123 until
-     * step 8b adds PORT ([auto] noted in QUESTIONS.md). */
-    LONG ret = run_cmd("C:sntp", "10.0.2.2 OFFSET 0", NULL, out, sizeof(out));
+    /* z.ai step 8b item 3: PORT/K/N targets the netsvc sntp mock;
+     * a synchronized reply prints the Server time line. */
+    LONG ret = run_cmd("C:sntp", "10.0.2.2 PORT 15123 OFFSET 0", NULL,
+                       out, sizeof(out));
     if (ret == 0 && (strstr(out, "offset") != NULL ||
                      strstr(out, "Server time") != NULL)) {
         TAP_OK("net_cmd_sntp");
     } else {
-        tapf("# net_cmd_sntp: rc=%ld\n", ret);
-        dump_cmd_out(out);
-        TAP_TODO("net_cmd_sntp", "red-baseline 18");
+        tapf("# net_cmd_sntp: rc=%ld out=%s\n", ret, out);
+        TAP_NOTOK("net_cmd_sntp", "no synchronized reply");
     }
 }
 
