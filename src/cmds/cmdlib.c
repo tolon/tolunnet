@@ -169,11 +169,12 @@ ULONG tn_call_inet_addr(const char *cp)
 
 STRPTR tn_call_inet_ntoa(struct in_addr in)
 {
+    /* z.ai step 8a item 2: Inet_NtoA (LVO -174) takes the address in D0
+     * and returns the string pointer in D0. */
     register struct Library *a6 __asm__("a6") = SocketBase;
-    register STRPTR d0 __asm__("d0");
-    register ULONG a0 __asm__("a0") = in.s_addr;
-    __asm__ __volatile__("jsr -174(%%a6)" : "=r"(d0) : "r"(a6), "r"(a0) : "a0","a1","memory");
-    return d0;
+    register ULONG d0 __asm__("d0") = in.s_addr;
+    __asm__ __volatile__("jsr -174(%%a6)" : "+r"(d0) : "r"(a6) : "a0","a1","memory");
+    return (STRPTR)d0;
 }
 
 struct hostent *tn_call_gethostbyname(const char *name)

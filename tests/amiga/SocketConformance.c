@@ -6348,7 +6348,7 @@ static void tc_net_inet_ntoa(void)
         TAP_OK("net_inet_ntoa");
     } else {
         tapf("# net_inet_ntoa: rc=%ld out=%.200s\n", ret, out);
-        TAP_TODO("net_inet_ntoa", "red-baseline 19");
+        TAP_NOTOK("net_inet_ntoa", "Inet_NtoA output mismatch");
     }
 }
 
