@@ -6390,6 +6390,23 @@ static void tc_net_cmd_nc_udp(void)
  * async with SystemTags writing its stdout to T:nc_listen.out; the test
  * connects to the guest's own IP (lwIP NETIF_LOOPBACK delivers to the
  * local listener), sends "x" and waits for it in the output file. */
+/* z.ai step 8b: hex-dump the first bytes for row diagnostics */
+static void hex_dump(const char *tag, const char *buf, LONG len)
+{
+    char line[80];
+    LONG i, o = 0;
+    static const char hex[] = "0123456789abcdef";
+    if (len > 32) len = 32;
+    for (i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)buf[i];
+        line[o++] = hex[c >> 4];
+        line[o++] = hex[c & 0x0F];
+        if (o >= 64) break;
+    }
+    line[o] = 0;
+    tapf("# %s len=%ld hex=%s\n", tag, len, line);
+}
+
 static void tc_net_cmd_nc_listen(void)
 {
     BPTR r;
@@ -6434,8 +6451,24 @@ static void tc_net_cmd_nc_listen(void)
         return;
     }
 
+    {
+        r = Open((CONST_STRPTR)"T:nc_listen.out", MODE_OLDFILE);
+        if (r != (BPTR)0) {
+            got = Read(r, out, sizeof(out) - 1);
+            Close(r);
+            hex_dump("nc_listen.pre", out, got);
+        }
+    }
     call_send(s, "x", 1, 0);
     Delay(50); /* let nc receive and print */
+    {
+        r = Open((CONST_STRPTR)"T:nc_listen.out", MODE_OLDFILE);
+        if (r != (BPTR)0) {
+            got = Read(r, out, sizeof(out) - 1);
+            Close(r);
+            hex_dump("nc_listen.sent", out, got);
+        }
+    }
     /* nc buffers its output and only flushes on exit: close first. */
     call_closesocket(s);
     for (tries = 0; tries < 60 && !found; tries++) {
@@ -6447,6 +6480,7 @@ static void tc_net_cmd_nc_listen(void)
             if (got > 0) {
                 out[got] = 0;
                 if (strchr(out, (int)'x') != NULL) found = 1;
+                else if (tries == 59) hex_dump("nc_listen.fin", out, got);
             }
         }
     }
@@ -6495,11 +6529,9 @@ static void tc_net_cmd_wget(void)
                   (LONG)NETSVC_HTTP_PORT);
     ret = run_cmd("C:TolunnetGet", args, NULL, out, sizeof(out));
     {
-        static char want[19] = "TOLUNNET_HTTP_OK";
+        static char want[18] = "TOLUNNET_HTTP_OK\n";
         char got[64];
         LONG got_len = -1;
-        want[17] = '\n';
-        want[18] = 0;
         fh = Open((CONST_STRPTR)"T:wget_test.bin", MODE_OLDFILE);
         if (fh != (BPTR)0) {
             got_len = Read(fh, (APTR)got, sizeof(got) - 1);
@@ -6544,11 +6576,9 @@ static void tc_net_cmd_wget_continue(void)
                   (LONG)NETSVC_HTTP_PORT);
     ret = run_cmd("C:TolunnetGet", args, NULL, out, sizeof(out));
     {
-        static char want[19] = "TOLUNNET_HTTP_OK";
+        static char want[18] = "TOLUNNET_HTTP_OK\n";
         char got[64];
         LONG got_len = -1;
-        want[17] = '\n';
-        want[18] = 0;
         fh = Open((CONST_STRPTR)"T:wget_cont.bin", MODE_OLDFILE);
         if (fh != (BPTR)0) {
             got_len = Read(fh, (APTR)got, sizeof(got) - 1);
