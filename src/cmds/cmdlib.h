@@ -37,6 +37,10 @@ LONG tn_call_socket(LONG d, LONG t, LONG p);
 LONG tn_call_connect(LONG fd, const struct sockaddr *a, LONG len);
 LONG tn_call_send(LONG fd, const void *buf, LONG len, LONG flags);
 LONG tn_call_recv(LONG fd, void *buf, LONG len, LONG flags);
+LONG tn_call_sendto(LONG fd, const void *buf, LONG len, LONG flags,
+                    const struct sockaddr *to, LONG tolen);
+LONG tn_call_recvfrom(LONG fd, void *buf, LONG len, LONG flags,
+                      struct sockaddr *from, LONG *fromlen);
 LONG tn_call_closesocket(LONG fd);
 LONG tn_call_gethostname(STRPTR name, LONG len);
 LONG tn_call_errno(void);

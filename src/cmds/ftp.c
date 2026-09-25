@@ -55,7 +55,6 @@ static LONG x_send(LONG fd, const void *b, LONG l, LONG f)
     return tn_call_send(fd, b, l, f);
 }
 
-static UWORD hs(UWORD v) { return ((v & 0xFF) << 8) | (v >> 8); }
 
 /* Read one line from control connection; returns length or -1 */
 static LONG ftp_read_line(LONG fd, char *buf, LONG maxlen)
@@ -164,7 +163,7 @@ static LONG ftp_data_connect(ULONG ip, UWORD port)
     memset(&dst, 0, sizeof(dst));
     dst.sin_len = sizeof(dst);
     dst.sin_family = AF_INET;
-    dst.sin_port = hs(port);
+    dst.sin_port = htons(port); /* z.ai step 8a item 4: hs() byte-swaps; htons is identity on 68k */
     dst.sin_addr.s_addr = htonl(ip);
     if (tn_call_connect(fd, (struct sockaddr *)&dst, sizeof(dst)) != 0) {
         tn_call_closesocket(fd);
@@ -230,7 +229,7 @@ int main(int argc, char **argv)
         memset(&dst, 0, sizeof(dst));
         dst.sin_len = sizeof(dst);
         dst.sin_family = AF_INET;
-        dst.sin_port = hs((UWORD)port);
+        dst.sin_port = htons((UWORD)port); /* z.ai step 8a item 4 */
         dst.sin_addr.s_addr = srv_addr;
 
         if (!quiet) tn_cmd_printf("ftp: connecting to %s:%ld...\n", cur_host, port);
@@ -321,7 +320,7 @@ int main(int argc, char **argv)
                 if (ctrl < 0) continue;
                 memset(&dst, 0, sizeof(dst));
                 dst.sin_family = AF_INET;
-                dst.sin_port = hs(FTP_PORT);
+                dst.sin_port = htons(FTP_PORT); /* z.ai step 8a item 4 */
                 dst.sin_addr.s_addr = srv_addr;
                 if (tn_call_connect(ctrl, (struct sockaddr *)&dst, sizeof(dst)) == 0) {
                     ftp_cmd(ctrl, NULL);

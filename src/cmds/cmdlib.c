@@ -52,6 +52,37 @@ LONG tn_call_recv(LONG fd, void *buf, LONG len, LONG flags)
     return d0;
 }
 
+/* z.ai step 8a item 4: sendto (LVO -60) and recvfrom (LVO -72) need the
+ * full register set - flags in D2, destination in A1/D3, source addr in
+ * A1 and the fromlen pointer in A2. */
+LONG tn_call_sendto(LONG fd, const void *buf, LONG len, LONG flags,
+                    const struct sockaddr *to, LONG tolen)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = fd;
+    register const void *a0 __asm__("a0") = buf;
+    register LONG d1 __asm__("d1") = len;
+    register LONG d2 __asm__("d2") = flags;
+    register const struct sockaddr *a1 __asm__("a1") = to;
+    register LONG d3 __asm__("d3") = tolen;
+    __asm__ __volatile__("jsr -60(%%a6)" : "+r"(d0) : "r"(a6), "r"(d0), "r"(a0), "r"(d1), "r"(d2), "r"(a1), "r"(d3) : "d1","d2","d3","a0","a1","memory");
+    return d0;
+}
+
+LONG tn_call_recvfrom(LONG fd, void *buf, LONG len, LONG flags,
+                      struct sockaddr *from, LONG *fromlen)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = fd;
+    register void *a0 __asm__("a0") = buf;
+    register LONG d1 __asm__("d1") = len;
+    register LONG d2 __asm__("d2") = flags;
+    register struct sockaddr *a1 __asm__("a1") = from;
+    register LONG *a2 __asm__("a2") = fromlen;
+    __asm__ __volatile__("jsr -72(%%a6)" : "+r"(d0) : "r"(a6), "r"(d0), "r"(a0), "r"(d1), "r"(d2), "r"(a1), "r"(a2) : "d1","d2","a0","a1","a2","memory");
+    return d0;
+}
+
 LONG tn_call_closesocket(LONG fd)
 {
     register struct Library *a6 __asm__("a6") = SocketBase;

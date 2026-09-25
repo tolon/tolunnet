@@ -87,7 +87,10 @@ int main(int argc, char **argv)
 
     tn_cmd_printf("sntp: querying %s...\n", host);
 
-    if (tn_call_send(fd, &pkt, NTP_PKT_LEN, 0) != NTP_PKT_LEN) {
+    /* z.ai step 8a item 4: unconnected UDP needs sendto, not send
+     * (send returned EDESTADDRREQ). */
+    if (tn_call_sendto(fd, &pkt, NTP_PKT_LEN, 0,
+                       (struct sockaddr *)&dst, sizeof(dst)) != NTP_PKT_LEN) {
         tn_cmd_printf("sntp: send failed (errno=%ld)\n", tn_call_errno());
         tn_call_closesocket(fd); FreeArgs(rdargs); tn_cmd_fini();
         return TN_CMD_FAIL;
