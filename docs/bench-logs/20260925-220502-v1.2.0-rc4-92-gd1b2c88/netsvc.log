@@ -1,0 +1,42 @@
+[2026-09-25 22:05:02] [main] starting hermetic slirp host services
+[2026-09-25 22:05:02] [udp_echo] listening on UDP 15007
+[2026-09-25 22:05:02] [tcp_echo] listening on TCP 15007
+[2026-09-25 22:05:02] [tcp_delay] listening on TCP 15009
+[2026-09-25 22:05:02] [sntp] listening on UDP 15123
+[2026-09-25 22:05:02] [tcp_silent] listening on TCP 15011
+[2026-09-25 22:05:02] [tftp] listening on UDP 15069
+[2026-09-25 22:05:02] [ftp] listening on TCP 15021 (PASV port: 15020)
+[2026-09-25 22:05:02] [main] all 7 service threads started, ready for traffic
+[2026-09-25 22:05:02] [whois] listening on TCP 15043
+[2026-09-25 22:05:02] [http] listening on TCP 15080
+[2026-09-25 22:05:02] [tcp_delay] accepted from ('127.0.0.1', 25992), sleeping 1.0 s before reply
+[2026-09-25 22:05:02] [ftp] connected from ('127.0.0.1', 25993)
+[2026-09-25 22:05:02] [ftp] session error: [WinError 10053] Kurulan bir bağlantı, ana makinenizdeki yazılım tarafından iptal edildi
+[2026-09-25 22:05:02] [whois] query '' from ('127.0.0.1', 25994)
+[2026-09-25 22:05:02] [http] request '' from ('127.0.0.1', 25995)
+[2026-09-25 22:06:51] [tcp_delay] accepted from ('127.0.0.1', 63650), sleeping 1.0 s before reply
+[2026-09-25 22:06:52] [udp_echo] echoing 9 bytes to ('127.0.0.1', 50874)
+[2026-09-25 22:06:52] [tcp_delay] accepted from ('127.0.0.1', 63651), sleeping 1.0 s before reply
+[2026-09-25 22:06:53] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 43829)
+[2026-09-25 22:06:53] [tcp_delay] accepted from ('127.0.0.1', 43831), sleeping 1.0 s before reply
+[2026-09-25 22:07:19] [tcp_delay] accepted from ('127.0.0.1', 58230), sleeping 1.0 s before reply
+[2026-09-25 22:07:20] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 58231)
+[2026-09-25 22:07:20] [ftp] connected from ('127.0.0.1', 58232)
+[2026-09-25 22:07:20] [ftp] command: USER anonymous
+[2026-09-25 22:07:20] [ftp] command: PASS tolunnet@
+[2026-09-25 22:07:20] [ftp] command: TYPE I
+[2026-09-25 22:07:20] [ftp] command: PASV 
+[2026-09-25 22:20:47] [ftp] session error: [WinError 10054] Varolan bir bağlantı uzaktaki bir ana bilgisayar tarafından zorla kapatıldı
+[2026-09-25 22:24:23] [tcp_delay] accepted from ('127.0.0.1', 49202), sleeping 1.0 s before reply
+[2026-09-25 22:24:24] [udp_echo] echoing 9 bytes to ('127.0.0.1', 59256)
+[2026-09-25 22:24:24] [tcp_delay] accepted from ('127.0.0.1', 49203), sleeping 1.0 s before reply
+[2026-09-25 22:24:25] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 49204)
+[2026-09-25 22:24:26] [tcp_delay] accepted from ('127.0.0.1', 49206), sleeping 1.0 s before reply
+[2026-09-25 22:24:52] [tcp_delay] accepted from ('127.0.0.1', 58918), sleeping 1.0 s before reply
+[2026-09-25 22:24:54] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 58920)
+[2026-09-25 22:24:54] [ftp] connected from ('127.0.0.1', 58921)
+[2026-09-25 22:24:54] [ftp] command: USER anonymous
+[2026-09-25 22:24:54] [ftp] command: PASS tolunnet@
+[2026-09-25 22:24:54] [ftp] command: TYPE I
+[2026-09-25 22:24:54] [ftp] command: PASV 
+[2026-09-25 22:36:37] [ftp] session error: [WinError 10054] Varolan bir bağlantı uzaktaki bir ana bilgisayar tarafından zorla kapatıldı
