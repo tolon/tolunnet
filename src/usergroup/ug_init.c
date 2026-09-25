@@ -27,28 +27,35 @@ __asm__(
     "    rts\n"
 );
 
+__asm__(
+    "    .text\n"
+    "    .even\n"
+    "    .globl _ug_autoinit_stub\n"
+    "_ug_autoinit_stub:\n"
+    "    move.l  %a0, -(%sp)\n"
+    "    move.l  %d0, -(%sp)\n"
+    "    jsr     _ug_init_c\n"
+    "    addq.l  #8, %sp\n"
+    "    rts\n"
+);
+
 BPTR ug_lib_expunge(struct UserGroupBase *base);
-extern struct UserGroupBase *ug_init_lib(BPTR seglist, struct ExecBase *sysBase);
 
 static const char g_ug_name[] = USERGROUP_LIB_NAME;
 static const char g_ug_id[]   = USERGROUP_ID_STR;
 
-/* z.ai step 7 item 7: RTF_AUTOINIT with a proper init table. The old
- * non-AUTOINIT RomTag made exec call ug_init_lib as a raw C function; the
- * compiler-generated prologue read remaining arguments from the stack, so
- * after an expunge+reload the caller's stack frame produced garbage (crash
- * on reopen). With RTF_AUTOINIT, exec allocates the library itself and
- * calls the initializer as (base, seglist, sysBase) — plain C. */
-/* Exec AUTOINIT calls this with d0=segList, a0=libBase, a6=ExecBase */
-struct UserGroupBase *ug_init_from_table(
-    struct UserGroupBase *base     __asm("a0"),
-    BPTR                  seglist  __asm("d0"),
-    struct ExecBase      *sysBase  __asm("a6"));
+/* z.ai step 7c item 1: exec calls an RTF_AUTOINIT initializer with
+ * D0 = freshly made library base, A0 = segList. This tiny asm stub moves
+ * the two registers onto the stack and calls the C initializer with the
+ * natural (base, seglist) argument order — no register bindings, no
+ * prologue assumptions. */
+
+extern void ug_autoinit_stub(void); /* C name -> asm _ug_autoinit_stub */
 
 static const APTR g_ug_init_table[] = {
     (APTR)sizeof(struct UserGroupBase),
     (APTR)g_ug_vectors,
-    (APTR)ug_init_from_table,
+    (APTR)ug_autoinit_stub,
     (APTR)NULL
 };
 
@@ -56,7 +63,7 @@ const struct Resident g_ug_romtag = {
     RTC_MATCHWORD,
     (struct Resident *)&g_ug_romtag,
     (APTR)(&g_ug_romtag + 1),
-    RTF_AUTOINIT | RTF_AFTERDOS,
+    RTF_AUTOINIT, /* no RTF_AFTERDOS: the init does not need dos.library first */
     USERGROUP_VER_NUM,
     NT_LIBRARY,
     0,
@@ -65,20 +72,24 @@ const struct Resident g_ug_romtag = {
     (APTR)g_ug_init_table
 };
 
-/* Exec AUTOINIT calls this with d0=segList, a0=libBase, a6=ExecBase —
- * the explicit register binding matches that convention exactly. */
-struct UserGroupBase *ug_init_from_table(
-    struct UserGroupBase *base     __asm("a0"),
-    BPTR                  seglist  __asm("d0"),
-    struct ExecBase      *sysBase  __asm("a6"))
-{
-    (void)sysBase;
+struct ExecBase   *SysBase;
+struct DosLibrary *DOSBase;
 
+/* C initializer called from the stub. Exec already allocated and cleared
+ * the base and installed the vector table; InitResident adds the library
+ * to LibList itself — do NOT AddLibrary here (a second Add corrupts the
+ * list). */
+struct UserGroupBase *ug_init_c(struct UserGroupBase *base, BPTR seglist)
+{
     SysBase = *(struct ExecBase **)4UL;
     DOSBase = (struct DosLibrary *)OpenLibrary((CONST_STRPTR)"dos.library", 36UL);
 
     if (!base) {
         if (DOSBase) CloseLibrary((struct Library *)DOSBase);
+        /* z.ai step 7c item 1: free the exec-allocated base on failure */
+        FreeMem((UBYTE *)base - ((struct Library *)base)->lib_NegSize,
+                (ULONG)(((struct Library *)base)->lib_NegSize +
+                        ((struct Library *)base)->lib_PosSize));
         return NULL;
     }
 
@@ -95,23 +106,9 @@ struct UserGroupBase *ug_init_from_table(
     InitSemaphore(&base->lock);
     ug_db_init(base);
 
-    Forbid();
-    AddLibrary(&base->libNode);
-    Permit();
-
     return base;
 }
 
-struct ExecBase   *SysBase;
-struct DosLibrary *DOSBase;
-
-/* RTF_AUTOINIT initializer: exec has already allocated and cleared the
- * library base of the requested size and set up the vector table. */
-/* Legacy name kept for the vector table / gen files. */
-struct UserGroupBase *ug_init_lib(BPTR seglist, struct ExecBase *sysBase)
-{
-    return ug_init_from_table(NULL, seglist, sysBase);
-}
 
 
 struct Library *ug_lib_open(struct UserGroupBase *base, ULONG version)
@@ -167,26 +164,6 @@ LONG ug_lib_reserved(struct UserGroupBase *base)
 {
     (void)base;
     return 0;
-}
-
-struct Library *ug_daemon_create(void)
-{
-    struct UserGroupBase *base;
-
-    /* Check if already in LibList */
-    Forbid();
-    base = (struct UserGroupBase *)FindName(&((struct ExecBase *)*(APTR *)4UL)->LibList,
-                                            (STRPTR)g_ug_name);
-    Permit();
-    if (base) return (struct Library *)base;
-
-    return (struct Library *)ug_init_lib(0, (struct ExecBase *)*(APTR *)4UL);
-}
-
-void ug_daemon_destroy(struct Library *lib)
-{
-    if (!lib) return;
-    ug_lib_expunge((struct UserGroupBase *)lib);
 }
 
 #else

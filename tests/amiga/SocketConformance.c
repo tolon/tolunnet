@@ -5548,8 +5548,38 @@ static void tc_usergroup(void)
         return;
     }
 
-    CloseLibrary(UserGroupBase);
-    UserGroupBase = NULL;
+    /* z.ai step 7c item 1: reload leg - force an expunge via a
+     * flush-class allocation, prove the library left LibList, then
+     * reopen and re-verify getpwnam(root). Catches init/expunge arg
+     * corruption that a single open/close cycle hides. */
+    {
+        APTR big = AllocMem(0x7FFFFFF0UL, MEMF_PUBLIC);
+        if (big != 0) {
+            FreeMem(big, 0x7FFFFFF0UL);
+        }
+        Forbid();
+        if (FindName(&SysBase->LibList, (CONST_STRPTR)"usergroup.library") != NULL) {
+            Permit();
+            TAP_NOTOK("tc_usergroup", "reload: library still in LibList after flush");
+            return;
+        }
+        Permit();
+
+        UserGroupBase = OpenLibrary((CONST_STRPTR)"usergroup.library", 4);
+        if (UserGroupBase == NULL) {
+            TAP_NOTOK("tc_usergroup", "reload: reopen failed");
+            return;
+        }
+        pw = ug_getpwnam("root");
+        if (!pw || pw->pw_uid != 0 || strcmp(pw->pw_name, "root") != 0) {
+            TAP_NOTOK("tc_usergroup", "reload: getpwnam(root) failed");
+            CloseLibrary(UserGroupBase);
+            UserGroupBase = NULL;
+            return;
+        }
+        CloseLibrary(UserGroupBase);
+        UserGroupBase = NULL;
+    }
     TAP_OK("tc_usergroup");
 }
 
