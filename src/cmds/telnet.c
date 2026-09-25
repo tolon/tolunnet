@@ -22,6 +22,8 @@
 #define OPT_SGA 3
 #define OPT_TTYPE 24
 #define OPT_NAWS 31
+#define CR 13
+#define LF 10
 
 /* Telnet protocol parser states (SEC item 8) */
 enum {
@@ -104,6 +106,14 @@ int main(int argc, char **argv)
         LONG running = 1;
         int tn_state = TN_STATE_DATA;
         UBYTE pending_cmd = 0;
+        /* z.ai step 8b item 2: file stdin (every script) is pumped with
+         * Read(), each LF is sent as CR LF (NVT), and at EOF the socket
+         * is half-closed, drained up to 2 s, and telnet exits 0.
+         * Interactive stdin keeps the WaitForChar path. */
+        BOOL interactive = IsInteractive(Input());
+        BOOL stdin_eof = FALSE;
+        LONG idle = 0; /* 0.2 s ticks drained after EOF */
+        static char crlf_buf[BUF_SIZE];
 
         while (running && !tn_cmd_check_ctrlc()) {
             FD_ZERO(&rfds);
@@ -183,14 +193,37 @@ int main(int argc, char **argv)
                 }
             }
 
-            /* Check for console input */
-            if (WaitForChar(Input(), 0)) {
-                if (FGets(Input(), (STRPTR)txbuf, sizeof(txbuf)) != NULL) {
-                    LONG len = strlen(txbuf);
-                    if (len > 0) {
-                        tn_call_send(fd, txbuf, len, 0);
+            /* Console input, or file stdin with NVT CR LF and EOF */
+            if (interactive) {
+                if (WaitForChar(Input(), 0)) {
+                    if (FGets(Input(), (STRPTR)txbuf, sizeof(txbuf)) != NULL) {
+                        LONG len = strlen(txbuf);
+                        if (len > 0) {
+                            tn_call_send(fd, txbuf, len, 0);
+                        }
                     }
                 }
+            } else if (!stdin_eof) {
+                LONG got = Read(Input(), (APTR)txbuf, sizeof(txbuf));
+                if (got > 0) {
+                    LONG i, o = 0;
+                    for (i = 0; i < got; i++) {
+                        if (txbuf[i] == LF && (o == 0 || crlf_buf[o - 1] != CR)) {
+                            crlf_buf[o++] = CR;
+                        }
+                        crlf_buf[o++] = txbuf[i];
+                    }
+                    if (o > 0) {
+                        tn_call_send(fd, crlf_buf, o, 0);
+                    }
+                    idle = 0;
+                } else {
+                    stdin_eof = TRUE;
+                    tn_call_shutdown(fd, 1); /* half-close, then drain */
+                }
+            } else {
+                idle++;
+                if (idle >= 10) running = 0; /* 10 x 0.2 s drained */
             }
         }
     }

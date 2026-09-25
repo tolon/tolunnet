@@ -6343,15 +6343,16 @@ static void tc_net_cmd_nc(void)
 static void tc_net_cmd_telnet(void)
 {
     char out[256];
-    /* Same netsvc tcp_delay target as nc: connects with the PORT/N arg,
-     * sends stdin, prints the filtered line, exits on server close. */
-    LONG ret = run_cmd("C:telnet", "10.0.2.2 15009", "ping\n",
+    /* z.ai step 8b item 2: real contract - 15007 echo. File stdin is
+     * sent as CR LF (NVT); at EOF telnet half-closes and the echo
+     * server closes, so the "ping" echo drains and telnet exits 0. */
+    LONG ret = run_cmd("C:telnet", "10.0.2.2 15007", "ping\n",
                        out, sizeof(out));
-    if (ret == 0 && strstr(out, "TOLUNNET_TCP_DELAYED_OK") != NULL) {
+    if (ret == 0 && strstr(out, "ping") != NULL) {
         TAP_OK("net_cmd_telnet");
     } else {
         tapf("# net_cmd_telnet: rc=%ld out=%s\n", ret, out);
-        TAP_NOTOK("net_cmd_telnet", "no delayed content or nonzero rc");
+        TAP_NOTOK("net_cmd_telnet", "no echo content or nonzero rc");
     }
 }
 
@@ -6409,7 +6410,7 @@ static void tc_net_cmd_nc_listen(void)
         return;
     }
     /* Handles pass to the async process; it closes them on exit. */
-    SystemTags((CONST_STRPTR)"C:nc \"LISTEN\" 15099 TIMEOUT 25",
+    SystemTags((CONST_STRPTR)"C:nc 0.0.0.0 LISTEN 15099 TIMEOUT 25",
                SYS_Input,  (LONG)in_fh,
                SYS_Output, (LONG)out_fh,
                SYS_Asynch, TRUE,
