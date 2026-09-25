@@ -93,7 +93,6 @@ static BOOL tn_task_alive(struct Task *t)
 /* TNET-150 item 6: name every live holder; run the CLOSE path (cancel
  * pending DNS, unref fds, disarm selectors) for bases whose task is gone
  * and decrement the root open count. Returns the number reaped. */
-int tn_reap_dead_clients_clients_shim(void);
 static int tn_reap_dead_clients(TnDaemon *d)
 {
     int b, reaped = 0;
