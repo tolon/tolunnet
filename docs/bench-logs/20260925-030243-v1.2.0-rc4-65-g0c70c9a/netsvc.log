@@ -1,0 +1,28 @@
+[2026-09-25 03:02:43] [main] starting hermetic slirp host services
+[2026-09-25 03:02:43] [udp_echo] listening on UDP 15007
+[2026-09-25 03:02:43] [tcp_echo] listening on TCP 15007
+[2026-09-25 03:02:43] [tcp_delay] listening on TCP 15009
+[2026-09-25 03:02:43] [tcp_silent] listening on TCP 15011
+[2026-09-25 03:02:43] [sntp] listening on UDP 15123
+[2026-09-25 03:02:43] [tftp] listening on UDP 15069
+[2026-09-25 03:02:43] [ftp] listening on TCP 15021 (PASV port: 15020)
+[2026-09-25 03:02:43] [main] all 7 service threads started, ready for traffic
+[2026-09-25 03:02:43] [whois] listening on TCP 15043
+[2026-09-25 03:02:43] [http] listening on TCP 15080
+[2026-09-25 03:02:43] [tcp_delay] accepted from ('127.0.0.1', 4307), sleeping 1.0 s before reply
+[2026-09-25 03:02:43] [ftp] connected from ('127.0.0.1', 4308)
+[2026-09-25 03:02:43] [ftp] session error: [WinError 10053] Kurulan bir bağlantı, ana makinenizdeki yazılım tarafından iptal edildi
+[2026-09-25 03:02:43] [whois] query '' from ('127.0.0.1', 4309)
+[2026-09-25 03:02:43] [http] request '' from ('127.0.0.1', 4310)
+[2026-09-25 03:04:29] [tcp_delay] accepted from ('127.0.0.1', 42666), sleeping 1.0 s before reply
+[2026-09-25 03:04:30] [udp_echo] echoing 9 bytes to ('127.0.0.1', 50817)
+[2026-09-25 03:04:30] [tcp_delay] accepted from ('127.0.0.1', 42669), sleeping 1.0 s before reply
+[2026-09-25 03:04:31] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 42672)
+[2026-09-25 03:04:53] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 45445)
+[2026-09-25 03:05:16] [tftp] RRQ for testfile (octet) from ('127.0.0.1', 56337)
+[2026-09-25 03:06:07] [tcp_delay] accepted from ('127.0.0.1', 24819), sleeping 1.0 s before reply
+[2026-09-25 03:06:08] [udp_echo] echoing 9 bytes to ('127.0.0.1', 63326)
+[2026-09-25 03:06:08] [tcp_delay] accepted from ('127.0.0.1', 24823), sleeping 1.0 s before reply
+[2026-09-25 03:06:09] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 24825)
+[2026-09-25 03:06:32] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 35206)
+[2026-09-25 03:06:54] [tftp] RRQ for testfile (octet) from ('127.0.0.1', 62702)
