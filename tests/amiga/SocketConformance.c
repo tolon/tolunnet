@@ -5557,22 +5557,51 @@ static void tc_usergroup(void)
         return;
     }
 
-    /* z.ai step 7c item 1: reload leg - force an expunge via a
-     * flush-class allocation, prove the library left LibList, then
-     * reopen and re-verify getpwnam(root). Catches init/expunge arg
-     * corruption that a single open/close cycle hides. */
+    /* z.ai step 7e item 1: CLOSE before the flush — an open library
+     * (OpenCnt=1) correctly sets LIBF_DELEXP instead of expunging, so
+     * without this close the LibList check below could never pass. */
+    CloseLibrary(UserGroupBase);
+    UserGroupBase = NULL;
+
+    /* Reload leg: force an expunge via a flush-class allocation, prove
+     * the library left LibList, then reopen and re-verify getpwnam(root).
+     * Catches init/expunge arg corruption that a single open/close cycle
+     * hides. */
     {
         APTR big = AllocMem(0x7FFFFFF0UL, MEMF_PUBLIC);
         if (big != 0) {
             FreeMem(big, 0x7FFFFFF0UL);
         }
-        Forbid();
-        if (FindName(&SysBase->LibList, (CONST_STRPTR)"usergroup.library") != NULL) {
-            Permit();
-            TAP_NOTOK("tc_usergroup", "reload: library still in LibList after flush");
-            return;
+        {
+            struct Library *gone = FindName(&SysBase->LibList,
+                                            (CONST_STRPTR)"usergroup.library");
+            if (gone != NULL) {
+                Permit();
+                tapf("# tc_usergroup: ug OpenCnt=%ld Flags=0x%lx still in LibList\n",
+                     (long)gone->lib_OpenCnt, (unsigned)gone->lib_Flags);
+                TAP_NOTOK("tc_usergroup", "reload: library still in LibList after flush");
+                return;
+            }
         }
         Permit();
+        Permit();
+
+        /* z.ai step 7e item 1: bsdsocket.library must survive the same
+         * flush (it stays OPEN — daemon holds it — so LibList keeps it). */
+        {
+            struct Library *bsd = FindName(&SysBase->LibList,
+                                           (CONST_STRPTR)"bsdsocket.library");
+            LONG st = -1, cs = -2;
+            if (bsd != NULL) {
+                st = call_socket(AF_INET, SOCK_STREAM, 0);
+                if (st >= 0) cs = call_closesocket(st);
+            }
+            if (bsd == NULL || st < 0 || cs != 0) {
+                TAP_NOTOK("tc_usergroup", "bsdsocket did not survive the flush");
+                return;
+            }
+            tapf("# tc_usergroup: bsdsocket survived flush (socket ok)\n");
+        }
 
         UserGroupBase = OpenLibrary((CONST_STRPTR)"usergroup.library", 4);
         if (UserGroupBase == NULL) {
