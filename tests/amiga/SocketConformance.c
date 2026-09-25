@@ -247,15 +247,17 @@ static ULONG tc_cfg_ip(const char *key, ULONG def)
         tapf("not ok %d - %s # stray CTRL_C before test\n", g_count, #tc); \
         SetSignal(0, SIGBREAKF_CTRL_C); \
     } \
-    /* z.ai step 7f item 2: leak check (see 7f notes) */ \
+    tc(); \
+    /* z.ai step 7g item 1: leak check AFTER tc(); restores BOTH ways. */ \
     if (SysBase->TDNestCnt != -1 || SysBase->IDNestCnt != -1) { \
         g_count++; g_not_ok_count++; \
-        tapf("not ok %d - %s # forbid/disable leak after previous test: TD=%ld ID=%ld\n", \
+        tapf("not ok %d - %s # forbid/disable leak after test: TD=%ld ID=%ld\n", \
              g_count, #tc, (long)SysBase->TDNestCnt, (long)SysBase->IDNestCnt); \
-        while (SysBase->TDNestCnt != -1) Permit(); \
-        while (SysBase->IDNestCnt != -1) Enable(); \
+        while (SysBase->TDNestCnt > -1) Permit(); \
+        while (SysBase->TDNestCnt < -1) Forbid(); \
+        while (SysBase->IDNestCnt > -1) Enable(); \
+        while (SysBase->IDNestCnt < -1) Disable(); \
     } \
-    tc(); \
     if (SocketBase != NULL && ((TnSocketBase *)SocketBase)->ipc_timeouts > tn_wd0) { \
         tapf("# TIMEOUT: ipc watchdog fired during %s\n", #tc); \
     } } while (0)
