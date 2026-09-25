@@ -32,8 +32,10 @@ __asm__(
     "    .even\n"
     "    .globl _ug_autoinit_stub\n"
     "_ug_autoinit_stub:\n"
-    "    move.l  %a0, %d1\n"
+    "    move.l  %a0, -(%sp)\n"
+    "    move.l  %d0, -(%sp)\n"
     "    jsr     _ug_init_c\n"
+    "    addq.l  #8, %sp\n"
     "    rts\n"
 );
 
@@ -42,6 +44,11 @@ BPTR ug_lib_expunge(struct UserGroupBase *base);
 static const char g_ug_name[] = USERGROUP_LIB_NAME;
 static const char g_ug_id[]   = USERGROUP_ID_STR;
 
+/* z.ai step 7d item 1: exec layout is { LibBaseSize, FunctionTable,
+ * DataTable (may be NULL), InitRoutine } - step 7c had the last two
+ * swapped, so exec never called the routine and executed the stub as
+ * data. Exec AUTOINIT calls the routine with D0 = base, A0 = segList;
+ * the stack-push stub feeds them to the C function in that order. */
 /* z.ai step 7c item 1: exec calls an RTF_AUTOINIT initializer with
  * D0 = freshly made library base, A0 = segList. This tiny asm stub moves
  * the two registers onto the stack and calls the C initializer with the
@@ -53,8 +60,8 @@ extern void ug_autoinit_stub(void); /* C name -> asm _ug_autoinit_stub */
 static const APTR g_ug_init_table[] = {
     (APTR)sizeof(struct UserGroupBase),
     (APTR)g_ug_vectors,
-    (APTR)ug_autoinit_stub,
-    (APTR)NULL
+    (APTR)NULL,
+    (APTR)ug_autoinit_stub
 };
 
 const struct Resident g_ug_romtag = {
@@ -82,9 +89,9 @@ struct UserGroupBase *ug_init_c(struct UserGroupBase *base, BPTR seglist)
     SysBase = *(struct ExecBase **)4UL;
     DOSBase = (struct DosLibrary *)OpenLibrary((CONST_STRPTR)"dos.library", 36UL);
 
-    if (!base) {
-        if (DOSBase) CloseLibrary((struct Library *)DOSBase);
-        /* z.ai step 7c item 1: free the exec-allocated base on failure */
+    /* z.ai step 7d item 1: guard by DOSBase — a NULL base deref in the
+     * old branch FreeMem'd through NULL. */
+    if (DOSBase == NULL) {
         FreeMem((UBYTE *)base - ((struct Library *)base)->lib_NegSize,
                 (ULONG)(((struct Library *)base)->lib_NegSize +
                         ((struct Library *)base)->lib_PosSize));

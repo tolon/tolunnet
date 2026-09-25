@@ -5445,7 +5445,16 @@ static void tc_usergroup(void)
         TAP_NOTOK("tc_usergroup", "OpenLibrary usergroup.library failed");
         return;
     }
-
+    /* z.ai step 7d item 1: prove the init ran (node filled). */
+    if (UserGroupBase->lib_Node.ln_Name == NULL ||
+        strcmp(UserGroupBase->lib_Node.ln_Name, "usergroup.library") != 0 ||
+        UserGroupBase->lib_IdString == NULL) {
+        tapf("# tc_usergroup: init did not run (node/id empty)\n");
+        TAP_NOTOK("tc_usergroup", "init did not run");
+        CloseLibrary(UserGroupBase);
+        UserGroupBase = NULL;
+        return;
+    }
     if (UserGroupBase->lib_Version < 4) {
         TAP_NOTOK("tc_usergroup", "usergroup.library version < 4");
         CloseLibrary(UserGroupBase);
