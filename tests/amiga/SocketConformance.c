@@ -6404,7 +6404,7 @@ static void tc_net_cmd_nc_listen(void)
      * pattern (tc_wizard uses it) - instead of SYS_Output handles.
      * TIMEOUT 15 keeps the child worst-case lifetime inside this row
      * so tc_cmd_stop_start never meets an open client. */
-    SystemTags((CONST_STRPTR)"Run >T:nc_listen.out NIL: C:nc 0.0.0.0 LISTEN 15099 TIMEOUT 15",
+    SystemTags((CONST_STRPTR)"Run <NIL: >T:nc_listen.out C:nc 0.0.0.0 LISTEN 15099 TIMEOUT 15",
                SYS_Asynch, FALSE,
                SYS_Input, (BPTR)0,
                SYS_Output, (BPTR)0,
@@ -6481,7 +6481,8 @@ static void tc_net_cmd_wget(void)
     LONG ret;
     char out[256];
     char args[96];
-    /* Pre-create output file to trigger unwanted resume Range logic */
+    /* Pre-create junk so a silent auto-resume would corrupt the body;
+     * without CONTINUE the target must be overwritten wholesale. */
     fh = Open((CONST_STRPTR)"T:wget_test.bin", MODE_NEWFILE);
     if (fh != (BPTR)0) {
         Write(fh, (CONST APTR)"12345", 5);
@@ -6507,16 +6508,59 @@ static void tc_net_cmd_wget(void)
         if (ret != 0) {
             tapf("# net_cmd_wget: rc=%ld\n", ret);
             dump_cmd_out(out);
-            TAP_TODO("net_cmd_wget", "red-baseline 21");
+            TAP_NOTOK("net_cmd_wget", "nonzero rc");
             return;
         }
         if (got_len != 18 || memcmp(got, want, 18) != 0) {
             tapf("# net_cmd_wget: content mismatch len=%ld (want 18)\n", got_len);
             dump_cmd_out(out);
-            TAP_TODO("net_cmd_wget", "red-baseline 21");
+            TAP_NOTOK("net_cmd_wget", "body mismatch");
             return;
         }
         TAP_OK("net_cmd_wget");
+    }
+}
+
+/* z.ai step 8b item 4: CONTINUE resumes with a Range request. The
+ * pre-created file holds the first 5 body bytes ("TOLUN"); netsvc
+ * answers bytes=5- with 206 + the remaining 13, so the file must be
+ * exactly the 18-byte body afterwards. The Range request itself is
+ * visible in the bench netsvc.log. */
+static void tc_net_cmd_wget_continue(void)
+{
+    BPTR fh;
+    LONG ret;
+    char out[256];
+    char args[96];
+    fh = Open((CONST_STRPTR)"T:wget_cont.bin", MODE_NEWFILE);
+    if (fh != (BPTR)0) {
+        Write(fh, (CONST APTR)"TOLUN", 5);
+        Close(fh);
+    }
+    snprintf_safe(args, sizeof(args),
+                  "http://10.0.2.2:%ld/test TO T:wget_cont.bin CONTINUE QUIET",
+                  (LONG)NETSVC_HTTP_PORT);
+    ret = run_cmd("C:TolunnetGet", args, NULL, out, sizeof(out));
+    {
+        static char want[19] = "TOLUNNET_HTTP_OK";
+        char got[64];
+        LONG got_len = -1;
+        want[17] = '\n';
+        want[18] = 0;
+        fh = Open((CONST_STRPTR)"T:wget_cont.bin", MODE_OLDFILE);
+        if (fh != (BPTR)0) {
+            got_len = Read(fh, (APTR)got, sizeof(got) - 1);
+            Close(fh);
+            if (got_len > 0) got[got_len] = 0;
+        }
+        DeleteFile((CONST_STRPTR)"T:wget_cont.bin");
+        if (ret != 0 || got_len != 18 || memcmp(got, want, 18) != 0) {
+            tapf("# net_cmd_wget_continue: rc=%ld len=%ld (want 18)' + NLs + '", ret, got_len);
+            dump_cmd_out(out);
+            TAP_NOTOK("net_cmd_wget_continue", "range resume mismatch");
+            return;
+        }
+        TAP_OK("net_cmd_wget_continue");
     }
 }
 
@@ -7104,6 +7148,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_telnet);
     TN_RUN(tc_net_inet_ntoa);
     TN_RUN(tc_net_cmd_wget);
+    TN_RUN(tc_net_cmd_wget_continue);
     TN_RUN(tc_net_cmd_ftp);
     TN_RUN(tc_net_cmd_sntp);
     TN_RUN(tc_net_cmd_traceroute);

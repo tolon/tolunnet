@@ -162,6 +162,7 @@ enum {
     OPT_PATH,
     OPT_TO,
     OPT_QUIET,
+    OPT_CONTINUE,
     OPT_NUM_OPTS
 };
 
@@ -175,7 +176,9 @@ int main(void)
     BPTR out_fh = 0;
     BOOL to_file = FALSE;
     BOOL quiet = FALSE;
+    BOOL do_continue = FALSE;
     LONG resume_offset = 0;
+    LONG resp_start = 0;
     int redirect_count = 0;
     LONG sock = -1;
     LONG total_written = 0;
@@ -190,7 +193,7 @@ int main(void)
 
     for (int i = 0; i < OPT_NUM_OPTS; i++) opts[i] = 0;
 
-    rdargs = ReadArgs((CONST_STRPTR)"URL/A,PORT/N,PATH,TO/K,QUIET/S", opts, NULL);
+    rdargs = ReadArgs((CONST_STRPTR)"URL/A,PORT/N,PATH,TO/K,QUIET/S,CONTINUE/S", opts, NULL);
     if (rdargs == NULL) {
         PrintFault(IoErr(), (CONST_STRPTR)"wget");
         CloseLibrary(DOSBase);
@@ -235,13 +238,19 @@ int main(void)
         return 20;
     }
 
-    /* 2. Check for resume capability if writing to an existing file */
-    if (to_file && to_path != NULL) {
+    /* 2. Resume an existing file only with CONTINUE (z.ai step 8b item 4):
+     * without it an existing target is overwritten. The FileInfoBlock
+     * must be longword-aligned, so it comes from AllocDosObject. */
+    if (opts[OPT_CONTINUE]) do_continue = TRUE;
+    if (do_continue && to_file && to_path != NULL) {
         BPTR lock = Lock(to_path, ACCESS_READ);
         if (lock != 0) {
-            struct FileInfoBlock fib;
-            if (Examine(lock, &fib) && fib.fib_DirEntryType < 0 && fib.fib_Size > 0) {
-                resume_offset = fib.fib_Size;
+            struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
+            if (fib != NULL) {
+                if (Examine(lock, fib) && fib->fib_DirEntryType < 0 && fib->fib_Size > 0) {
+                    resume_offset = (LONG)fib->fib_Size;
+                }
+                FreeDosObject(DOS_FIB, fib);
             }
             UnLock(lock);
         }
@@ -401,6 +410,7 @@ int main(void)
                 if (out_fh != 0) {
                     Seek(out_fh, 0, OFFSET_END);
                     total_written = resume_offset;
+                    resp_start = resume_offset;
                     if (!quiet) tn_logf(TN_LOG_BASIC, "wget: resuming from byte %ld...\n", resume_offset);
                 }
             }
@@ -450,8 +460,11 @@ int main(void)
         /* Stream Remainder of Body */
         while (1) {
             if (hdr_info.is_chunked && cst.state == TN_CHUNK_STATE_DONE) break;
+            /* z.ai step 8b item 4: stop when the bytes of THIS response
+             * reach its Content-Length (total_written includes any
+             * resume offset, the 206 length is the remainder only). */
             if (!hdr_info.is_chunked && hdr_info.content_length > 0 &&
-                total_written >= hdr_info.content_length) break;
+                total_written - resp_start >= hdr_info.content_length) break;
 
             LONG n = call_recv(sock, rx_buf, sizeof(rx_buf), 0);
             if (n > 0) {
