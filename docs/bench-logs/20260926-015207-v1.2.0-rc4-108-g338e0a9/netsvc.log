@@ -1,0 +1,100 @@
+[2026-09-26 01:52:08] [main] starting hermetic slirp host services
+[2026-09-26 01:52:08] [udp_echo] listening on UDP 15007
+[2026-09-26 01:52:08] [tcp_delay] listening on TCP 15009
+[2026-09-26 01:52:08] [tcp_echo] listening on TCP 15007
+[2026-09-26 01:52:08] [tcp_silent] listening on TCP 15011
+[2026-09-26 01:52:08] [sntp] listening on UDP 15123
+[2026-09-26 01:52:08] [tftp] listening on UDP 15069
+[2026-09-26 01:52:08] [ftp] listening on TCP 15021 (PASV port: 15020)
+[2026-09-26 01:52:08] [main] all 7 service threads started, ready for traffic
+[2026-09-26 01:52:08] [whois] listening on TCP 15043
+[2026-09-26 01:52:08] [http] listening on TCP 15080
+[2026-09-26 01:52:08] [tcp_delay] accepted from ('127.0.0.1', 16258), sleeping 1.0 s before reply
+[2026-09-26 01:52:08] [ftp] connected from ('127.0.0.1', 16259)
+[2026-09-26 01:52:08] [whois] query '' from ('127.0.0.1', 16260)
+[2026-09-26 01:52:08] [ftp] session error: [WinError 10053] Kurulan bir bağlantı, ana makinenizdeki yazılım tarafından iptal edildi
+[2026-09-26 01:52:08] [http] request '' from ('127.0.0.1', 16261)
+[2026-09-26 01:53:56] [tcp_delay] accepted from ('127.0.0.1', 28525), sleeping 1.0 s before reply
+[2026-09-26 01:53:57] [udp_echo] echoing 9 bytes to ('127.0.0.1', 64668)
+[2026-09-26 01:53:57] [tcp_delay] accepted from ('127.0.0.1', 28526), sleeping 1.0 s before reply
+[2026-09-26 01:53:58] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 28529)
+[2026-09-26 01:53:58] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 28531)
+[2026-09-26 01:53:59] [udp_echo] echoing 6 bytes to ('127.0.0.1', 64669)
+[2026-09-26 01:54:10] [whois] query 'example.com' from ('127.0.0.1', 28534)
+[2026-09-26 01:54:10] [tcp_echo] echoing 9 bytes to ('127.0.0.1', 28535)
+[2026-09-26 01:54:10] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 28535)
+[2026-09-26 01:54:10] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 28535)
+[2026-09-26 01:54:11] [tcp_echo] echoing 3 bytes to ('127.0.0.1', 28535)
+[2026-09-26 01:54:11] [tcp_echo] echoing 3 bytes to ('127.0.0.1', 28535)
+[2026-09-26 01:54:11] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 28536)
+[2026-09-26 01:54:11] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 28537)
+[2026-09-26 01:54:11] [ftp] connected from ('127.0.0.1', 28538)
+[2026-09-26 01:54:11] [ftp] command: USER anonymous
+[2026-09-26 01:54:11] [ftp] command: PASS tolunnet@
+[2026-09-26 01:54:11] [ftp] command: TYPE A
+[2026-09-26 01:54:11] [ftp] command: PASV 
+[2026-09-26 01:54:11] [ftp] command: QUIT 
+[2026-09-26 01:54:11] [sntp] replying NTP packet to ('127.0.0.1', 54856)
+[2026-09-26 01:55:08] [tcp_delay] accepted from ('127.0.0.1', 25823), sleeping 1.0 s before reply
+[2026-09-26 01:55:09] [udp_echo] echoing 9 bytes to ('127.0.0.1', 58758)
+[2026-09-26 01:55:09] [tcp_delay] accepted from ('127.0.0.1', 25824), sleeping 1.0 s before reply
+[2026-09-26 01:55:10] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 25825)
+[2026-09-26 01:55:10] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 25827)
+[2026-09-26 01:55:11] [udp_echo] echoing 6 bytes to ('127.0.0.1', 64344)
+[2026-09-26 01:55:22] [whois] query 'example.com' from ('127.0.0.1', 25835)
+[2026-09-26 01:55:23] [tcp_echo] echoing 9 bytes to ('127.0.0.1', 25836)
+[2026-09-26 01:55:23] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 25836)
+[2026-09-26 01:55:23] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 25836)
+[2026-09-26 01:55:23] [tcp_echo] echoing 3 bytes to ('127.0.0.1', 25836)
+[2026-09-26 01:55:23] [tcp_echo] echoing 3 bytes to ('127.0.0.1', 25836)
+[2026-09-26 01:55:23] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 28285)
+[2026-09-26 01:55:23] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 28286)
+[2026-09-26 01:55:23] [ftp] connected from ('127.0.0.1', 28287)
+[2026-09-26 01:55:23] [ftp] command: USER anonymous
+[2026-09-26 01:55:23] [ftp] command: PASS tolunnet@
+[2026-09-26 01:55:23] [ftp] command: TYPE A
+[2026-09-26 01:55:23] [ftp] command: PASV 
+[2026-09-26 01:55:23] [ftp] command: QUIT 
+[2026-09-26 01:55:23] [sntp] replying NTP packet to ('127.0.0.1', 65095)
+[2026-09-26 01:59:27] [tcp_delay] accepted from ('127.0.0.1', 64787), sleeping 1.0 s before reply
+[2026-09-26 01:59:28] [udp_echo] echoing 9 bytes to ('127.0.0.1', 62179)
+[2026-09-26 01:59:28] [tcp_delay] accepted from ('127.0.0.1', 64808), sleeping 1.0 s before reply
+[2026-09-26 01:59:29] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 64826)
+[2026-09-26 01:59:29] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 64832)
+[2026-09-26 01:59:29] [udp_echo] echoing 6 bytes to ('127.0.0.1', 62180)
+[2026-09-26 01:59:41] [whois] query 'example.com' from ('127.0.0.1', 4368)
+[2026-09-26 01:59:42] [tcp_echo] echoing 9 bytes to ('127.0.0.1', 4379)
+[2026-09-26 01:59:42] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 4379)
+[2026-09-26 01:59:42] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 4379)
+[2026-09-26 01:59:42] [tcp_echo] echoing 3 bytes to ('127.0.0.1', 4379)
+[2026-09-26 01:59:42] [tcp_echo] echoing 3 bytes to ('127.0.0.1', 4379)
+[2026-09-26 01:59:42] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 4388)
+[2026-09-26 01:59:43] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 4401)
+[2026-09-26 01:59:43] [ftp] connected from ('127.0.0.1', 4412)
+[2026-09-26 01:59:43] [ftp] command: USER anonymous
+[2026-09-26 01:59:43] [ftp] command: PASS tolunnet@
+[2026-09-26 01:59:43] [ftp] command: TYPE A
+[2026-09-26 01:59:43] [ftp] command: PASV 
+[2026-09-26 01:59:43] [ftp] command: QUIT 
+[2026-09-26 01:59:43] [sntp] replying NTP packet to ('127.0.0.1', 55232)
+[2026-09-26 02:01:14] [tcp_delay] accepted from ('127.0.0.1', 46137), sleeping 1.0 s before reply
+[2026-09-26 02:01:15] [udp_echo] echoing 9 bytes to ('127.0.0.1', 61821)
+[2026-09-26 02:01:16] [tcp_delay] accepted from ('127.0.0.1', 46164), sleeping 1.0 s before reply
+[2026-09-26 02:01:17] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 46187)
+[2026-09-26 02:01:17] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 46196)
+[2026-09-26 02:01:17] [udp_echo] echoing 6 bytes to ('127.0.0.1', 61829)
+[2026-09-26 02:01:29] [whois] query 'example.com' from ('127.0.0.1', 7377)
+[2026-09-26 02:01:30] [tcp_echo] echoing 9 bytes to ('127.0.0.1', 7382)
+[2026-09-26 02:01:30] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 7382)
+[2026-09-26 02:01:30] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 7382)
+[2026-09-26 02:01:30] [tcp_echo] echoing 3 bytes to ('127.0.0.1', 7382)
+[2026-09-26 02:01:30] [tcp_echo] echoing 3 bytes to ('127.0.0.1', 7382)
+[2026-09-26 02:01:30] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 7409)
+[2026-09-26 02:01:31] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 7422)
+[2026-09-26 02:01:31] [ftp] connected from ('127.0.0.1', 7435)
+[2026-09-26 02:01:31] [ftp] command: USER anonymous
+[2026-09-26 02:01:31] [ftp] command: PASS tolunnet@
+[2026-09-26 02:01:31] [ftp] command: TYPE A
+[2026-09-26 02:01:31] [ftp] command: PASV 
+[2026-09-26 02:01:31] [ftp] command: QUIT 
+[2026-09-26 02:01:31] [sntp] replying NTP packet to ('127.0.0.1', 56466)
