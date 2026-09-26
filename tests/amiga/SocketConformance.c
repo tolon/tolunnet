@@ -7117,6 +7117,8 @@ static void tc_net_cmd_status_down(void)
     }
 }
 
+static void tc_net_cmd_status_route(void)
+{
     char out[512];
     char junk[512];
     int added = 0, removed = 0;
