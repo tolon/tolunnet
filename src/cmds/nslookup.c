@@ -261,20 +261,17 @@ int main(int argc, char **argv)
             tv.tv_micro = 0;
             sel = tn_call_waitselect(fd + 1, &rfds, NULL, NULL, &tv, NULL);
             if (sel <= 0) {
-                tn_cmd_printf("** try %ld: waitselect=%ld
-", (LONG)(tries + 1), sel);
+                tn_cmd_printf("** try %ld: waitselect=%ld\n", (LONG)(tries + 1), sel);
                 continue;
             }
             fromlen = (LONG)sizeof(from);
             got = tn_call_recvfrom(fd, rx, sizeof(rx), 0, (struct sockaddr *)&from, &fromlen);
             if (got < 12) {
-                tn_cmd_printf("** try %ld: recv got=%ld
-", (LONG)(tries + 1), got);
+                tn_cmd_printf("** try %ld: recv got=%ld\n", (LONG)(tries + 1), got);
                 continue;
             }
             if (rx[0] != tx[0] || rx[1] != tx[1]) {
-                tn_cmd_printf("** try %ld: txid mismatch
-", (LONG)(tries + 1));
+                tn_cmd_printf("** try %ld: txid mismatch\n", (LONG)(tries + 1));
                 continue;
             }
             if (dns_parse_reply(rx, got, qtype, out, (LONG)sizeof(out)) == 0) {
