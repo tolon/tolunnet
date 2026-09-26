@@ -317,9 +317,22 @@ int main(int argc, char *argv[])
                  * before icmp_input). Drain non-replies and keep waiting. */
                 if (rcvd > 0 && !use_udp) {
                     int rip_hlen = (rx_buf[0] & 0x0F) * 4;
-                    if (rcvd >= rip_hlen + (int)sizeof(struct tn_icmp_hdr) &&
-                        rx_buf[rip_hlen] == TN_ICMP_ECHO_REQUEST) {
-                        rcvd = 0; /* own request: keep waiting for the reply */
+                    if (rcvd < rip_hlen + (int)sizeof(struct tn_icmp_hdr)) {
+                        tn_logf(TN_LOG_BASIC, "ping: rx %ld bytes (short)
+", rcvd);
+                        rcvd = 0;
+                    } else {
+                        UBYTE rtype = (UBYTE)rx_buf[rip_hlen];
+                        if (rtype == TN_ICMP_ECHO_REQUEST) {
+                            tn_logf(TN_LOG_BASIC, "ping: rx own request (%ld)
+", rcvd);
+                            rcvd = 0; /* own request: keep waiting */
+                        } else if (rtype != TN_ICMP_ECHO_REPLY) {
+                            tn_logf(TN_LOG_BASIC, "ping: rx non-reply type=%ld (%ld bytes)
+",
+                                    (LONG)rtype, rcvd);
+                            rcvd = 0;
+                        }
                     }
                 }
                 if (rcvd > 0) {
