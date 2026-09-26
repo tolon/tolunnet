@@ -36,6 +36,7 @@ def load_ports(path=DEFAULT_PORTS_FILE):
         "TFTP_PORT": 15069,
         "HTTP_PORT": 15080,
         "SNTP_PORT": 15123,
+        "DNS_PORT": 15353,
     }
     if os.path.isfile(path):
         with open(path, "r", encoding="utf-8") as f:
@@ -517,6 +518,104 @@ def run_whois(port):
     srv.close()
 
 # ---------------------------------------------------------------------------
+# 6b. DNS Server (z.ai step 9b item 4): answers A for tolunbench.test
+# and PTR for 10.0.2.2 ( -> tolunnet-guest.test ) over UDP.
+# ---------------------------------------------------------------------------
+def run_dns(port):
+    import struct as _struct
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(("0.0.0.0", port))
+    sock.settimeout(1.0)
+    log("dns", f"listening on UDP {port}")
+
+    A_NAME = "tolunbench.test"
+    A_ADDR = "10.0.2.55"
+    PTR_SUFFIX = ".in-addr.arpa"
+    PTR_NAME = "tolunnet-guest.test"
+
+    def enc_name(name):
+        out = b""
+        for lab in name.strip(".").split("."):
+            out += bytes([len(lab)]) + lab.encode("latin1")
+        return out + b"\x00"
+
+    def read_name(pkt, off, depth=0):
+        labels, jumped = [], False
+        orig = off
+        guard = 0
+        while True:
+            if off >= len(pkt) or depth > 8:
+                return "", orig + 1
+            l = pkt[off]
+            if l == 0:
+                off += 1
+                break
+            if l & 0xC0 == 0xC0:
+                if not jumped:
+                    orig = off + 2
+                off = ((l & 0x3F) << 8) | pkt[off + 1]
+                jumped = True
+                depth += 1
+                guard += 1
+                if guard > 32:
+                    return "", orig + 1
+                continue
+            lab = pkt[off + 1:off + 1 + l].decode("latin1", errors="replace")
+            labels.append(lab)
+            off += 1 + l
+        name = ".".join(labels)
+        return name, (orig if jumped else off)
+
+    while g_running:
+        try:
+            data, addr = sock.recvfrom(1024)
+        except socket.timeout:
+            continue
+        except Exception:
+            break
+        if len(data) < 12:
+            continue
+        qid = data[:2]
+        try:
+            qdcount = _struct.unpack("!H", data[4:6])[0]
+        except Exception:
+            continue
+        if qdcount < 1:
+            continue
+        off = 12
+        qname, qend = read_name(data, off)
+        qtype, qclass = _struct.unpack("!HH", data[qend:qend + 4])
+        qend += 4
+        log("dns", f"query {qname} type={qtype} from {addr}")
+
+        rname = qname
+        rdata = None
+        rtype = qtype
+        if qtype == 1 and qname.lower() == A_NAME:
+            rdata = bytes(int(x) for x in A_ADDR.split("."))
+        elif qtype == 12 and qname.lower().endswith(PTR_SUFFIX):
+            parts = qname[: -len(PTR_SUFFIX)].split(".")
+            ip = ".".join(reversed(parts))
+            if ip == "10.0.2.2":
+                rtype = 12
+                rdata = enc_name(PTR_NAME)
+                rname = qname
+            else:
+                sock.sendto(qid + b"\x81\x83" + b"\x00\x00\x00\x00\x00\x00", addr)
+                continue
+        else:
+            sock.sendto(qid + b"\x81\x83" + b"\x00\x00\x00\x00\x00\x00", addr)
+            continue
+
+        ancount = 1
+        reply = qid + b"\x81\x80" + _struct.pack("!HHHH", 1, ancount, 0, 0)
+        reply += enc_name(qname) + _struct.pack("!HHIH", qtype, 1, 60, len(rdata)) + rdata
+        try:
+            sock.sendto(reply, addr)
+        except Exception as e:
+            log("dns", f"send error: {e}")
+
 # 7. HTTP Server (RFC 2616 / 7230)
 # ---------------------------------------------------------------------------
 def run_http(port):
@@ -604,7 +703,7 @@ def check_ports_free(ports):
         finally:
             s.close()
     # Check UDP
-    for name in ("ECHO_PORT", "TFTP_PORT", "SNTP_PORT"):
+    for name in ("ECHO_PORT", "TFTP_PORT", "SNTP_PORT", "DNS_PORT"):
         p = ports[name]
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
@@ -689,6 +788,7 @@ def main():
         threading.Thread(target=run_tcp_echo, args=(ports["ECHO_PORT"],), daemon=True),
         threading.Thread(target=run_tcp_silent, args=(ports["SILENT_PORT"],), daemon=True),
         threading.Thread(target=run_sntp, args=(ports["SNTP_PORT"],), daemon=True),
+        threading.Thread(target=run_dns, args=(ports["DNS_PORT"],), daemon=True),
         threading.Thread(target=run_tftp, args=(ports["TFTP_PORT"],), daemon=True),
         threading.Thread(target=run_ftp, args=(ports["FTP_PORT"], ports["FTP_PASV_PORT"]), daemon=True),
         threading.Thread(target=run_whois, args=(ports["WHOIS_PORT"],), daemon=True),

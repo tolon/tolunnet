@@ -7281,6 +7281,34 @@ static void tc_net_cmd_ping_ttl(void)
     }
 }
 
+/* z.ai step 9b item 4: nslookup with its own DNS client (SERVER/PORT). */
+static void tc_net_cmd_nslookup_server(void)
+{
+    char out[512];
+    LONG r = run_cmd("C:nslookup", "tolunbench.test SERVER 10.0.2.2 PORT 15353",
+                     NULL, out, sizeof(out));
+    if (r == 0 && strstr(out, "10.0.2.55") != NULL) {
+        TAP_OK("net_cmd_nslookup_server");
+    } else {
+        tapf("# net_cmd_nslookup_server: r=%ld out=%s\n", r, out);
+        TAP_NOTOK("net_cmd_nslookup_server", "A answer missing");
+    }
+}
+
+static void tc_net_cmd_nslookup_ptr(void)
+{
+    char out[512];
+    LONG r = run_cmd("C:nslookup", "10.0.2.2 SERVER 10.0.2.2 PORT 15353",
+                     NULL, out, sizeof(out));
+    if (r == 0 && strstr(out, "Hostname:") != NULL &&
+        strstr(out, "tolunnet-guest.test") != NULL) {
+        TAP_OK("net_cmd_nslookup_ptr");
+    } else {
+        tapf("# net_cmd_nslookup_ptr: r=%ld out=%s\n", r, out);
+        TAP_NOTOK("net_cmd_nslookup_ptr", "PTR answer missing");
+    }
+}
+
 static void tc_net_recv_ctrlc(void)
 {
     LONG lst = -1, cli = -1, conn = -1;
@@ -7633,6 +7661,8 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_netshutdown);
     TN_RUN(tc_net_cmd_hostname_set);
     TN_RUN(tc_net_cmd_ping_ttl);
+    TN_RUN(tc_net_cmd_nslookup_server);
+    TN_RUN(tc_net_cmd_nslookup_ptr);
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
