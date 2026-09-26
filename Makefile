@@ -165,6 +165,7 @@ HOST_TESTS   = $(wildcard tests/host/test_*.c)
 HOST_BINS    = $(patsubst tests/host/%.c,$(BUILD)/host/%,$(HOST_TESTS))
 
 test-host: $(HOST_BINS) python-checks
+	@python3 scripts/lvo_check_selftest.py
 	@set -e; fails=0; total=0; \
 	for t in $(HOST_BINS); do \
 	  total=$$((total+1)); \
@@ -180,6 +181,8 @@ $(BUILD)/host/%: tests/host/%.c $(HOST_UNITS) tests/host/tn_test.h
 
 .PHONY: python-checks
 python-checks:
+	python3 scripts/lvo_check.py
+	python3 scripts/lvo_check_selftest.py
 	python3 scripts/gen_lvo_table.py
 	python3 scripts/gen_usergroup_table.py
 	python3 scripts/gen_pkg_docs.py

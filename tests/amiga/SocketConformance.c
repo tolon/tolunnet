@@ -358,7 +358,7 @@ static LONG call_ioctl(LONG s, ULONG req, APTR argp)
     register LONG d0 __asm__("d0") = s;
     register LONG d1 __asm__("d1") = (LONG)req;
     register APTR a0 __asm__("a0") = argp;
-    __asm__ __volatile__ ("jsr -114(%%a6)" : "+r"(d0)
+    __asm__ __volatile__ ("jsr -114(%%a6)" : "+r"(d0) /* lvo:IoctlSocket */
         : "r"(a6), "r"(d0), "r"(d1), "r"(a0) : "d1", "a0", "a1", "memory");
     return d0;
 }
@@ -422,7 +422,7 @@ static LONG call_dup2(LONG o, LONG n)
     register struct Library *a6 __asm__("a6") = SocketBase;
     register LONG d0 __asm__("d0") = o;
     register LONG d1 __asm__("d1") = n;
-    __asm__ __volatile__ ("jsr -264(%%a6)" : "+r"(d0)
+    __asm__ __volatile__ ("jsr -264(%%a6)" : "+r"(d0) /* lvo:Dup2Socket */
         : "r"(a6), "r"(d0), "r"(d1) : "d1", "a0", "a1", "memory");
     return d0;
 }
@@ -5400,7 +5400,7 @@ static struct tn_passwd *ug_getpwnam(const char *name)
     register struct Library *a6 __asm__("a6") = UserGroupBase;
     register struct tn_passwd *d0 __asm__("d0");
     register const char *a1 __asm__("a1") = name;
-    __asm__ __volatile__ ("jsr -114(%%a6)"
+    __asm__ __volatile__ ("jsr -114(%%a6)" /* lvo:IoctlSocket */
         : "=r"(d0), "+r"(a1)
         : "r"(a6)
         : "d1", "a0", "memory");

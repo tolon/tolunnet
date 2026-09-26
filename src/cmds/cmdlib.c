@@ -109,7 +109,7 @@ LONG tn_call_ioctl(LONG fd, ULONG req, APTR argp)
     register LONG d0 __asm__("d0") = fd;
     register ULONG d1 __asm__("d1") = req;
     register APTR a0 __asm__("a0") = argp;
-    __asm__ __volatile__("jsr -114(%%a6)" : "+r"(d0) : "r"(a6), "r"(d0), "r"(d1), "r"(a0) : "d1","a0","a1","memory");
+    __asm__ __volatile__("jsr -114(%%a6)" : "+r"(d0) : "r"(a6), "r"(d0), "r"(d1), "r"(a0) : "d1","a0","a1","memory"); /* lvo:IoctlSocket */
     return d0;
 }
 
