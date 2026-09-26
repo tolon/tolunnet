@@ -176,7 +176,7 @@ int main(int argc, char **argv)
     if (rc == TN_CMD_OK || opts[0]) {
         LONG n = route_ctl(TN_ROUTECTL_LIST, 0, 0, 0, rows, TN_MAX_ROUTES);
         if (n < 0) {
-            tn_cmd_printf("route: daemon unreachable\n");
+            tn_cmd_printf("route: daemon unreachable (n=%ld)\n", n);
             FreeArgs(rdargs); tn_cmd_fini();
             return TN_CMD_FAIL;
         }
