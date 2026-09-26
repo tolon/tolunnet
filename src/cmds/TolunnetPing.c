@@ -312,6 +312,16 @@ int main(int argc, char *argv[])
             if (ready > 0) {
                 LONG rcvd = tn_call_recvfrom(sock, rx_buf, sizeof(rx_buf), 0,
                                           (struct sockaddr *)&from_sin, &from_len);
+                /* RAW sockets receive our OWN echo request back (lwIP raw
+                 * input hands every protocol-matching packet to the pcb
+                 * before icmp_input). Drain non-replies and keep waiting. */
+                if (rcvd > 0 && !use_udp) {
+                    int rip_hlen = (rx_buf[0] & 0x0F) * 4;
+                    if (rcvd >= rip_hlen + (int)sizeof(struct tn_icmp_hdr) &&
+                        rx_buf[rip_hlen] == TN_ICMP_ECHO_REQUEST) {
+                        rcvd = 0; /* own request: keep waiting for the reply */
+                    }
+                }
                 if (rcvd > 0) {
                     ULONG rtt_us = 0;
 
