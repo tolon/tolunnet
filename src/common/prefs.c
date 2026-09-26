@@ -181,10 +181,16 @@ static BOOL tn_prefs_write_one(const char *path, const char *text)
         return FALSE;
     }
     tn_prefs_last_stage = 70;
+    /* some filesystems refuse Rename onto an existing target that
+     * carries odd protection bits (the wizard rewrites this file);
+     * clear the way first, then retry the rename once. */
     if (Rename((CONST_STRPTR)tmp, (CONST_STRPTR)path) == FALSE) {
-        DeleteFile((CONST_STRPTR)tmp);
-        tn_prefs_last_stage = 71;
-        return FALSE;
+        DeleteFile((CONST_STRPTR)path);
+        if (Rename((CONST_STRPTR)tmp, (CONST_STRPTR)path) == FALSE) {
+            DeleteFile((CONST_STRPTR)tmp);
+            tn_prefs_last_stage = 71;
+            return FALSE;
+        }
     }
     return TRUE;
 }
