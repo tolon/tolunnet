@@ -82,19 +82,17 @@ if [ "${1:-}" = "soak" ]; then
 
     xd() { wsl -d Ubuntu-24.04 -e bash -c "\$HOME/.local/bin/xdftool '$HDF_UX' $*" ; }
 
-    # z.ai step 9a: the pristine image is 99.9% full - reclaim space from
-    # stock/user content the headless bench never runs (ephemeral copy):
-    # Storage driver variants and the Storage drawer itself, plus C:
-    # user tools. Roughly 200 KB freed; the wizard's runtime writes
-    # (IFF captures, config rewrites) need the headroom.
-    for junk in arc cdboot All2Lha butcher Amigatool AllowBad bigcli ArchEdge BootPic Bounce; do
-        xd delete C/$junk >/dev/null 2>&1
-    done
+    # z.ai step 9a: the pristine image is 99.9% full with heavily
+    # fragmented free space (xdftool refuses contiguous allocations,
+    # 'No Free Blocks ... want 18'). Empty the Storage drawer - stock
+    # driver variants the headless bench never touches - and repack so
+    # staging writes land on consolidated free space. ~800 KB free.
     xd list Storage 2>/dev/null | tail -n +2 | sed 's/^[[:space:]]*//;s/ .*//' | while read -r entry; do
         [ -z "$entry" ] && continue
         xd delete "Storage/$entry" >/dev/null 2>&1
     done
     xd delete Storage >/dev/null 2>&1
+    xd repack >/dev/null 2>&1
 
     xd delete C/tolunnet        >/dev/null 2>&1
     xd delete C/TolunnetPing    >/dev/null 2>&1
@@ -331,19 +329,17 @@ for cfg in $CONFIGS; do
 
     xd() { wsl -d Ubuntu-24.04 -e bash -c "\$HOME/.local/bin/xdftool '$HDF_UX' $*" ; }
 
-    # z.ai step 9a: the pristine image is 99.9% full - reclaim space from
-    # stock/user content the headless bench never runs (ephemeral copy):
-    # Storage driver variants and the Storage drawer itself, plus C:
-    # user tools. Roughly 200 KB freed; the wizard's runtime writes
-    # (IFF captures, config rewrites) need the headroom.
-    for junk in arc cdboot All2Lha butcher Amigatool AllowBad bigcli ArchEdge BootPic Bounce; do
-        xd delete C/$junk >/dev/null 2>&1
-    done
+    # z.ai step 9a: the pristine image is 99.9% full with heavily
+    # fragmented free space (xdftool refuses contiguous allocations,
+    # 'No Free Blocks ... want 18'). Empty the Storage drawer - stock
+    # driver variants the headless bench never touches - and repack so
+    # staging writes land on consolidated free space. ~800 KB free.
     xd list Storage 2>/dev/null | tail -n +2 | sed 's/^[[:space:]]*//;s/ .*//' | while read -r entry; do
         [ -z "$entry" ] && continue
         xd delete "Storage/$entry" >/dev/null 2>&1
     done
     xd delete Storage >/dev/null 2>&1
+    xd repack >/dev/null 2>&1
 
     xd delete C/tolunnet        >/dev/null 2>&1
     xd delete C/TolunnetControl >/dev/null 2>&1
