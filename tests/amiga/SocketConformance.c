@@ -7105,6 +7105,13 @@ static void tc_net_cmd_status_route(void)
     LONG r1 = run_cmd("C:route",
                       "ADD 192.168.77.0 NETMASK 255.255.255.0 GATEWAY 10.0.2.2",
                       NULL, out, sizeof(out));
+    tapf("# net_cmd_status_route: ADD r1=%ld out=%s\n", r1, out);
+    {
+        char keep[512];
+        LONG k;
+        for (k = 0; k < (LONG)sizeof(keep) - 1 && out[k]; k++) keep[k] = out[k];
+        keep[k] = 0;
+    }
     LONG r2 = run_cmd("C:ShowNetStatus", "ROUTES", NULL, out, sizeof(out));
     if (r1 == 0 && r2 == 0 && strstr(out, "192.168.77.0") != NULL) added = 1;
     tapf("# net_cmd_status_route: r1=%ld r2=%ld out=%s\n", r1, r2, out);
