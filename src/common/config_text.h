@@ -30,6 +30,12 @@ void tn_config_parse_line(TnPrefs *prefs, const char *key, const char *val);
 #define TN_CONFIG_TEXT_MAX 768
 int tn_config_format(const TnPrefs *prefs, char *buf, int buf_size);
 
+/* z.ai step 9b item 2: append to new_text the lines of old_text that
+ * must survive a rewrite - unknown keys and lines longer than 127
+ * characters. Returns the merged length or -1 if buf is too small. */
+int tn_config_merge_preserve(const char *new_text, const char *old_text,
+                             char *buf, int buf_size);
+
 /* Case-insensitive equality + clean-copy helpers (shared with prefs.c). */
 int  tn_str_equal_nocase(const char *s1, const char *s2);
 void tn_str_copy_clean(char *dst, const char *src, int max_len);

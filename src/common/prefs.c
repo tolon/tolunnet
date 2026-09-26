@@ -7,6 +7,7 @@
  */
 
 #include "prefs.h"
+#include <string.h>
 #include "config_text.h"
 #include <stddef.h>
 #include <proto/dos.h>
@@ -132,9 +133,55 @@ BOOL tn_prefs_load(TnPrefs *prefs)
     return FALSE;
 }
 
+/* z.ai step 9b item 2: honest atomic write - merge in the previous
+ * file's unknown keys and over-long lines, write to <path>_tmp,
+ * then Rename over the target. Any failure returns FALSE and leaves
+ * the target untouched. */
+static BOOL tn_prefs_write_one(const char *path, const char *text)
+{
+    char prev[1024];
+    char merged[2048];
+    char tmp[256];
+    LONG plen = 0, wlen, r;
+    BPTR fh;
+
+    prev[0] = 0;
+    fh = Open((CONST_STRPTR)path, MODE_OLDFILE);
+    if (fh != (BPTR)0) {
+        plen = Read(fh, (APTR)prev, (LONG)sizeof(prev) - 1);
+        Close(fh);
+        if (plen < 0) plen = 0;
+    }
+    prev[plen] = 0;
+
+    if (tn_config_merge_preserve(text, prev, merged, (int)sizeof(merged)) < 0)
+        return FALSE;
+
+    for (r = 0; path[r] != 0 && r + 6 < (LONG)sizeof(tmp); r++) tmp[r] = path[r];
+    tmp[r] = 0;
+    strcat(tmp, "_tmp");
+
+    fh = Open((CONST_STRPTR)tmp, MODE_NEWFILE);
+    if (fh == (BPTR)0) return FALSE;
+    wlen = strlen(merged);
+    if (Write(fh, (APTR)merged, wlen) != wlen) {
+        Close(fh);
+        DeleteFile((CONST_STRPTR)tmp);
+        return FALSE;
+    }
+    if (Close(fh) == FALSE) {
+        DeleteFile((CONST_STRPTR)tmp);
+        return FALSE;
+    }
+    if (Rename((CONST_STRPTR)tmp, (CONST_STRPTR)path) == FALSE) {
+        DeleteFile((CONST_STRPTR)tmp);
+        return FALSE;
+    }
+    return TRUE;
+}
+
 BOOL tn_prefs_save(const TnPrefs *prefs, TnPrefsSaveMode mode)
 {
-    BPTR fh;
     char text[TN_CONFIG_TEXT_MAX];
 
     if (prefs == NULL) return FALSE;
@@ -142,26 +189,11 @@ BOOL tn_prefs_save(const TnPrefs *prefs, TnPrefsSaveMode mode)
 
     if (mode == TN_PREFS_SAVE) {
         /* 1. Persistent text config: DEVS:tolunnet.config (canonical, TNET-083) */
-        fh = Open((CONST_STRPTR)TN_CONFIG_FILE_DEVS, MODE_NEWFILE);
-        if (fh != (BPTR)0) {
-            FPuts(fh, (CONST_STRPTR)text);
-            Close(fh);
-        }
-
-        /* 2. ENVARC: text config — persistent across reboots */
-        fh = Open((CONST_STRPTR)TN_PREFS_FILE_ENVARC, MODE_NEWFILE);
-        if (fh != (BPTR)0) {
-            FPuts(fh, (CONST_STRPTR)text);
-            Close(fh);
-        }
+        if (!tn_prefs_write_one(TN_CONFIG_FILE_DEVS, text)) return FALSE;
+        /* 2. ENVARC: text config - persistent across reboots */
+        if (!tn_prefs_write_one(TN_PREFS_FILE_ENVARC, text)) return FALSE;
     }
 
-    /* 3. ENV: text config — always written (live for session, TNET-083) */
-    fh = Open((CONST_STRPTR)TN_PREFS_FILE_ENV, MODE_NEWFILE);
-    if (fh != (BPTR)0) {
-        FPuts(fh, (CONST_STRPTR)text);
-        Close(fh);
-    }
-
-    return TRUE;
+    /* 3. ENV: text config - always written (live for session, TNET-083) */
+    return tn_prefs_write_one(TN_PREFS_FILE_ENV, text);
 }

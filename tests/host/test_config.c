@@ -607,6 +607,48 @@ TN_TEST(checknetconfig_vocabulary)
     }
 }
 
+TN_TEST(merge_preserves_unknown_and_long)
+{
+    /* z.ai step 9b item 2: unknown keys and over-long lines must
+     * survive a config rewrite (tn_config_merge_preserve). */
+    static const char *new_text =
+        "# tolunnet configuration file\n"
+        "DEVICE=ethernet.device\n"
+        "DHCP=YES\n";
+    static char old_text[512];
+    char merged[1024];
+    int n, i;
+
+    strcpy(old_text, "DEVICE=ethernet.device\n"
+                     "MYSTERYKEY=1\n");
+    /* a 200-character line */
+    strcat(old_text, "LONGKEY=");
+    for (i = 0; i < 187; i++) strcat(old_text, "x");
+    strcat(old_text, "\n");
+
+    n = tn_config_merge_preserve(new_text, old_text, merged, (int)sizeof(merged));
+    TN_ASSERT_TRUE(n >= 0);
+    TN_ASSERT_TRUE(strstr(merged, "MYSTERYKEY=1") != NULL);
+    TN_ASSERT_TRUE(strstr(merged, "LONGKEY=") != NULL);
+    /* the 200-char line survived verbatim */
+    {
+        const char *lk = strstr(merged, "LONGKEY=");
+        int line_len = 0;
+        while (lk[line_len] && lk[line_len] != 10) line_len++;
+        TN_ASSERT_EQ(line_len, 8 + 187);
+    }
+    /* a known key from the old file must NOT be duplicated */
+    TN_ASSERT_EQ(strstr(merged, "DEVICE=") - strstr(merged, "DEVICE="), 0);
+    {
+        int count = 0;
+        const char *p = merged;
+        while ((p = strstr(p, "DEVICE=")) != NULL) { count++; p++; }
+        TN_ASSERT_EQ(count, 1);
+    }
+    /* truncation is reported */
+    TN_ASSERT_TRUE(tn_config_merge_preserve(new_text, old_text, merged, 32) < 0);
+}
+
 int main(void)
 {
     TN_TEST_RUN(round_trip_all_keys);
@@ -627,6 +669,7 @@ int main(void)
     TN_TEST_RUN(font_key_tnet110);
     TN_TEST_RUN(diag_key_tnet139);
     TN_TEST_RUN(checknetconfig_vocabulary);
+    TN_TEST_RUN(merge_preserves_unknown_and_long);
     TN_TEST_PLAN();
     return tn_test_failures();
 }

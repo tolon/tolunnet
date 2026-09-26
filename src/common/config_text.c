@@ -571,3 +571,47 @@ int tn_config_value_class(const char *key)
     }
     return 0;
 }
+
+/* z.ai step 9b item 2: keep unknown keys and over-long lines alive
+ * across a config rewrite. Lines longer than the 127-character parse
+ * limit and KEY=VALUE lines with an unknown key are carried over
+ * verbatim; comments and known keys are already covered by new_text. */
+int tn_config_merge_preserve(const char *new_text, const char *old_text,
+                             char *buf, int buf_size)
+{
+    int o = 0;
+    const char *p;
+
+    if (buf == NULL || buf_size <= 0) return -1;
+    for (p = new_text; p && *p && o < buf_size - 1; p++) buf[o++] = *p;
+
+    p = old_text;
+    while (p != NULL && *p != 0) {
+        const char *eol = strchr(p, 10); /* LF */
+        int len = eol ? (int)(eol - p) : (int)strlen(p);
+        char key[32];
+        int ki = 0, ci, k, keep = 0;
+
+        if (len > 127) keep = 1;
+        for (ci = 0; ci < len && ci < (int)sizeof(key) - 1; ci++) {
+            if (p[ci] == 61) break; /* = */
+            key[ki++] = p[ci];
+        }
+        key[ki] = 0;
+        if (!keep && p[0] != 35 /* # */ && ki > 0 &&
+            !tn_config_key_known(key)) {
+            keep = 1;
+        }
+        if (keep) {
+            if (o + len + 2 > buf_size - 1) return -1;
+            if (o > 0 && buf[o - 1] != 10) buf[o++] = 10;
+            for (k = 0; k < len; k++) buf[o++] = p[k];
+            buf[o++] = 10;
+        }
+        if (eol == NULL) break;
+        p = eol + 1;
+    }
+
+    buf[o] = 0;
+    return o;
+}

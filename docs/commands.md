@@ -43,7 +43,7 @@ All commands install to `SYS:C/` (except Prefs tools). Every command is a thin c
 
 | Command | ReadArgs Template | RC | Description | Conformance |
 |---------|------------------|-----|-------------|-------------|
-| `hostname` | `HOSTNAME,SAVE/S` | 0/10 | Show system hostname | `tc_cmd_hostname` |
+| `hostname` | `NAME` | 0/5/10/20 | Show hostname; NAME (RFC 1123) persists via config and live RECONFIG | `net_cmd_hostname_set` |
 | `nslookup` | `NAME/A,SERVER` | 0/10 | Forward (A) + reverse (PTR) DNS (reverse via gethostbyaddr: STUB) | `tc_cmd_nslookup` |
 | `whois` | `QUERY/A,SERVER,PORT/K/N` | 0/5/10 | WHOIS query, default port 43 | `tc_cmd_whois` |
 

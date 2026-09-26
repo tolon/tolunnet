@@ -237,7 +237,7 @@ $(TEST_BIN): $(BUILD)/src/cmds/TestSocket.o $(BUILD)/src/common/log.o $(BUILD)/s
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: CLI commands (CMD-0/1/2)
-$(HOSTNAME_BIN): $(BUILD)/src/cmds/hostname.o $(CMDLIB_OBJ)
+$(HOSTNAME_BIN): $(BUILD)/src/cmds/hostname.o $(CMDLIB_OBJ) $(BUILD)/src/common/prefs.o $(BUILD)/src/common/config_text.o $(BUILD)/src/common/ipc_client.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(NSLOOKUP_BIN): $(BUILD)/src/cmds/nslookup.o $(CMDLIB_OBJ)

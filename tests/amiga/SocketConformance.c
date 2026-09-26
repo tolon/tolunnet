@@ -7205,6 +7205,59 @@ static void tc_net_cmd_route_host(void)
         TAP_NOTOK("net_cmd_route_host", "host route not reflected");
     }
 }
+/* z.ai step 9b item 2: hostname NAME persists (config line) and goes
+ * live (gethostname). The original name is restored the same way. */
+static void tc_net_cmd_hostname_set(void)
+{
+    char out[512];
+    char old[64];
+    char junk[512];
+    LONG r;
+    int set_ok = 0, cfg_ok = 0, restored = 0;
+
+    if (call_gethostname((STRPTR)old, (LONG)sizeof(old) - 1) != 0 || old[0] == 0) {
+        strcpy(old, "amiga");
+    }
+
+    r = run_cmd("C:hostname", "tolunbench", NULL, out, sizeof(out));
+    CloseLibrary(SocketBase);
+    SocketBase = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
+    {
+        char now[64];
+        BPTR fh;
+        if (r == 0 && SocketBase != NULL &&
+            call_gethostname((STRPTR)now, (LONG)sizeof(now) - 1) == 0 &&
+            strcmp(now, "tolunbench") == 0) set_ok = 1;
+        fh = Open((CONST_STRPTR)"DEVS:tolunnet.config", MODE_OLDFILE);
+        if (fh != (BPTR)0) {
+            LONG n = Read(fh, junk, (LONG)sizeof(junk) - 1);
+            Close(fh);
+            if (n > 0) {
+                junk[n] = 0;
+                if (strstr(junk, "HOSTNAME=tolunbench") != NULL) cfg_ok = 1;
+            }
+        }
+    }
+
+    r = run_cmd("C:hostname", old, NULL, out, sizeof(out));
+    CloseLibrary(SocketBase);
+    SocketBase = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
+    {
+        char now[64];
+        if (r == 0 && SocketBase != NULL &&
+            call_gethostname((STRPTR)now, (LONG)sizeof(now) - 1) == 0 &&
+            strcmp(now, old) == 0) restored = 1;
+    }
+
+    if (set_ok && cfg_ok && restored) {
+        TAP_OK("net_cmd_hostname_set");
+    } else {
+        tapf("# net_cmd_hostname_set: set=%ld cfg=%ld restored=%ld r=%ld out=%s\n",
+             (LONG)set_ok, (LONG)cfg_ok, (LONG)restored, r, out);
+        TAP_NOTOK("net_cmd_hostname_set", "hostname set/restore failed");
+    }
+}
+
 static void tc_net_recv_ctrlc(void)
 {
     LONG lst = -1, cli = -1, conn = -1;
@@ -7555,6 +7608,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_status_route);
     TN_RUN(tc_net_cmd_route_host);
     TN_RUN(tc_net_cmd_netshutdown);
+    TN_RUN(tc_net_cmd_hostname_set);
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
