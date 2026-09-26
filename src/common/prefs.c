@@ -188,12 +188,15 @@ BOOL tn_prefs_save(const TnPrefs *prefs, TnPrefsSaveMode mode)
     if (tn_config_format(prefs, text, sizeof(text)) < 0) return FALSE;
 
     if (mode == TN_PREFS_SAVE) {
-        /* 1. Persistent text config: DEVS:tolunnet.config (canonical, TNET-083) */
+        /* 1. Persistent text config: DEVS:tolunnet.config (canonical,
+         * TNET-083). Its failure fails the save. */
         if (!tn_prefs_write_one(TN_CONFIG_FILE_DEVS, text)) return FALSE;
-        /* 2. ENVARC: text config - persistent across reboots */
-        if (!tn_prefs_write_one(TN_PREFS_FILE_ENVARC, text)) return FALSE;
+        /* 2./3. ENVARC:/ENV mirrors are best-effort: ENVARC: is not
+         * mounted on every headless install, and a missing mirror must
+         * not fail a save whose canonical target succeeded. */
+        tn_prefs_write_one(TN_PREFS_FILE_ENVARC, text);
     }
 
-    /* 3. ENV: text config - always written (live for session, TNET-083) */
-    return tn_prefs_write_one(TN_PREFS_FILE_ENV, text);
+    tn_prefs_write_one(TN_PREFS_FILE_ENV, text);
+    return TRUE;
 }
