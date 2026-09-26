@@ -7085,7 +7085,27 @@ static void tc_net_cmd_status_down(void)
     if (r1 == 0 && r2 == 0 && strstr(out, "DOWN") != NULL) down = 1;
     {
         LONG r3 = run_cmd("C:Online", NULL, NULL, out, sizeof(out));
-        LONG r4 = run_cmd("C:ShowNetStatus", "INTERFACES", NULL, out, sizeof(out));
+        LONG r4 = -1;
+        int waits;
+        /* S2_ONLINE can wedge the daemon briefly (RC3 note in
+         * tc_cmd_ifctl): wait until IFCTL LIST reports up again. */
+        for (waits = 0; waits < 40; waits++) {
+            static TnIfInfo rows[4];
+            TnIpcMsg msg;
+            LONG args[6];
+            APTR ptrs[1];
+            memset(&msg, 0, sizeof(msg));
+            memset(args, 0, sizeof(args));
+            args[0] = TN_IFCTL_LIST;
+            args[4] = 4;
+            ptrs[0] = rows;
+            {
+                int lrc = tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, ptrs, 1, &msg);
+                if (lrc >= 1 && rows[0].in_use && rows[0].is_up) break;
+            }
+            Delay(5);
+        }
+        r4 = run_cmd("C:ShowNetStatus", "INTERFACES", NULL, out, sizeof(out));
         if (r3 == 0 && r4 == 0 && strstr(out, "UP") != NULL) up = 1;
     }
     if (down && up) {
@@ -7105,16 +7125,15 @@ static void tc_net_cmd_status_route(void)
     LONG r1 = run_cmd("C:route",
                       "ADD DEST 192.168.77.0 NETMASK 255.255.255.0 GATEWAY 10.0.2.2",
                       NULL, out, sizeof(out));
-    tapf("# net_cmd_status_route: ADD r1=%ld out=%s\n", r1, out);
-    {
-        char keep[512];
-        LONG k;
-        for (k = 0; k < (LONG)sizeof(keep) - 1 && out[k]; k++) keep[k] = out[k];
-        keep[k] = 0;
+    if (r1 != 0) {
+        /* the daemon can still be busy after the Online wedge window */
+        Delay(50);
+        r1 = run_cmd("C:route",
+                      "ADD DEST 192.168.77.0 NETMASK 255.255.255.0 GATEWAY 10.0.2.2",
+                      NULL, out, sizeof(out));
     }
     LONG r2 = run_cmd("C:ShowNetStatus", "ROUTES", NULL, out, sizeof(out));
     if (r1 == 0 && r2 == 0 && strstr(out, "192.168.77.0") != NULL) added = 1;
-    tapf("# net_cmd_status_route: r1=%ld r2=%ld out=%s\n", r1, r2, out);
     {
         LONG r3 = run_cmd("C:route", "DELETE DEST 192.168.77.0 NETMASK 255.255.255.0",
                           NULL, out, sizeof(out));
