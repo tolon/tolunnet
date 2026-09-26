@@ -28,23 +28,20 @@ int main(int argc, char **argv)
         return TN_CMD_USAGE;
     }
 
-    dest = tn_call_inet_addr((const char *)opts[0]);
-    if (dest == INADDR_NONE) {
+    if (!tn_parse_ipv4((const char *)opts[0], &dest)) {
         tn_cmd_printf("AddNetRoute: bad DEST\n");
         FreeArgs(rdargs); tn_cmd_fini();
         return TN_CMD_USAGE;
     }
     if (opts[1] != 0) {
-        mask = tn_call_inet_addr((const char *)opts[1]);
-        if (mask == INADDR_NONE) {
+        if (!tn_parse_ipv4((const char *)opts[1], &mask)) {
             tn_cmd_printf("AddNetRoute: bad MASK\n");
             FreeArgs(rdargs); tn_cmd_fini();
             return TN_CMD_USAGE;
         }
     }
     if (opts[2] != 0) {
-        gw = tn_call_inet_addr((const char *)opts[2]);
-        if (gw == INADDR_NONE) {
+        if (!tn_parse_ipv4((const char *)opts[2], &gw)) {
             tn_cmd_printf("AddNetRoute: bad GATEWAY\n");
             FreeArgs(rdargs); tn_cmd_fini();
             return TN_CMD_USAGE;

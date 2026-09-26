@@ -85,4 +85,9 @@ void tn_cmd_printf(const char *fmt, ...);
 BOOL tn_cmd_check_ctrlc(void);
 ULONG tn_cmd_resolve(const char *host);
 
+/* z.ai step 9a item 3: strict dotted-quad parser - a.b.c.d with each
+ * part 0-255 and nothing trailing; unlike inet_addr it accepts
+ * 255.255.255.255. Stores the address big-endian in *out. */
+BOOL tn_parse_ipv4(const char *s, ULONG *out);
+
 #endif /* TOLUNNET_CMDLIB_H */

@@ -29,24 +29,21 @@ int main(int argc, char **argv)
     }
 
     if (opts[1] != 0) {
-        addr = tn_call_inet_addr((const char *)opts[1]);
-        if (addr == INADDR_NONE) {
+        if (!tn_parse_ipv4((const char *)opts[1], &addr)) {
             tn_cmd_printf("ConfigureNetInterface: bad ADDRESS\n");
             FreeArgs(rdargs); tn_cmd_fini();
             return TN_CMD_USAGE;
         }
     }
     if (opts[2] != 0) {
-        mask = tn_call_inet_addr((const char *)opts[2]);
-        if (mask == INADDR_NONE) {
+        if (!tn_parse_ipv4((const char *)opts[2], &mask)) {
             tn_cmd_printf("ConfigureNetInterface: bad NETMASK\n");
             FreeArgs(rdargs); tn_cmd_fini();
             return TN_CMD_USAGE;
         }
     }
     if (opts[3] != 0) {
-        gw = tn_call_inet_addr((const char *)opts[3]);
-        if (gw == INADDR_NONE) {
+        if (!tn_parse_ipv4((const char *)opts[3], &gw)) {
             tn_cmd_printf("ConfigureNetInterface: bad GATEWAY\n");
             FreeArgs(rdargs); tn_cmd_fini();
             return TN_CMD_USAGE;

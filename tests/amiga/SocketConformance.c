@@ -7174,6 +7174,37 @@ static void tc_net_cmd_status_route(void)
     }
 }
 
+/* z.ai step 9a item 3: host routes are possible now - the strict
+ * dotted-quad parser accepts 255.255.255.255 (inet_addr returned
+ * INADDR_NONE for it). */
+static void tc_net_cmd_route_host(void)
+{
+    char out[512];
+    char junk[512];
+    int added = 0, removed = 0;
+
+    run_cmd("C:route",
+            "ADD DEST 10.0.2.99 NETMASK 255.255.255.255 GATEWAY 10.0.2.2",
+            NULL, junk, sizeof(junk));
+    {
+        LONG r2 = run_cmd("C:ShowNetStatus", "ROUTES", NULL, out, sizeof(out));
+        if (r2 == 0 && strstr(out, "10.0.2.99") != NULL) added = 1;
+    }
+    run_cmd("C:route", "DELETE DEST 10.0.2.99 NETMASK 255.255.255.255",
+            NULL, junk, sizeof(junk));
+    {
+        LONG r4 = run_cmd("C:ShowNetStatus", "ROUTES", NULL, out, sizeof(out));
+        if (r4 == 0 && strstr(out, "10.0.2.99") == NULL) removed = 1;
+    }
+
+    if (added && removed) {
+        TAP_OK("net_cmd_route_host");
+    } else {
+        tapf("# net_cmd_route_host: added=%ld removed=%ld out=%s\n",
+             (LONG)added, (LONG)removed, out);
+        TAP_NOTOK("net_cmd_route_host", "host route not reflected");
+    }
+}
 static void tc_net_recv_ctrlc(void)
 {
     LONG lst = -1, cli = -1, conn = -1;
@@ -7522,6 +7553,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_status_live);
     TN_RUN(tc_net_cmd_status_down);
     TN_RUN(tc_net_cmd_status_route);
+    TN_RUN(tc_net_cmd_route_host);
     TN_RUN(tc_net_cmd_netshutdown);
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
     tapf("1..%d\n", g_count);

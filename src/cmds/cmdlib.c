@@ -301,3 +301,32 @@ ULONG tn_cmd_resolve(const char *host)
         }
     }
 }
+
+/* --- z.ai step 9a item 3: strict dotted-quad parser --- */
+BOOL tn_parse_ipv4(const char *s, ULONG *out)
+{
+    ULONG addr = 0;
+    int part, len = 0;
+
+    if (s == NULL || out == NULL) return FALSE;
+    for (part = 0; part < 4; part++) {
+        int digits = 0;
+        ULONG v = 0;
+        while (s[len] >= '0' && s[len] <= '9') {
+            v = v * 10 + (ULONG)(s[len] - '0');
+            if (v > 255) return FALSE;
+            len++;
+            digits++;
+            if (digits > 3) return FALSE;
+        }
+        if (digits == 0) return FALSE;
+        addr = (addr << 8) | v;
+        if (part < 3) {
+            if (s[len] != '.') return FALSE;
+            len++;
+        }
+    }
+    if (s[len] != '\0') return FALSE;
+    *out = addr;
+    return TRUE;
+}

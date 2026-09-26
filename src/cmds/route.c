@@ -90,23 +90,20 @@ int main(int argc, char **argv)
             FreeArgs(rdargs); tn_cmd_fini();
             return TN_CMD_USAGE;
         }
-        dest = tn_call_inet_addr(dest_s);
-        if (dest == INADDR_NONE) {
+        if (!tn_parse_ipv4(dest_s, &dest)) {
             tn_cmd_printf("route: bad DEST address\n");
             FreeArgs(rdargs); tn_cmd_fini();
             return TN_CMD_USAGE;
         }
         if (mask_s != NULL) {
-            mask = tn_call_inet_addr(mask_s);
-            if (mask == INADDR_NONE) {
+            if (!tn_parse_ipv4(mask_s, &mask)) {
                 tn_cmd_printf("route: bad NETMASK\n");
                 FreeArgs(rdargs); tn_cmd_fini();
                 return TN_CMD_USAGE;
             }
         }
         if (gw_s != NULL) {
-            gw = tn_call_inet_addr(gw_s);
-            if (gw == INADDR_NONE) {
+            if (!tn_parse_ipv4(gw_s, &gw)) {
                 tn_cmd_printf("route: bad GATEWAY\n");
                 FreeArgs(rdargs); tn_cmd_fini();
                 return TN_CMD_USAGE;
@@ -131,13 +128,12 @@ int main(int argc, char **argv)
             FreeArgs(rdargs); tn_cmd_fini();
             return TN_CMD_USAGE;
         }
-        dest = tn_call_inet_addr(dest_s);
-        if (dest == INADDR_NONE) {
+        if (!tn_parse_ipv4(dest_s, &dest)) {
             tn_cmd_printf("route: bad DEST address\n");
             FreeArgs(rdargs); tn_cmd_fini();
             return TN_CMD_USAGE;
         }
-        if (mask_s != NULL) mask = tn_call_inet_addr(mask_s);
+        if (mask_s != NULL) tn_parse_ipv4(mask_s, &mask);
         {
             LONG r = route_ctl(TN_ROUTECTL_DELETE, dest, mask, 0, NULL, 0);
             if (r != 0) {
@@ -155,8 +151,7 @@ int main(int argc, char **argv)
             FreeArgs(rdargs); tn_cmd_fini();
             return TN_CMD_USAGE;
         }
-        gw = tn_call_inet_addr(gw_s);
-        if (gw == INADDR_NONE) {
+        if (!tn_parse_ipv4(gw_s, &gw)) {
             tn_cmd_printf("route: bad GATEWAY\n");
             FreeArgs(rdargs); tn_cmd_fini();
             return TN_CMD_USAGE;

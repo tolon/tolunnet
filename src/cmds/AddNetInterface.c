@@ -88,19 +88,17 @@ int main(int argc, char **argv)
         }
 
         if (addr_s[0] != '\0') {
-            addr = tn_call_inet_addr(addr_s);
-            if (addr == INADDR_NONE) {
+            if (!tn_parse_ipv4(addr_s, &addr)) {
                 tn_cmd_printf("%s: bad ADDRESS '%s' — skipped\n", e->name, addr_s);
                 rc = TN_CMD_FAIL;
                 continue;
             }
         }
         if (e->netmask[0] != '\0') {
-            mask = tn_call_inet_addr(e->netmask);
+            tn_parse_ipv4(e->netmask, &mask);
         }
         if (e->gateway[0] != '\0') {
-            gw = tn_call_inet_addr(e->gateway);
-            if (gw == INADDR_NONE) gw = 0;
+            if (!tn_parse_ipv4(e->gateway, &gw)) gw = 0;
         }
 
         {
