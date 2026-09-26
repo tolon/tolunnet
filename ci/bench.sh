@@ -356,6 +356,7 @@ for cfg in $CONFIGS; do
     xd delete C/telnet          >/dev/null 2>&1
     xd delete C/nslookup        >/dev/null 2>&1
     xd delete C/hostname        >/dev/null 2>&1
+    xd delete C/TolunnetPing   >/dev/null 2>&1
     xd delete C/GetNetStatus    >/dev/null 2>&1
     xd delete C/ShowNetStatus   >/dev/null 2>&1
     xd delete C/route           >/dev/null 2>&1
@@ -384,6 +385,7 @@ for cfg in $CONFIGS; do
     xd write build/telnet C/telnet             || die "xdftool write telnet failed"
     xd write build/nslookup C/nslookup         || die "xdftool write nslookup failed"
     xd write build/hostname C/hostname         || die "xdftool write hostname failed"
+    xd write build/TolunnetPing C/TolunnetPing || die "xdftool write TolunnetPing failed"
     xd write build/GetNetStatus C/GetNetStatus || die "xdftool write GetNetStatus failed"
     xd write build/ShowNetStatus C/ShowNetStatus || die "xdftool write ShowNetStatus failed"
     xd write build/route C/route               || die "xdftool write route failed"
