@@ -107,7 +107,7 @@ CONF_BIN     = $(BUILD)/SocketConformance
 BSDTEST_BIN  = $(BUILD)/bsdsocktest
 TOGGLE_BIN   = $(BUILD)/S2Toggle
 INSTALL_BIN  = $(BUILD)/Install_Tolunnet
-CMDLIB_OBJ   = $(BUILD)/src/cmds/cmdlib.o
+CMDLIB_OBJ   = $(BUILD)/src/cmds/cmdlib.o $(BUILD)/src/common/ipc_client.o
 HOSTNAME_BIN = $(BUILD)/hostname
 NSLOOKUP_BIN = $(BUILD)/nslookup
 WHOIS_BIN    = $(BUILD)/whois
@@ -276,34 +276,34 @@ $(GETNETSTATUS_BIN): $(BUILD)/src/cmds/GetNetStatus.o $(CMDLIB_OBJ)
 $(FTP_BIN): $(BUILD)/src/cmds/ftp.o $(CMDLIB_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(ROUTE_BIN): $(BUILD)/src/cmds/route.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
+$(ROUTE_BIN): $(BUILD)/src/cmds/route.o $(CMDLIB_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(ADDNETROUTE_BIN): $(BUILD)/src/cmds/AddNetRoute.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
+$(ADDNETROUTE_BIN): $(BUILD)/src/cmds/AddNetRoute.o $(CMDLIB_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(DELETENETROUTE_BIN): $(BUILD)/src/cmds/DeleteNetRoute.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
+$(DELETENETROUTE_BIN): $(BUILD)/src/cmds/DeleteNetRoute.o $(CMDLIB_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(IPERF_BIN): $(BUILD)/src/cmds/iperf.o $(CMDLIB_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(ADDNETIF_BIN): $(BUILD)/src/cmds/AddNetInterface.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o $(BUILD)/src/common/ifreader.o
+$(ADDNETIF_BIN): $(BUILD)/src/cmds/AddNetInterface.o $(CMDLIB_OBJ) $(BUILD)/src/common/ifreader.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(CONFNETIF_BIN): $(BUILD)/src/cmds/ConfigureNetInterface.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
+$(CONFNETIF_BIN): $(BUILD)/src/cmds/ConfigureNetInterface.o $(CMDLIB_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(ONLINE_BIN): $(BUILD)/src/cmds/Online.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
+$(ONLINE_BIN): $(BUILD)/src/cmds/Online.o $(CMDLIB_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(OFFLINE_BIN): $(BUILD)/src/cmds/Offline.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
+$(OFFLINE_BIN): $(BUILD)/src/cmds/Offline.o $(CMDLIB_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(CHECKNETCONFIG_BIN): $(BUILD)/src/cmds/CheckNetConfig.o $(CMDLIB_OBJ) $(BUILD)/src/common/config_text.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(NETSHUTDOWN_BIN): $(BUILD)/src/cmds/NetShutdown.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
+$(NETSHUTDOWN_BIN): $(BUILD)/src/cmds/NetShutdown.o $(CMDLIB_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetPing CLI Binary (M4)

@@ -6948,6 +6948,79 @@ out:
  * interrupted by CTRL-C (break mask) within 2 s: -1/EINTR, and the
  * daemon cancelled the parked message (a follow-up recv works). A
  * helper child Signals the parent after 1 s. */
+/* z.ai step 9a item 1: the status tools must print live daemon state */
+static void tc_net_cmd_status_live(void)
+{
+    char out[256];
+    LONG a = run_cmd("C:GetNetStatus", "ADDRESS", NULL, out, sizeof(out));
+    int addr_ok = 0, gw_ok = 0;
+    {
+        char *e = out + strlen(out);
+        while (e > out && (e[-1] == 10 || e[-1] == 13)) *--e = 0;
+        addr_ok = (a == 0 && strcmp(out, "10.0.2.15") == 0);
+    }
+    {
+        char out2[256];
+        LONG g = run_cmd("C:GetNetStatus", "GATEWAY", NULL, out2, sizeof(out2));
+        char *e = out2 + strlen(out2);
+        while (e > out2 && (e[-1] == 10 || e[-1] == 13)) *--e = 0;
+        gw_ok = (g == 0 && strcmp(out2, "10.0.2.2") == 0);
+    }
+    if (addr_ok && gw_ok) {
+        TAP_OK("net_cmd_status_live");
+    } else {
+        tapf("# net_cmd_status_live: addr_ok=%ld gw_ok=%ld out=%.60s\n",
+             (LONG)addr_ok, (LONG)gw_ok, out);
+        TAP_NOTOK("net_cmd_status_live", "live address/gateway mismatch");
+    }
+}
+
+/* After Offline the interfaces table says DOWN; after Online it says UP. */
+static void tc_net_cmd_status_down(void)
+{
+    char out[512];
+    int down = 0, up = 0;
+    LONG r1 = run_cmd("C:Offline", NULL, NULL, out, sizeof(out));
+    LONG r2 = run_cmd("C:ShowNetStatus", "INTERFACES", NULL, out, sizeof(out));
+    if (r1 == 0 && r2 == 0 && strstr(out, "DOWN") != NULL) down = 1;
+    {
+        LONG r3 = run_cmd("C:Online", NULL, NULL, out, sizeof(out));
+        LONG r4 = run_cmd("C:ShowNetStatus", "INTERFACES", NULL, out, sizeof(out));
+        if (r3 == 0 && r4 == 0 && strstr(out, "UP") != NULL) up = 1;
+    }
+    if (down && up) {
+        TAP_OK("net_cmd_status_down");
+    } else {
+        tapf("# net_cmd_status_down: down=%ld up=%ld out=%.120s\n",
+             (LONG)down, (LONG)up, out);
+        TAP_NOTOK("net_cmd_status_down", "interface flag not reflected");
+    }
+}
+
+/* route ADD ... GATEWAY then DELETE is reflected in ShowNetStatus ROUTES */
+static void tc_net_cmd_status_route(void)
+{
+    char out[512];
+    int added = 0, removed = 0;
+    LONG r1 = run_cmd("C:route",
+                      "ADD 192.168.77.0 NETMASK 255.255.255.0 GATEWAY 10.0.2.2",
+                      NULL, out, sizeof(out));
+    LONG r2 = run_cmd("C:ShowNetStatus", "ROUTES", NULL, out, sizeof(out));
+    if (r1 == 0 && r2 == 0 && strstr(out, "192.168.77.0") != NULL) added = 1;
+    {
+        LONG r3 = run_cmd("C:route", "DELETE 192.168.77.0 NETMASK 255.255.255.0",
+                          NULL, out, sizeof(out));
+        LONG r4 = run_cmd("C:ShowNetStatus", "ROUTES", NULL, out, sizeof(out));
+        if (r3 == 0 && r4 == 0 && strstr(out, "192.168.77.0") == NULL) removed = 1;
+    }
+    if (added && removed) {
+        TAP_OK("net_cmd_status_route");
+    } else {
+        tapf("# net_cmd_status_route: added=%ld removed=%ld out=%.160s\n",
+             (LONG)added, (LONG)removed, out);
+        TAP_NOTOK("net_cmd_status_route", "route add/delete not reflected");
+    }
+}
 static void tc_net_recv_ctrlc(void)
 {
     LONG lst = -1, cli = -1, conn = -1;
@@ -7293,6 +7366,9 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_traceroute);
     TN_RUN(tc_net_cmd_tftp);
     TN_RUN(tc_net_cmd_tftp_big);
+    TN_RUN(tc_net_cmd_status_live);
+    TN_RUN(tc_net_cmd_status_down);
+    TN_RUN(tc_net_cmd_status_route);
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
