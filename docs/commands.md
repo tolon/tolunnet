@@ -34,10 +34,10 @@ All commands install to `SYS:C/` (except Prefs tools). Every command is a thin c
 
 | Command | ReadArgs Template | RC | Description | Conformance |
 |---------|------------------|-----|-------------|-------------|
-| `wget` / `curl` | `URL/A,PORT/N,PATH,TO/K,QUIET/S` | 0/10/20 | HTTP/1.1 client (redirects, chunked, Range) |
+| `wget` / `curl` | `URL/A,PORT/N,PATH,TO/K,QUIET/S,CONTINUE/S` | 0/10/20 | HTTP/1.1 client (redirects, chunked); resume only with CONTINUE (Range; 206 appends, 200 overwrites), stop on this response's bytes | `net_cmd_wget`, `net_cmd_wget_continue` |
 | `iperf` | `CLIENT/K,SERVER/S,PORT/N,SECONDS/N` | 0/10/20 | TCP throughput tool (client blast / server sink; loopback number via tc_iperf_loopback) | `tc_iperf_loopback` |
-| `tftp` | `HOST/A,GET/S,PUT/S,FILE/A,LOCAL` | 0/5/10 | TFTP (RFC 1350 octet, 5-retry timeout) | `tc_cmd_tftp` |
-| `ftp` | `HOST,PORT/N,USER,PASS,SCRIPT,QUIET/S` | 0/10 | Interactive FTP (PASV, cd/ls/get/put/bin/quit) | `tc_cmd_ftp` |
+| `tftp` | `HOST/A,PORT/K/N,GET/S,PUT/S,FILE/A,LOCAL` | 0 ok / 5 Ctrl-C / 10 fail | TFTP RFC 1350 octet; PORT (default 69), last-ACK re-send on timeout, duplicate-DATA re-ACK, transfer-ID lock, UWORD block wrap, ERROR text, empty final block on 512-multiple PUT | `net_cmd_tftp`, `net_cmd_tftp_big` |
+| `ftp` | `HOST,PORT/N,USER,PASS,SCRIPT,QUIET/S,PASVANY/S` | 0 clean / 10 any 4xx-5xx or failed transfer / 20 usage | Interactive FTP: RFC 959 multiline replies, one PASV per transfer, ls/get remote [local]/put local [remote], open host [port], get remote [local] | `net_cmd_ftp`, `net_cmd_ftp_put` |
 
 ## DNS and Lookup
 
@@ -52,7 +52,7 @@ All commands install to `SYS:C/` (except Prefs tools). Every command is a thin c
 | Command | ReadArgs Template | RC | Description | Conformance |
 |---------|------------------|-----|-------------|-------------|
 | `traceroute` | `HOST/A,MAXHOPS/N,QUERIES/N,WAIT/N,NUMERIC/S` | 0/5 | ICMP TTL route tracing | `tc_cmd_traceroute` |
-| `nc` | `HOST/A,PORT/N,UDP/S,LISTEN/S,TIMEOUT/N` | 0/10 | TCP/UDP pipe (netcat) | `tc_cmd_nc` |
+| `nc` | `HOST/A,PORT/N,UDP/S,LISTEN/S,TIMEOUT/N` | 0 / 10 bind-connect-accept fail / 20 usage | netcat: file stdin pumped with Read(), EOF half-close + drain, real LISTEN (bind+listen+accept), UDP connect; interactive stdin keeps WaitForChar | `net_cmd_nc`, `net_cmd_nc_udp`, `net_cmd_nc_listen` |
 | `arp` | `SHOW/S` | 0 | ARP table via SIOCGARP /24 scan | `tc_cmd_arp` |
 
 ## Time
@@ -65,7 +65,7 @@ All commands install to `SYS:C/` (except Prefs tools). Every command is a thin c
 
 | Command | ReadArgs Template | RC | Description | Conformance |
 |---------|------------------|-----|-------------|-------------|
-| `telnet` | `HOST/A,PORT/N` | 0/5/10 | TCP terminal (NVT, IAC filter) | `tc_cmd_telnet` |
+| `telnet` | `HOST/A,PORT/N` | 0/5/10 | TCP terminal: NVT IAC filter, file stdin sent as CR LF, EOF half-close + 2 s drain | `net_cmd_telnet` |
 
 ## Status for Scripts
 
