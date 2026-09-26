@@ -7107,7 +7107,7 @@ static void tc_net_cmd_status_route(void)
                       NULL, out, sizeof(out));
     LONG r2 = run_cmd("C:ShowNetStatus", "ROUTES", NULL, out, sizeof(out));
     if (r1 == 0 && r2 == 0 && strstr(out, "192.168.77.0") != NULL) added = 1;
-    tapf("# net_cmd_status_route: r1=%ld r2=%ld out=%s" + NLs + "", r1, r2, out);
+    tapf("# net_cmd_status_route: r1=%ld r2=%ld out=%s\n", r1, r2, out);
     {
         LONG r3 = run_cmd("C:route", "DELETE 192.168.77.0 NETMASK 255.255.255.0",
                           NULL, out, sizeof(out));
