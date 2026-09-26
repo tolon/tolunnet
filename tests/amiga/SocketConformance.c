@@ -1229,23 +1229,25 @@ static void tc_connect_refused_host(void)
         call_closesocket(s);
         return;
     }
-    FD_ZERO(&wfds);
-    FD_SET(s, &wfds);
-    tv.tv_secs = 10;
-    tv.tv_micro = 0;
-    sel = call_waitselect(s + 1, NULL, &wfds, NULL, &tv, NULL);
-    if (sel <= 0) {
-        tapf("# tc_connect_refused_host: waitselect=%ld\n", sel);
-        TAP_NOTOK("tc_connect_refused_host", "no refusal within 10 s");
-        call_closesocket(s);
-        return;
+    /* z.ai step 10a item 1: WaitSelect total <= 10 s in 1 s slices;
+     * SO_ERROR decides — ECONNREFUSED proves the refusal arrived. */
+    soerr = -1;
+    sel = -1;
+    for (i = 0; i < 10; i++) {
+        FD_ZERO(&wfds);
+        FD_SET(s, &wfds);
+        tv.tv_secs = 1;
+        tv.tv_micro = 0;
+        sel = call_waitselect(s + 1, NULL, &wfds, NULL, &tv, NULL);
+        if (call_getsockopt(s, SOL_SOCKET, SO_ERROR,
+                            (APTR)&soerr, &so_len) != 0) break;
+        if (soerr == ECONNREFUSED) break;
+        if (soerr != 0 && soerr != EINPROGRESS) break;
     }
-    if (call_getsockopt(s, SOL_SOCKET, SO_ERROR,
-                           (APTR)&soerr, &so_len) == 0 &&
-        soerr == ECONNREFUSED) {
+    if (soerr == ECONNREFUSED) {
         TAP_OK("tc_connect_refused_host");
     } else {
-        tapf("# tc_connect_refused_host: soerr=%ld\n", soerr);
+        tapf("# tc_connect_refused_host: soerr=%ld sel=%ld\n", soerr, sel);
         TAP_NOTOK("tc_connect_refused_host", "SO_ERROR != ECONNREFUSED");
     }
     call_closesocket(s);
