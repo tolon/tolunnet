@@ -6986,6 +6986,9 @@ static void tc_net_cmd_netshutdown(void)
         if (tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, ptrs, 1, &msg) == 0 &&
             msg.result >= 1 && rows[0].in_use && rows[0].is_up) {
             up_ok = 1;
+        } else {
+            tapf("# net_cmd_netshutdown: LIST result=%ld in_use=%ld up=%ld' + NL + '",
+                 (msg.result), (LONG)rows[0].in_use, (LONG)rows[0].is_up);
         }
     }
 
@@ -7011,7 +7014,25 @@ static void tc_net_cmd_netshutdown(void)
             if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) break;
             Delay(5);
         }
-        if (ret == 0 && FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) restarted = 1;
+        if (ret == 0 && FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
+            /* wait for the fresh daemon's DHCP lease: primary up + addr */
+            static TnIfInfo rows[4];
+            TnIpcMsg msg;
+            LONG args[6];
+            APTR ptrs[1];
+            for (waits = 0; waits < 60; waits++) {
+                memset(&msg, 0, sizeof(msg));
+                memset(args, 0, sizeof(args));
+                args[0] = TN_IFCTL_LIST;
+                args[4] = 4;
+                ptrs[0] = rows;
+                if (tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, ptrs, 1, &msg) == 0 &&
+                    msg.result >= 1 && rows[0].in_use && rows[0].is_up &&
+                    rows[0].addr != 0) break;
+                Delay(5);
+            }
+            restarted = 1;
+        }
     }
     SocketBase = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
     if (SocketBase == NULL) restarted = 0;
@@ -7019,7 +7040,7 @@ static void tc_net_cmd_netshutdown(void)
     if (busy && up_ok && stopped && restarted) {
         TAP_OK("net_cmd_netshutdown");
     } else {
-        tapf("# net_cmd_netshutdown: busy=%ld up_ok=%ld stopped=%ld restarted=%ld r1=%ld r2=%ld out=%.80s\n",
+        tapf("# net_cmd_netshutdown: busy=%ld up_ok=%ld stopped=%ld restarted=%ld r1=%ld r2=%ld out=%s\n",
              (LONG)busy, (LONG)up_ok, (LONG)stopped, (LONG)restarted, r1, r2, out);
         TAP_NOTOK("net_cmd_netshutdown", "stop contract violated");
     }
@@ -7044,7 +7065,7 @@ static void tc_net_cmd_status_live(void)
     if (addr_ok && gw_ok) {
         TAP_OK("net_cmd_status_live");
     } else {
-        tapf("# net_cmd_status_live: addr_ok=%ld gw_ok=%ld out=%.60s\n",
+        tapf("# net_cmd_status_live: addr_ok=%ld gw_ok=%ld out=%s\n",
              (LONG)addr_ok, (LONG)gw_ok, out);
         TAP_NOTOK("net_cmd_status_live", "live address/gateway mismatch");
     }
@@ -7066,7 +7087,7 @@ static void tc_net_cmd_status_down(void)
     if (down && up) {
         TAP_OK("net_cmd_status_down");
     } else {
-        tapf("# net_cmd_status_down: down=%ld up=%ld out=%.120s\n",
+        tapf("# net_cmd_status_down: down=%ld up=%ld out=%s\n",
              (LONG)down, (LONG)up, out);
         TAP_NOTOK("net_cmd_status_down", "interface flag not reflected");
     }
@@ -7091,7 +7112,7 @@ static void tc_net_cmd_status_route(void)
     if (added && removed) {
         TAP_OK("net_cmd_status_route");
     } else {
-        tapf("# net_cmd_status_route: added=%ld removed=%ld out=%.160s\n",
+        tapf("# net_cmd_status_route: added=%ld removed=%ld out=%s\n",
              (LONG)added, (LONG)removed, out);
         TAP_NOTOK("net_cmd_status_route", "route add/delete not reflected");
     }
@@ -7441,10 +7462,10 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_traceroute);
     TN_RUN(tc_net_cmd_tftp);
     TN_RUN(tc_net_cmd_tftp_big);
-    TN_RUN(tc_net_cmd_netshutdown);
     TN_RUN(tc_net_cmd_status_live);
     TN_RUN(tc_net_cmd_status_down);
     TN_RUN(tc_net_cmd_status_route);
+    TN_RUN(tc_net_cmd_netshutdown);
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
