@@ -7103,7 +7103,7 @@ static void tc_net_cmd_status_route(void)
     char out[512];
     int added = 0, removed = 0;
     LONG r1 = run_cmd("C:route",
-                      "ADD 192.168.77.0 NETMASK 255.255.255.0 GATEWAY 10.0.2.2",
+                      "ADD DEST 192.168.77.0 NETMASK 255.255.255.0 GATEWAY 10.0.2.2",
                       NULL, out, sizeof(out));
     tapf("# net_cmd_status_route: ADD r1=%ld out=%s\n", r1, out);
     {
@@ -7116,7 +7116,7 @@ static void tc_net_cmd_status_route(void)
     if (r1 == 0 && r2 == 0 && strstr(out, "192.168.77.0") != NULL) added = 1;
     tapf("# net_cmd_status_route: r1=%ld r2=%ld out=%s\n", r1, r2, out);
     {
-        LONG r3 = run_cmd("C:route", "DELETE 192.168.77.0 NETMASK 255.255.255.0",
+        LONG r3 = run_cmd("C:route", "DELETE DEST 192.168.77.0 NETMASK 255.255.255.0",
                           NULL, out, sizeof(out));
         LONG r4 = run_cmd("C:ShowNetStatus", "ROUTES", NULL, out, sizeof(out));
         if (r3 == 0 && r4 == 0 && strstr(out, "192.168.77.0") == NULL) removed = 1;
