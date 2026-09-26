@@ -308,44 +308,36 @@ int main(int argc, char *argv[])
             tv.tv_secs = timeout;
             tv.tv_micro = 0;
 
-            ready = tn_call_waitselect(sock + 1, &rfds, NULL, NULL, &tv, NULL);
-            if (ready > 0) {
-                LONG rcvd = tn_call_recvfrom(sock, rx_buf, sizeof(rx_buf), 0,
-                                          (struct sockaddr *)&from_sin, &from_len);
-                /* RAW sockets receive our OWN echo request back (lwIP raw
-                 * input hands every protocol-matching packet to the pcb
-                 * before icmp_input). Drain non-replies and keep waiting. */
-                if (rcvd > 0 && !use_udp) {
-                    int rip_hlen = (rx_buf[0] & 0x0F) * 4;
-                    if (rcvd < rip_hlen + (int)sizeof(struct tn_icmp_hdr)) {
-                        tn_logf(TN_LOG_BASIC, "ping: rx %ld bytes (short)\n", rcvd);
-                        rcvd = 0;
-                    } else {
-                        UBYTE rtype = (UBYTE)rx_buf[rip_hlen];
-                        if (rtype == TN_ICMP_ECHO_REQUEST) {
-                            tn_logf(TN_LOG_BASIC, "ping: rx own request (%ld)\n", rcvd);
-                            rcvd = 0; /* own request: keep waiting */
-                        } else if (rtype != TN_ICMP_ECHO_REPLY) {
-                            tn_logf(TN_LOG_BASIC, "ping: rx non-reply type=%ld (%ld bytes)\n",
-                                    (LONG)rtype, rcvd);
-                            rcvd = 0;
-                        }
+            /* z.ai step 9c item 1: the RAW socket receives our OWN echo
+             * request (lwIP raw_input) BEFORE the reply — drain non-replies
+             * and keep waiting until the timeout expires. */
+            int rx_tries = 0;
+            for (;;) {
+                fd_set rfds2;
+                struct timeval tv2;
+                FD_ZERO(&rfds2);
+                FD_SET(sock, &rfds2);
+                tv2.tv_secs = timeout;
+                tv2.tv_micro = 0;
+                ready = tn_call_waitselect(sock + 1, &rfds2, NULL, NULL, &tv2, NULL);
+                if (ready <= 0) break; /* timeout: no reply */
+                {
+                    LONG rcvd = tn_call_recvfrom(sock, rx_buf, sizeof(rx_buf), 0,
+                                              (struct sockaddr *)&from_sin, &from_len);
+                    if (rcvd <= 0) {
+                        if (++rx_tries > 4) break;
+                        continue;
                     }
-                }
-                if (rcvd > 0) {
-                    ULONG rtt_us = 0;
-
-                    if (tm_io != NULL) {
-                        tm_io->tr_node.io_Command = TR_GETSYSTIME;
-                        DoIO((struct IORequest *)tm_io);
-                        t_end = tm_io->tr_time;
-
-                        LONG sec_diff = t_end.tv_secs - t_start.tv_secs;
-                        LONG us_diff  = t_end.tv_micro - t_start.tv_micro;
-                        rtt_us = (ULONG)(sec_diff * 1000000L + us_diff);
-                    }
-
                     if (use_udp) {
+                        ULONG rtt_us = 0;
+                        if (tm_io != NULL) {
+                            tm_io->tr_node.io_Command = TR_GETSYSTIME;
+                            DoIO((struct IORequest *)tm_io);
+                            t_end = tm_io->tr_time;
+                        }
+                        LONG sec_d = t_end.tv_secs - t_start.tv_secs;
+                        LONG us_d = t_end.tv_micro - t_start.tv_micro;
+                        rtt_us = (ULONG)(sec_d * 1000000L + us_d);
                         ULONG rtt_100 = rtt_us / 100;
                         if (rtt_100 > 65535UL) rtt_100 = 65535UL;
                         got_reply = TRUE;
@@ -354,39 +346,55 @@ int main(int argc, char *argv[])
                         sum_sq_100us += (rtt_100 * rtt_100);
                         if (rtt_us < min_us) min_us = rtt_us;
                         if (rtt_us > max_us) max_us = rtt_us;
-
                         if (!quiet) {
-                            tn_logf(TN_LOG_BASIC, "%ld bytes from %s: seq=%ld time=%lu.%02lu ms\n",
+                            tn_logf(TN_LOG_BASIC, "%ld bytes from %s: seq=%ld time=%lu.%02lu ms
+",
                                     rcvd, target_ip_str, seq, rtt_us / 1000, (rtt_us % 1000) / 10);
                         }
-                    } else {
-                        /* In SOCK_RAW, rx_buf starts with IPv4 header */
+                        break;
+                    }
+                    /* RAW: rx_buf starts with the IPv4 header */
+                    {
                         int ip_hlen = (rx_buf[0] & 0x0F) * 4;
+                        UBYTE rtype = 0xFF;
+                        UWORD rid = 0;
                         if (rcvd >= ip_hlen + (int)sizeof(struct tn_icmp_hdr)) {
-                            struct tn_icmp_hdr *rep = (struct tn_icmp_hdr *)(void *)(rx_buf + ip_hlen); /* ip_hlen is a multiple of 4 */
-                            UBYTE ttl = (UBYTE)rx_buf[8];
-
-                            if (rep->type == TN_ICMP_ECHO_REPLY && ntohs(rep->id) == ping_id) {
-                                ULONG rtt_100 = rtt_us / 100;
-                                if (rtt_100 > 65535UL) rtt_100 = 65535UL;
-                                got_reply = TRUE;
-                                acknowledged++;
-                                sum_us += rtt_us;
-                                sum_sq_100us += (rtt_100 * rtt_100);
-                                if (rtt_us < min_us) min_us = rtt_us;
-                                if (rtt_us > max_us) max_us = rtt_us;
-
-                                if (!quiet) {
-                                    tn_logf(TN_LOG_BASIC, "%ld bytes from %s: icmp_seq=%ld ttl=%lu time=%lu.%02lu ms\n",
-                                            rcvd - ip_hlen, target_ip_str, seq, (ULONG)ttl,
-                                            rtt_us / 1000, (rtt_us % 1000) / 10);
-                                }
-                            }
+                            struct tn_icmp_hdr *rep = (struct tn_icmp_hdr *)(void *)(rx_buf + ip_hlen);
+                            rtype = rep->type;
+                            rid = ntohs(rep->id);
                         }
+                        if (rtype == TN_ICMP_ECHO_REPLY && rid == ping_id) {
+                            ULONG rtt_us = 0;
+                            if (tm_io != NULL) {
+                                tm_io->tr_node.io_Command = TR_GETSYSTIME;
+                                DoIO((struct IORequest *)tm_io);
+                                t_end = tm_io->tr_time;
+                            }
+                            LONG sec_d = t_end.tv_secs - t_start.tv_secs;
+                            LONG us_d = t_end.tv_micro - t_start.tv_micro;
+                            rtt_us = (ULONG)(sec_d * 1000000L + us_d);
+                            UBYTE ttl_val = (UBYTE)rx_buf[8];
+                            ULONG rtt_100 = rtt_us / 100;
+                            if (rtt_100 > 65535UL) rtt_100 = 65535UL;
+                            got_reply = TRUE;
+                            acknowledged++;
+                            sum_us += rtt_us;
+                            sum_sq_100us += (rtt_100 * rtt_100);
+                            if (rtt_us < min_us) min_us = rtt_us;
+                            if (rtt_us > max_us) max_us = rtt_us;
+                            if (!quiet) {
+                                tn_logf(TN_LOG_BASIC, "%ld bytes from %s: icmp_seq=%ld ttl=%ld time=%lu.%02lu ms
+",
+                                        rcvd - ip_hlen, target_ip_str, seq, (LONG)ttl_val,
+                                        rtt_us / 1000, (rtt_us % 1000) / 10);
+                            }
+                            break;
+                        }
+                        /* non-reply (our own request, etc.): keep draining */
+                        if (++rx_tries > 6) break;
                     }
                 }
             }
-
             if (!got_reply && !quiet) {
                 tn_logf(TN_LOG_BASIC, "Request timeout for seq %ld\n", seq);
             }
