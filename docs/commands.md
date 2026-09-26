@@ -28,7 +28,7 @@ All commands install to `SYS:C/` (except Prefs tools). Every command is a thin c
 | `Online` | `NAME` | 0/10 | Bring the interface up | `tc_cmd_ifctl` |
 | `Offline` | `NAME` | 0/10 | Take the interface down | `tc_cmd_ifctl` |
 | `CheckNetConfig` | `FILE` | 0 clean / 5 unreadable / 10 problems | Config validator: KEY=VALUE, unknown keys, value classes, LINE numbers | host `checknetconfig_vocabulary` |
-| `NetShutdown` | `FORCE/S` | 0/5/20 | Interface down + daemon stop signal (TNET-059 guard applies) | `tc_cmd_netshutdown` |
+| `NetShutdown` | `FORCE/S` | 0 stopped / 5 busy or no daemon / 20 usage | Daemon stop via IPC STOP (no library held, interface untouched); RC 5 with open-program count on EBUSY | `net_cmd_netshutdown` |
 
 ## File Transfer
 
