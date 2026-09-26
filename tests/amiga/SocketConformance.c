@@ -4887,7 +4887,7 @@ static void tc_cmd_getnetstatus(void)
  * deliverable — bench SUMMARY greps the bytes/s line. */
 /* TNET-151 / RC3-2: loopback probes after each wizard-area row. The
  * first failing probe names the suite-tail degradation suspect. */
-static void tc_probe_loop_impl(const char *label, USHORT port)
+static void tc_probe_loop_impl(const char *label, LONG port, int verify_daemon)
 {
     LONG lst, cli, conn;
     char buf[16];
@@ -4945,13 +4945,37 @@ static void tc_probe_loop_impl(const char *label, USHORT port)
         return;
     }
     call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+    if (verify_daemon) {
+        /* z.ai step 9a-2 item 2: after the wizard, the tolunnet port
+         * must exist and the primary interface must still be up. */
+        static TnIfInfo rows[4];
+        TnIpcMsg msg;
+        LONG args[6];
+        APTR ptrs[1];
+        int lrc, alive = 0;
+        if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) {
+            TAP_NOTOK(label, "daemon port gone after wizard");
+            return;
+        }
+        memset(&msg, 0, sizeof(msg));
+        memset(args, 0, sizeof(args));
+        args[0] = TN_IFCTL_LIST;
+        args[4] = 4;
+        ptrs[0] = rows;
+        lrc = tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, ptrs, 1, &msg);
+        alive = (lrc >= 1 && rows[0].in_use && rows[0].is_up);
+        if (!alive) {
+            TAP_NOTOK(label, "primary interface down after wizard");
+            return;
+        }
+    }
     TAP_OK(label);
 }
 
-static void tc_probe_after_wizard_wired(void)  { tc_probe_loop_impl("tc_probe_after_wizard_wired", 23531); }
-static void tc_probe_after_wizard_ntsc(void)   { tc_probe_loop_impl("tc_probe_after_wizard_ntsc", 23532); }
-static void tc_probe_after_wifi_scan(void)     { tc_probe_loop_impl("tc_probe_after_wifi_scan", 23533); }
-static void tc_probe_after_reconfig(void)      { tc_probe_loop_impl("tc_probe_after_reconfig", 23534); }
+static void tc_probe_after_wizard_wired(void)  { tc_probe_loop_impl("tc_probe_after_wizard_wired", 23531, 1); }
+static void tc_probe_after_wizard_ntsc(void)   { tc_probe_loop_impl("tc_probe_after_wizard_ntsc", 23532, 1); }
+static void tc_probe_after_wifi_scan(void)     { tc_probe_loop_impl("tc_probe_after_wifi_scan", 23533, 0); }
+static void tc_probe_after_reconfig(void)      { tc_probe_loop_impl("tc_probe_after_reconfig", 23534, 0); }
 
 /* TNET-152 / RC3 item 1: the user-facing stop and relaunch path.
  * Tests TolunnetControl STOP (with EBUSY refusal while clients open),

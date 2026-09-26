@@ -19,6 +19,7 @@
 #include <dos/dosextens.h>
 #include <exec/types.h>
 #include <exec/execbase.h>
+#include "../../include/ipc.h"
 #include <dos/dos.h>
 #include <dos/dostags.h>
 extern struct ExecBase *SysBase;
@@ -560,11 +561,33 @@ void tn_stack_request_quit(WizardState *ws)
         Execute((CONST_STRPTR)"rx \"address MIAMIDX 'QUIT'\" >NIL: <NIL:", 0, 0);
     }
 
-    /* 2. Roadshow shutdown */
-    if (file_exists("C:NetShutdown")) {
-        Execute((CONST_STRPTR)"C:NetShutdown >NIL: <NIL:", 0, 0);
-    } else if (file_exists("NetShutdown")) {
-        Execute((CONST_STRPTR)"NetShutdown >NIL: <NIL:", 0, 0);
+    /* 2. Roadshow shutdown — only for a REAL Roadshow install
+     * (z.ai step 9a-2 item 2): bsdsocket.library in the Exec library
+     * list whose IdString contains "Roadshow", and no tolunnet port.
+     * Our own NetShutdown must never be run against our own daemon:
+     * its old IFCTL DOWN left the interface down (bench
+     * 20260926-085001). */
+    {
+        BOOL roadshow = FALSE;
+        struct Library *lib;
+        Forbid();
+        for (lib = (struct Library *)SysBase->LibList.lh_Head;
+             lib->lib_Node.ln_Succ != NULL;
+             lib = (struct Library *)lib->lib_Node.ln_Succ) {
+            if (lib->lib_IdString != NULL &&
+                strstr((const char *)lib->lib_IdString, "Roadshow") != NULL) {
+                roadshow = TRUE;
+                break;
+            }
+        }
+        Permit();
+        if (roadshow && FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) {
+            if (file_exists("C:NetShutdown")) {
+                Execute((CONST_STRPTR)"C:NetShutdown >NIL: <NIL:", 0, 0);
+            } else if (file_exists("NetShutdown")) {
+                Execute((CONST_STRPTR)"NetShutdown >NIL: <NIL:", 0, 0);
+            }
+        }
     }
 
     /* 3. AmiTCP shutdown */
