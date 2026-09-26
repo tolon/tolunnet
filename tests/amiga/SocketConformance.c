@@ -5203,6 +5203,17 @@ static void tc_cmd_ifctl(void)
         return;
     }
     if (!rows[0].is_up) {
+        /* z.ai step 9a diagnosis: dump every LIST row on this failure */
+        LONG di;
+        tapf("# tc_cmd_ifctl: LIST result=%ld rows:
+", n);
+        for (di = 0; di < n && di < 4; di++) {
+            tapf("#   [%ld] name=%s in_use=%ld up=%ld dhcp=%ld link=%ld addr=0x%08lx mask=0x%08lx gw=0x%08lx
+",
+                 di, rows[di].name, (LONG)rows[di].in_use, (LONG)rows[di].is_up,
+                 (LONG)rows[di].is_dhcp, (LONG)rows[di].link_up,
+                 (ULONG)rows[di].addr, (ULONG)rows[di].mask, (ULONG)rows[di].gw);
+        }
         TAP_NOTOK("tc_cmd_ifctl", "interface not up");
         return;
     }
