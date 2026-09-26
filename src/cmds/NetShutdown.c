@@ -1,15 +1,22 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
- * tolunnet — NetShutdown command (CLOSE §B.8).
- * ReadArgs: FORCE/S — takes the interface down (IFCTL DOWN) and asks the
- * daemon to stop (CTRL-C via the IPC port, the same mechanism the
- * conformance suite uses). Without FORCE the daemon's TNET-059 guard may
- * refuse while clients still have bsdsocket.library open — reported.
+ * tolunnet — NetShutdown command (CLOSE §B.8; z.ai step 9a-2 item 1).
+ * ReadArgs: FORCE/S — stops the daemon via TN_IPC_CMD_STOP over the IPC
+ * port, exactly like TolunnetControl STOP: no bsdsocket.library is
+ * opened, the interface is never taken down, no CTRL_C signal is sent.
+ *
+ * EBUSY means programs still hold bsdsocket.library: the network stays
+ * up, RC 5. Success: the daemon port disappears within 5 s, RC 0.
+ * FORCE only skips the extra hint text.
  */
-#include "ifctl_cmd.h"
-#include <proto/exec.h>
+#include <exec/types.h>
 #include <exec/ports.h>
+#include <proto/exec.h>
+#include <proto/dos.h>
 #include <string.h>
+#include <errno.h>
+#include "../../include/ipc.h"
+#include "../common/ipc_client.h"
 
 #define TEMPLATE "FORCE/S"
 
@@ -18,42 +25,69 @@ int main(int argc, char **argv)
     LONG opts[1] = { 0 };
     struct RDArgs *rdargs;
     TnIpcMsg msg;
-    struct MsgPort *port;
-
-    if (tn_cmd_init() != TN_CMD_OK) return TN_CMD_FAIL;
+    int waits;
+    int rc;
 
     rdargs = ReadArgs((CONST_STRPTR)TEMPLATE, opts, NULL);
     if (rdargs == NULL) {
         PrintFault(IoErr(), (CONST_STRPTR)"NetShutdown");
-        tn_cmd_fini();
-        return TN_CMD_USAGE;
+        return 20;
     }
 
-    /* interface down first */
-    ifctl_call(TN_IFCTL_DOWN, -1, 0, 0, 0, NULL, 0, &msg);
-    tn_cmd_printf("NetShutdown: interface down\n");
-
-    /* ask the daemon to stop */
-    port = (struct MsgPort *)FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
-    if (port == NULL || port->mp_SigTask == NULL) {
-        tn_cmd_printf("NetShutdown: tolunnet daemon is not running\n");
+    if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) {
+        Printf((CONST_STRPTR)"NetShutdown: tolunnet daemon is not running\n");
         FreeArgs(rdargs);
-        tn_cmd_fini();
-        return TN_CMD_WARN;
-    }
-    Signal((struct Task *)port->mp_SigTask, SIGBREAKF_CTRL_C);
-    tn_cmd_printf("NetShutdown: stop signal sent to the daemon\n");
-    if (opts[0] == 0) {
-        tn_cmd_printf("NetShutdown: if clients still hold bsdsocket.library the daemon\n");
-        tn_cmd_printf("             refuses until they close (TNET-059); use FORCE to\n");
-        tn_cmd_printf("             send the signal regardless (it is already sent).\n");
-    } else {
-        tn_cmd_printf("NetShutdown: FORCE — signal delivered; lingering clients are\n");
-        tn_cmd_printf("             named and dead ones reaped by the daemon.\n");
+        return 5;
     }
 
-    (void)argc; (void)argv;
+    {
+        int res = tn_ipc_oneshot(TN_IPC_CMD_STOP, NULL, 0, &msg);
+        if (res != 0 || msg.result != 0) {
+            if (msg.err_no == EBUSY) {
+                LONG n = -1;
+                {
+                    static TnSocketInfo socks[32];
+                    LONG sargs[1];
+                    APTR sptrs[1];
+                    TnIpcMsg emsg;
+                    sargs[0] = 32;
+                    sptrs[0] = (APTR)socks;
+                    if (tn_ipc_oneshot_ex(TN_IPC_CMD_ENUMSOCKETS, sargs, 1,
+                                          sptrs, 1, &emsg) == 0 &&
+                        emsg.result >= 0) {
+                        n = emsg.result;
+                    }
+                }
+                if (n >= 0) {
+                    Printf((CONST_STRPTR)"NetShutdown: %ld program(s) still use the network; close them first\n",
+                           n);
+                } else {
+                    Printf((CONST_STRPTR)"NetShutdown: programs still use the network; close them first\n");
+                }
+                if (opts[0] == 0) {
+                    Printf((CONST_STRPTR)"NetShutdown: the daemon reaps dead clients automatically; retry after closing them\n");
+                }
+            } else {
+                Printf((CONST_STRPTR)"NetShutdown: daemon stop failed\n");
+            }
+            FreeArgs(rdargs);
+            return 5;
+        }
+    }
+
+    /* the daemon port must disappear within 5 s */
+    for (waits = 0; waits < 20; waits++) {
+        if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) break;
+        Delay(5); /* 0.25 s */
+    }
+    if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
+        Printf((CONST_STRPTR)"NetShutdown: daemon did not exit within 5 s\n");
+        FreeArgs(rdargs);
+        return 5;
+    }
+
+    Printf((CONST_STRPTR)"NetShutdown: stopped\n");
+    rc = 0;
     FreeArgs(rdargs);
-    tn_cmd_fini();
-    return TN_CMD_OK;
+    return rc;
 }

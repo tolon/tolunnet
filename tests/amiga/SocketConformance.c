@@ -6958,6 +6958,72 @@ out:
  * daemon cancelled the parked message (a follow-up recv works). A
  * helper child Signals the parent after 1 s. */
 /* z.ai step 9a item 1: the status tools must print live daemon state */
+/* z.ai step 9a-2 item 1: NetShutdown refuses (RC 5) while the suite holds
+ * bsdsocket.library, leaves the interface UP, then stops cleanly once the
+ * base is closed; the daemon is restarted like tc_cmd_stop_start does. */
+static void tc_net_cmd_netshutdown(void)
+{
+    char out[512];
+    LONG r1, r2;
+    int busy = 0, up_ok = 0, stopped = 0, restarted = 0;
+    int waits;
+
+    r1 = run_cmd("C:NetShutdown", NULL, NULL, out, sizeof(out));
+    if (r1 == 5 && FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) busy = 1;
+    if (strstr(out, "still use the network") == NULL) busy = 0;
+
+    /* the network must be untouched: primary interface still up */
+    {
+        static TnIfInfo rows[4];
+        TnIpcMsg msg;
+        LONG args[6];
+        APTR ptrs[1];
+        memset(&msg, 0, sizeof(msg));
+        memset(args, 0, sizeof(args));
+        args[0] = TN_IFCTL_LIST;
+        args[4] = 4;
+        ptrs[0] = rows;
+        if (tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, ptrs, 1, &msg) == 0 &&
+            msg.result >= 1 && rows[0].in_use && rows[0].is_up) {
+            up_ok = 1;
+        }
+    }
+
+    /* close our base: now the stop must succeed with RC 0 */
+    CloseLibrary(SocketBase);
+    SocketBase = NULL;
+    r2 = run_cmd("C:NetShutdown", NULL, NULL, out, sizeof(out));
+    for (waits = 0; waits < 20; waits++) {
+        if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) break;
+        Delay(5);
+    }
+    if (r2 == 0 && FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) stopped = 1;
+
+    /* restart the daemon the same way tc_cmd_stop_start does */
+    {
+        BPTR seg = load_control_cmd();
+        LONG ret = -1;
+        if (seg != (BPTR)0) {
+            ret = RunCommand(seg, 32768, (CONST_STRPTR)"START\n", 6);
+            UnLoadSeg(seg);
+        }
+        for (waits = 0; waits < 100; waits++) {
+            if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) break;
+            Delay(5);
+        }
+        if (ret == 0 && FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) restarted = 1;
+    }
+    SocketBase = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
+    if (SocketBase == NULL) restarted = 0;
+
+    if (busy && up_ok && stopped && restarted) {
+        TAP_OK("net_cmd_netshutdown");
+    } else {
+        tapf("# net_cmd_netshutdown: busy=%ld up_ok=%ld stopped=%ld restarted=%ld r1=%ld r2=%ld out=%.80s\n",
+             (LONG)busy, (LONG)up_ok, (LONG)stopped, (LONG)restarted, r1, r2, out);
+        TAP_NOTOK("net_cmd_netshutdown", "stop contract violated");
+    }
+}
 static void tc_net_cmd_status_live(void)
 {
     char out[256];
@@ -7375,6 +7441,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_traceroute);
     TN_RUN(tc_net_cmd_tftp);
     TN_RUN(tc_net_cmd_tftp_big);
+    TN_RUN(tc_net_cmd_netshutdown);
     TN_RUN(tc_net_cmd_status_live);
     TN_RUN(tc_net_cmd_status_down);
     TN_RUN(tc_net_cmd_status_route);
