@@ -296,6 +296,7 @@ int tn_ipc_cmd_sendto(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
         serr = raw_sendto(slot->raw_pcb, p, &dst_ip);
         pbuf_free(p);
+        tn_drain_loopback(); /* z.ai step 9c item 1: RAW loopback (127.0.0.1, own addr) needs pumping like UDP */
 
         if (serr != ERR_OK) {
             /* [auto] z.ai step 4 item 3: map lwIP err_t -> errno */
