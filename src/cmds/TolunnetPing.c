@@ -347,8 +347,7 @@ int main(int argc, char *argv[])
                         if (rtt_us < min_us) min_us = rtt_us;
                         if (rtt_us > max_us) max_us = rtt_us;
                         if (!quiet) {
-                            tn_logf(TN_LOG_BASIC, "%ld bytes from %s: seq=%ld time=%lu.%02lu ms
-",
+                            tn_logf(TN_LOG_BASIC, "%ld bytes from %s: seq=%ld time=%lu.%02lu ms\n",
                                     rcvd, target_ip_str, seq, rtt_us / 1000, (rtt_us % 1000) / 10);
                         }
                         break;
@@ -383,8 +382,7 @@ int main(int argc, char *argv[])
                             if (rtt_us < min_us) min_us = rtt_us;
                             if (rtt_us > max_us) max_us = rtt_us;
                             if (!quiet) {
-                                tn_logf(TN_LOG_BASIC, "%ld bytes from %s: icmp_seq=%ld ttl=%ld time=%lu.%02lu ms
-",
+                                tn_logf(TN_LOG_BASIC, "%ld bytes from %s: icmp_seq=%ld ttl=%ld time=%lu.%02lu ms\n",
                                         rcvd - ip_hlen, target_ip_str, seq, (LONG)ttl_val,
                                         rtt_us / 1000, (rtt_us % 1000) / 10);
                             }
