@@ -276,13 +276,13 @@ $(GETNETSTATUS_BIN): $(BUILD)/src/cmds/GetNetStatus.o $(CMDLIB_OBJ) $(BUILD)/src
 $(FTP_BIN): $(BUILD)/src/cmds/ftp.o $(CMDLIB_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(ROUTE_BIN): $(BUILD)/src/cmds/route.o $(CMDLIB_OBJ)
+$(ROUTE_BIN): $(BUILD)/src/cmds/route.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(ADDNETROUTE_BIN): $(BUILD)/src/cmds/AddNetRoute.o $(CMDLIB_OBJ)
+$(ADDNETROUTE_BIN): $(BUILD)/src/cmds/AddNetRoute.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(DELETENETROUTE_BIN): $(BUILD)/src/cmds/DeleteNetRoute.o $(CMDLIB_OBJ)
+$(DELETENETROUTE_BIN): $(BUILD)/src/cmds/DeleteNetRoute.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(IPERF_BIN): $(BUILD)/src/cmds/iperf.o $(CMDLIB_OBJ)
@@ -291,19 +291,19 @@ $(IPERF_BIN): $(BUILD)/src/cmds/iperf.o $(CMDLIB_OBJ)
 $(ADDNETIF_BIN): $(BUILD)/src/cmds/AddNetInterface.o $(CMDLIB_OBJ) $(BUILD)/src/common/ifreader.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(CONFNETIF_BIN): $(BUILD)/src/cmds/ConfigureNetInterface.o $(CMDLIB_OBJ)
+$(CONFNETIF_BIN): $(BUILD)/src/cmds/ConfigureNetInterface.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(ONLINE_BIN): $(BUILD)/src/cmds/Online.o $(CMDLIB_OBJ)
+$(ONLINE_BIN): $(BUILD)/src/cmds/Online.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(OFFLINE_BIN): $(BUILD)/src/cmds/Offline.o $(CMDLIB_OBJ)
+$(OFFLINE_BIN): $(BUILD)/src/cmds/Offline.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(CHECKNETCONFIG_BIN): $(BUILD)/src/cmds/CheckNetConfig.o $(CMDLIB_OBJ) $(BUILD)/src/common/config_text.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(NETSHUTDOWN_BIN): $(BUILD)/src/cmds/NetShutdown.o $(CMDLIB_OBJ)
+$(NETSHUTDOWN_BIN): $(BUILD)/src/cmds/NetShutdown.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetPing CLI Binary (M4)
