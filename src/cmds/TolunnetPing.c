@@ -323,7 +323,7 @@ int main(int argc, char *argv[])
                 tn_logf(TN_LOG_BASIC, "ping: waitselect ready=%ld\n", ready);
                 if (ready <= 0) break; /* timeout: no reply */
                 {
-                    LONG rcvd = tn_call_recvfrom(sock, rx_buf, sizeof(rx_buf), 0,
+                    LONG rcvd = tn_call_recvfrom(sock, rx_buf, 1600, 0,
                                               (struct sockaddr *)&from_sin, &from_len);
                     tn_logf(TN_LOG_BASIC, "ping: recvfrom rcvd=%ld b0=%02lx icmp=%ld\n",
                             rcvd, (ULONG)rx_buf[0], (LONG)rx_buf[20]);
