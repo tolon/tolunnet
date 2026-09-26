@@ -193,7 +193,7 @@ def run_tcp_silent(port):
             continue
         except Exception:
             break
-        log("tcp_silent", f"accepted from {a}, staying silent")
+        log("tcp_silent", f"accepted from {addr}, staying silent")
         # hold the connection open, never send
     srv.close()
 

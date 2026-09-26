@@ -82,6 +82,12 @@ if [ "${1:-}" = "soak" ]; then
 
     xd() { wsl -d Ubuntu-24.04 -e bash -c "\$HOME/.local/bin/xdftool '$HDF_UX' $*" ; }
 
+    # z.ai step 9a: the pristine image is 99.9% full - reclaim space from
+    # stock/user tools the headless bench never runs (ephemeral copy).
+    for junk in arc cdboot All2Lha butcher Amigatool AllowBad bigcli ArchEdge BootPic Bounce; do
+        xd delete C/$junk >/dev/null 2>&1
+    done
+
     xd delete C/tolunnet        >/dev/null 2>&1
     xd delete C/TolunnetPing    >/dev/null 2>&1
     xd delete C/TolunnetGet     >/dev/null 2>&1
@@ -316,6 +322,12 @@ for cfg in $CONFIGS; do
     HDF_UX="/mnt/e/amiga/Amigatolon/bench/tolunnet/wb30-$cfg.hdf"
 
     xd() { wsl -d Ubuntu-24.04 -e bash -c "\$HOME/.local/bin/xdftool '$HDF_UX' $*" ; }
+
+    # z.ai step 9a: the pristine image is 99.9% full - reclaim space from
+    # stock/user tools the headless bench never runs (ephemeral copy).
+    for junk in arc cdboot All2Lha butcher Amigatool AllowBad bigcli ArchEdge BootPic Bounce; do
+        xd delete C/$junk >/dev/null 2>&1
+    done
 
     xd delete C/tolunnet        >/dev/null 2>&1
     xd delete C/TolunnetControl >/dev/null 2>&1
