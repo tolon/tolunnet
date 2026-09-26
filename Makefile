@@ -288,7 +288,7 @@ $(DELETENETROUTE_BIN): $(BUILD)/src/cmds/DeleteNetRoute.o $(CMDLIB_OBJ) $(BUILD)
 $(IPERF_BIN): $(BUILD)/src/cmds/iperf.o $(CMDLIB_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(ADDNETIF_BIN): $(BUILD)/src/cmds/AddNetInterface.o $(CMDLIB_OBJ) $(BUILD)/src/common/ifreader.o
+$(ADDNETIF_BIN): $(BUILD)/src/cmds/AddNetInterface.o $(CMDLIB_OBJ) $(BUILD)/src/common/ifreader.o $(BUILD)/src/common/ipc_client.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(CONFNETIF_BIN): $(BUILD)/src/cmds/ConfigureNetInterface.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
