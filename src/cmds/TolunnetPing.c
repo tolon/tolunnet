@@ -304,9 +304,9 @@ int main(int argc, char *argv[])
     if (interval < 0) interval = 1;
     if (timeout <= 0) timeout = 2;
 
-    /* z.ai step 9b item 3: TTL 1-255 applied via IP_TTL; 0 or >255 is
-     * a usage error (RC 10). */
-    if (ttl < 0 || ttl > 255) {
+    /* z.ai step 9b item 3: TTL 1-255 applied via IP_TTL; explicit
+     * TTL 0 or >255 is a usage error (RC 10). */
+    if (opts[OPT_TTL] != 0 && (ttl < 1 || ttl > 255)) {
         tn_logf(TN_LOG_BASIC, "ping: TTL must be 1-255\n");
         FreeArgs(rdargs);
         CloseLibrary(DOSBase);
