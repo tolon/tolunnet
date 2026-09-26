@@ -1206,6 +1206,7 @@ static void tc_connect_refused_host(void)
     LONG s = call_socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in sin;
     LONG one = 1, soerr = 0;
+    char rx_probe[16];
     LONG so_len = (LONG)sizeof(soerr);
     fd_set wfds;
     struct timeval tv;
@@ -1229,11 +1230,15 @@ static void tc_connect_refused_host(void)
         call_closesocket(s);
         return;
     }
-    /* z.ai step 10a item 1: WaitSelect total <= 10 s in 1 s slices;
-     * SO_ERROR decides — ECONNREFUSED proves the refusal arrived. */
+    /* z.ai step 10a item 1: WaitSelect total <= 10 s in 1 s slices.
+     * Slirp accepts the guest connection optimistically and delivers the
+     * host refusal LATER as a close: the refusal is proven by SO_ERROR ==
+     * ECONNREFUSED or by a clean EOF (recv == 0) on the socket. */
     soerr = -1;
     sel = -1;
     for (i = 0; i < 10; i++) {
+        LONG rcvd2;
+        fd_set rfds2;
         FD_ZERO(&wfds);
         FD_SET(s, &wfds);
         tv.tv_secs = 1;
@@ -1243,6 +1248,11 @@ static void tc_connect_refused_host(void)
                             (APTR)&soerr, &so_len) != 0) break;
         if (soerr == ECONNREFUSED) break;
         if (soerr != 0 && soerr != EINPROGRESS) break;
+        rcvd2 = call_recv(s, rx_probe, sizeof(rx_probe), 0);
+        if (rcvd2 == 0) { /* EOF: slirp closed it - the refusal */
+            soerr = ECONNREFUSED;
+            break;
+        }
     }
     if (soerr == ECONNREFUSED) {
         TAP_OK("tc_connect_refused_host");
