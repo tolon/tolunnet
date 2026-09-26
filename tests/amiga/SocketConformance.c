@@ -259,9 +259,9 @@ static ULONG tc_cfg_ip(const char *key, ULONG def)
         while (SysBase->IDNestCnt < -1) Disable(); \
     } \
     if (SocketBase != NULL && ((TnSocketBase *)SocketBase)->ipc_timeouts > tn_wd0) { \
-        g_count++; g_not_ok_count++;
-        tapf("not ok %d - %s # TIMEOUT: ipc watchdog fired during the test\n",
-                     g_count, #tc);
+        g_count++; g_not_ok_count++; \
+        tapf("not ok %d - %s # TIMEOUT: ipc watchdog fired during the test\n", \
+                     g_count, #tc); \
     } } while (0)
 #define TAP_TODO(name, why)  do { g_count++; tapf("not ok %d - %s # TODO %s\n", g_count, name, why); } while (0)
 #define TAP_SKIP(name, why)  do { g_count++; tapf("ok %d - %s # SKIP %s\n", g_count, name, why); } while (0)
@@ -1189,11 +1189,11 @@ static void tc_connect_refused(void)
     sin.sin_port   = htons(9);
     sin.sin_addr.s_addr = htonl(0x7F000001UL); /* 127.0.0.1, closed */
     rc = call_connect(s, (struct sockaddr *)&sin, sizeof(sin));
-    if (rc < 0 && tn_call_errno() == ECONNREFUSED) {
+    if (rc < 0 && call_errno() == ECONNREFUSED) {
         TAP_OK("tc_connect_refused");
     } else {
         tapf("# tc_connect_refused: rc=%ld errno=%ld (want -1/ECONNREFUSED)\n",
-             rc, tn_call_errno());
+             rc, call_errno());
         TAP_NOTOK("tc_connect_refused", "expected ECONNREFUSED");
     }
     call_closesocket(s);
@@ -1213,7 +1213,7 @@ static void tc_connect_refused_host(void)
     int i;
 
     if (s < 0) { TAP_NOTOK("tc_connect_refused_host", "no socket"); return; }
-    if (tn_call_ioctl(s, FIONBIO, (APTR)&one) != 0) {
+    if (call_ioctl(s, FIONBIO, (APTR)&one) != 0) {
         TAP_NOTOK("tc_connect_refused_host", "FIONBIO failed");
         call_closesocket(s);
         return;
@@ -1233,14 +1233,14 @@ static void tc_connect_refused_host(void)
     FD_SET(s, &wfds);
     tv.tv_secs = 10;
     tv.tv_micro = 0;
-    sel = tn_call_waitselect(s + 1, NULL, &wfds, NULL, &tv, NULL);
+    sel = call_waitselect(s + 1, NULL, &wfds, NULL, &tv, NULL);
     if (sel <= 0) {
         tapf("# tc_connect_refused_host: waitselect=%ld\n", sel);
         TAP_NOTOK("tc_connect_refused_host", "no refusal within 10 s");
         call_closesocket(s);
         return;
     }
-    if (tn_call_getsockopt(s, SOL_SOCKET, SO_ERROR,
+    if (call_getsockopt(s, SOL_SOCKET, SO_ERROR,
                            (APTR)&soerr, &so_len) == 0 &&
         soerr == ECONNREFUSED) {
         TAP_OK("tc_connect_refused_host");
