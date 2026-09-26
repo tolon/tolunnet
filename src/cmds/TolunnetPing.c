@@ -320,14 +320,12 @@ int main(int argc, char *argv[])
                 tv2.tv_secs = timeout;
                 tv2.tv_micro = 0;
                 ready = tn_call_waitselect(sock + 1, &rfds2, NULL, NULL, &tv2, NULL);
-                tn_logf(TN_LOG_BASIC, "ping: waitselect ready=%ld
-", ready);
+                tn_logf(TN_LOG_BASIC, "ping: waitselect ready=%ld\n", ready);
                 if (ready <= 0) break; /* timeout: no reply */
                 {
                     LONG rcvd = tn_call_recvfrom(sock, rx_buf, sizeof(rx_buf), 0,
                                               (struct sockaddr *)&from_sin, &from_len);
-                    tn_logf(TN_LOG_BASIC, "ping: recvfrom rcvd=%ld b0=%02lx icmp=%ld
-",
+                    tn_logf(TN_LOG_BASIC, "ping: recvfrom rcvd=%ld b0=%02lx icmp=%ld\n",
                             rcvd, (ULONG)rx_buf[0], (LONG)rx_buf[20]);
                     if (rcvd <= 0) {
                         if (++rx_tries > 4) break;
