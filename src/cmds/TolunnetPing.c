@@ -320,13 +320,12 @@ int main(int argc, char *argv[])
                 tv2.tv_secs = timeout;
                 tv2.tv_micro = 0;
                 ready = tn_call_waitselect(sock + 1, &rfds2, NULL, NULL, &tv2, NULL);
-                tn_logf(TN_LOG_BASIC, "ping: waitselect ready=%ld\n", ready);
                 if (ready <= 0) break; /* timeout: no reply */
                 {
-                    LONG rcvd = tn_call_recvfrom(sock, rx_buf, 1600, 0,
+                    LONG rcvd;
+                    from_len = sizeof(from_sin); /* reset: length is in/out */
+                    rcvd = tn_call_recvfrom(sock, rx_buf, 1600, 0,
                                               (struct sockaddr *)&from_sin, &from_len);
-                    tn_logf(TN_LOG_BASIC, "ping: recvfrom rcvd=%ld b0=%02lx icmp=%ld\n",
-                            rcvd, (ULONG)rx_buf[0], (LONG)rx_buf[20]);
                     if (rcvd <= 0) {
                         if (++rx_tries > 4) break;
                         continue;
@@ -355,17 +354,24 @@ int main(int argc, char *argv[])
                         }
                         break;
                     }
-                    /* RAW: rx_buf starts with the IPv4 header */
+                    /* RAW: rx_buf starts with the IPv4 header.
+                     * z.ai step 9d item 1: sane header bounds and a match on
+                     * id AND sequence (a late reply belongs to no probe). */
                     {
                         int ip_hlen = (rx_buf[0] & 0x0F) * 4;
                         UBYTE rtype = 0xFF;
-                        UWORD rid = 0;
-                        if (rcvd >= ip_hlen + (int)sizeof(struct tn_icmp_hdr)) {
+                        UWORD rid = 0, rseq = 0;
+                        if (ip_hlen < 20 || rcvd < ip_hlen + 8) {
+                            if (++rx_tries > 6) break;
+                            continue;
+                        }
+                        {
                             struct tn_icmp_hdr *rep = (struct tn_icmp_hdr *)(void *)(rx_buf + ip_hlen);
                             rtype = rep->type;
                             rid = ntohs(rep->id);
+                            rseq = ntohs(rep->seq);
                         }
-                        if (rtype == TN_ICMP_ECHO_REPLY && rid == ping_id) {
+                        if (rtype == TN_ICMP_ECHO_REPLY && rid == ping_id && rseq == (UWORD)seq) {
                             ULONG rtt_us = 0;
                             if (tm_io != NULL) {
                                 tm_io->tr_node.io_Command = TR_GETSYSTIME;

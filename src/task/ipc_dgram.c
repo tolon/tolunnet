@@ -78,12 +78,6 @@ u8_t tn_raw_recv_cb(void *arg, struct raw_pcb *pcb, struct pbuf *p,
         return 0;
     }
 
-    {
-        const UBYTE *iph = (const UBYTE *)p->payload;
-        UBYTE ihl = (UBYTE)((iph[0] & 0x0F) * 4);
-        tn_logf(TN_LOG_BASIC, "raw recv cb: len=%ld proto=%ld icmptype=%ld\n",
-                (LONG)p->len, (LONG)iph[9], (LONG)iph[ihl]);
-    }
     q = pbuf_clone(PBUF_RAW, PBUF_RAM, p);
     if (q == NULL) {
         return 0;
@@ -300,12 +294,9 @@ int tn_ipc_cmd_sendto(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         }
         pbuf_take(p, buf, send_len);
 
-        tn_logf(TN_LOG_BASIC, "raw sendto dst=%lx len=%ld\n",
-                (unsigned long)dst_ip.addr, (LONG)send_len);
         serr = raw_sendto(slot->raw_pcb, p, &dst_ip);
         pbuf_free(p);
         tn_drain_loopback(); /* z.ai step 9c item 1: RAW loopback (127.0.0.1, own addr) needs pumping like UDP */
-        tn_logf(TN_LOG_BASIC, "raw sendto: serr=%ld sent=%ld\n", (LONG)serr, imsg->result);
 
         if (serr != ERR_OK) {
             /* [auto] z.ai step 4 item 3: map lwIP err_t -> errno */

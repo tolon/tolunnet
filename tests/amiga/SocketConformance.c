@@ -7268,8 +7268,13 @@ static void tc_net_cmd_ping_ttl(void)
 
     /* z.ai step 9c item 1: 127.0.0.1 — lwIP answers ICMP echo itself,
      * so the row proves OUR ping path without slirp. */
-    r1 = run_cmd("C:TolunnetPing", "127.0.0.1 COUNT 1 TTL 7", NULL, out, sizeof(out));
-    if (r1 == 0 && strstr(out, "bytes from 127.0.0.1") != NULL) ttl_ok = 1;
+    /* z.ai step 9d item 1: COUNT 3 must show 3/3 received, and the
+     * output must be free of the 9c diagnostic text. */
+    r1 = run_cmd("C:TolunnetPing", "127.0.0.1 COUNT 3 TTL 7", NULL, out, sizeof(out));
+    if (r1 == 0 && strstr(out, "bytes from 127.0.0.1") != NULL &&
+        strstr(out, "waitselect") == NULL &&
+        strstr(out, "recvfrom") == NULL &&
+        strstr(out, "3 packets transmitted, 3 packets received") != NULL) ttl_ok = 1;
 
     r2 = run_cmd("C:TolunnetPing", "10.0.2.2 COUNT 1 TTL 0", NULL, junk, sizeof(junk));
     if (r2 == 10 && strstr(junk, "TTL must be 1-255") != NULL) zero_ok = 1;
