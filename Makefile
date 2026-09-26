@@ -107,7 +107,7 @@ CONF_BIN     = $(BUILD)/SocketConformance
 BSDTEST_BIN  = $(BUILD)/bsdsocktest
 TOGGLE_BIN   = $(BUILD)/S2Toggle
 INSTALL_BIN  = $(BUILD)/Install_Tolunnet
-CMDLIB_OBJ   = $(BUILD)/src/cmds/cmdlib.o $(BUILD)/src/common/ipc_client.o
+CMDLIB_OBJ   = $(BUILD)/src/cmds/cmdlib.o
 HOSTNAME_BIN = $(BUILD)/hostname
 NSLOOKUP_BIN = $(BUILD)/nslookup
 WHOIS_BIN    = $(BUILD)/whois
@@ -255,7 +255,7 @@ $(NC_BIN): $(BUILD)/src/cmds/nc.o $(CMDLIB_OBJ)
 $(ARP_BIN): $(BUILD)/src/cmds/arp.o $(CMDLIB_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(SHOWNETSTATUS_BIN): $(BUILD)/src/cmds/ShowNetStatus.o $(CMDLIB_OBJ)
+$(SHOWNETSTATUS_BIN): $(BUILD)/src/cmds/ShowNetStatus.o $(CMDLIB_OBJ) $(BUILD)/src/cmds/snapshot.o $(BUILD)/src/common/ipc_client.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(SNTP_BIN): $(BUILD)/src/cmds/sntp.o $(CMDLIB_OBJ)
@@ -270,7 +270,7 @@ $(TFTP_BIN): $(BUILD)/src/cmds/tftp.o $(CMDLIB_OBJ)
 $(CONTROL_BIN): $(BUILD)/src/cmds/TolunnetControl.o $(CMDLIB_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(GETNETSTATUS_BIN): $(BUILD)/src/cmds/GetNetStatus.o $(CMDLIB_OBJ)
+$(GETNETSTATUS_BIN): $(BUILD)/src/cmds/GetNetStatus.o $(CMDLIB_OBJ) $(BUILD)/src/cmds/snapshot.o $(BUILD)/src/common/ipc_client.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(FTP_BIN): $(BUILD)/src/cmds/ftp.o $(CMDLIB_OBJ)
