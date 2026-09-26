@@ -610,7 +610,8 @@ def run_dns(port):
 
         ancount = 1
         reply = qid + b"\x81\x80" + _struct.pack("!HHHH", 1, ancount, 0, 0)
-        reply += enc_name(qname) + _struct.pack("!HHIH", qtype, 1, 60, len(rdata)) + rdata
+        reply += enc_name(qname) + _struct.pack("!HH", qtype, 1)
+        reply += enc_name(qname) + _struct.pack("!HHIH", rtype, 1, 60, len(rdata)) + rdata
         try:
             sock.sendto(reply, addr)
         except Exception as e:
