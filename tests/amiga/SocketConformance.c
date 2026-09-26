@@ -5205,8 +5205,7 @@ static void tc_cmd_ifctl(void)
     if (!rows[0].is_up) {
         /* z.ai step 9a diagnosis: dump every LIST row on this failure */
         LONG di;
-        tapf("# tc_cmd_ifctl: LIST result=%ld rows:
-", n);
+        tapf("# tc_cmd_ifctl: LIST result=%ld rows:\n", n);
         for (di = 0; di < n && di < 4; di++) {
             tapf("#   [%ld] name=%s in_use=%ld up=%ld dhcp=%ld link=%ld addr=0x%08lx mask=0x%08lx gw=0x%08lx
 ",
