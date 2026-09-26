@@ -184,6 +184,19 @@ int main(int argc, char **argv)
     if (opts[2] != 0) port = *(LONG *)opts[2];
     if (port <= 0 || port > 65535) port = 53;
 
+    /* plain dotted-quad without SERVER keeps the old round-trip:
+     * net_inet_ntoa row expects Address: <ip> without any DNS. */
+    if (server == NULL && dns_is_ipv4(name)) {
+        ULONG addr = tn_call_inet_addr(name);
+        if (addr != INADDR_NONE) {
+            struct in_addr ia;
+            ia.s_addr = addr;
+            tn_cmd_printf("Name:      %s\nAddress:   %s\n", name, tn_call_inet_ntoa(ia));
+            FreeArgs(rdargs); tn_cmd_fini();
+            return TN_CMD_OK;
+        }
+    }
+
     if (dns_is_ipv4(name)) qtype = DNS_TYPE_PTR;
     else qtype = DNS_TYPE_A;
     strcpy(qname, name);
@@ -237,6 +250,7 @@ int main(int argc, char **argv)
             fd_set rfds;
             struct timeval tv;
             LONG fromlen;
+            LONG sel;
             if (tn_call_sendto(fd, tx, txlen, 0, (struct sockaddr *)&dst, sizeof(dst)) != txlen) {
                 tn_cmd_printf("** send failed (errno=%ld)\n", tn_call_errno());
                 break;
@@ -245,11 +259,24 @@ int main(int argc, char **argv)
             FD_SET(fd, &rfds);
             tv.tv_secs = 3;
             tv.tv_micro = 0;
-            if (tn_call_waitselect(fd + 1, &rfds, NULL, NULL, &tv, NULL) <= 0) continue;
+            sel = tn_call_waitselect(fd + 1, &rfds, NULL, NULL, &tv, NULL);
+            if (sel <= 0) {
+                tn_cmd_printf("** try %ld: waitselect=%ld
+", (LONG)(tries + 1), sel);
+                continue;
+            }
             fromlen = (LONG)sizeof(from);
             got = tn_call_recvfrom(fd, rx, sizeof(rx), 0, (struct sockaddr *)&from, &fromlen);
-            if (got < 12) continue;
-            if (rx[0] != tx[0] || rx[1] != tx[1]) continue;
+            if (got < 12) {
+                tn_cmd_printf("** try %ld: recv got=%ld
+", (LONG)(tries + 1), got);
+                continue;
+            }
+            if (rx[0] != tx[0] || rx[1] != tx[1]) {
+                tn_cmd_printf("** try %ld: txid mismatch
+", (LONG)(tries + 1));
+                continue;
+            }
             if (dns_parse_reply(rx, got, qtype, out, (LONG)sizeof(out)) == 0) {
                 done = 1;
                 if (qtype == DNS_TYPE_A) {
