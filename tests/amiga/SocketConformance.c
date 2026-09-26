@@ -6983,12 +6983,14 @@ static void tc_net_cmd_netshutdown(void)
         args[0] = TN_IFCTL_LIST;
         args[4] = 4;
         ptrs[0] = rows;
-        if (tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, ptrs, 1, &msg) == 0 &&
-            msg.result >= 1 && rows[0].in_use && rows[0].is_up) {
-            up_ok = 1;
-        } else {
-            tapf("# net_cmd_netshutdown: LIST result=%ld in_use=%ld up=%ld' + NL + '",
-                 (msg.result), (LONG)rows[0].in_use, (LONG)rows[0].is_up);
+        {
+            int lrc = tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, ptrs, 1, &msg);
+            if (lrc >= 1 && rows[0].in_use && rows[0].is_up) {
+                up_ok = 1;
+            } else {
+                tapf("# net_cmd_netshutdown: LIST rc=%ld in_use=%ld up=%ld\n",
+                     (LONG)lrc, (LONG)rows[0].in_use, (LONG)rows[0].is_up);
+            }
         }
     }
 
@@ -7026,9 +7028,11 @@ static void tc_net_cmd_netshutdown(void)
                 args[0] = TN_IFCTL_LIST;
                 args[4] = 4;
                 ptrs[0] = rows;
-                if (tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, ptrs, 1, &msg) == 0 &&
-                    msg.result >= 1 && rows[0].in_use && rows[0].is_up &&
-                    rows[0].addr != 0) break;
+                {
+                    int lrc = tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, ptrs, 1, &msg);
+                    if (lrc >= 1 && rows[0].in_use && rows[0].is_up &&
+                        rows[0].addr != 0) break;
+                }
                 Delay(5);
             }
             restarted = 1;

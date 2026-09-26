@@ -44,6 +44,8 @@ int tn_cmd_snapshot(TnSnapshot *snap)
     snap->if_count = -1;
     snap->route_count = -1;
 
+    /* tn_ipc_oneshot_ex returns the daemon's result: 0 for GETSTATUS,
+     * the ROW COUNT for the IFCTL/ROUTECTL LIST calls. */
     st_args[0] = 0; st_args[1] = 0; st_args[2] = 0; st_args[3] = 0;
     st_args[4] = (LONG)sizeof(TnStatusInfoV2);
     st_ptrs[0] = (APTR)&snap->status;
@@ -54,14 +56,18 @@ int tn_cmd_snapshot(TnSnapshot *snap)
     if_args[0] = TN_IFCTL_LIST; if_args[1] = 0; if_args[2] = 0; if_args[3] = 0;
     if_args[4] = TN_SNAP_MAX_IFS;
     if_ptrs[0] = (APTR)snap->ifs;
-    if (tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, if_args, 5, if_ptrs, 1, &msg) == 0)
-        snap->if_count = msg.result;
+    {
+        int rc = tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, if_args, 5, if_ptrs, 1, &msg);
+        snap->if_count = (rc >= 0) ? rc : -1;
+    }
 
     rt_args[0] = TN_ROUTECTL_LIST; rt_args[1] = 0; rt_args[2] = 0; rt_args[3] = 0;
     rt_args[4] = TN_SNAP_MAX_ROUTES;
     rt_ptrs[0] = (APTR)snap->routes;
-    if (tn_ipc_oneshot_ex(TN_IPC_CMD_ROUTECTL, rt_args, 5, rt_ptrs, 1, &msg) == 0)
-        snap->route_count = msg.result;
+    {
+        int rc = tn_ipc_oneshot_ex(TN_IPC_CMD_ROUTECTL, rt_args, 5, rt_ptrs, 1, &msg);
+        snap->route_count = (rc >= 0) ? rc : -1;
+    }
 
     return 0;
 }

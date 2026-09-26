@@ -141,14 +141,15 @@ int main(int argc, char *argv[])
         iargs[0] = TN_IFCTL_LIST; iargs[1] = 0; iargs[2] = 0; iargs[3] = 0;
         iargs[4] = 8;
         iptrs[0] = (APTR)if_list;
-        if (tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, iargs, 5, iptrs, 1, &msg) == 0 &&
-            msg.result > 0) {
-            if_count = (int)msg.result;
-            live_ip = if_list[0].addr;
-            live_nm = if_list[0].mask;
-            live_gw = if_list[0].gw;
+        {
+            int lrc = tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, iargs, 5, iptrs, 1, &msg);
+            if (lrc > 0) {
+                if_count = lrc;
+                live_ip = if_list[0].addr;
+                live_nm = if_list[0].mask;
+                live_gw = if_list[0].gw;
+            }
         }
-    }
     {
         LONG rargs[5];
         APTR rptrs[1];
@@ -156,9 +157,11 @@ int main(int argc, char *argv[])
         rargs[0] = TN_ROUTECTL_LIST; rargs[1] = 0; rargs[2] = 0; rargs[3] = 0;
         rargs[4] = 16;
         rptrs[0] = (APTR)rt_list;
-        if (tn_ipc_oneshot_ex(TN_IPC_CMD_ROUTECTL, rargs, 5, rptrs, 1, &msg) == 0 &&
-            msg.result > 0) {
-            rt_count = (int)msg.result;
+        {
+            int rrc = tn_ipc_oneshot_ex(TN_IPC_CMD_ROUTECTL, rargs, 5, rptrs, 1, &msg);
+            if (rrc > 0) {
+            rt_count = rrc;
+            }
         }
     }
 
@@ -252,4 +255,5 @@ int main(int argc, char *argv[])
     CloseLibrary(SocketBase);
     CloseLibrary(DOSBase);
     return 0;
+}
 }
