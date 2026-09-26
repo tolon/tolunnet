@@ -91,5 +91,6 @@ BOOL tn_prefs_load(TnPrefs *prefs);
 
 /* Save preferences per Amiga Prefs convention (TNET-064). */
 BOOL tn_prefs_save(const TnPrefs *prefs, TnPrefsSaveMode mode);
+extern int tn_prefs_last_stage; /* diag: last tn_prefs_write_one stage */
 
 #endif /* TOLUNNET_PREFS_H */

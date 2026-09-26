@@ -137,6 +137,8 @@ BOOL tn_prefs_load(TnPrefs *prefs)
  * file's unknown keys and over-long lines, write to <path>_tmp,
  * then Rename over the target. Any failure returns FALSE and leaves
  * the target untouched. */
+int tn_prefs_last_stage = 0;
+
 static BOOL tn_prefs_write_one(const char *path, const char *text)
 {
     char prev[1024];
@@ -154,27 +156,34 @@ static BOOL tn_prefs_write_one(const char *path, const char *text)
     }
     prev[plen] = 0;
 
-    if (tn_config_merge_preserve(text, prev, merged, (int)sizeof(merged)) < 0)
-        return FALSE;
+    tn_prefs_last_stage = 30;
+    if (tn_config_merge_preserve(text, prev, merged, (int)sizeof(merged)) < 0) { tn_prefs_last_stage = 31; return FALSE; }
 
     for (r = 0; path[r] != 0 && r + 6 < (LONG)sizeof(tmp); r++) tmp[r] = path[r];
     tmp[r] = 0;
     strcat(tmp, "_tmp");
 
+    tn_prefs_last_stage = 40;
     fh = Open((CONST_STRPTR)tmp, MODE_NEWFILE);
-    if (fh == (BPTR)0) return FALSE;
+    if (fh == (BPTR)0) { tn_prefs_last_stage = 41; return FALSE; }
     wlen = strlen(merged);
+    tn_prefs_last_stage = 50;
     if (Write(fh, (APTR)merged, wlen) != wlen) {
         Close(fh);
         DeleteFile((CONST_STRPTR)tmp);
+        tn_prefs_last_stage = 51;
         return FALSE;
     }
+    tn_prefs_last_stage = 60;
     if (Close(fh) == FALSE) {
         DeleteFile((CONST_STRPTR)tmp);
+        tn_prefs_last_stage = 61;
         return FALSE;
     }
+    tn_prefs_last_stage = 70;
     if (Rename((CONST_STRPTR)tmp, (CONST_STRPTR)path) == FALSE) {
         DeleteFile((CONST_STRPTR)tmp);
+        tn_prefs_last_stage = 71;
         return FALSE;
     }
     return TRUE;
