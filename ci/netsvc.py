@@ -278,13 +278,63 @@ def run_tftp(port):
             mode = parts[1].decode("latin1", errors="replace") if len(parts) > 1 else "octet"
             log("tftp", f"RRQ for {filename} ({mode}) from {addr}")
 
-            # Send DATA block 1
-            payload = b"TOLUNNET_TFTP_OK\n"
-            resp = struct.pack("!HH", 3, 1) + payload
+            if filename == "bigfile":
+                payload = bytes(((i * 7 + 3) & 0xFF) for i in range(1200))
+            else:
+                payload = b"TOLUNNET_TFTP_OK\n"
+            # Multi-block transfer: send DATA, wait for the matching
+            # ACK, resend on timeout or stale ACK (RFC 1350 lockstep).
+            block = 0
+            offset = 0
             try:
-                sock.sendto(resp, addr)
+                while g_running:
+                    block = (block + 1) & 0xFFFF
+                    chunk = payload[offset:offset + 512]
+                    sock.sendto(struct.pack("!HH", 3, block) + chunk, addr)
+                    if len(chunk) < 512:
+                        break
+                    acked = False
+                    for _ in range(3):
+                        sock.settimeout(2.0)
+                        try:
+                            ack, _a = sock.recvfrom(1024)
+                        except socket.timeout:
+                            sock.sendto(struct.pack("!HH", 3, block) + chunk, addr)
+                            continue
+                        if len(ack) >= 4 and struct.unpack("!H", ack[:2])[0] == 4:
+                            ablock = struct.unpack("!H", ack[2:4])[0]
+                            if ablock == block:
+                                acked = True
+                                break
+                            sock.sendto(struct.pack("!HH", 3, block) + chunk, addr)
+                    if not acked:
+                        log("tftp", "giving up on block %d" % block)
+                        break
+                    offset += 512
             except Exception as e:
-                log("tftp", f"send error: {e}")
+                log("tftp", f"transfer error: {e}")
+        elif opcode == 2:  # WRQ
+            parts = data[2:].split(b"\x00")
+            filename = parts[0].decode("latin1", errors="replace") if len(parts) > 0 else "unknown"
+            log("tftp", f"WRQ for {filename} from {addr}")
+            sock.sendto(struct.pack("!HH", 4, 0), addr)
+            total = 0
+            expected = 1
+            sock.settimeout(3.0)
+            try:
+                while True:
+                    dpack, _a = sock.recvfrom(2048)
+                    if len(dpack) >= 4 and struct.unpack("!H", dpack[:2])[0] == 3:
+                        dblock = struct.unpack("!H", dpack[2:4])[0]
+                        if dblock == expected:
+                            total += len(dpack) - 4
+                            sock.sendto(struct.pack("!HH", 4, dblock), addr)
+                            expected = (expected + 1) & 0xFFFF
+                            if len(dpack) - 4 < 512:
+                                break
+            except socket.timeout:
+                pass
+            log("tftp", f"WRQ {filename} received {total} bytes")
     sock.close()
 
 # ---------------------------------------------------------------------------

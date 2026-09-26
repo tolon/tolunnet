@@ -6478,6 +6478,43 @@ static void tc_net_cmd_nc_listen(void)
     }
 }
 
+/* z.ai step 8c item 2: a 1200-byte file needs 3 DATA blocks (512+512+176)
+ * with lockstep ACKs; netsvc serves bigfile as (i*7+3) & 0xFF. */
+static void tc_net_cmd_tftp_big(void)
+{
+    LONG ret;
+    BPTR fh;
+    char out[256];
+    static char big[1200];
+    char got[64];
+    LONG got_len = -1;
+    LONG i, off = 0, mism = -1;
+    for (i = 0; i < 1200; i++) big[i] = (char)((i * 7 + 3) & 0xFF);
+    DeleteFile((CONST_STRPTR)"T:tftp_big.bin");
+    ret = run_cmd("C:tftp", "10.0.2.2 PORT 15069 GET bigfile LOCAL T:tftp_big.bin",
+                  NULL, out, sizeof(out));
+    fh = Open((CONST_STRPTR)"T:tftp_big.bin", MODE_OLDFILE);
+    if (fh != (BPTR)0) {
+        mism = 0;
+        while ((got_len = Read(fh, (APTR)got, sizeof(got))) > 0) {
+            for (i = 0; i < got_len; i++) {
+                if (off + i >= 1200 || got[i] != big[off + i]) { mism = 1; break; }
+            }
+            off += got_len;
+        }
+        if (off != 1200) mism = 1;
+        Close(fh);
+    }
+    DeleteFile((CONST_STRPTR)"T:tftp_big.bin");
+    if (ret == 0 && mism == 0) {
+        TAP_OK("net_cmd_tftp_big");
+    } else {
+        tapf("# net_cmd_tftp_big: rc=%ld off=%ld mism=%ld\n", ret, off, mism);
+        dump_cmd_out(out);
+        TAP_NOTOK("net_cmd_tftp_big", "multi-block payload mismatch");
+    }
+}
+
 /* Item 19: whois command & tn_call_inet_ntoa A0/D0 (Madde 19: cmdlib.c:173, whois.c) */
 static void tc_net_cmd_whois(void)
 {
@@ -6605,7 +6642,7 @@ static void tc_net_cmd_ftp(void)
                   (LONG)NETSVC_FTP_PORT);
     ret = run_cmd("C:ftp", args, NULL, out, sizeof(out));
     {
-        static char want[18] = "TOLUNNET_FTP_OK\n";
+        static char want[17] = "TOLUNNET_FTP_OK\n"; /* 15 chars + LF = 16 */
         BPTR dfh;
         char got[64];
         LONG got_len = -1;
@@ -6618,9 +6655,9 @@ static void tc_net_cmd_ftp(void)
         DeleteFile((CONST_STRPTR)"T:ftp_get.bin");
         DeleteFile((CONST_STRPTR)"T:ftp.cmd");
         if (ret != 10 || strstr(out, "test.bin") == NULL ||
-            strstr(out, "550") == NULL || got_len != 17 ||
-            memcmp(got, want, 17) != 0) {
-            tapf("# net_cmd_ftp: rc=%ld got_len=%ld (want 10/17)\n", ret, got_len);
+            strstr(out, "550") == NULL || got_len != 16 ||
+            memcmp(got, want, 16) != 0) {
+            tapf("# net_cmd_ftp: rc=%ld got_len=%ld (want 10/16)\n", ret, got_len);
             dump_cmd_out(out);
             TAP_NOTOK("net_cmd_ftp", "listing/550/file/rc mismatch");
             return;
@@ -6725,13 +6762,13 @@ static void tc_net_cmd_tftp(void)
     LONG ret;
     BPTR fh;
     char out[256];
-    static char want[18] = "TOLUNNET_TFTP_OK";
+    static char want[18] = "TOLUNNET_TFTP_OK\n";
     char got[64];
     LONG got_len = -1;
-    want[16] = '\n';
     want[17] = 0;
     DeleteFile((CONST_STRPTR)"T:tftp_get.bin");
-    ret = run_cmd("C:tftp", "10.0.2.2 GET testfile LOCAL T:tftp_get.bin",
+    /* z.ai step 8c item 2: PORT/K/N targets the netsvc mock. */
+    ret = run_cmd("C:tftp", "10.0.2.2 PORT 15069 GET testfile LOCAL T:tftp_get.bin",
                   NULL, out, sizeof(out));
     fh = Open((CONST_STRPTR)"T:tftp_get.bin", MODE_OLDFILE);
     if (fh != (BPTR)0) {
@@ -6743,9 +6780,9 @@ static void tc_net_cmd_tftp(void)
     if (ret == 0 && got_len == 17 && memcmp(got, want, 17) == 0) {
         TAP_OK("net_cmd_tftp");
     } else {
-        tapf("# net_cmd_tftp: rc=%ld got_len=%ld (want 17)\n", ret, got_len);
+        tapf("# net_cmd_tftp: rc=%ld got_len=%ld (want 0/17)\n", ret, got_len);
         dump_cmd_out(out);
-        TAP_TODO("net_cmd_tftp", "red-baseline 20");
+        TAP_NOTOK("net_cmd_tftp", "payload mismatch");
     }
 }
 
@@ -7255,6 +7292,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_sntp);
     TN_RUN(tc_net_cmd_traceroute);
     TN_RUN(tc_net_cmd_tftp);
+    TN_RUN(tc_net_cmd_tftp_big);
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
