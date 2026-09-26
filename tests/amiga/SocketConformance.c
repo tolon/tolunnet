@@ -5207,7 +5207,7 @@ static void tc_cmd_ifctl(void)
         LONG di;
         tapf("# tc_cmd_ifctl: LIST result=%ld rows:\n", n);
         for (di = 0; di < n && di < 4; di++) {
-            tapf("#   [%ld] name=%s in_use=%ld up=%ld dhcp=%ld link=%ld addr=0x%08lx mask=0x%08lx gw=0x%08lx\n",
+            tapf("#   [%ld] name=%s in_use=%ld up=%ld dhcp=%ld link=%ld addr=%lx mask=%lx gw=%lx\n",
                  di, rows[di].name, (LONG)rows[di].in_use, (LONG)rows[di].is_up,
                  (LONG)rows[di].is_dhcp, (LONG)rows[di].link_up,
                  (ULONG)rows[di].addr, (ULONG)rows[di].mask, (ULONG)rows[di].gw);
