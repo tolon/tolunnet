@@ -318,18 +318,15 @@ int main(int argc, char *argv[])
                 if (rcvd > 0 && !use_udp) {
                     int rip_hlen = (rx_buf[0] & 0x0F) * 4;
                     if (rcvd < rip_hlen + (int)sizeof(struct tn_icmp_hdr)) {
-                        tn_logf(TN_LOG_BASIC, "ping: rx %ld bytes (short)
-", rcvd);
+                        tn_logf(TN_LOG_BASIC, "ping: rx %ld bytes (short)\n", rcvd);
                         rcvd = 0;
                     } else {
                         UBYTE rtype = (UBYTE)rx_buf[rip_hlen];
                         if (rtype == TN_ICMP_ECHO_REQUEST) {
-                            tn_logf(TN_LOG_BASIC, "ping: rx own request (%ld)
-", rcvd);
+                            tn_logf(TN_LOG_BASIC, "ping: rx own request (%ld)\n", rcvd);
                             rcvd = 0; /* own request: keep waiting */
                         } else if (rtype != TN_ICMP_ECHO_REPLY) {
-                            tn_logf(TN_LOG_BASIC, "ping: rx non-reply type=%ld (%ld bytes)
-",
+                            tn_logf(TN_LOG_BASIC, "ping: rx non-reply type=%ld (%ld bytes)\n",
                                     (LONG)rtype, rcvd);
                             rcvd = 0;
                         }
