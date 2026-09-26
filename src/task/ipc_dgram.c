@@ -78,9 +78,12 @@ u8_t tn_raw_recv_cb(void *arg, struct raw_pcb *pcb, struct pbuf *p,
         return 0;
     }
 
-    tn_logf(TN_LOG_BASIC, "raw recv cb: len=%ld proto=%ld type=%ld\n",
-            (LONG)p->len, (LONG)IP_HDR_GET_PROTO(p->payload),
-            (LONG)((UBYTE *)p->payload)[((UBYTE *)p->payload)[0] & 0x0F]);
+    {
+        const UBYTE *iph = (const UBYTE *)p->payload;
+        UBYTE ihl = (UBYTE)((iph[0] & 0x0F) * 4);
+        tn_logf(TN_LOG_BASIC, "raw recv cb: len=%ld proto=%ld icmptype=%ld\n",
+                (LONG)p->len, (LONG)iph[9], (LONG)iph[ihl]);
+    }
     q = pbuf_clone(PBUF_RAW, PBUF_RAM, p);
     if (q == NULL) {
         return 0;
