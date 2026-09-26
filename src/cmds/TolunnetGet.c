@@ -16,93 +16,18 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include "cmdlib.h"
 
 #include "../common/log.h"
 #include "../common/http_url.h"
 #include "../common/rawfmt.h"
 #include <string.h>
 
-struct Library *SocketBase = NULL;
 
-static LONG call_socket(LONG domain, LONG type, LONG protocol)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = domain;
-    register LONG d1 __asm__("d1") = type;
-    register LONG d2 __asm__("d2") = protocol;
 
-    __asm__ __volatile__ (
-        "jsr -30(%%a6)"
-        : "+r"(d0)
-        : "r"(a6), "r"(d0), "r"(d1), "r"(d2)
-        : "d1", "d2", "a0", "a1", "memory"
-    );
-    return d0;
-}
 
-static LONG call_connect(LONG sock, struct sockaddr *name, socklen_t namelen)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = sock;
-    register struct sockaddr *a0 __asm__("a0") = name;
-    register LONG d1 __asm__("d1") = (LONG)namelen;
 
-    __asm__ __volatile__ (
-        "jsr -54(%%a6)"
-        : "+r"(d0)
-        : "r"(a6), "r"(d0), "r"(a0), "r"(d1)
-        : "d1", "a0", "a1", "memory"
-    );
-    return d0;
-}
 
-static LONG call_send(LONG sock, const void *buf, LONG len, LONG flags)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = sock;
-    register const void *a0 __asm__("a0") = buf;
-    register LONG d1 __asm__("d1") = len;
-    register LONG d2 __asm__("d2") = flags;
-
-    __asm__ __volatile__ (
-        "jsr -66(%%a6)"
-        : "+r"(d0)
-        : "r"(a6), "r"(d0), "r"(a0), "r"(d1), "r"(d2)
-        : "d1", "d2", "a0", "a1", "memory"
-    );
-    return d0;
-}
-
-static LONG call_recv(LONG sock, void *buf, LONG len, LONG flags)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = sock;
-    register void *a0 __asm__("a0") = buf;
-    register LONG d1 __asm__("d1") = len;
-    register LONG d2 __asm__("d2") = flags;
-
-    __asm__ __volatile__ (
-        "jsr -78(%%a6)"
-        : "+r"(d0)
-        : "r"(a6), "r"(d0), "r"(a0), "r"(d1), "r"(d2)
-        : "d1", "d2", "a0", "a1", "memory"
-    );
-    return d0;
-}
-
-static LONG call_closesocket(LONG sock)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = sock;
-
-    __asm__ __volatile__ (
-        "jsr -120(%%a6)"
-        : "+r"(d0)
-        : "r"(a6), "r"(d0)
-        : "d1", "a0", "a1", "memory"
-    );
-    return d0;
-}
 
 static STRPTR call_inet_ntoa(in_addr_t ip)
 {
@@ -300,7 +225,7 @@ int main(void)
                     current_url.host, call_inet_ntoa(target_ip), (ULONG)current_url.port);
         }
 
-        sock = call_socket(AF_INET, SOCK_STREAM, 0);
+        sock = tn_call_socket(AF_INET, SOCK_STREAM, 0);
         if (sock < 0) {
             if (!quiet) tn_logf(TN_LOG_BASIC, "wget: socket creation failed (rc=%ld)\n", sock);
             exit_code = 20;
@@ -313,10 +238,10 @@ int main(void)
         srv_sin.sin_port        = htons((UWORD)current_url.port);
         srv_sin.sin_addr.s_addr = target_ip;
 
-        rc = call_connect(sock, (struct sockaddr *)&srv_sin, sizeof(srv_sin));
+        rc = tn_call_connect(sock, (struct sockaddr *)&srv_sin, sizeof(srv_sin));
         if (rc != 0) {
             if (!quiet) tn_logf(TN_LOG_BASIC, "wget: connection failed (rc=%ld)\n", rc);
-            call_closesocket(sock);
+            tn_call_closesocket(sock);
             sock = -1;
             exit_code = 20;
             break;
@@ -339,7 +264,7 @@ int main(void)
                      (APTR)req_args, TN_RAWFMT_PUTCH, req_buf);
         }
 
-        call_send(sock, req_buf, str_len(req_buf), 0);
+        tn_call_send(sock, req_buf, str_len(req_buf), 0);
 
         /* Read Response Headers */
         int hdr_len = 0;
@@ -347,7 +272,7 @@ int main(void)
         struct TnHdrInfo hdr_info;
 
         while (hdr_len < (int)sizeof(hdr_buf) - 1) {
-            LONG n = call_recv(sock, hdr_buf + hdr_len, sizeof(hdr_buf) - 1 - hdr_len, 0);
+            LONG n = tn_call_recv(sock, hdr_buf + hdr_len, sizeof(hdr_buf) - 1 - hdr_len, 0);
             if (n <= 0) break;
             hdr_len += n;
             hdr_buf[hdr_len] = '\0';
@@ -357,7 +282,7 @@ int main(void)
 
         if (body_offset <= 0) {
             if (!quiet) tn_log(TN_LOG_BASIC, "wget: malformed or empty HTTP response\n");
-            call_closesocket(sock);
+            tn_call_closesocket(sock);
             sock = -1;
             exit_code = 20;
             break;
@@ -369,7 +294,7 @@ int main(void)
             hdr_info.status_code == 308) {
             if (hdr_info.location[0] == '\0') {
                 if (!quiet) tn_log(TN_LOG_BASIC, "wget: redirect without Location header\n");
-                call_closesocket(sock);
+                tn_call_closesocket(sock);
                 sock = -1;
                 exit_code = 20;
                 break;
@@ -377,7 +302,7 @@ int main(void)
 
             if (tn_http_resolve_redirect(&current_url, hdr_info.location, &next_url) != 0) {
                 if (!quiet) tn_log(TN_LOG_BASIC, "wget: unable to resolve redirect target\n");
-                call_closesocket(sock);
+                tn_call_closesocket(sock);
                 sock = -1;
                 exit_code = 20;
                 break;
@@ -389,7 +314,7 @@ int main(void)
                 tn_logf(TN_LOG_BASIC, "wget: redirecting (%d) to %s:%lu%s...\n",
                         redirect_count, current_url.host, (ULONG)current_url.port, current_url.path);
             }
-            call_closesocket(sock);
+            tn_call_closesocket(sock);
             sock = -1;
             continue; /* Follow redirect */
         }
@@ -397,7 +322,7 @@ int main(void)
         /* Check HTTP Status */
         if (hdr_info.status_code >= 400) {
             if (!quiet) tn_logf(TN_LOG_BASIC, "wget: HTTP error %ld\n", (LONG)hdr_info.status_code);
-            call_closesocket(sock);
+            tn_call_closesocket(sock);
             sock = -1;
             exit_code = 20;
             break;
@@ -420,7 +345,7 @@ int main(void)
             }
             if (out_fh == 0) {
                 if (!quiet) tn_logf(TN_LOG_BASIC, "wget: unable to open destination file '%s'\n", to_path);
-                call_closesocket(sock);
+                tn_call_closesocket(sock);
                 sock = -1;
                 exit_code = 20;
                 break;
@@ -466,7 +391,7 @@ int main(void)
             if (!hdr_info.is_chunked && hdr_info.content_length > 0 &&
                 total_written - resp_start >= hdr_info.content_length) break;
 
-            LONG n = call_recv(sock, rx_buf, sizeof(rx_buf), 0);
+            LONG n = tn_call_recv(sock, rx_buf, sizeof(rx_buf), 0);
             if (n > 0) {
                 if (hdr_info.is_chunked) {
                     int pos = 0;
@@ -519,7 +444,7 @@ int main(void)
             }
         }
 
-        call_closesocket(sock);
+        tn_call_closesocket(sock);
         sock = -1;
         break; /* Done successfully */
     }
@@ -535,7 +460,7 @@ int main(void)
     }
 
     if (sock >= 0) {
-        call_closesocket(sock);
+        tn_call_closesocket(sock);
         sock = -1;
     }
 

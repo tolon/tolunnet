@@ -26,125 +26,15 @@
 #include <sys/errno.h>
 
 #include "../common/log.h"
+#include "cmdlib.h"
 
-struct Library *SocketBase = NULL;
 
-static LONG call_socket(LONG domain, LONG type, LONG protocol)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = domain;
-    register LONG d1 __asm__("d1") = type;
-    register LONG d2 __asm__("d2") = protocol;
 
-    __asm__ __volatile__ (
-        "jsr -30(%%a6)"
-        : "+r"(d0)
-        : "r"(a6), "r"(d0), "r"(d1), "r"(d2)
-        : "d1", "d2", "a0", "a1", "memory"
-    );
-    return d0;
-}
 
-static LONG call_closesocket(LONG sock)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = sock;
 
-    __asm__ __volatile__ (
-        "jsr -120(%%a6)"
-        : "+r"(d0)
-        : "r"(a6), "r"(d0)
-        : "d1", "a0", "a1", "memory"
-    );
-    return d0;
-}
 
-static LONG call_ioctlsocket(LONG sock, ULONG req, APTR argp)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = sock;
-    register ULONG d1 __asm__("d1") = req;
-    register APTR a0 __asm__("a0") = argp;
 
-    __asm__ __volatile__ (
-        "jsr -114(%%a6)"
-        : "+r"(d0)
-        : "r"(a6), "r"(d0), "r"(d1), "r"(a0)
-        : "d1", "a0", "a1", "memory"
-    );
-    return d0;
-}
 
-static LONG call_setsockopt(LONG sock, LONG level, LONG optname, const void *optval, socklen_t optlen)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = sock;
-    register LONG d1 __asm__("d1") = level;
-    register LONG d2 __asm__("d2") = optname;
-    register const void *a0 __asm__("a0") = optval;
-    register LONG d3 __asm__("d3") = (LONG)optlen;
-
-    __asm__ __volatile__ (
-        "jsr -90(%%a6)"
-        : "+r"(d0)
-        : "r"(a6), "r"(d0), "r"(d1), "r"(d2), "r"(a0), "r"(d3)
-        : "d1", "d2", "d3", "a0", "a1", "memory"
-    );
-    return d0;
-}
-
-static LONG call_getsockopt(LONG sock, LONG level, LONG optname, void *optval, socklen_t *optlen)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = sock;
-    register LONG d1 __asm__("d1") = level;
-    register LONG d2 __asm__("d2") = optname;
-    register void *a0 __asm__("a0") = optval;
-    register socklen_t *a1 __asm__("a1") = optlen;
-
-    __asm__ __volatile__ (
-        "jsr -96(%%a6)"
-        : "+r"(d0)
-        : "r"(a6), "r"(d0), "r"(d1), "r"(d2), "r"(a0), "r"(a1)
-        : "d1", "d2", "a0", "a1", "memory"
-    );
-    return d0;
-}
-
-static LONG call_waitselect(LONG nfds, APTR read_fds, APTR write_fds, APTR except_fds,
-                            struct timeval *timeout, ULONG *signals)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = nfds;
-    register APTR a0 __asm__("a0") = read_fds;
-    register APTR a1 __asm__("a1") = write_fds;
-    register APTR a2 __asm__("a2") = except_fds;
-    register struct timeval *a3 __asm__("a3") = timeout;
-    register ULONG *d1 __asm__("d1") = signals;
-
-    __asm__ __volatile__ (
-        "jsr -126(%%a6)"
-        : "+r"(d0)
-        : "r"(a6), "r"(d0), "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(d1)
-        : "d1", "memory"
-    );
-    return d0;
-}
-
-static STRPTR call_inet_ntoa(in_addr_t ip)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = (LONG)ip;
-    register STRPTR a0 __asm__("a0");
-
-    __asm__ __volatile__ (
-        "jsr -174(%%a6)"
-        : "=r"(a0), "+r"(d0)
-        : "r"(a6), "r"(d0)
-        : "d1", "a1", "memory"
-    );
-    return a0;
-}
 
 static in_addr_t call_inet_addr(CONST_STRPTR cp)
 {
@@ -161,19 +51,6 @@ static in_addr_t call_inet_addr(CONST_STRPTR cp)
     return (in_addr_t)d0;
 }
 
-static LONG call_errno(VOID)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0");
-
-    __asm__ __volatile__ (
-        "jsr -162(%%a6)"
-        : "=r"(d0)
-        : "r"(a6)
-        : "d1", "a0", "a1", "memory"
-    );
-    return d0;
-}
 
 static BOOL str_equal(const char *s1, const char *s2)
 {
@@ -184,6 +61,53 @@ static BOOL str_equal(const char *s1, const char *s2)
         s2++;
     }
     return (*s1 == *s2);
+}
+
+
+/* cmdlib-backed forwarders (z.ai step 9c item 2): signatures kept for
+ * the existing call sites; the raw asm wrappers are gone. */
+static STRPTR call_inet_ntoa(in_addr_t ip)
+{
+    struct in_addr ia;
+    ia.s_addr = ip;
+    return tn_call_inet_ntoa(ia);
+}
+
+static LONG call_waitselect(LONG nfds, APTR read_fds, APTR write_fds, APTR except_fds,
+                            struct timeval *timeout, ULONG *signals)
+{
+    return tn_call_waitselect(nfds, (fd_set *)read_fds, (fd_set *)write_fds,
+                              (fd_set *)except_fds, timeout, signals);
+}
+
+static LONG call_socket(LONG domain, LONG type, LONG protocol)
+{
+    return tn_call_socket(domain, type, protocol);
+}
+
+static LONG call_closesocket(LONG sock)
+{
+    return tn_call_closesocket(sock);
+}
+
+static LONG call_ioctlsocket(LONG sock, ULONG req, APTR argp)
+{
+    return tn_call_ioctl(sock, req, argp);
+}
+
+static LONG call_setsockopt(LONG sock, LONG level, LONG optname, const void *optval, socklen_t optlen)
+{
+    return tn_call_setsockopt(sock, level, optname, optval, (LONG)optlen);
+}
+
+static LONG call_getsockopt(LONG sock, LONG level, LONG optname, void *optval, socklen_t *optlen)
+{
+    return tn_call_getsockopt(sock, level, optname, optval, (LONG *)optlen);
+}
+
+static LONG call_errno(VOID)
+{
+    return tn_call_errno();
 }
 
 int main(int argc, char *argv[])

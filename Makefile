@@ -140,8 +140,11 @@ UG_OBJS = $(BUILD)/src/usergroup/ug_init.o \
           $(BUILD)/src/usergroup/ug_table.gen.o \
           $(BUILD)/src/usergroup/ug_stubs.gen.o
 
-.PHONY: all clean test-host package
-all: $(TOLUNNET_BIN) $(USERGROUP_LIB) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN) $(BSDTEST_BIN) $(FREEZEWATCH_BIN) $(HOSTNAME_BIN) $(NSLOOKUP_BIN) $(WHOIS_BIN) $(TRACEROUTE_BIN) $(NC_BIN) $(ARP_BIN) $(SHOWNETSTATUS_BIN) $(SNTP_BIN) $(TELNET_BIN) $(TFTP_BIN) $(CONTROL_BIN) $(GETNETSTATUS_BIN) $(FTP_BIN) $(ROUTE_BIN) $(ADDNETROUTE_BIN) $(DELETENETROUTE_BIN) $(IPERF_BIN) $(ADDNETIF_BIN) $(CONFNETIF_BIN) $(ONLINE_BIN) $(OFFLINE_BIN) $(CHECKNETCONFIG_BIN) $(NETSHUTDOWN_BIN)
+.PHONY: all clean test-host package lvo-check
+lvo-check:
+	@python3 scripts/lvo_check.py
+
+all: lvo-check $(TOLUNNET_BIN) $(USERGROUP_LIB) $(STATUS_BIN) $(TEST_BIN) $(PING_BIN) $(GET_BIN) $(PREFS_BIN) $(SETUP_BIN) $(CONF_BIN) $(TOGGLE_BIN) $(BSDTEST_BIN) $(FREEZEWATCH_BIN) $(HOSTNAME_BIN) $(NSLOOKUP_BIN) $(WHOIS_BIN) $(TRACEROUTE_BIN) $(NC_BIN) $(ARP_BIN) $(SHOWNETSTATUS_BIN) $(SNTP_BIN) $(TELNET_BIN) $(TFTP_BIN) $(CONTROL_BIN) $(GETNETSTATUS_BIN) $(FTP_BIN) $(ROUTE_BIN) $(ADDNETROUTE_BIN) $(DELETENETROUTE_BIN) $(IPERF_BIN) $(ADDNETIF_BIN) $(CONFNETIF_BIN) $(ONLINE_BIN) $(OFFLINE_BIN) $(CHECKNETCONFIG_BIN) $(NETSHUTDOWN_BIN)
 
 # --- Host unit tests (Round 3 §B.1) -----------------------------------------
 # Every tests/host/test_*.c runs under native gcc with sanitizers + Werror;
@@ -233,7 +236,7 @@ $(STATUS_BIN): $(BUILD)/src/cmds/TolunnetStatus.o $(BUILD)/src/common/prefs.o $(
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TestSocket Client Binary (M3)
-$(TEST_BIN): $(BUILD)/src/cmds/TestSocket.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o
+$(TEST_BIN): $(BUILD)/src/cmds/TestSocket.o $(CMDLIB_OBJ) $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: CLI commands (CMD-0/1/2)
@@ -311,7 +314,7 @@ $(PING_BIN): $(BUILD)/src/cmds/TolunnetPing.o $(CMDLIB_OBJ) $(BUILD)/src/common/
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetGet HTTP Client CLI Binary (M5)
-$(GET_BIN): $(BUILD)/src/cmds/TolunnetGet.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD)/src/common/http_url.o $(BUILD)/src/common/rawfmt.o
+$(GET_BIN): $(BUILD)/src/cmds/TolunnetGet.o $(CMDLIB_OBJ) $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD)/src/common/http_url.o $(BUILD)/src/common/rawfmt.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetPrefs Native Workbench GadTools GUI Panel
