@@ -310,7 +310,8 @@ def run_ftp(ctrl_port, pasv_port):
             pasv_srv = None
             try:
                 log("ftp", f"connected from {a}")
-                c.sendall(b"220 Tolunnet Mock FTP Server ready\r\n")
+                c.sendall(b"220-Tolunnet Mock FTP Server ready\r\n"
+                          b"220 Multiline greeting per RFC 959\r\n")
                 buf = b""
                 while g_running:
                     chunk = c.recv(1024)
@@ -358,7 +359,8 @@ def run_ftp(ctrl_port, pasv_port):
                             if pasv_srv:
                                 try:
                                     dconn, _ = pasv_srv.accept()
-                                    dconn.sendall(b"-rw-r--r-- 1 ftp ftp 17 Sep 23 12:00 testfile.txt\r\n")
+                                    dconn.sendall(b"-rw-r--r-- 1 ftp ftp 17 Sep 23 12:00 test.bin\r\n"
+                                                  b"-rw-r--r-- 1 ftp ftp 23 Sep 23 12:00 testfile.txt\r\n")
                                     dconn.close()
                                 except Exception as e:
                                     log("ftp", f"PASV accept error: {e}")
@@ -366,12 +368,38 @@ def run_ftp(ctrl_port, pasv_port):
                                 pasv_srv = None
                             c.sendall(b"226 Transfer complete\r\n")
                         elif cmd == "RETR":
-                            c.sendall(b"150 Opening data connection\r\n")
+                            if arg != "test.bin":
+                                log("ftp", f"RETR {arg}: no such file")
+                                if pasv_srv:
+                                    pasv_srv.close()
+                                    pasv_srv = None
+                                c.sendall(b"550 File not found\r\n")
+                            else:
+                                c.sendall(b"150 Opening data connection\r\n")
+                                if pasv_srv:
+                                    try:
+                                        dconn, _ = pasv_srv.accept()
+                                        dconn.sendall(b"TOLUNNET_FTP_OK\n")
+                                        dconn.close()
+                                    except Exception as e:
+                                        log("ftp", f"PASV accept error: {e}")
+                                    pasv_srv.close()
+                                    pasv_srv = None
+                                c.sendall(b"226 Transfer complete\r\n")
+                        elif cmd == "STOR":
+                            c.sendall(b"150 Ready to receive data\r\n")
                             if pasv_srv:
                                 try:
                                     dconn, _ = pasv_srv.accept()
-                                    dconn.sendall(b"TOLUNNET_FTP_OK\n")
+                                    dconn.settimeout(5.0)
+                                    total = 0
+                                    while True:
+                                        chunk = dconn.recv(4096)
+                                        if not chunk:
+                                            break
+                                        total += len(chunk)
                                     dconn.close()
+                                    log("ftp", f"STOR received {total} bytes")
                                 except Exception as e:
                                     log("ftp", f"PASV accept error: {e}")
                                 pasv_srv.close()

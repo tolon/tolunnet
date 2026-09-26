@@ -6586,29 +6586,46 @@ static void tc_net_cmd_ftp(void)
 {
     BPTR fh;
     LONG ret;
-    char out[256];
+    char out[1024];
     char args[96];
+    /* z.ai step 8c item 1: the real contract. No QUIET: the reply
+     * lines (listing, 550) must reach stdout. netsvc serves RETR
+     * test.bin with TOLUNNET_FTP_OK + LF (17 bytes) and answers 550
+     * for anything else. rc must be 10 (one 550 in the session). */
     fh = Open((CONST_STRPTR)"T:ftp.cmd", MODE_NEWFILE);
     if (fh != (BPTR)0) {
-        /* ls only: the get path reads the PASV reply twice (ftp.c sends
-         * PASV, consumes the 227 via ftp_cmd, then blocks on a second
-         * read_line) - that protocol bug hangs the row against any real
-         * server and is step 8b work ([auto] QUESTIONS.md 8). */
-        Write(fh, (CONST APTR)"ls\n", 3);
-        Write(fh, (CONST APTR)"quit\n", 5);
+        { LONG L = strlen("ls\n"); Write(fh, (CONST APTR)"ls\n", L); }
+        { LONG L = strlen("get test.bin T:ftp_get.bin\n"); Write(fh, (CONST APTR)"get test.bin T:ftp_get.bin\n", L); }
+        { LONG L = strlen("get nosuchfile T:x\n"); Write(fh, (CONST APTR)"get nosuchfile T:x\n", L); }
+        { LONG L = strlen("quit\n"); Write(fh, (CONST APTR)"quit\n", L); }
         Close(fh);
     }
-    /* No QUIET: the greeting line is the content proof that the /N port
-     * and the htons control connect actually round-trip netsvc. */
+    DeleteFile((CONST_STRPTR)"T:ftp_get.bin");
     snprintf_safe(args, sizeof(args), "10.0.2.2 %ld SCRIPT T:ftp.cmd",
                   (LONG)NETSVC_FTP_PORT);
     ret = run_cmd("C:ftp", args, NULL, out, sizeof(out));
-    DeleteFile((CONST_STRPTR)"T:ftp.cmd");
-    if (ret == 0 && strstr(out, "connected (code 220)") != NULL) {
+    {
+        static char want[18] = "TOLUNNET_FTP_OK\n";
+        BPTR dfh;
+        char got[64];
+        LONG got_len = -1;
+        dfh = Open((CONST_STRPTR)"T:ftp_get.bin", MODE_OLDFILE);
+        if (dfh != (BPTR)0) {
+            got_len = Read(dfh, (APTR)got, sizeof(got) - 1);
+            Close(dfh);
+            if (got_len > 0) got[got_len] = 0;
+        }
+        DeleteFile((CONST_STRPTR)"T:ftp_get.bin");
+        DeleteFile((CONST_STRPTR)"T:ftp.cmd");
+        if (ret != 10 || strstr(out, "test.bin") == NULL ||
+            strstr(out, "550") == NULL || got_len != 17 ||
+            memcmp(got, want, 17) != 0) {
+            tapf("# net_cmd_ftp: rc=%ld got_len=%ld (want 10/17)\n", ret, got_len);
+            dump_cmd_out(out);
+            TAP_NOTOK("net_cmd_ftp", "listing/550/file/rc mismatch");
+            return;
+        }
         TAP_OK("net_cmd_ftp");
-    } else {
-        tapf("# net_cmd_ftp: rc=%ld out=%s\n", ret, out);
-        TAP_TODO("net_cmd_ftp", "red-baseline 21");
     }
 }
 
@@ -6662,6 +6679,44 @@ static void tc_net_cmd_traceroute(void)
         tapf("# net_cmd_traceroute: UDP probe send errno=%ld\n", call_errno());
         TAP_TODO("net_cmd_traceroute", "red-baseline 18");
     }
+}
+
+/* z.ai step 8c item 1: put a 1500-byte file with STOR; netsvc logs the
+ * received size on the host side and the client reports it too. */
+static void tc_net_cmd_ftp_put(void)
+{
+    BPTR fh;
+    LONG ret;
+    char out[1024];
+    char args[96];
+    int i;
+
+    fh = Open((CONST_STRPTR)"T:ftp_put.bin", MODE_NEWFILE);
+    if (fh != (BPTR)0) {
+        for (i = 0; i < 1500; i++) {
+            unsigned char b = (unsigned char)(i & 0xFF);
+            Write(fh, (CONST APTR)&b, 1);
+        }
+        Close(fh);
+    }
+    fh = Open((CONST_STRPTR)"T:ftp_put.cmd", MODE_NEWFILE);
+    if (fh != (BPTR)0) {
+        { LONG L = strlen("put T:ftp_put.bin uploaded.bin\n"); Write(fh, (CONST APTR)"put T:ftp_put.bin uploaded.bin\n", L); }
+        { LONG L = strlen("quit\n"); Write(fh, (CONST APTR)"quit\n", L); }
+        Close(fh);
+    }
+    snprintf_safe(args, sizeof(args), "10.0.2.2 %ld SCRIPT T:ftp_put.cmd",
+                  (LONG)NETSVC_FTP_PORT);
+    ret = run_cmd("C:ftp", args, NULL, out, sizeof(out));
+    DeleteFile((CONST_STRPTR)"T:ftp_put.bin");
+    DeleteFile((CONST_STRPTR)"T:ftp_put.cmd");
+    if (ret != 0 || strstr(out, "1500") == NULL) {
+        tapf("# net_cmd_ftp_put: rc=%ld (want 0, 1500-byte report)\n", ret);
+        dump_cmd_out(out);
+        TAP_NOTOK("net_cmd_ftp_put", "stor round trip failed");
+        return;
+    }
+    TAP_OK("net_cmd_ftp_put");
 }
 
 /* Item 20: tftp RRQ & unset d2/a2 in recvfrom (Madde 20: tftp.c:34-43) */
@@ -7196,6 +7251,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_wget);
     TN_RUN(tc_net_cmd_wget_continue);
     TN_RUN(tc_net_cmd_ftp);
+    TN_RUN(tc_net_cmd_ftp_put);
     TN_RUN(tc_net_cmd_sntp);
     TN_RUN(tc_net_cmd_traceroute);
     TN_RUN(tc_net_cmd_tftp);
