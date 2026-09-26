@@ -7148,6 +7148,8 @@ static void tc_net_cmd_status_route(void)
              (LONG)added, (LONG)removed, out);
         TAP_NOTOK("net_cmd_status_route", "route add/delete not reflected");
     }
+}
+
 static void tc_net_recv_ctrlc(void)
 {
     LONG lst = -1, cli = -1, conn = -1;
