@@ -64,7 +64,7 @@ LWIP_OBJS = $(patsubst %.c,$(BUILD)/%.o,$(LWIP_CORE_SRCS))
 # Common & SANA-II Objects
 # inet_parse/config_text/sbtc_dispatch/fdset_util are the pure, host-testable
 # units (Round 3 §B.1) shared by daemon, library and host tests.
-COMMON_OBJS = $(BUILD)/src/common/log.o $(BUILD)/src/common/mem.o $(BUILD)/src/common/prefs.o \
+COMMON_OBJS = $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD)/src/common/mem.o $(BUILD)/src/common/prefs.o \
               $(BUILD)/src/common/inet_parse.o $(BUILD)/src/common/config_text.o \
               $(BUILD)/src/common/sbtc_dispatch.o $(BUILD)/src/common/fdset_util.o \
               $(BUILD)/src/common/ipc_client.o $(BUILD)/src/common/http_url.o \
@@ -157,7 +157,7 @@ HOST_UNITS   = src/common/inet_parse.c src/common/config_text.c \
                src/setup/net_test.c src/setup/hw_detect.c \
                tests/host/mock_lwip.c src/task/slot_table.c \
                src/task/route.c src/common/ifreader.c \
-               src/task/timers.c
+               src/common/log_format.c src/task/timers.c
 HOST_TESTS   = $(wildcard tests/host/test_*.c)
 HOST_BINS    = $(patsubst tests/host/%.c,$(BUILD)/host/%,$(HOST_TESTS))
 
@@ -229,11 +229,11 @@ $(USERGROUP_LIB): $(UG_OBJS)
 	$(CC) $(LDFLAGS) -nostartfiles -o $@ $^
 
 # Target: TolunnetStatus Diagnostic Tool (M1/M2)
-$(STATUS_BIN): $(BUILD)/src/cmds/TolunnetStatus.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/config_text.o $(BUILD)/src/common/log.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/common/rawfmt.o
+$(STATUS_BIN): $(BUILD)/src/cmds/TolunnetStatus.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/config_text.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/common/rawfmt.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TestSocket Client Binary (M3)
-$(TEST_BIN): $(BUILD)/src/cmds/TestSocket.o $(BUILD)/src/common/log.o
+$(TEST_BIN): $(BUILD)/src/cmds/TestSocket.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: CLI commands (CMD-0/1/2)
@@ -307,15 +307,15 @@ $(NETSHUTDOWN_BIN): $(BUILD)/src/cmds/NetShutdown.o $(CMDLIB_OBJ) $(BUILD)/src/c
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetPing CLI Binary (M4)
-$(PING_BIN): $(BUILD)/src/cmds/TolunnetPing.o $(BUILD)/src/common/log.o
+$(PING_BIN): $(BUILD)/src/cmds/TolunnetPing.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetGet HTTP Client CLI Binary (M5)
-$(GET_BIN): $(BUILD)/src/cmds/TolunnetGet.o $(BUILD)/src/common/log.o $(BUILD)/src/common/http_url.o $(BUILD)/src/common/rawfmt.o
+$(GET_BIN): $(BUILD)/src/cmds/TolunnetGet.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD)/src/common/http_url.o $(BUILD)/src/common/rawfmt.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetPrefs Native Workbench GadTools GUI Panel
-$(PREFS_BIN): $(BUILD)/src/cmds/TolunnetPrefs.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/log.o $(BUILD)/src/common/config_text.o $(BUILD)/src/common/inet_parse.o $(BUILD)/src/common/sbtc_dispatch.o $(BUILD)/src/common/fdset_util.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/setup/stack_detect.o
+$(PREFS_BIN): $(BUILD)/src/cmds/TolunnetPrefs.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD)/src/common/config_text.o $(BUILD)/src/common/inet_parse.o $(BUILD)/src/common/sbtc_dispatch.o $(BUILD)/src/common/fdset_util.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/setup/stack_detect.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetSetup First-Run Network Wizard
@@ -326,12 +326,12 @@ SETUP_OBJS = $(BUILD)/src/cmds/TolunnetSetup.o \
              $(BUILD)/src/setup/net_test.o \
              $(BUILD)/src/setup/setup_rexx.o \
              $(BUILD)/src/common/inet_parse.o \
-             $(BUILD)/src/common/log.o
+             $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o
 $(SETUP_BIN): $(SETUP_OBJS)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: SocketConformance Amiga-side TAP binary (Round 3 §B.2)
-$(CONF_BIN): $(BUILD)/tests/amiga/SocketConformance.o $(BUILD)/src/common/log.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/setup/wifi_mgr.o $(BUILD)/src/setup/stack_detect.o
+$(CONF_BIN): $(BUILD)/tests/amiga/SocketConformance.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/setup/wifi_mgr.o $(BUILD)/src/setup/stack_detect.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: FreezeWatch TNET-115 capture helper (bench diagnostic only,
