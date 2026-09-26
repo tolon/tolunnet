@@ -1186,7 +1186,7 @@ static void tc_connect_refused(void)
     for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
     sin.sin_len    = sizeof(sin);
     sin.sin_family = AF_INET;
-    sin.sin_port   = htons(9);
+    sin.sin_port   = htons(65530); /* certainly closed */
     sin.sin_addr.s_addr = htonl(0x7F000001UL); /* 127.0.0.1, closed */
     rc = call_connect(s, (struct sockaddr *)&sin, sizeof(sin));
     if (rc < 0 && call_errno() == ECONNREFUSED) {
@@ -1222,7 +1222,7 @@ static void tc_connect_refused_host(void)
     for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
     sin.sin_len    = sizeof(sin);
     sin.sin_family = AF_INET;
-    sin.sin_port   = htons(9);
+    sin.sin_port   = htons(65530); /* certainly closed */
     sin.sin_addr.s_addr = htonl(0x0A000202UL); /* 10.0.2.2, closed port */
     rc = call_connect(s, (struct sockaddr *)&sin, sizeof(sin));
     if (rc == 0) {
