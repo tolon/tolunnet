@@ -18,7 +18,6 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
-#include "../../include/ipc.h"
 
 /* Return codes (AmigaDOS convention) */
 #define TN_CMD_OK    0
@@ -42,26 +41,6 @@ LONG tn_call_sendto(LONG fd, const void *buf, LONG len, LONG flags,
                     const struct sockaddr *to, LONG tolen);
 LONG tn_call_recvfrom(LONG fd, void *buf, LONG len, LONG flags,
                       struct sockaddr *from, LONG *fromlen);
-
-/* --- z.ai step 9a item 1: live daemon state over IPC only --- */
-#define TN_SNAP_MAX_IFS 8
-#define TN_SNAP_MAX_ROUTES 16
-typedef struct TnSnapshot {
-    TnStatusInfoV2 status;                  /* GETSTATUS v2 */
-    TnIfInfo ifs[TN_SNAP_MAX_IFS];          /* IFCTL LIST */
-    LONG if_count;                          /* -1 if the call failed */
-    TnRouteInfo routes[TN_SNAP_MAX_ROUTES]; /* ROUTECTL LIST */
-    LONG route_count;                       /* -1 if the call failed */
-    LONG socket_count;                      /* status.active_sockets */
-} TnSnapshot;
-
-/* Fill snap from the daemon over the IPC port; opens no library.
- * Returns 0 when the daemon answered, -1 when it is not running. */
-int tn_cmd_snapshot(TnSnapshot *snap);
-
-/* Format a big-endian ULONG IPv4 as a.b.c.d into buf (>= 16 bytes). */
-void tn_cmd_ip_to_str(ULONG ip, char *buf);
-
 LONG tn_call_closesocket(LONG fd);
 LONG tn_call_gethostname(STRPTR name, LONG len);
 LONG tn_call_errno(void);

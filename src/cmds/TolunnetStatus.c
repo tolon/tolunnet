@@ -73,10 +73,7 @@ int main(int argc, char *argv[])
 {
     struct Library *DOSBase;
     struct Library *SocketBase;
-    static TnIfInfo if_list[8];
-    static TnRouteInfo rt_list[16];
-    int if_count = 0, rt_count = 0;
-    ULONG dns1 = 0, dns2 = 0;
+    TnPrefs prefs;
     BOOL is_netstat = FALSE;
     ULONG live_ip = 0, live_nm = 0, live_gw = 0;
     int active_socks = 0;
@@ -89,18 +86,8 @@ int main(int argc, char *argv[])
     g_log_dos = DOSBase;
     g_log_level = TN_LOG_VERBOSE;
 
-    /* z.ai step 9a item 1: case-insensitive FilePart alias match */
-    if (argv && argv[0]) {
-        STRPTR base = FilePart((STRPTR)argv[0]);
-        char lc[32];
-        int i;
-        for (i = 0; base[i] && i < 31; i++) {
-            char c = base[i];
-            if (c >= 65 && c <= 90) c = (char)(c + 32);
-            lc[i] = c;
-        }
-        lc[i] = 0;
-        if (strcmp(lc, "netstat") == 0) is_netstat = TRUE;
+    if (argv && argv[0] && str_ends_with(argv[0], "netstat")) {
+        is_netstat = TRUE;
     }
 
     SocketBase = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
@@ -110,55 +97,17 @@ int main(int argc, char *argv[])
         return 5;
     }
 
-    /* z.ai step 9a item 1: live daemon state - status V2 (dns), the
-    interface list and the route list. No prefs fallback. */
+    /* Load persistent configuration */
+    tn_prefs_load(&prefs);
+
+    /* Query live daemon status via Exec IPC (TNET-043/082) */
     {
-        static TnStatusInfoV2 v2;
-        LONG sargs[5];
-        APTR sptrs[1];
         TnIpcMsg msg;
-        sargs[0] = 0; sargs[1] = 0; sargs[2] = 0; sargs[3] = 0;
-        sargs[4] = (LONG)sizeof(TnStatusInfoV2);
-        sptrs[0] = (APTR)&v2;
-        if (tn_ipc_oneshot_ex(TN_IPC_CMD_GETSTATUS, sargs, 5, sptrs, 1, &msg) == 0) {
-            live_ip = ((ULONG)v2.ip_addr[0] << 24) | ((ULONG)v2.ip_addr[1] << 16) |
-                      ((ULONG)v2.ip_addr[2] << 8) | (ULONG)v2.ip_addr[3];
-            live_nm = ((ULONG)v2.netmask[0] << 24) | ((ULONG)v2.netmask[1] << 16) |
-                      ((ULONG)v2.netmask[2] << 8) | (ULONG)v2.netmask[3];
-            live_gw = ((ULONG)v2.gw[0] << 24) | ((ULONG)v2.gw[1] << 16) |
-                      ((ULONG)v2.gw[2] << 8) | (ULONG)v2.gw[3];
-            active_socks = (int)v2.active_sockets;
-            dns1 = ((ULONG)v2.dns1[0] << 24) | ((ULONG)v2.dns1[1] << 16) |
-                   ((ULONG)v2.dns1[2] << 8) | (ULONG)v2.dns1[3];
-            dns2 = ((ULONG)v2.dns2[0] << 24) | ((ULONG)v2.dns2[1] << 16) |
-                   ((ULONG)v2.dns2[2] << 8) | (ULONG)v2.dns2[3];
-        }
-    }
-    {
-        LONG iargs[5];
-        APTR iptrs[1];
-        TnIpcMsg msg;
-        iargs[0] = TN_IFCTL_LIST; iargs[1] = 0; iargs[2] = 0; iargs[3] = 0;
-        iargs[4] = 8;
-        iptrs[0] = (APTR)if_list;
-        if (tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, iargs, 5, iptrs, 1, &msg) == 0 &&
-            msg.result > 0) {
-            if_count = (int)msg.result;
-            live_ip = if_list[0].addr;
-            live_nm = if_list[0].mask;
-            live_gw = if_list[0].gw;
-        }
-    }
-    {
-        LONG rargs[5];
-        APTR rptrs[1];
-        TnIpcMsg msg;
-        rargs[0] = TN_ROUTECTL_LIST; rargs[1] = 0; rargs[2] = 0; rargs[3] = 0;
-        rargs[4] = 16;
-        rptrs[0] = (APTR)rt_list;
-        if (tn_ipc_oneshot_ex(TN_IPC_CMD_ROUTECTL, rargs, 5, rptrs, 1, &msg) == 0 &&
-            msg.result > 0) {
-            rt_count = (int)msg.result;
+        if (tn_ipc_oneshot(TN_IPC_CMD_GETSTATUS, NULL, 0, &msg) == 0) {
+            live_ip      = (ULONG)msg.args[0];
+            live_nm      = (ULONG)msg.args[1];
+            live_gw      = (ULONG)msg.args[2];
+            active_socks = (int)msg.args[3];
         }
     }
 
@@ -166,6 +115,11 @@ int main(int argc, char *argv[])
         ip_to_str(live_ip, ip_str);
         ip_to_str(live_nm, nm_str);
         ip_to_str(live_gw, gw_str);
+    } else {
+        int i = 0;
+        while (prefs.ip_addr[i]) { ip_str[i] = prefs.ip_addr[i]; i++; } ip_str[i] = '\0';
+        i = 0; while (prefs.netmask[i]) { nm_str[i] = prefs.netmask[i]; i++; } nm_str[i] = '\0';
+        i = 0; while (prefs.gateway[i]) { gw_str[i] = prefs.gateway[i]; i++; } gw_str[i] = '\0';
     }
 
     if (is_netstat) {
@@ -212,41 +166,25 @@ int main(int argc, char *argv[])
         tn_logf(TN_LOG_BASIC, "active socket descriptors: %ld\n", (LONG)((count > 0) ? count : active_socks));
         PutStr((CONST_STRPTR)"\nKernel IP routing table:\n");
         PutStr((CONST_STRPTR)"Destination     Gateway         Genmask         Flags Metric Ref    Use Iface\n");
-        /* z.ai step 9a item 1: the daemon route list, not placeholders */
-        for (int ri = 0; ri < rt_count && ri < 16; ri++) {
-            char rd[24], rg[24], rm[24];
-            const char *gws;
-            const char *ifn = (if_count > 0) ? if_list[0].name : "eth0";
-            if (!rt_list[ri].in_use) continue;
-            ip_to_str(rt_list[ri].dest, rd);
-            ip_to_str(rt_list[ri].mask, rm);
-            if (rt_list[ri].gw == 0) {
-                gws = "*";
-            } else {
-                ip_to_str(rt_list[ri].gw, rg);
-                gws = rg;
-            }
-            tn_logf(TN_LOG_BASIC, "%-15s %-15s %-15s %-5s 0      0        0 %s\n",
-                    rd, gws, rm, (rt_list[ri].gw != 0) ? "UG" : "U", ifn);
-        }
+        tn_logf(TN_LOG_BASIC, "default         %-15s 0.0.0.0         UG    0      0        0 %s%lu\n",
+                gw_str[0] ? gw_str : "10.0.2.2", prefs.device, prefs.unit);
+        tn_logf(TN_LOG_BASIC, "%-15s *               %-15s U     0      0        0 %s%lu\n",
+                ip_str[0] ? ip_str : "10.0.2.0",
+                nm_str[0] ? nm_str : "255.255.255.0",
+                prefs.device, prefs.unit);
     }
  else {
-        /* z.ai step 9a item 1: live interface flags, DNS and socket
-         * count - no prefs, no fixed UP. */
-        char d1[24], d2[24];
-        ip_to_str(dns1, d1);
-        ip_to_str(dns2, d2);
-        tn_logf(TN_LOG_BASIC, "%s (unit %lu): flags=<%s,%s,%s> mtu 1500\n",
-                if_count > 0 ? if_list[0].name : "eth0",
-                if_count > 0 ? (ULONG)if_list[0].unit : 0,
-                (if_count > 0 && if_list[0].is_up) ? "UP" : "DOWN",
-                (if_count > 0 && if_list[0].is_dhcp) ? "DHCP" : "STATIC",
-                (if_count > 0 && if_list[0].link_up) ? "LINK" : "NOLINK");
+        tn_logf(TN_LOG_BASIC, "%s (unit %lu): flags=0x8063<UP,BROADCAST,RUNNING,MULTICAST> mtu 1500\n",
+                prefs.device, prefs.unit);
         tn_logf(TN_LOG_BASIC, "        inet %s  netmask %s  gateway %s\n",
-                ip_str, nm_str, gw_str);
-        tn_logf(TN_LOG_BASIC, "        nameserver %s\n", d1[0] ? d1 : "none");
-        if (dns2 != 0) tn_logf(TN_LOG_BASIC, "        nameserver %s\n", d2);
-        tn_logf(TN_LOG_BASIC, "        active sockets: %ld\n", (LONG)active_socks);
+                ip_str[0] ? ip_str : "0.0.0.0",
+                nm_str[0] ? nm_str : "255.255.255.0",
+                gw_str[0] ? gw_str : "0.0.0.0");
+        tn_logf(TN_LOG_BASIC, "        nameserver %s  (mode: %s)\n",
+                prefs.dns_server[0] ? prefs.dns_server : "none",
+                prefs.use_dhcp ? "DHCP" : "STATIC");
+        PutStr((CONST_STRPTR)"lo0:    flags=0x8049<UP,LOOPBACK,RUNNING> mtu 16384\n");
+        PutStr((CONST_STRPTR)"        inet 127.0.0.1  netmask 255.0.0.0\n");
     }
 
     CloseLibrary(SocketBase);

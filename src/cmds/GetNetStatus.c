@@ -20,54 +20,14 @@ int main(int argc, char **argv)
     int rc = TN_CMD_OK;
     char name[64];
 
-    /* z.ai step 9a item 1: ADDRESS/GATEWAY/DNS are pure IPC - the
-     * library is opened only for the liveness paths that need it. */
+    if (tn_cmd_init() != TN_CMD_OK) return TN_CMD_FAIL;
+
     rdargs = ReadArgs((CONST_STRPTR)TEMPLATE, opts, NULL);
     if (rdargs == NULL) {
         PrintFault(IoErr(), (CONST_STRPTR)"GetNetStatus");
+        tn_cmd_fini();
         return TN_CMD_USAGE;
     }
-
-    if (opts[1] || opts[2] || opts[3]) {
-        static TnSnapshot snap;
-        char buf[16];
-        if (tn_cmd_snapshot(&snap) != 0) {
-            tn_cmd_printf("offline\n");
-            FreeArgs(rdargs);
-            return TN_CMD_WARN; /* RC 5: daemon not running */
-        }
-        if (opts[1]) {
-            ULONG raw = ((ULONG)snap.status.ip_addr[0] << 24) |
-                        ((ULONG)snap.status.ip_addr[1] << 16) |
-                        ((ULONG)snap.status.ip_addr[2] << 8) |
-                         (ULONG)snap.status.ip_addr[3];
-            tn_cmd_ip_to_str(raw, buf);
-            tn_cmd_printf("%s\n", buf);
-        } else if (opts[2]) {
-            ULONG raw = ((ULONG)snap.status.gw[0] << 24) |
-                        ((ULONG)snap.status.gw[1] << 16) |
-                        ((ULONG)snap.status.gw[2] << 8) |
-                         (ULONG)snap.status.gw[3];
-            tn_cmd_ip_to_str(raw, buf);
-            tn_cmd_printf("%s\n", buf);
-        } else {
-            ULONG raw1 = ((ULONG)snap.status.dns1[0] << 24) |
-                         ((ULONG)snap.status.dns1[1] << 16) |
-                         ((ULONG)snap.status.dns1[2] << 8) |
-                          (ULONG)snap.status.dns1[3];
-            ULONG raw2 = ((ULONG)snap.status.dns2[0] << 24) |
-                         ((ULONG)snap.status.dns2[1] << 16) |
-                         ((ULONG)snap.status.dns2[2] << 8) |
-                          (ULONG)snap.status.dns2[3];
-            if (raw1 != 0) { tn_cmd_ip_to_str(raw1, buf); tn_cmd_printf("%s\n", buf); }
-            if (raw2 != 0) { tn_cmd_ip_to_str(raw2, buf); tn_cmd_printf("%s\n", buf); }
-            if (raw1 == 0 && raw2 == 0) tn_cmd_printf("none\n");
-        }
-        FreeArgs(rdargs);
-        return TN_CMD_OK;
-    }
-
-    if (tn_cmd_init() != TN_CMD_OK) return TN_CMD_FAIL;
 
     /* ONLINE: daemon liveness, not DNS — a resolver round trip would call
      * every DNS-less site "offline" (TNET-141). The library answering
@@ -82,6 +42,16 @@ int main(int argc, char **argv)
             rc = TN_CMD_WARN;
         }
         if (fd >= 0) tn_call_closesocket(fd);
+    } else if (opts[1]) {
+        /* ADDRESS: not directly available via thin client */
+        tn_cmd_printf("(use ifconfig for address)\n");
+        rc = TN_CMD_WARN;
+    } else if (opts[2]) {
+        tn_cmd_printf("(use netstat -r for gateway)\n");
+        rc = TN_CMD_WARN;
+    } else if (opts[3]) {
+        tn_cmd_printf("(use netstat for DNS)\n");
+        rc = TN_CMD_WARN;
     } else {
         /* Default: show hostname as proof of stack liveness */
         if (tn_call_gethostname((STRPTR)name, (LONG)sizeof(name) - 1) == 0) {
