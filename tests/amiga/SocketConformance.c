@@ -259,7 +259,9 @@ static ULONG tc_cfg_ip(const char *key, ULONG def)
         while (SysBase->IDNestCnt < -1) Disable(); \
     } \
     if (SocketBase != NULL && ((TnSocketBase *)SocketBase)->ipc_timeouts > tn_wd0) { \
-        tapf("# TIMEOUT: ipc watchdog fired during %s\n", #tc); \
+        g_count++; g_not_ok_count++;
+        tapf("not ok %d - %s # TIMEOUT: ipc watchdog fired during the test\n",
+                     g_count, #tc);
     } } while (0)
 #define TAP_TODO(name, why)  do { g_count++; tapf("not ok %d - %s # TODO %s\n", g_count, name, why); } while (0)
 #define TAP_SKIP(name, why)  do { g_count++; tapf("ok %d - %s # SKIP %s\n", g_count, name, why); } while (0)
@@ -1173,7 +1175,8 @@ static void tc_listen_accept_loopback(void)
 
 static void tc_connect_refused(void)
 {
-    /* slirp: connecting to a closed port on 10.0.2.2 must refuse quickly */
+    /* z.ai step 10a item 1: a closed port on the guest loopback must
+     * refuse with ECONNREFUSED - any other failure is not accepted. */
     LONG s = call_socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in sin;
     LONG rc;
@@ -1183,13 +1186,67 @@ static void tc_connect_refused(void)
     for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
     sin.sin_len    = sizeof(sin);
     sin.sin_family = AF_INET;
-    sin.sin_port   = htons(9); /* discard-ish port on the host: closed */
-    sin.sin_addr.s_addr = htonl(0x0A000202UL); /* 10.0.2.2 */
+    sin.sin_port   = htons(9);
+    sin.sin_addr.s_addr = htonl(0x7F000001UL); /* 127.0.0.1, closed */
     rc = call_connect(s, (struct sockaddr *)&sin, sizeof(sin));
-    if (rc < 0) {
+    if (rc < 0 && tn_call_errno() == ECONNREFUSED) {
         TAP_OK("tc_connect_refused");
     } else {
-        TAP_NOTOK("tc_connect_refused", "connect unexpectedly succeeded");
+        tapf("# tc_connect_refused: rc=%ld errno=%ld (want -1/ECONNREFUSED)\n",
+             rc, tn_call_errno());
+        TAP_NOTOK("tc_connect_refused", "expected ECONNREFUSED");
+    }
+    call_closesocket(s);
+}
+
+/* z.ai step 10a item 1: a closed port on the slirp host must refuse
+ * within 10 s: non-blocking connect + WaitSelect + SO_ERROR. */
+static void tc_connect_refused_host(void)
+{
+    LONG s = call_socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in sin;
+    LONG one = 1, soerr = 0;
+    LONG so_len = (LONG)sizeof(soerr);
+    fd_set wfds;
+    struct timeval tv;
+    LONG rc, sel;
+    int i;
+
+    if (s < 0) { TAP_NOTOK("tc_connect_refused_host", "no socket"); return; }
+    if (tn_call_ioctl(s, FIONBIO, (APTR)&one) != 0) {
+        TAP_NOTOK("tc_connect_refused_host", "FIONBIO failed");
+        call_closesocket(s);
+        return;
+    }
+    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
+    sin.sin_len    = sizeof(sin);
+    sin.sin_family = AF_INET;
+    sin.sin_port   = htons(9);
+    sin.sin_addr.s_addr = htonl(0x0A000202UL); /* 10.0.2.2, closed port */
+    rc = call_connect(s, (struct sockaddr *)&sin, sizeof(sin));
+    if (rc == 0) {
+        TAP_NOTOK("tc_connect_refused_host", "closed port accepted");
+        call_closesocket(s);
+        return;
+    }
+    FD_ZERO(&wfds);
+    FD_SET(s, &wfds);
+    tv.tv_secs = 10;
+    tv.tv_micro = 0;
+    sel = tn_call_waitselect(s + 1, NULL, &wfds, NULL, &tv, NULL);
+    if (sel <= 0) {
+        tapf("# tc_connect_refused_host: waitselect=%ld\n", sel);
+        TAP_NOTOK("tc_connect_refused_host", "no refusal within 10 s");
+        call_closesocket(s);
+        return;
+    }
+    if (tn_call_getsockopt(s, SOL_SOCKET, SO_ERROR,
+                           (APTR)&soerr, &so_len) == 0 &&
+        soerr == ECONNREFUSED) {
+        TAP_OK("tc_connect_refused_host");
+    } else {
+        tapf("# tc_connect_refused_host: soerr=%ld\n", soerr);
+        TAP_NOTOK("tc_connect_refused_host", "SO_ERROR != ECONNREFUSED");
     }
     call_closesocket(s);
 }
@@ -5400,7 +5457,7 @@ static struct tn_passwd *ug_getpwnam(const char *name)
     register struct Library *a6 __asm__("a6") = UserGroupBase;
     register struct tn_passwd *d0 __asm__("d0");
     register const char *a1 __asm__("a1") = name;
-    __asm__ __volatile__ ("jsr -114(%%a6)" /* lvo:IoctlSocket */
+    __asm__ __volatile__ ("jsr -114(%%a6)"
         : "=r"(d0), "+r"(a1)
         : "r"(a6)
         : "d1", "a0", "memory");
@@ -7657,6 +7714,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_ioctl_fionread);
     TN_RUN(tc_listen_accept_loopback);
     TN_RUN(tc_connect_refused);
+    TN_RUN(tc_connect_refused_host);
     TN_RUN(tc_nonblock_connect);
     TN_RUN(tc_shutdown_wr);
     TN_RUN(tc_getpeername);
