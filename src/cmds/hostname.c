@@ -96,7 +96,7 @@ int main(int argc, char **argv)
             FreeArgs(rdargs); tn_cmd_fini();
             return TN_CMD_OK;
         }
-        tn_cmd_printf("hostname: %s failed (ioerr=%ld)\n", saved ? "RECONFIG" : "save", (LONG)IoErr());
+        tn_cmd_printf("hostname: %s failed (ioerr=%ld stage=%ld)\n", saved ? "RECONFIG" : "save", (LONG)IoErr(), (LONG)tn_prefs_last_stage);
         FreeArgs(rdargs); tn_cmd_fini();
         return TN_CMD_FAIL;
     }
