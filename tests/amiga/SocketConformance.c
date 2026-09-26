@@ -7258,6 +7258,29 @@ static void tc_net_cmd_hostname_set(void)
     }
 }
 
+/* z.ai step 9b item 3: TTL applied via IP_TTL; TTL 0 is a usage error. */
+static void tc_net_cmd_ping_ttl(void)
+{
+    char out[512];
+    char junk[512];
+    int ttl_ok = 0, zero_ok = 0;
+    LONG r1, r2;
+
+    r1 = run_cmd("C:TolunnetPing", "10.0.2.2 COUNT 1 TTL 7", NULL, out, sizeof(out));
+    if (r1 == 0 && strstr(out, "1 packets received") != NULL) ttl_ok = 1;
+
+    r2 = run_cmd("C:TolunnetPing", "10.0.2.2 COUNT 1 TTL 0", NULL, junk, sizeof(junk));
+    if (r2 == 10 && strstr(junk, "TTL must be 1-255") != NULL) zero_ok = 1;
+
+    if (ttl_ok && zero_ok) {
+        TAP_OK("net_cmd_ping_ttl");
+    } else {
+        tapf("# net_cmd_ping_ttl: ttl=%ld zero=%ld r1=%ld r2=%ld out=%s\n",
+             (LONG)ttl_ok, (LONG)zero_ok, r1, r2, out);
+        TAP_NOTOK("net_cmd_ping_ttl", "TTL handling broken");
+    }
+}
+
 static void tc_net_recv_ctrlc(void)
 {
     LONG lst = -1, cli = -1, conn = -1;
@@ -7609,6 +7632,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_route_host);
     TN_RUN(tc_net_cmd_netshutdown);
     TN_RUN(tc_net_cmd_hostname_set);
+    TN_RUN(tc_net_cmd_ping_ttl);
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");

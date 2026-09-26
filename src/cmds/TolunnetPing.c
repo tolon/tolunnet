@@ -143,6 +143,39 @@ static in_addr_t call_inet_addr(CONST_STRPTR cp)
     return (in_addr_t)d0;
 }
 
+static LONG call_setsockopt(LONG sock, LONG level, LONG optname,
+                            const void *optval, LONG optlen)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0") = sock;
+    register LONG d1 __asm__("d1") = level;
+    register LONG d2 __asm__("d2") = optname;
+    register const void *a0 __asm__("a0") = optval;
+    register LONG d3 __asm__("d3") = optlen;
+
+    __asm__ __volatile__ (
+        "jsr -6(%%a6)"
+        : "+r"(d0)
+        : "r"(a6), "r"(d0), "r"(d1), "r"(d2), "r"(a0), "r"(d3)
+        : "d1", "d2", "d3", "a0", "a1", "memory"
+    );
+    return d0;
+}
+
+static LONG call_errno(void)
+{
+    register struct Library *a6 __asm__("a6") = SocketBase;
+    register LONG d0 __asm__("d0");
+
+    __asm__ __volatile__ (
+        "jsr -83(%%a6)"
+        : "=r"(d0)
+        : "r"(a6)
+        : "d1", "a0", "a1", "memory"
+    );
+    return d0;
+}
+
 static struct hostent *call_gethostbyname(CONST_STRPTR name)
 {
     register struct Library *a6 __asm__("a6") = SocketBase;
@@ -225,11 +258,11 @@ int main(int argc, char *argv[])
     CONST_STRPTR target_str;
     char target_ip_str[24];
     in_addr_t target_ip;
-    LONG sock, count = 4, size = 56, interval = 1, timeout = 2;
+    LONG sock, count = 4, size = 56, interval = 1, timeout = 2, ttl = 0;
     BOOL quiet = FALSE, use_udp = FALSE;
     UWORD ping_id;
-    char tx_buf[1500];
-    char rx_buf[1600];
+    char *tx_buf = NULL;  /* z.ai step 9b item 3: heap, not the 4 KB CLI stack */
+    char *rx_buf = NULL;
     LONG transmitted = 0, acknowledged = 0;
     ULONG min_us = 0xFFFFFFFFUL, max_us = 0, sum_us = 0;
     ULONG sum_sq_100us = 0;
@@ -261,6 +294,7 @@ int main(int argc, char *argv[])
     if (opts[OPT_SIZE])     size = *(LONG *)opts[OPT_SIZE];
     if (opts[OPT_INTERVAL]) interval = *(LONG *)opts[OPT_INTERVAL];
     if (opts[OPT_TIMEOUT])  timeout = *(LONG *)opts[OPT_TIMEOUT];
+    if (opts[OPT_TTL])      ttl = *(LONG *)opts[OPT_TTL];
     if (opts[OPT_QUIET])    quiet = TRUE;
     if (opts[OPT_UDP])      use_udp = TRUE;
 
@@ -269,6 +303,26 @@ int main(int argc, char *argv[])
     if (size > 1400) size = 1400;
     if (interval < 0) interval = 1;
     if (timeout <= 0) timeout = 2;
+
+    /* z.ai step 9b item 3: TTL 1-255 applied via IP_TTL; 0 or >255 is
+     * a usage error (RC 10). */
+    if (ttl < 0 || ttl > 255) {
+        tn_logf(TN_LOG_BASIC, "ping: TTL must be 1-255\n");
+        FreeArgs(rdargs);
+        CloseLibrary(DOSBase);
+        return 10;
+    }
+
+    /* z.ai step 9b item 3: 3.1 KB of ping buffers off the CLI stack */
+    tx_buf = AllocVec(1500, MEMF_CLEAR | MEMF_PUBLIC);
+    rx_buf = AllocVec(1600, MEMF_CLEAR | MEMF_PUBLIC);
+    if (tx_buf == NULL || rx_buf == NULL) {
+        if (tx_buf) FreeVec(tx_buf);
+        if (rx_buf) FreeVec(rx_buf);
+        FreeArgs(rdargs);
+        CloseLibrary(DOSBase);
+        return 20;
+    }
 
     /* 1. Open timer.device for microsecond RTT measurement */
     tm_port = CreateMsgPort();
@@ -336,6 +390,22 @@ int main(int argc, char *argv[])
         CloseLibrary(SocketBase);
         CloseLibrary(DOSBase);
         return 20;
+    }
+
+    /* z.ai step 9b item 3: apply the requested TTL before the first send */
+    if (ttl > 0) {
+        int ttl_val = (int)ttl;
+        if (call_setsockopt(sock, IPPROTO_IP, IP_TTL, &ttl_val, sizeof(ttl_val)) != 0) {
+            tn_logf(TN_LOG_BASIC, "ping: IP_TTL setsockopt failed (errno=%ld)\n", call_errno());
+            call_closesocket(sock);
+            if (tm_io) { CloseDevice((struct IORequest *)tm_io); FreeVec(tm_io); }
+            if (tm_port) DeleteMsgPort(tm_port);
+            FreeVec(tx_buf); FreeVec(rx_buf);
+            FreeArgs(rdargs);
+            CloseLibrary(SocketBase);
+            CloseLibrary(DOSBase);
+            return 10;
+        }
     }
 
     /* Task identity for ICMP identifier */
@@ -515,5 +585,7 @@ int main(int argc, char *argv[])
     FreeArgs(rdargs);
     CloseLibrary(SocketBase);
     CloseLibrary(DOSBase);
+    FreeVec(tx_buf);
+    FreeVec(rx_buf);
     return (acknowledged > 0) ? 0 : 5;
 }

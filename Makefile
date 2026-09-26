@@ -307,7 +307,7 @@ $(NETSHUTDOWN_BIN): $(BUILD)/src/cmds/NetShutdown.o $(CMDLIB_OBJ) $(BUILD)/src/c
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetPing CLI Binary (M4)
-$(PING_BIN): $(BUILD)/src/cmds/TolunnetPing.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o
+$(PING_BIN): $(BUILD)/src/cmds/TolunnetPing.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD)/src/common/ipc_client.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: TolunnetGet HTTP Client CLI Binary (M5)
