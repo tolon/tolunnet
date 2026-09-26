@@ -17,180 +17,12 @@
 #include <sys/socket.h>
 
 #include "../common/log.h"
+#include "cmdlib.h"
 #include "../../include/ipc.h"
 #include <string.h>
 
-static struct Library *SocketBase = NULL;
 
 /* 68k LVO wrappers for bsdsocket.library */
-static LONG call_socket(LONG domain, LONG type, LONG protocol)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = domain;
-    register LONG d1 __asm__("d1") = type;
-    register LONG d2 __asm__("d2") = protocol;
-
-    __asm__ __volatile__ (
-        "jsr -30(%%a6)"
-        : "+r"(d0)
-        : "r"(a6), "r"(d0), "r"(d1), "r"(d2)
-        : "d1", "d2", "a0", "a1", "memory"
-    );
-    return d0;
-}
-
-static LONG call_closesocket(LONG sock)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = sock;
-
-    __asm__ __volatile__ (
-        "jsr -120(%%a6)"
-        : "+r"(d0)
-        : "r"(a6), "r"(d0)
-        : "d1", "a0", "a1", "memory"
-    );
-    return d0;
-}
-
-static LONG call_sendto(LONG sock, const void *buf, LONG len, LONG flags,
-                        const struct sockaddr *to, socklen_t tolen)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = sock;
-    register const void *a0 __asm__("a0") = buf;
-    register LONG d1 __asm__("d1") = len;
-    register LONG d2 __asm__("d2") = flags;
-    register const struct sockaddr *a1 __asm__("a1") = to;
-    register LONG d3 __asm__("d3") = (LONG)tolen;
-
-    __asm__ __volatile__ (
-        "jsr -60(%%a6)"
-        : "+r"(d0)
-        : "r"(a6), "r"(d0), "r"(a0), "r"(d1), "r"(d2), "r"(a1), "r"(d3)
-        : "d1", "d2", "d3", "a0", "a1", "memory"
-    );
-    return d0;
-}
-
-static LONG call_recvfrom(LONG sock, void *buf, LONG len, LONG flags,
-                          struct sockaddr *addr, socklen_t *addrlen)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = sock;
-    register void *a0 __asm__("a0") = buf;
-    register LONG d1 __asm__("d1") = len;
-    register LONG d2 __asm__("d2") = flags;
-    register struct sockaddr *a1 __asm__("a1") = addr;
-    register socklen_t *a2 __asm__("a2") = addrlen;
-
-    __asm__ __volatile__ (
-        "jsr -72(%%a6)"
-        : "+r"(d0)
-        : "r"(a6), "r"(d0), "r"(a0), "r"(d1), "r"(d2), "r"(a1), "r"(a2)
-        : "d1", "d2", "a0", "a1", "a2", "memory"
-    );
-    return d0;
-}
-
-static LONG call_waitselect(LONG nfds, fd_set *rfds, fd_set *wfds, fd_set *efds,
-                            struct timeval *timeout, ULONG *signals)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = nfds;
-    register fd_set *a0 __asm__("a0") = rfds;
-    register fd_set *a1 __asm__("a1") = wfds;
-    register fd_set *a2 __asm__("a2") = efds;
-    register struct timeval *a3 __asm__("a3") = timeout;
-    register ULONG d1 __asm__("d1") = signals ? *signals : 0;
-
-    __asm__ __volatile__ (
-        "jsr -126(%%a6)"
-        : "+r"(d0)
-        : "r"(a6), "r"(d0), "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(d1)
-        : "d1", "a0", "a1", "a2", "a3", "memory"
-    );
-    return d0;
-}
-
-static STRPTR call_inet_ntoa(in_addr_t ip)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = (LONG)ip;
-    register STRPTR a0 __asm__("a0");
-
-    __asm__ __volatile__ (
-        "jsr -174(%%a6)"
-        : "=r"(a0), "+r"(d0)
-        : "r"(a6), "r"(d0)
-        : "d1", "a1", "memory"
-    );
-    return a0;
-}
-
-static in_addr_t call_inet_addr(CONST_STRPTR cp)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register CONST_STRPTR a0 __asm__("a0") = cp;
-    register LONG d0 __asm__("d0");
-
-    __asm__ __volatile__ (
-        "jsr -180(%%a6)"
-        : "=r"(d0)
-        : "r"(a6), "r"(a0)
-        : "d1", "a1", "memory"
-    );
-    return (in_addr_t)d0;
-}
-
-static LONG call_setsockopt(LONG sock, LONG level, LONG optname,
-                            const void *optval, LONG optlen)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = sock;
-    register LONG d1 __asm__("d1") = level;
-    register LONG d2 __asm__("d2") = optname;
-    register const void *a0 __asm__("a0") = optval;
-    register LONG d3 __asm__("d3") = optlen;
-
-    __asm__ __volatile__ (
-        "jsr -6(%%a6)"
-        : "+r"(d0)
-        : "r"(a6), "r"(d0), "r"(d1), "r"(d2), "r"(a0), "r"(d3)
-        : "d1", "d2", "d3", "a0", "a1", "memory"
-    );
-    return d0;
-}
-
-static LONG call_errno(void)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0");
-
-    __asm__ __volatile__ (
-        "jsr -83(%%a6)"
-        : "=r"(d0)
-        : "r"(a6)
-        : "d1", "a0", "a1", "memory"
-    );
-    return d0;
-}
-
-static struct hostent *call_gethostbyname(CONST_STRPTR name)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register CONST_STRPTR a0 __asm__("a0") = name;
-    register struct hostent *res __asm__("a0");
-
-    __asm__ __volatile__ (
-        "jsr -210(%%a6)"
-        : "=r"(res)
-        : "r"(a6), "r"(a0)
-        : "d0", "d1", "a1", "memory"
-    );
-    return res;
-}
-
 /* ICMP echo packet structure */
 struct tn_icmp_hdr {
     UBYTE type;
@@ -337,9 +169,8 @@ int main(int argc, char *argv[])
         }
     }
 
-    /* 2. Open bsdsocket.library */
-    SocketBase = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
-    if (SocketBase == NULL) {
+    /* 2. Open bsdsocket.library via cmdlib */
+    if (tn_cmd_init() != TN_CMD_OK) {
         PutStr((CONST_STRPTR)"ping: unable to open bsdsocket.library\n");
         if (tm_io) { CloseDevice((struct IORequest *)tm_io); FreeVec(tm_io); }
         if (tm_port) DeleteMsgPort(tm_port);
@@ -349,9 +180,9 @@ int main(int argc, char *argv[])
     }
 
     /* 3. Resolve Target IP */
-    target_ip = call_inet_addr(target_str);
+    target_ip = tn_call_inet_addr(target_str);
     if (target_ip == (in_addr_t)INADDR_NONE) {
-        he = call_gethostbyname(target_str);
+        he = tn_call_gethostbyname(target_str);
         if (he != NULL && he->h_addr_list != NULL && he->h_addr_list[0] != NULL) {
             memcpy(&target_ip, he->h_addr_list[0], sizeof(target_ip)); /* TNET-139 */
         } else {
@@ -359,14 +190,16 @@ int main(int argc, char *argv[])
             if (tm_io) { CloseDevice((struct IORequest *)tm_io); FreeVec(tm_io); }
             if (tm_port) DeleteMsgPort(tm_port);
             FreeArgs(rdargs);
-            CloseLibrary(SocketBase);
+            tn_cmd_fini();
             CloseLibrary(DOSBase);
             return 20;
         }
     }
 
     {
-        STRPTR ntoa = call_inet_ntoa(target_ip);
+        struct in_addr ia;
+        ia.s_addr = target_ip;
+        STRPTR ntoa = tn_call_inet_ntoa(ia);
         int j = 0;
         while (ntoa && ntoa[j] && j < 23) {
             target_ip_str[j] = ntoa[j];
@@ -377,9 +210,9 @@ int main(int argc, char *argv[])
 
     /* 4. Open Socket (SOCK_RAW for ICMP, SOCK_DGRAM for UDP) */
     if (use_udp) {
-        sock = call_socket(AF_INET, SOCK_DGRAM, 0);
+        sock = tn_call_socket(AF_INET, SOCK_DGRAM, 0);
     } else {
-        sock = call_socket(AF_INET, 3 /* SOCK_RAW */, 1 /* IPPROTO_ICMP */);
+        sock = tn_call_socket(AF_INET, 3 /* SOCK_RAW */, 1 /* IPPROTO_ICMP */);
     }
 
     if (sock < 0) {
@@ -387,7 +220,7 @@ int main(int argc, char *argv[])
         if (tm_io) { CloseDevice((struct IORequest *)tm_io); FreeVec(tm_io); }
         if (tm_port) DeleteMsgPort(tm_port);
         FreeArgs(rdargs);
-        CloseLibrary(SocketBase);
+        tn_cmd_fini();
         CloseLibrary(DOSBase);
         return 20;
     }
@@ -395,14 +228,14 @@ int main(int argc, char *argv[])
     /* z.ai step 9b item 3: apply the requested TTL before the first send */
     if (ttl > 0) {
         int ttl_val = (int)ttl;
-        if (call_setsockopt(sock, IPPROTO_IP, IP_TTL, &ttl_val, sizeof(ttl_val)) != 0) {
-            tn_logf(TN_LOG_BASIC, "ping: IP_TTL setsockopt failed (errno=%ld)\n", call_errno());
-            call_closesocket(sock);
+        if (tn_call_setsockopt(sock, IPPROTO_IP, IP_TTL, &ttl_val, sizeof(ttl_val)) != 0) {
+            tn_logf(TN_LOG_BASIC, "ping: IP_TTL setsockopt failed (errno=%ld)\n", tn_call_errno());
+            tn_call_closesocket(sock);
             if (tm_io) { CloseDevice((struct IORequest *)tm_io); FreeVec(tm_io); }
             if (tm_port) DeleteMsgPort(tm_port);
             FreeVec(tx_buf); FreeVec(rx_buf);
             FreeArgs(rdargs);
-            CloseLibrary(SocketBase);
+            tn_cmd_fini();
             CloseLibrary(DOSBase);
             return 10;
         }
@@ -464,7 +297,7 @@ int main(int argc, char *argv[])
             t_start = tm_io->tr_time;
         }
 
-        sent = call_sendto(sock, tx_buf, total_len, 0,
+        sent = tn_call_sendto(sock, tx_buf, total_len, 0,
                            (struct sockaddr *)&dst_sin, sizeof(dst_sin));
         if (sent > 0) {
             transmitted++;
@@ -475,9 +308,9 @@ int main(int argc, char *argv[])
             tv.tv_secs = timeout;
             tv.tv_micro = 0;
 
-            ready = call_waitselect(sock + 1, &rfds, NULL, NULL, &tv, NULL);
+            ready = tn_call_waitselect(sock + 1, &rfds, NULL, NULL, &tv, NULL);
             if (ready > 0) {
-                LONG rcvd = call_recvfrom(sock, rx_buf, sizeof(rx_buf), 0,
+                LONG rcvd = tn_call_recvfrom(sock, rx_buf, sizeof(rx_buf), 0,
                                           (struct sockaddr *)&from_sin, &from_len);
                 if (rcvd > 0) {
                     ULONG rtt_us = 0;
@@ -572,7 +405,7 @@ int main(int argc, char *argv[])
     }
 
     /* 7. Cleanup */
-    call_closesocket(sock);
+    tn_call_closesocket(sock);
 
     if (tm_io != NULL) {
         CloseDevice((struct IORequest *)tm_io);
@@ -583,7 +416,7 @@ int main(int argc, char *argv[])
     }
 
     FreeArgs(rdargs);
-    CloseLibrary(SocketBase);
+    tn_cmd_fini();
     CloseLibrary(DOSBase);
     FreeVec(tx_buf);
     FreeVec(rx_buf);

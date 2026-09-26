@@ -7266,8 +7266,10 @@ static void tc_net_cmd_ping_ttl(void)
     int ttl_ok = 0, zero_ok = 0;
     LONG r1, r2;
 
-    r1 = run_cmd("C:TolunnetPing", "10.0.2.2 COUNT 1 TTL 7", NULL, out, sizeof(out));
-    if (r1 == 0 && strstr(out, "1 packets received") != NULL) ttl_ok = 1;
+    /* z.ai step 9c item 1: 127.0.0.1 — lwIP answers ICMP echo itself,
+     * so the row proves OUR ping path without slirp. */
+    r1 = run_cmd("C:TolunnetPing", "127.0.0.1 COUNT 1 TTL 7", NULL, out, sizeof(out));
+    if (r1 == 0 && strstr(out, "bytes from 127.0.0.1") != NULL) ttl_ok = 1;
 
     r2 = run_cmd("C:TolunnetPing", "10.0.2.2 COUNT 1 TTL 0", NULL, junk, sizeof(junk));
     if (r2 == 10 && strstr(junk, "TTL must be 1-255") != NULL) zero_ok = 1;
@@ -7306,6 +7308,80 @@ static void tc_net_cmd_nslookup_ptr(void)
     } else {
         tapf("# net_cmd_nslookup_ptr: r=%ld out=%s\n", r, out);
         TAP_NOTOK("net_cmd_nslookup_ptr", "PTR answer missing");
+    }
+}
+
+/* z.ai step 9c item 1: ping the interface address reported by the
+ * daemon snapshot (lwIP answers for its own address). */
+static void tc_net_cmd_ping_self(void)
+{
+    static TnIfInfo rows[4];
+    TnIpcMsg msg;
+    LONG args[6];
+    APTR ptrs[1];
+    char out[512];
+    char self[16];
+    char args_str[96];
+    LONG r;
+    int ok = 0;
+
+    memset(&msg, 0, sizeof(msg));
+    memset(args, 0, sizeof(args));
+    args[0] = TN_IFCTL_LIST;
+    args[4] = 4;
+    ptrs[0] = rows;
+    if (tn_ipc_oneshot_ex(TN_IPC_CMD_IFCTL, args, 5, ptrs, 1, &msg) >= 1 &&
+        rows[0].in_use && rows[0].addr != 0) {
+        ULONG a = rows[0].addr;
+        self[0] = (char)('0' + (a >> 24 & 0xFF) / 100);
+        {
+            ULONG o1 = (a >> 24) & 0xFF, o2 = (a >> 16) & 0xFF;
+            ULONG o3 = (a >> 8) & 0xFF, o4 = a & 0xFF;
+            ULONG v[4];
+            int k, pos = 0;
+            v[0] = o1; v[1] = o2; v[2] = o3; v[3] = o4;
+            for (k = 0; k < 4; k++) {
+                int added = 0;
+                ULONG x = v[k];
+                if (k > 0) self[pos++] = '.';
+                if (x >= 100) { self[pos++] = (char)('0' + x / 100); added = 1; }
+                if (x >= 10 || added) { self[pos++] = (char)('0' + (x / 10) % 10); added = 1; }
+                self[pos++] = (char)('0' + x % 10);
+            }
+            self[pos] = 0;
+        }
+        {
+            char *w = args_str;
+            const char *s = self;
+            while (*s) *w++ = *s++;
+            *w++ = ' ';
+            s = "COUNT 1 TTL 7";
+            while (*s) *w++ = *s++;
+            *w = 0;
+        }
+        r = run_cmd("C:TolunnetPing", args_str, NULL, out, sizeof(out));
+        ok = (r == 0 && strstr(out, self) != NULL && strstr(out, "bytes from") != NULL);
+    }
+    if (ok) {
+        TAP_OK("net_cmd_ping_self");
+    } else {
+        tapf("# net_cmd_ping_self: self=%s out=%s\n", self, out);
+        TAP_NOTOK("net_cmd_ping_self", "own-address ping failed");
+    }
+}
+
+/* z.ai step 9c item 1: ping the slirp host. If OUR side is proven
+ * (127.0.0.1 + own address green) but slirp never answers, this row
+ * stays TODO with a QUESTIONS [auto] entry. */
+static void tc_net_cmd_ping_gw(void)
+{
+    char out[512];
+    LONG r = run_cmd("C:TolunnetPing", "10.0.2.2 COUNT 1 TTL 7", NULL, out, sizeof(out));
+    if (r == 0 && strstr(out, "bytes from 10.0.2.2") != NULL) {
+        TAP_OK("net_cmd_ping_gw");
+    } else {
+        tapf("# net_cmd_ping_gw: r=%ld out=%s\n", r, out);
+        TAP_TODO("net_cmd_ping_gw", "slirp does not answer ICMP echo");
     }
 }
 
@@ -7661,6 +7737,8 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_netshutdown);
     TN_RUN(tc_net_cmd_hostname_set);
     TN_RUN(tc_net_cmd_ping_ttl);
+    TN_RUN(tc_net_cmd_ping_self);
+    TN_RUN(tc_net_cmd_ping_gw);
     TN_RUN(tc_net_cmd_nslookup_server);
     TN_RUN(tc_net_cmd_nslookup_ptr);
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
