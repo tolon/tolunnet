@@ -412,8 +412,8 @@ for cfg in $CONFIGS; do
     xd write Install_Tolunnet.script S/Install_Tolunnet.script || die "xdftool write Install_Tolunnet.script failed"
     # 10c item 2: the undo, proven in a T: sandbox by tc_undo_sandbox -
     # same script with every SYS:/S:/LIBS:/DEVS: path rewritten under T:tnsbx/
-    python3 scripts/gen_installer.py --undo-root="T:tnsbx/" --undo-out="$WORK_DIR/tolunnet-undo-sandbox"         || die "undo sandbox generation failed"
-    xd write "$WORK_DIR/tolunnet-undo-sandbox" S/tolunnet-undo-sandbox || die "xdftool write tolunnet-undo-sandbox failed"
+    python3 scripts/gen_installer.py --undo-root="T:tnsbx/" --undo-out="build/tolunnet-undo-sandbox" || die "undo sandbox generation failed"
+    xd write build/tolunnet-undo-sandbox S/tolunnet-undo-sandbox || die "xdftool write tolunnet-undo-sandbox failed"
     xd write "$BENCH_CFG" Devs/tolunnet.config          || die "xdftool write tolunnet.config failed"
     say "staged: tolunnet + SocketConformance + bsdsocktest + cmds + usergroup.library + TolunnetSetup + TolunnetPrefs + Conformance-Script + User-Startup + tolunnet.config -> $HDF_WIN"
 
