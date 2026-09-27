@@ -14,7 +14,8 @@ Copy >NIL: SYS:C/nc T:tnsbx/C/nc CLONE
 Echo ROADSHW >T:tnsbx/Storage/tolunnet-backup/C/NetShutdown
 Echo orig >T:tnsbx/S/User-Startup.tolunnet-bak
 Echo rs >T:tnsbx/LIBS/bsdsocket.library.pre-tolunnet
-Execute S:tolunnet-undo-sandbox
+Execute >T:undo.out S:tolunnet-undo-sandbox
+FailAt 10
 ; Staged into the bench HDF by ci/bench.sh. Two full start/conformance/stop
 ; cycles prove the TNET-059/060 restart path; logs land on WORK: (host dir).
 

@@ -5091,9 +5091,20 @@ static void tc_undo_sandbox(void)
     /* 1. replaced tool restored from the backup */
     sz = tn_file_size_of("T:tnsbx/C/NetShutdown");
     if (sz != 7 || !tn_file_head_is("T:tnsbx/C/NetShutdown", "ROADSHW")) {
-        tapf("# %s: C/NetShutdown size=%ld, backup size=%ld\n", label,
+        BPTR ef = Open((CONST_STRPTR)"T:undo.out", MODE_OLDFILE);
+        char ub[301];
+        LONG un = 0;
+
+        if (ef != 0) {
+            un = Read(ef, ub, 300);
+            Close(ef);
+        }
+        if (un < 0) un = 0;
+        ub[un] = '\0';
+        tapf("# %s: C/NetShutdown size=%ld, backup size=%ld, undo.out:\n%s\n", label,
              (long)sz,
-             (long)tn_file_size_of("T:tnsbx/Storage/tolunnet-backup/C/NetShutdown"));
+             (long)tn_file_size_of("T:tnsbx/Storage/tolunnet-backup/C/NetShutdown"),
+             ub);
         TAP_NOTOK(label, "undo did not restore C/NetShutdown from backup");
         return;
     }

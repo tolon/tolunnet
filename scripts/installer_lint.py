@@ -353,17 +353,30 @@ def backup_undo_coverage(top, names):
         undo_restore = any(
             ("SYS:Storage/tolunnet-backup/C/" + n) in t and
             ("SYS:C/" + n) in t for t in strings)
-        undo_delete = any(("Delete >NIL: SYS:C/" + n) in t for t in strings)
-        undo_guarded = any(("If EXISTS SYS:C/" + n) in t for t in strings)
         if not undo_restore:
             findings.append("undo does not restore SYS:C/%s" % n)
-        if not undo_delete:
-            findings.append("undo does not handle new file SYS:C/%s" % n)
-        if undo_delete and not undo_guarded:
+            continue
+        # 10e item 2: the delete of a restored name must sit inside the
+        # Else of its own backup If - the flat If/If shape deleted what
+        # the Copy had just restored.
+        idx_bif = next(i for i, t in enumerate(strings)
+                       if "If EXISTS SYS:Storage/tolunnet-backup/C/" + n in t)
+        idx_copy = next(i for i, t in enumerate(strings)
+                        if "Copy >NIL: SYS:Storage/tolunnet-backup/C/" + n in t)
+        else_nl = "Else" + chr(92) + "n"
+        idx_else = next((i for i, t in enumerate(strings)
+                         if i > idx_copy and t.strip() in ("Else", else_nl)), None)
+        idx_gif = next((i for i, t in enumerate(strings)
+                        if i > (idx_else or 0) and
+                        "If EXISTS SYS:C/" + n in t), None)
+        idx_del = next((i for i, t in enumerate(strings)
+                        if i > (idx_gif or 0) and
+                        "Delete >NIL: SYS:C/" + n in t), None)
+        if idx_else is None or idx_gif is None or idx_del is None:
             findings.append(
-                "undo deletes SYS:C/%s outside an If EXISTS guard "
-                "(Delete of a missing file returns 20 and aborts at the "
-                "default FailAt)" % n)
+                "undo block for SYS:C/%s is not "
+                "If EXISTS backup / Copy / Else / If EXISTS / Delete "
+                "(the flat If/If shape deletes the restored file)" % n)
     if not any("FailAt 21" in t for t in strings):
         findings.append(
             "undo has no 'FailAt 21' (a missing file must not abort it)")

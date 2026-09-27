@@ -185,6 +185,7 @@ python-checks:
 	python3 scripts/lvo_check_selftest.py
 	python3 scripts/installer_lint.py Install_Tolunnet.script
 	python3 scripts/installer_lint.py --selftest
+	python3 scripts/undo_sim.py --selftest
 	python3 scripts/gen_installer.py --check
 	python3 scripts/gen_lvo_table.py
 	python3 scripts/gen_usergroup_table.py

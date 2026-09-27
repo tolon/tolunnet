@@ -62,12 +62,16 @@ def undo_tokens(names):
     out.append(U_INDENT + Q + "; restore what we replaced, remove what we"
                " created" + BSN + Q)
     for n in names:
+        # 10e item 2: restore from the backup, and ONLY when there is no
+        # backup delete the file we created - never both (the flat
+        # If/If shape deleted what the Copy had just restored).
         for line in ("If EXISTS SYS:Storage/tolunnet-backup/C/" + n,
                      "  Copy >NIL: SYS:Storage/tolunnet-backup/C/" + n
                      + " SYS:C/" + n + " CLONE",
-                     "EndIf",
-                     "If EXISTS SYS:C/" + n,
-                     "  Delete >NIL: SYS:C/" + n + " QUIET",
+                     "Else",
+                     "  If EXISTS SYS:C/" + n,
+                     "    Delete >NIL: SYS:C/" + n + " QUIET",
+                     "  EndIf",
                      "EndIf"):
             out.append(U_INDENT + Q + line + BSN + Q)
     out.append(U_INDENT + Q + U_END_INNER + BSN + Q)
