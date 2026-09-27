@@ -5068,6 +5068,28 @@ static void tc_daemon_noconfig_start(void)
     int i;
     int exited = 0;
 
+    /* the previous row stops the daemon, but its port can outlive the
+     * STOP reply for a moment - wait for it to disappear */
+    for (i = 0; i < 10; i++) {
+        if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) break;
+        Delay(25);
+    }
+    if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
+        rc = SystemTags((CONST_STRPTR)"C:tolunnet STOP >NIL:",
+                        SYS_Asynch, FALSE,
+                        SYS_Input, (BPTR)0,
+                        SYS_Output, (BPTR)0,
+                        TAG_END);
+        for (i = 0; i < 10; i++) {
+            if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) break;
+            Delay(25);
+        }
+    }
+    if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
+        TAP_NOTOK(label, "daemon still running at row start");
+        return;
+    }
+
     Rename((CONST_STRPTR)"DEVS:tolunnet.config",
            (CONST_STRPTR)"DEVS:tolunnet.config-tnbak");
     Rename((CONST_STRPTR)"ENV:tolunnet.prefs",
