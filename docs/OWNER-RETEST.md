@@ -157,6 +157,18 @@ ve geri getirdiğini gerçek bir Roadshow kurulumuyla doğrula:
    sihirbazının KENDİ KENDİNE açılması gerekir (artık
    DEVICE=ethernet.device placeholder config yazılmıyor); sihirbazdan
    gerçek donanımı seçip ağı ayağa kaldır.
+6. **Undo semantiği — User-Startup:** undo, S:User-Startup'ı
+   KURULUM ÖNCESİ yedeğine döndürür: kurulumdan sonra o dosyaya
+   yapılan düzenlemeler KAYBOLUR (yedek geri gelir). Kurulum öncesi
+   S:User-Startup hiç yoksa, installer boş bir dosya oluşturup onu
+   yedekler — undo sonrası da boş kalır, hiçbir Run satırı artık
+   kalmaz (boot hatası oluşmaz).
+7. **Undo — silinmiş araç dayanıklılığı:** Kurulumdan sonra
+   kullanıcının SYS:C'deki tolunnet araçlarından birini (örn. `nc`
+   ya da `ftp`) ELLE SİLMESİ durumunda `Execute S:tolunnet-undo`
+   YİNE DE sonuna kadar çalışmalı (FailAt 21 sayesinde eksik dosya
+   script'i yarıda kesmez) ve diğer tüm yedeklenen araçlar yine de
+   geri gelmelidir.
 
 Sonuçları (adım adım geçti/kaldı + `List SYS:Storage/tolunnet-backup/C`
 çıktısı) sürüm notlarına ekle.
