@@ -128,4 +128,39 @@ açılmış olması.
 Sonucu (adım adım geçti/kaldı, WinUAE mi donanım mı olduğunu) sürüm
 notlarına yaz.
 
+---
+
+# Ortak yaşam (coexistence) denetimi (10b madde 4)
+
+tolunnet'in artık diğer stack'lerin SYS:C araçlarının YEDEĞİNİ aldığını
+ve geri getirdiğini gerçek bir Roadshow kurulumuyla doğrula:
+
+1. **Roadshow demo kur:** Temiz bir WB 3.x görüntüsüne Aminet'teki
+   Roadshow demo sürümünü kur ve boot edip çalıştığını gör
+   (`ShowNetStatus` Roadshow'un kendi aracı olmalı).
+2. **tolunnet'i kur:** Aynı sisteme tolunnet installer'ını çalıştır
+   (novice). Kurulum sonunda sihirbaz açılacak; tamamla ya da kapat.
+3. **Yedek denetimi:** `List SYS:Storage/tolunnet-backup/C` —
+   Roadshow'un araçları burada durmalı: özellikle `ping`, `route`,
+   `Online`, `Offline`, `NetShutdown`, `AddNetInterface`,
+   `AddNetRoute`, `DeleteNetRoute`, `ConfigureNetInterface`,
+   `GetNetStatus`, `ShowNetStatus` (tolunnet'in bunların üzerine
+   yazdığı isimler). `SYS:Storage/tolunnet-backup/new-files` içinde
+   Roadshow'da olmayan isimler (örn. `tolunnet`, `TolunnetControl`)
+   listelenmeli.
+4. **Geri alma:** `Execute S:tolunnet-undo` çalıştır, yeniden boot et.
+   Roadshow yeniden çalışmalı: `ping 127.0.0.1` Roadshow'un ping'i ile
+   cevap vermeli ve `ShowNetStatus` Roadshow'un çıktısını vermeli
+   (tolunnet'in user-startup satırı gitmiş, DEVS:tolunnet.config
+   silinmiş, yedek dizin kaldırılmış olmalı).
+5. **ethernet.device olmayan makinede novice kurulum:** Sürücüsü
+   `ethernet.device` olmayan bir yapıda (PiStorm, A2065, PLIP…)
+   novice kurulum yap — kurulumun sonunda SYS:Prefs/TolunnetSetup
+   sihirbazının KENDİ KENDİNE açılması gerekir (artık
+   DEVICE=ethernet.device placeholder config yazılmıyor); sihirbazdan
+   gerçek donanımı seçip ağı ayağa kaldır.
+
+Sonuçları (adım adım geçti/kaldı + `List SYS:Storage/tolunnet-backup/C`
+çıktısı) sürüm notlarına ekle.
+
 
