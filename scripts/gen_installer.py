@@ -15,7 +15,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from installer_lint import doc_c_commands  # noqa: E402
+from installer_lint import doc_c_commands, parse, Str, clause  # noqa: E402
 
 SCRIPT = "Install_Tolunnet.script"
 DOC = "docs/commands.md"
@@ -103,10 +103,81 @@ def copied_c_names(text):
     return out
 
 
+def undo_content(script_text):
+    """The S:tolunnet-undo textfile content as one plain-text script."""
+    top = parse(script_text)
+
+    def find(node):
+        if not (isinstance(node, list) and node):
+            return None
+        if node[0] == "textfile":
+            dest = clause(node, "dest")
+            if isinstance(dest, Str) and str(dest) == "S:tolunnet-undo":
+                app = clause(node, "append")
+                parts = []
+
+                def collect(n):
+                    if isinstance(n, Str):
+                        parts.append(str(n))
+                    elif isinstance(n, list):
+                        for c in n:
+                            collect(c)
+
+                collect(app)
+                return "".join(parts)
+        for child in node[1:]:
+            r = find(child)
+            if r is not None:
+                return r
+        return None
+
+    for node in top:
+        r = find(node)
+        if r is not None:
+            return r
+    raise GenError("S:tolunnet-undo textfile not found")
+
+
+def sandbox_undo(script_text, root):
+    """The undo script with every SYS:/LIBS:/DEVS:/S: path rewritten
+    under root (trailing slash), for the bench sandbox row."""
+    content = undo_content(script_text)
+    content = content.replace(BSN, NL)
+    if not root.endswith("/"):
+        root += "/"
+    # SYS: first - a plain S: replacement would also hit SYS:
+    content = content.replace("SYS:", root)
+    content = content.replace("LIBS:", root + "LIBS/")
+    content = content.replace("DEVS:", root + "DEVS/")
+    content = content.replace("S:", root + "S/")
+    return content
+
+
 def main(argv):
-    args = [a for a in argv if not a.startswith("--")]
-    script = args[0] if args else SCRIPT
-    doc = args[1] if len(args) > 1 else DOC
+    flags = {a for a in argv if a.startswith("--")}
+    pos = [a for a in argv if not a.startswith("--")]
+    root = None
+    for a in list(argv):
+        if a.startswith("--undo-root="):
+            root = a.split("=", 1)[1]
+    undo_out = None
+    for a in list(argv):
+        if a.startswith("--undo-out="):
+            undo_out = a.split("=", 1)[1]
+    script = pos[0] if pos else SCRIPT
+    doc = pos[1] if len(pos) > 1 else DOC
+    if root is not None and undo_out is not None:
+        with open(script, encoding="utf-8") as fh:
+            text = fh.read()
+        try:
+            content = sandbox_undo(text, root)
+        except GenError as exc:
+            print("gen_installer: ERROR: %s" % exc)
+            return 2
+        with open(undo_out, "w", encoding="utf-8", newline=NL) as fh:
+            fh.write(content)
+        print("gen_installer: %s written (root %s)" % (undo_out, root))
+        return 0
     with open(doc, encoding="utf-8") as fh:
         names = doc_c_commands(fh.read())
     with open(script, encoding="utf-8") as fh:

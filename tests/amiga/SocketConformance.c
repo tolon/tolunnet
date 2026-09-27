@@ -5057,6 +5057,155 @@ static BPTR load_control_cmd(void)
  * line and no requester. Runs after tc_cmd_stop_start (daemon already
  * stopped, SocketBase closed); every store is moved aside within its
  * own directory and put back on every path out of the row. */
+/* ---- file helpers for the undo sandbox (10c item 2) ---- */
+static int tn_copy_file(const char *src, const char *dst)
+{
+    BPTR in = Open((CONST_STRPTR)src, MODE_OLDFILE);
+    BPTR out;
+    char buf[1024];
+    LONG n;
+
+    if (in == 0) return 0;
+    out = Open((CONST_STRPTR)dst, MODE_NEWFILE);
+    if (out == 0) {
+        Close(in);
+        return 0;
+    }
+    while ((n = Read(in, buf, sizeof(buf))) > 0) {
+        if (Write(out, buf, n) != n) {
+            Close(in);
+            Close(out);
+            return 0;
+        }
+    }
+    Close(in);
+    Close(out);
+    return 1;
+}
+
+static int tn_write_file(const char *path, const char *text)
+{
+    BPTR fh = Open((CONST_STRPTR)path, MODE_NEWFILE);
+    LONG len = (LONG)strlen(text);
+
+    if (fh == 0) return 0;
+    if (len > 0) Write(fh, (CONST_APTR)text, len);
+    Close(fh);
+    return 1;
+}
+
+static int tn_file_head_is(const char *path, const char *expect)
+{
+    BPTR fh = Open((CONST_STRPTR)path, MODE_OLDFILE);
+    char buf[64];
+    LONG n;
+    LONG len = (LONG)strlen(expect);
+
+    if (fh == 0) return 0;
+    n = Read(fh, buf, sizeof(buf) - 1);
+    Close(fh);
+    if (n < len) return 0;
+    buf[n] = "\0";
+    return strncmp(buf, expect, (size_t)len) == 0;
+}
+
+/* z.ai step 10c item 2: prove the undo script end-to-end. T:tnsbx/
+ * mirrors the real layout; S:tolunnet-undo-sandbox is the generated
+ * undo with every SYS:/S:/LIBS:/DEVS: path rewritten under T:tnsbx/
+ * (gen_installer --undo-root, staged by ci/bench.sh). Roadshow's
+ * NetShutdown comes back from the backup, the new nc is deleted, the
+ * pre-install User-Startup and bsdsocket.library return, and the
+ * backup dir is removed. */
+static void tc_undo_sandbox(void)
+{
+    const char *label = "tc_undo_sandbox";
+    static const char *const dirs[] = {
+        "T:tnsbx", "T:tnsbx/C", "T:tnsbx/Storage",
+        "T:tnsbx/Storage/tolunnet-backup",
+        "T:tnsbx/Storage/tolunnet-backup/C",
+        "T:tnsbx/S", "T:tnsbx/LIBS", "T:tnsbx/DEVS",
+    };
+    size_t i;
+    BPTR lk;
+
+    /* clean slate (both cycles run this row) */
+    DeleteFile((CONST_STRPTR)"T:tnsbx/C/NetShutdown");
+    DeleteFile((CONST_STRPTR)"T:tnsbx/C/nc");
+    DeleteFile((CONST_STRPTR)"T:tnsbx/Storage/tolunnet-backup/C/NetShutdown");
+    DeleteFile((CONST_STRPTR)"T:tnsbx/Storage/tolunnet-backup/C");
+    DeleteFile((CONST_STRPTR)"T:tnsbx/Storage/tolunnet-backup");
+    DeleteFile((CONST_STRPTR)"T:tnsbx/Storage");
+    DeleteFile((CONST_STRPTR)"T:tnsbx/S/User-Startup");
+    DeleteFile((CONST_STRPTR)"T:tnsbx/S/User-Startup.tolunnet-bak");
+    DeleteFile((CONST_STRPTR)"T:tnsbx/S/tolunnet-undo");
+    DeleteFile((CONST_STRPTR)"T:tnsbx/S");
+    DeleteFile((CONST_STRPTR)"T:tnsbx/LIBS/bsdsocket.library");
+    DeleteFile((CONST_STRPTR)"T:tnsbx/LIBS/bsdsocket.library.pre-tolunnet");
+    DeleteFile((CONST_STRPTR)"T:tnsbx/LIBS");
+    DeleteFile((CONST_STRPTR)"T:tnsbx/DEVS/tolunnet.config");
+    DeleteFile((CONST_STRPTR)"T:tnsbx/DEVS");
+    DeleteFile((CONST_STRPTR)"T:tnsbx");
+
+    for (i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) {
+        CreateDir((CONST_STRPTR)dirs[i]);
+    }
+
+    if (!tn_copy_file("SYS:C/NetShutdown", "T:tnsbx/C/NetShutdown") ||
+        !tn_copy_file("SYS:C/nc", "T:tnsbx/C/nc")) {
+        TAP_NOTOK(label, "cannot seed T:tnsbx/C from SYS:C");
+        return;
+    }
+    if (!tn_write_file("T:tnsbx/Storage/tolunnet-backup/C/NetShutdown",
+                       "ROADSHW")) {
+        TAP_NOTOK(label, "cannot write the fake Roadshow backup");
+        return;
+    }
+    if (!tn_write_file("T:tnsbx/S/User-Startup.tolunnet-bak", "orig") ||
+        !tn_write_file("T:tnsbx/LIBS/bsdsocket.library.pre-tolunnet",
+                       "rs")) {
+        TAP_NOTOK(label, "cannot write the sandbox backups");
+        return;
+    }
+
+    SystemTags((CONST_STRPTR)"Execute S:tolunnet-undo-sandbox >NIL:",
+               SYS_Asynch, FALSE,
+               SYS_Input, (BPTR)0,
+               SYS_Output, (BPTR)0,
+               TAG_END);
+
+    /* 1. replaced tool restored from the backup */
+    if (!tn_file_head_is("T:tnsbx/C/NetShutdown", "ROADSHW")) {
+        TAP_NOTOK(label, "undo did not restore C/NetShutdown from backup");
+        return;
+    }
+    /* 2. tool that was new is gone */
+    lk = Lock((CONST_STRPTR)"T:tnsbx/C/nc", ACCESS_READ);
+    if (lk != (BPTR)0) {
+        UnLock(lk);
+        TAP_NOTOK(label, "undo left the new C/nc behind");
+        return;
+    }
+    /* 3. pre-install User-Startup restored */
+    if (!tn_file_head_is("T:tnsbx/S/User-Startup", "orig")) {
+        TAP_NOTOK(label, "undo did not restore S/User-Startup");
+        return;
+    }
+    /* 4. previous stack library restored */
+    if (!tn_file_head_is("T:tnsbx/LIBS/bsdsocket.library", "rs")) {
+        TAP_NOTOK(label, "undo did not restore LIBS/bsdsocket.library");
+        return;
+    }
+    /* 5. backup dir removed */
+    lk = Lock((CONST_STRPTR)"T:tnsbx/Storage/tolunnet-backup", ACCESS_READ);
+    if (lk != (BPTR)0) {
+        UnLock(lk);
+        TAP_NOTOK(label, "undo left the backup dir behind");
+        return;
+    }
+
+    TAP_OK(label);
+}
+
 static void tc_daemon_noconfig_start(void)
 {
     const char *label = "tc_daemon_noconfig_start";
@@ -7944,6 +8093,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_nslookup_server);
     TN_RUN(tc_net_cmd_nslookup_ptr);
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */    TN_RUN(tc_daemon_noconfig_start); /* 10b item 2: bare boot, no config (daemon already stopped) */
+    TN_RUN(tc_undo_sandbox); /* 10c item 2: undo proven in a T: sandbox */
 
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");

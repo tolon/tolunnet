@@ -14,6 +14,11 @@ script safe to run unattended:
   SYS:Storage/tolunnet-backup/C/ and appears in the undo restore/delete
   logic (restore from the backup, or delete when it was new);
 - the wizard run (SYS:Prefs/TolunnetSetup) comes after all copies;
+- `execute` is only for DOS scripts (S:/... or *.script) - binaries
+  need `run`;
+- `exit` never combines text with (quiet) (the text would be hidden);
+- every `makedir`'s parent is created or exists-checked first;
+- no `textfile` destination is written twice;
 - every C: binary documented in docs/commands.md is copied.
 
 Exit codes: 0 = clean, 1 = findings or selftest mismatch, 2 = usage/IO
@@ -143,6 +148,9 @@ def subtree_tokens(nodes):
 
 
 def lint_top(top, findings):
+    makedir_state = (set(), set())
+    textfile_dests = set()
+
     def walk(node, ancestors):
         if not (isinstance(node, list) and node):
             return
@@ -153,6 +161,43 @@ def lint_top(top, findings):
                 findings.append("forbidden function: (%s ...)" % head)
             elif head not in ALLOWED:
                 findings.append("unknown function: (%s ...)" % head)
+            if head == "execute":
+                cmd = next((c for c in kids if isinstance(c, Str)), None)
+                if isinstance(cmd, Str):
+                    t = str(cmd)
+                    if not (t.startswith("S:") or t.endswith(".script")):
+                        findings.append(
+                            "execute runs a DOS script, not a binary: %s "
+                            "(use run for programs)" % t)
+            if head == "exit":
+                has_text = any(isinstance(c, Str) for c in kids)
+                has_quiet = any(isinstance(c, list) and c and c[0] == "quiet"
+                                for c in kids)
+                if has_text and has_quiet:
+                    findings.append(
+                        "(quiet) suppresses the exit text the user is "
+                        "meant to see")
+            if head == "makedir":
+                target = next((c for c in kids if isinstance(c, Str)), None)
+                if isinstance(target, Str):
+                    seen_made, seen_exists = makedir_state
+                    t = str(target)
+                    vol, sep, rest = t.partition(":")
+                    if sep and "/" in rest:
+                        parent = vol + ":" + rest.rsplit("/", 1)[0]
+                        if parent not in seen_made and                                 parent not in seen_exists:
+                            findings.append(
+                                "makedir '%s': parent '%s' is not created "
+                                "or checked first" % (t, parent))
+                    seen_made.add(t)
+            if head == "textfile":
+                dest = clause(node, "dest")
+                if isinstance(dest, Str):
+                    if str(dest) in textfile_dests:
+                        findings.append(
+                            "textfile to the same dest twice: %s (the "
+                            "second write replaces the first)" % dest)
+                    textfile_dests.add(str(dest))
             if head == "welcome":
                 for child in kids:
                     if isinstance(child, list) and child and child[0] == "text":
@@ -160,6 +205,9 @@ def lint_top(top, findings):
                             "welcome takes plain strings; a (text ...) clause "
                             "inside welcome is not Installer 43")
             elif head == "exists":
+                tgt = next((c for c in kids if isinstance(c, Str)), None)
+                if isinstance(tgt, Str):
+                    makedir_state[1].add(str(tgt))
                 if not any(isinstance(c, list) and c and c[0] == "noreq"
                            for c in kids):
                     findings.append("exists without (noreq)")
@@ -353,7 +401,8 @@ def selftest(script_path, doc_path):
     with open(doc_path, encoding="utf-8") as fh:
         doc_text = fh.read()
     for rev, expect_pass in (("fe3c61b", False), ("565fe26", False),
-                             ("1e88155", False), ("HEAD", True)):
+                             ("1e88155", False), ("e2d54e8", False),
+                             ("HEAD", True)):
         try:
             findings = lint_text(git_show(rev, script_path), doc_text)
         except LintError as exc:
