@@ -6188,7 +6188,7 @@ static void tc_installer_run(void)
     }
     snprintf_safe(cli, sizeof(cli),
                   "cd WORK:tolunnet-pkg\n"
-                  "Installer S:Install_Tolunnet.script NOVICE LOGFILE WORK:tolunnet-install.log\n"
+                  "Installer S:Install_Tolunnet.script NOVICE LOGFILE WORK:tolunnet-install.log >WORK:installer-console.log\n"
                   "Echo $RC >T:tn-installer-rc\n");
     Write(fh, (CONST_APTR)cli, strlen(cli));
     Close(fh);

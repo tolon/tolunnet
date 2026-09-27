@@ -507,6 +507,7 @@ for cfg in $CONFIGS; do
     cp "$WORK_DIR/tolunnet-task.log" "$OUT/" 2>/dev/null || true
     # z.ai step 10a-2 item 2: Installer transcript (tc_installer_run)
     cp "$WORK_DIR/tolunnet-install.log" "$OUT/" 2>/dev/null || true
+    cp "$WORK_DIR/installer-console.log" "$OUT/" 2>/dev/null || true
     # TN_DIAG trap capture (TNET-139): copied from RAM: by the boot script
     cp "$WORK_DIR/tolunnet-crash.log"  "$OUT/" 2>/dev/null || true
     cp "$WORK_DIR/tolunnet-crash2.log" "$OUT/" 2>/dev/null || true
