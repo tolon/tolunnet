@@ -1,92 +1,77 @@
-# STOP-REPORT — z.ai step 10c, item 2 (tc_undo_sandbox), 2026-09-27
+# STOP-REPORT — z.ai step 10d, item 1 (undo sandbox), 2026-09-27
 
-State: HEAD `e3b98f7`. Item 1 is done and ALL-GREEN. Item 2 is red on
-both profiles and both cycles for the third time; the order's rule says
-stop after two consecutive reds on the same item, so I am stopping
-instead of burning a fourth bench.
+State: HEAD `c26f2e9`. Item 1 is red twice in a row (benches
+`20260927-211506-gе4bdc01` and `20260927-214202-gc26f2e9`); per the
+order's rule I stop instead of running the third attempt.
 
 ## Item status
 
-1. `fix(installer): run the wizard, visible exit text, safe makedir,
-   User-Startup marker` — DONE: `56bbbdd`. Bench
-   `docs/bench-logs/20260927-190135-v1.2.0-rc4-242-g56bbbdd`:
-   `conformance.log: core: 100 ok / 0 not ok; external: 1 skipped (skip=2 todo=0)`
-   `conformance2.log: core: 100 ok / 0 not ok; external: 1 skipped (skip=2 todo=0)`
-   Logs commit with the core: lines: `9d38656`-era `docs(bench): logs
-   for 56bbbdd`.
+1. `fix(installer): undo survives missing files` — code in (`e4bdc01`
+   FailAt 21 + If EXISTS-guarded deletes + tn_file_size_of fix +
+   lint rules with c83af21/HEAD selftest), but the bench is RED.
+2. `test: Prefs window must open` — tc_prefs_opens was written early
+   and ACCIDENTALLY rode in item 1's commit (process slip, mine): on
+   a1200 it correctly emits the TODO row, on 68000 the suite died at
+   row 99 right where it runs (details below).
+3. `bench: measure HDF free space` — NOT DONE.
+4. `docs: OWNER-RETEST` — NOT DONE.
 
-2. `test: lint + undo proven in the bench` — code is in
-   (`24643a0`: lint rules + selftest + gen_installer --undo-root +
-   bench.sh staging + tc_undo_sandbox row; `6b9d5bc`: repo-relative
-   staging path; `e3b98f7`: in-process Execute + diagnostics) but the
-   row is RED. Three bench attempts:
-   - attempt 1 `20260927-191428-g24643a0`: aborted at STAGING (Git Bash
-     `$WORK_DIR` path is invisible to the WSL xdftool); no emulator leg
-     ran; empty log dir removed; fix `6b9d5bc`.
-   - attempt 2 `20260927-195506-g6b9d5bc`:
-     `not ok 102 - tc_undo_sandbox # undo did not restore C/NetShutdown from backup`
-   - attempt 3 `20260927-201340-g3b98f7/e3b98f7`: same red, with
-     diagnostics.
+## Final bench 20260927-214202-v1.2.0-rc4-249-gc26f2e9
 
-3. `docs: OWNER-RETEST` undo semantics + no-User-Startup case —
-   NOT DONE (item 2 red twice; stopping per the rule).
+- a1200: `conformance.log: core: 100 ok / 2 not ok; external: 1 skipped (skip=2 todo=1)`
+  - `not ok 100 - tc_prefs_opens # TODO TolunnetPrefs never opens its window - fixed in step 11` (expected shape)
+  - `not ok 103 - tc_undo_sandbox # undo did not restore C/NetShutdown from backup`
+  - diagnostic: `# tc_undo_sandbox: C/NetShutdown size=-1, backup size=-1`
+- a1200 conformance2: identical.
+- 68000: `conformance.log: core: 98 ok / 0 not ok; external: 1 skipped (skip=2 todo=0)`,
+  suite DIED at row 99/100 (the tc_prefs_opens slot; log simply stops,
+  no 1..103), conformance2.log absent, leg TIMEOUT.
 
-## Last 5 lines of each log (final bench, verbatim)
+## Last 5 lines of each log (verbatim)
 
 a1200/conformance.log:
 ```
-ok 101 - tc_daemon_noconfig_start
-# tc_undo_sandbox: sizes: backup=0 dst=0 nc=0
-not ok 102 - tc_undo_sandbox # undo did not restore C/NetShutdown from backup
-1..102
+ok 102 - tc_daemon_noconfig_start
+# tc_undo_sandbox: C/NetShutdown size=-1, backup size=-1
+not ok 103 - tc_undo_sandbox # undo did not restore C/NetShutdown from backup
+1..103
 # bench: asking daemon to stop (restart-cycle proof)
 ```
-a1200/conformance2.log:
+a1200/conformance2.log: identical to a1200/conformance.log.
+68000/conformance.log:
 ```
-ok 101 - tc_daemon_noconfig_start
-# tc_undo_sandbox: sizes: backup=0 dst=0 nc=0
-not ok 102 - tc_undo_sandbox # undo did not restore C/NetShutdown from backup
-1..102
-# bench: asking daemon to stop (restart-cycle proof)
+ok 95 - net_cmd_ping_ttl
+ok 96 - net_cmd_ping_self
+ok 97 - net_cmd_ping_gw
+ok 98 - net_cmd_nslookup_server
+ok 99 - net_cmd_nslookup_ptr
 ```
-68000/conformance.log: identical to a1200/conformance.log (same 5
-lines). 68000/conformance2.log: identical as well.
+68000/conformance2.log: (missing) — cycle 2 never started.
 
-Bench dir: `docs/bench-logs/20260927-201340-v1.2.0-rc4-246-ge3b98f7`
-(RESULT: HAS-FAILURES; everything else is green — 100 ok / 1 not ok,
-the lone red being tc_undo_sandbox).
+## Analysis for the next attempt
 
-## What is known (evidence, not speculation)
+- a1200 `size=-1, backup size=-1`: at row time T:tnsbx/C/NetShutdown
+  and the whole backup path do not exist. The boot-script sandbox
+  (makedir chain, Copy of SYS:C/NetShutdown and SYS:C/nc, three Echo
+  seeds, Execute S:tolunnet-undo-sandbox) runs BEFORE the daemon at
+  boot; the artifacts should survive in RAM: until row 103. Either the
+  boot-script block itself failed early (a makedir/Copy error aborts
+  the User-Startup script at FailAt 10 — and the sandbox block has no
+  FailAt of its own!) or something removed T:tnsbx later. The undo
+  cannot be the remover: it only deletes inside T:tnsbx paths it
+  restores first, and `T:tnsbx/S` files were seen in the earlier
+  manual probe. NEXT: give the boot-script sandbox its own
+  `FailAt 21` + echo markers into WORK: (e.g. `Echo seed-ok
+  >WORK:tnsbx-seed.log` after the last seed) so the next run shows
+  whether the seeds happened at all.
+- 68000 hang at the tc_prefs_opens slot: every wait in the row is
+  bounded (10 s window poll, 20 s close poll, screenshot ~seconds), so
+  a pure hang is unexpected; next attempt should add tapf markers
+  before launch/after poll/after screenshot to localize it, or park
+  the row behind a WORK: flag until step 11.
+- Process note: tc_prefs_opens belongs to item 2; its early inclusion
+  in the item-1 commit is my slip and it contaminates the reading of
+  item 1's bench.
 
-- The generated sandbox undo itself is GOOD: a manual UAE probe
-  (boot-shell `Execute S:tolunnet-undo-sandbox` on the staged 68000
-  HDF, seeded exactly like the row) restored NetShutdown, kept
-  User-Startup/bsdsocket restores intact, removed the backup dir, and
-  printed `after-undo rc=0`. The script is not the problem.
-- In the row, BOTH invocation layers fail identically:
-  `SystemTags("Execute S:tolunnet-undo-sandbox >NIL:", SYS_Asynch,
-  FALSE, ...)` (195506) and in-process
-  `Execute("S:tolunnet-undo-sandbox", 0, 0)` (201340). After Execute,
-  T:tnsbx/C/NetShutdown does not read "ROADSHW" — consistent with the
-  undo's per-name `Else` branch (delete) having run instead of the
-  `If EXISTS <backup>` branch, i.e. the backup file was not seen at
-  undo time, or the whole script aborted before the Copy.
-- The row's seeding is verified before Execute (tn_copy_file /
-  tn_write_file return codes are asserted), so the backup existed when
-  Execute was called.
-- Known row bug for the next attempt: my `tn_file_size_of` uses
-  `Seek(fh, 0, OFFSET_END)` and reads the return value as the size —
-  Seek returns the position BEFORE seeking (0), so the diagnostic
-  `sizes: backup=0 dst=0 nc=0` line is meaningless. Use
-  Examine/fib_Size instead. (The pass/fail assertion itself uses
-  Open+Read+strncmp and is independent of this bug.)
-- Next investigation, in order: (a) capture the undo's own output
-  (Execute into a WORK: file instead of NIL) to see whether the script
-  aborts early and with which message; (b) check whether
-  `Execute(S:..., 0, 0)` from a process whose ConsoleHandle is a
-  redirected log file behaves differently for `If EXISTS`/`Copy >NIL:`
-  chains; (c) try the row's Execute from a System child WITH a real
-  WORK: console file instead of NIL.
-
-No further benches were run for item 2 after the second consecutive
-red bench (195506, 201340), per the order's rule.
+No further benches were run after the second consecutive red, per the
+order's rule.
