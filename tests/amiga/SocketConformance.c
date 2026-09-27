@@ -6070,9 +6070,50 @@ static int tn_count_occurrences(const char *path, const char *needle)
     return cnt;
 }
 
-/* Touch the failure marker; the boot script restores the staged package
- * between the two cycles (sequential copies there - an in-row recovery
- * raced cycle 2's TolunnetSetup launches: bench 20260927-091723). */
+/* Rewrite S:User-Startup without its C:tolunnet lines, so every cycle's
+ * install is verified against a clean file (the startup block then adds
+ * exactly one daemon line). */
+static void tn_strip_userstartup(void)
+{
+    BPTR fh;
+    char buf[8192];
+    char *p;
+    char *e;
+    LONG n;
+
+    fh = Open((CONST_STRPTR)"S:User-Startup", MODE_OLDFILE);
+    if (fh == 0) {
+        return;
+    }
+    n = Read(fh, buf, sizeof(buf) - 1);
+    Close(fh);
+    if (n <= 0) {
+        return;
+    }
+    buf[n] = '\0';
+    fh = Open((CONST_STRPTR)"S:User-Startup", MODE_NEWFILE);
+    if (fh == 0) {
+        return;
+    }
+    p = buf;
+    while (p != NULL && *p != '\0') {
+        e = strchr(p, '\n');
+        if (e != NULL) {
+            *e = '\0';
+        }
+        if (strstr(p, "C:tolunnet") == NULL) {
+            Write(fh, (CONST_APTR)p, strlen(p));
+            Write(fh, (CONST_APTR)"\n", 1);
+        }
+        p = (e != NULL) ? e + 1 : NULL;
+    }
+    Close(fh);
+}
+
+/* Touch the failure marker and fail the row. The boot script restores
+ * the staged package between the two cycles (sequential copies there -
+ * an in-row recovery raced cycle 2's TolunnetSetup launches: bench
+ * 20260927-091723); in the green case neither fires. */
 static void tn_installer_fail(const char *label, const char *why)
 {
     BPTR fh = Open((CONST_STRPTR)"WORK:installer-failed", MODE_NEWFILE);
@@ -6081,7 +6122,7 @@ static void tn_installer_fail(const char *label, const char *why)
         Write(fh, (CONST_APTR)"1", 1);
         Close(fh);
     }
-    TAP_TODO(label, why);
+    TAP_NOTOK(label, why);
 }
 
 /* Item 2 (z.ai step 10a-2): run the real Commodore Installer against
@@ -6090,9 +6131,9 @@ static void tn_installer_fail(const char *label, const char *why)
  * SYS:Prefs/TolunnetSetup + TolunnetPrefs, DEVS:tolunnet.config, exactly
  * one C:tolunnet line in S:User-Startup, S:tolunnet-undo. The installer
  * runs with cwd = package root so the script's relative sources resolve
- * inside WORK:tolunnet-pkg. Item 3 rewrites the script into valid
- * Installer 43; until then a non-zero RC or a missed 90 s bound is a
- * TODO (this commit only). */
+ * inside WORK:tolunnet-pkg. Any failure is a real not ok (item 3 landed
+ * the valid Installer 43 script) and touches WORK:installer-failed so
+ * the boot script restores the package before cycle 2. */
 static void tc_installer_run(void)
 {
     const char *label = "tc_installer_run";
@@ -6133,7 +6174,7 @@ static void tc_installer_run(void)
     DeleteFile((CONST_STRPTR)"SYS:Prefs/TolunnetSetup.info");
     DeleteFile((CONST_STRPTR)"S:tolunnet-undo");
     DeleteFile((CONST_STRPTR)"S:User-Startup.tolunnet-bak");
-    DeleteFile((CONST_STRPTR)"S:User-Startup");
+    tn_strip_userstartup();
     DeleteFile((CONST_STRPTR)"T:tn-installer-rc");
 
     /* cd is process-local, so the installer sees cwd = package root;
@@ -6174,15 +6215,13 @@ static void tc_installer_run(void)
     }
     if (rc < 0) {
         tn_installer_fail(label, "installer did not finish within 90 s "
-                                 "(script-error requester?): "
-                                 "Install_Tolunnet.script is not valid "
-                                 "Installer 43 yet (item 3 rewrites it)");
+                                 "(requester or copy stall; see "
+                                 "WORK:tolunnet-install.log)");
         return;
     }
     if (rc != 0) {
-        tn_installer_fail(label, "Installer RC != 0: Install_Tolunnet.script "
-                                 "is not valid Installer 43 yet (item 3 "
-                                 "rewrites it)");
+        tn_installer_fail(label, "Installer RC != 0 (see "
+                                 "WORK:tolunnet-install.log)");
         return;
     }
 
