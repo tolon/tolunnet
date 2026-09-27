@@ -1708,8 +1708,8 @@ static void apply_wizard_finish(void)
         if (prefs_path) {
             SystemTags((CONST_STRPTR)prefs_path,
                        SYS_Asynch, TRUE,
-                       SYS_Input, (BPTR)0,
-                       SYS_Output, (BPTR)0,
+                       SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE),
+                       SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
                        TAG_END);
         }
     }

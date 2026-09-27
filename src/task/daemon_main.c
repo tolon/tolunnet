@@ -1076,8 +1076,8 @@ int main(int argc, char *argv[])
             }
             SystemTags((CONST_STRPTR)"C:tolunnet",
                        SYS_Asynch, TRUE,
-                       SYS_Input, (BPTR)0,
-                       SYS_Output, (BPTR)0,
+                       SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE),
+                       SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
                        NP_StackSize, 32768,
                        TAG_END);
             PutStr((CONST_STRPTR)"tolunnet: daemon started in background (32 KB stack)\n");
