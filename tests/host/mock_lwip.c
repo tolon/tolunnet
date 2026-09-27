@@ -354,3 +354,13 @@ err_t igmp_leavegroup(const ip4_addr_t *ifaddr, const ip4_addr_t *groupaddr)
     return ERR_OK;
 }
 
+
+/* z.ai step 7 item 6 left the daemon-side reap in daemon_main.c, which
+ * host tests do not link (they include ipc_status.c directly). The stub
+ * keeps the STOP path linkable; host tests assert no reaping behavior. */
+int tn_reap_dead_clients_public(TnDaemon *d);
+int tn_reap_dead_clients_public(TnDaemon *d)
+{
+    (void)d;
+    return 0;
+}

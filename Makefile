@@ -183,6 +183,8 @@ $(BUILD)/host/%: tests/host/%.c $(HOST_UNITS) tests/host/tn_test.h
 python-checks:
 	python3 scripts/lvo_check.py
 	python3 scripts/lvo_check_selftest.py
+	python3 scripts/installer_lint.py Install_Tolunnet.script
+	python3 scripts/installer_lint.py --selftest
 	python3 scripts/gen_lvo_table.py
 	python3 scripts/gen_usergroup_table.py
 	python3 scripts/gen_pkg_docs.py

@@ -4,7 +4,7 @@
 > Enforced fresh by `make python-checks` (regenerate + git-diff gate).
 > Sources: `sfd/bsdsocket_lib.sfd` (LVO offset + prototype) ·
 > `src/lib/lib_vectors.c` + `src/task/ipc_dispatch.c` (BUILT/BROKEN/STUB) ·
-> bench TAP `20260926-235104-v1.2.0-rc4-190-gab9ed7b` (PASS column: green `tc_*` coverage).
+> bench TAP `20260927-130008-v1.2.0-rc4-221-gb7b1ad3` (PASS column: green `tc_*` coverage).
 
 | Offset | Function | Signature | Status | Notes | PASS (bench) |
 |---|---|---|---|---|---|
