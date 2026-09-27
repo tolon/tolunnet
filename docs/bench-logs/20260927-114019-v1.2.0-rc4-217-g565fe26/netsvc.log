@@ -1,0 +1,12 @@
+[2026-09-27 11:40:20] [main] starting hermetic slirp host services
+[2026-09-27 11:40:20] [udp_echo] listening on UDP 15007
+[2026-09-27 11:40:20] [tcp_delay] listening on TCP 15009
+[2026-09-27 11:40:20] [tcp_echo] listening on TCP 15007
+[2026-09-27 11:40:20] [dns] listening on UDP 15353
+[2026-09-27 11:40:20] [sntp] listening on UDP 15123
+[2026-09-27 11:40:20] [tcp_silent] listening on TCP 15011
+[2026-09-27 11:40:20] [tftp] listening on UDP 15069
+[2026-09-27 11:40:20] [ftp] listening on TCP 15021 (PASV port: 15020)
+[2026-09-27 11:40:20] [main] all 7 service threads started, ready for traffic
+[2026-09-27 11:40:20] [whois] listening on TCP 15043
+[2026-09-27 11:40:20] [http] listening on TCP 15080
