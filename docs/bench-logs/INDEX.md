@@ -68,3 +68,14 @@ GUI program (welcome, messages and the novice start screen wait for a
 click); tc_installer_run was removed in 6bfb7a0 and the suite is back
 to the 7c0be65 row set (first post-revert ALL-GREEN:
 `…124728…gf41c8ae`).
+
+## 10b item 1: the 27 KB script filled the HDF (two reds, then fixed)
+
+`…144027…gdd3fde0` and `…151354…g9c2bce6`: rows 1-37 byte-identical to
+the last green run, then tc_wizard_wired failed ("Legacy lines not
+properly commented out") and tc_reconfig_rc hung the suite - the
+generated installer script had eaten the last free blocks (xdftool
+info: 0 free), so the wizard's S:User-Startup rewrite failed silently.
+Fixed in 0d27d1f: bench reclaims the stale typo'd tolunnet binaries
+and C:Installer; the HDF now stages with ~574 KB free. First green:
+`…155404…g0d27d1f`.
