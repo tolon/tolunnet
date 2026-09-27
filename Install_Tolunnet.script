@@ -16,6 +16,286 @@
   (message "Installing tolunnet binaries to SYS:C/ ...")
 )
 
+; ---- first install: back up the C: tools we are about to replace -------
+; (reinstall: S:tolunnet-undo already exists -> keep the original
+; backups and the original undo) ------------------------------------------
+(if (not (exists "S:tolunnet-undo" (noreq)))
+  (if (not (exists "SYS:Storage/tolunnet-backup" (noreq)))
+    (makedir "SYS:Storage/tolunnet-backup")
+  )
+  (if (not (exists "SYS:Storage/tolunnet-backup/C" (noreq)))
+    (makedir "SYS:Storage/tolunnet-backup/C")
+  )
+;BEGIN GENERATED-BACKUP (scripts/gen_installer.py - do not edit)
+; first install only: preserve whatever we are about to
+; replace, and note what we create from scratch
+  (if (exists "SYS:C/tolunnet" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/tolunnet" (noreq)))
+      (copyfiles (source "SYS:C/tolunnet") (dest "SYS:Storage/tolunnet-backup/C") (newname "tolunnet"))
+    )
+  )
+  (if (exists "SYS:C/TolunnetControl" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/TolunnetControl" (noreq)))
+      (copyfiles (source "SYS:C/TolunnetControl") (dest "SYS:Storage/tolunnet-backup/C") (newname "TolunnetControl"))
+    )
+  )
+  (if (exists "SYS:C/ping" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/ping" (noreq)))
+      (copyfiles (source "SYS:C/ping") (dest "SYS:Storage/tolunnet-backup/C") (newname "ping"))
+    )
+  )
+  (if (exists "SYS:C/ifconfig" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/ifconfig" (noreq)))
+      (copyfiles (source "SYS:C/ifconfig") (dest "SYS:Storage/tolunnet-backup/C") (newname "ifconfig"))
+    )
+  )
+  (if (exists "SYS:C/netstat" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/netstat" (noreq)))
+      (copyfiles (source "SYS:C/netstat") (dest "SYS:Storage/tolunnet-backup/C") (newname "netstat"))
+    )
+  )
+  (if (exists "SYS:C/route" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/route" (noreq)))
+      (copyfiles (source "SYS:C/route") (dest "SYS:Storage/tolunnet-backup/C") (newname "route"))
+    )
+  )
+  (if (exists "SYS:C/AddNetRoute" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/AddNetRoute" (noreq)))
+      (copyfiles (source "SYS:C/AddNetRoute") (dest "SYS:Storage/tolunnet-backup/C") (newname "AddNetRoute"))
+    )
+  )
+  (if (exists "SYS:C/DeleteNetRoute" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/DeleteNetRoute" (noreq)))
+      (copyfiles (source "SYS:C/DeleteNetRoute") (dest "SYS:Storage/tolunnet-backup/C") (newname "DeleteNetRoute"))
+    )
+  )
+  (if (exists "SYS:C/AddNetInterface" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/AddNetInterface" (noreq)))
+      (copyfiles (source "SYS:C/AddNetInterface") (dest "SYS:Storage/tolunnet-backup/C") (newname "AddNetInterface"))
+    )
+  )
+  (if (exists "SYS:C/ConfigureNetInterface" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/ConfigureNetInterface" (noreq)))
+      (copyfiles (source "SYS:C/ConfigureNetInterface") (dest "SYS:Storage/tolunnet-backup/C") (newname "ConfigureNetInterface"))
+    )
+  )
+  (if (exists "SYS:C/Online" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/Online" (noreq)))
+      (copyfiles (source "SYS:C/Online") (dest "SYS:Storage/tolunnet-backup/C") (newname "Online"))
+    )
+  )
+  (if (exists "SYS:C/Offline" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/Offline" (noreq)))
+      (copyfiles (source "SYS:C/Offline") (dest "SYS:Storage/tolunnet-backup/C") (newname "Offline"))
+    )
+  )
+  (if (exists "SYS:C/CheckNetConfig" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/CheckNetConfig" (noreq)))
+      (copyfiles (source "SYS:C/CheckNetConfig") (dest "SYS:Storage/tolunnet-backup/C") (newname "CheckNetConfig"))
+    )
+  )
+  (if (exists "SYS:C/NetShutdown" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/NetShutdown" (noreq)))
+      (copyfiles (source "SYS:C/NetShutdown") (dest "SYS:Storage/tolunnet-backup/C") (newname "NetShutdown"))
+    )
+  )
+  (if (exists "SYS:C/wget" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/wget" (noreq)))
+      (copyfiles (source "SYS:C/wget") (dest "SYS:Storage/tolunnet-backup/C") (newname "wget"))
+    )
+  )
+  (if (exists "SYS:C/curl" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/curl" (noreq)))
+      (copyfiles (source "SYS:C/curl") (dest "SYS:Storage/tolunnet-backup/C") (newname "curl"))
+    )
+  )
+  (if (exists "SYS:C/iperf" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/iperf" (noreq)))
+      (copyfiles (source "SYS:C/iperf") (dest "SYS:Storage/tolunnet-backup/C") (newname "iperf"))
+    )
+  )
+  (if (exists "SYS:C/tftp" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/tftp" (noreq)))
+      (copyfiles (source "SYS:C/tftp") (dest "SYS:Storage/tolunnet-backup/C") (newname "tftp"))
+    )
+  )
+  (if (exists "SYS:C/ftp" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/ftp" (noreq)))
+      (copyfiles (source "SYS:C/ftp") (dest "SYS:Storage/tolunnet-backup/C") (newname "ftp"))
+    )
+  )
+  (if (exists "SYS:C/hostname" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/hostname" (noreq)))
+      (copyfiles (source "SYS:C/hostname") (dest "SYS:Storage/tolunnet-backup/C") (newname "hostname"))
+    )
+  )
+  (if (exists "SYS:C/nslookup" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/nslookup" (noreq)))
+      (copyfiles (source "SYS:C/nslookup") (dest "SYS:Storage/tolunnet-backup/C") (newname "nslookup"))
+    )
+  )
+  (if (exists "SYS:C/whois" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/whois" (noreq)))
+      (copyfiles (source "SYS:C/whois") (dest "SYS:Storage/tolunnet-backup/C") (newname "whois"))
+    )
+  )
+  (if (exists "SYS:C/traceroute" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/traceroute" (noreq)))
+      (copyfiles (source "SYS:C/traceroute") (dest "SYS:Storage/tolunnet-backup/C") (newname "traceroute"))
+    )
+  )
+  (if (exists "SYS:C/nc" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/nc" (noreq)))
+      (copyfiles (source "SYS:C/nc") (dest "SYS:Storage/tolunnet-backup/C") (newname "nc"))
+    )
+  )
+  (if (exists "SYS:C/arp" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/arp" (noreq)))
+      (copyfiles (source "SYS:C/arp") (dest "SYS:Storage/tolunnet-backup/C") (newname "arp"))
+    )
+  )
+  (if (exists "SYS:C/sntp" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/sntp" (noreq)))
+      (copyfiles (source "SYS:C/sntp") (dest "SYS:Storage/tolunnet-backup/C") (newname "sntp"))
+    )
+  )
+  (if (exists "SYS:C/telnet" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/telnet" (noreq)))
+      (copyfiles (source "SYS:C/telnet") (dest "SYS:Storage/tolunnet-backup/C") (newname "telnet"))
+    )
+  )
+  (if (exists "SYS:C/GetNetStatus" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/GetNetStatus" (noreq)))
+      (copyfiles (source "SYS:C/GetNetStatus") (dest "SYS:Storage/tolunnet-backup/C") (newname "GetNetStatus"))
+    )
+  )
+  (if (exists "SYS:C/ShowNetStatus" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/ShowNetStatus" (noreq)))
+      (copyfiles (source "SYS:C/ShowNetStatus") (dest "SYS:Storage/tolunnet-backup/C") (newname "ShowNetStatus"))
+    )
+  )
+  (if (exists "SYS:C/TolunnetPing" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/TolunnetPing" (noreq)))
+      (copyfiles (source "SYS:C/TolunnetPing") (dest "SYS:Storage/tolunnet-backup/C") (newname "TolunnetPing"))
+    )
+  )
+  (if (exists "SYS:C/TolunnetStatus" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/TolunnetStatus" (noreq)))
+      (copyfiles (source "SYS:C/TolunnetStatus") (dest "SYS:Storage/tolunnet-backup/C") (newname "TolunnetStatus"))
+    )
+  )
+  (if (exists "SYS:C/TolunnetGet" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/TolunnetGet" (noreq)))
+      (copyfiles (source "SYS:C/TolunnetGet") (dest "SYS:Storage/tolunnet-backup/C") (newname "TolunnetGet"))
+    )
+  )
+  (if (exists "SYS:C/TestSocket" (noreq))
+    (if (not (exists "SYS:Storage/tolunnet-backup/C/TestSocket" (noreq)))
+      (copyfiles (source "SYS:C/TestSocket") (dest "SYS:Storage/tolunnet-backup/C") (newname "TestSocket"))
+    )
+  )
+  (if (not (exists "SYS:C/tolunnet" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "tolunnet\n"))
+  )
+  (if (not (exists "SYS:C/TolunnetControl" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "TolunnetControl\n"))
+  )
+  (if (not (exists "SYS:C/ping" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "ping\n"))
+  )
+  (if (not (exists "SYS:C/ifconfig" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "ifconfig\n"))
+  )
+  (if (not (exists "SYS:C/netstat" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "netstat\n"))
+  )
+  (if (not (exists "SYS:C/route" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "route\n"))
+  )
+  (if (not (exists "SYS:C/AddNetRoute" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "AddNetRoute\n"))
+  )
+  (if (not (exists "SYS:C/DeleteNetRoute" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "DeleteNetRoute\n"))
+  )
+  (if (not (exists "SYS:C/AddNetInterface" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "AddNetInterface\n"))
+  )
+  (if (not (exists "SYS:C/ConfigureNetInterface" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "ConfigureNetInterface\n"))
+  )
+  (if (not (exists "SYS:C/Online" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "Online\n"))
+  )
+  (if (not (exists "SYS:C/Offline" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "Offline\n"))
+  )
+  (if (not (exists "SYS:C/CheckNetConfig" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "CheckNetConfig\n"))
+  )
+  (if (not (exists "SYS:C/NetShutdown" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "NetShutdown\n"))
+  )
+  (if (not (exists "SYS:C/wget" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "wget\n"))
+  )
+  (if (not (exists "SYS:C/curl" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "curl\n"))
+  )
+  (if (not (exists "SYS:C/iperf" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "iperf\n"))
+  )
+  (if (not (exists "SYS:C/tftp" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "tftp\n"))
+  )
+  (if (not (exists "SYS:C/ftp" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "ftp\n"))
+  )
+  (if (not (exists "SYS:C/hostname" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "hostname\n"))
+  )
+  (if (not (exists "SYS:C/nslookup" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "nslookup\n"))
+  )
+  (if (not (exists "SYS:C/whois" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "whois\n"))
+  )
+  (if (not (exists "SYS:C/traceroute" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "traceroute\n"))
+  )
+  (if (not (exists "SYS:C/nc" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "nc\n"))
+  )
+  (if (not (exists "SYS:C/arp" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "arp\n"))
+  )
+  (if (not (exists "SYS:C/sntp" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "sntp\n"))
+  )
+  (if (not (exists "SYS:C/telnet" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "telnet\n"))
+  )
+  (if (not (exists "SYS:C/GetNetStatus" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "GetNetStatus\n"))
+  )
+  (if (not (exists "SYS:C/ShowNetStatus" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "ShowNetStatus\n"))
+  )
+  (if (not (exists "SYS:C/TolunnetPing" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "TolunnetPing\n"))
+  )
+  (if (not (exists "SYS:C/TolunnetStatus" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "TolunnetStatus\n"))
+  )
+  (if (not (exists "SYS:C/TolunnetGet" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "TolunnetGet\n"))
+  )
+  (if (not (exists "SYS:C/TestSocket" (noreq)))
+    (textfile (dest "SYS:Storage/tolunnet-backup/new-files") (append "TestSocket\n"))
+  )
+;END GENERATED-BACKUP
+)
+
 (copyfiles (source "C/tolunnet") (dest "SYS:C"))
 (copyfiles (source "C/TolunnetControl") (dest "SYS:C"))
 (copyfiles (source "C/ping") (dest "SYS:C"))
@@ -78,9 +358,190 @@
     (run "Copy >NIL: S:User-Startup S:User-Startup.tolunnet-bak CLONE")
   )
 )
+(run "Delete >NIL: S:tolunnet-undo QUIET")
 (textfile
   (dest "S:tolunnet-undo")
-  (append "; tolunnet-undo - remove tolunnet and restore the previous stack\nIf EXISTS S:User-Startup.tolunnet-bak\n  Copy >NIL: S:User-Startup.tolunnet-bak S:User-Startup CLONE\nEndIf\nIf EXISTS LIBS:bsdsocket.library.pre-tolunnet\n  Copy >NIL: LIBS:bsdsocket.library.pre-tolunnet LIBS:bsdsocket.library CLONE\n  Delete >NIL: LIBS:bsdsocket.library.pre-tolunnet QUIET\nEndIf\nDelete >NIL: DEVS:tolunnet.config QUIET\n")
+    (append (cat "; tolunnet-undo - remove tolunnet and restore the previous stack\n"
+          ";BEGIN GENERATED-UNDO (scripts/gen_installer.py - do not edit)\n"
+          "; restore what we replaced, remove what we created\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/tolunnet\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/tolunnet SYS:C/tolunnet CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/tolunnet QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/TolunnetControl\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/TolunnetControl SYS:C/TolunnetControl CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/TolunnetControl QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/ping\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/ping SYS:C/ping CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/ping QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/ifconfig\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/ifconfig SYS:C/ifconfig CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/ifconfig QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/netstat\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/netstat SYS:C/netstat CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/netstat QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/route\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/route SYS:C/route CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/route QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/AddNetRoute\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/AddNetRoute SYS:C/AddNetRoute CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/AddNetRoute QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/DeleteNetRoute\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/DeleteNetRoute SYS:C/DeleteNetRoute CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/DeleteNetRoute QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/AddNetInterface\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/AddNetInterface SYS:C/AddNetInterface CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/AddNetInterface QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/ConfigureNetInterface\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/ConfigureNetInterface SYS:C/ConfigureNetInterface CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/ConfigureNetInterface QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/Online\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/Online SYS:C/Online CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/Online QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/Offline\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/Offline SYS:C/Offline CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/Offline QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/CheckNetConfig\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/CheckNetConfig SYS:C/CheckNetConfig CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/CheckNetConfig QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/NetShutdown\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/NetShutdown SYS:C/NetShutdown CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/NetShutdown QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/wget\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/wget SYS:C/wget CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/wget QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/curl\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/curl SYS:C/curl CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/curl QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/iperf\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/iperf SYS:C/iperf CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/iperf QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/tftp\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/tftp SYS:C/tftp CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/tftp QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/ftp\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/ftp SYS:C/ftp CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/ftp QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/hostname\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/hostname SYS:C/hostname CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/hostname QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/nslookup\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/nslookup SYS:C/nslookup CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/nslookup QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/whois\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/whois SYS:C/whois CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/whois QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/traceroute\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/traceroute SYS:C/traceroute CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/traceroute QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/nc\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/nc SYS:C/nc CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/nc QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/arp\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/arp SYS:C/arp CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/arp QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/sntp\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/sntp SYS:C/sntp CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/sntp QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/telnet\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/telnet SYS:C/telnet CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/telnet QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/GetNetStatus\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/GetNetStatus SYS:C/GetNetStatus CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/GetNetStatus QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/ShowNetStatus\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/ShowNetStatus SYS:C/ShowNetStatus CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/ShowNetStatus QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/TolunnetPing\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/TolunnetPing SYS:C/TolunnetPing CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/TolunnetPing QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/TolunnetStatus\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/TolunnetStatus SYS:C/TolunnetStatus CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/TolunnetStatus QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/TolunnetGet\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/TolunnetGet SYS:C/TolunnetGet CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/TolunnetGet QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Storage/tolunnet-backup/C/TestSocket\n"
+          "  Copy >NIL: SYS:Storage/tolunnet-backup/C/TestSocket SYS:C/TestSocket CLONE\n"
+          "Else\n"
+          "  Delete >NIL: SYS:C/TestSocket QUIET\n"
+          "EndIf\n"
+          ";END GENERATED-UNDO\n"
+          "If EXISTS S:User-Startup.tolunnet-bak\n"
+          "  Copy >NIL: S:User-Startup.tolunnet-bak S:User-Startup CLONE\n"
+          "EndIf\n"
+          "If EXISTS LIBS:bsdsocket.library.pre-tolunnet\n"
+          "  Copy >NIL: LIBS:bsdsocket.library.pre-tolunnet LIBS:bsdsocket.library CLONE\n"
+          "  Delete >NIL: LIBS:bsdsocket.library.pre-tolunnet QUIET\n"
+          "EndIf\n"
+          "Delete >NIL: DEVS:tolunnet.config QUIET\n"
+          "Delete >NIL: SYS:Storage/tolunnet-backup ALL QUIET\n"
+          "Run >NIL: Delete S:tolunnet-undo QUIET\n"
+    )
+  )
 )
 
 ; ---- boot line: stack size + daemon ------------------------------------

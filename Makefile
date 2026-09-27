@@ -140,7 +140,7 @@ UG_OBJS = $(BUILD)/src/usergroup/ug_init.o \
           $(BUILD)/src/usergroup/ug_table.gen.o \
           $(BUILD)/src/usergroup/ug_stubs.gen.o
 
-.PHONY: all clean test-host package lvo-check
+.PHONY: all clean test-host package lvo-check installer
 lvo-check:
 	@python3 scripts/lvo_check.py
 
@@ -179,12 +179,13 @@ $(BUILD)/host/%: tests/host/%.c $(HOST_UNITS) tests/host/tn_test.h
 	@mkdir -p $(BUILD)/host
 	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_UNITS) -o $@
 
-.PHONY: python-checks
+.PHONY: python-checks installer
 python-checks:
 	python3 scripts/lvo_check.py
 	python3 scripts/lvo_check_selftest.py
 	python3 scripts/installer_lint.py Install_Tolunnet.script
 	python3 scripts/installer_lint.py --selftest
+	python3 scripts/gen_installer.py --check
 	python3 scripts/gen_lvo_table.py
 	python3 scripts/gen_usergroup_table.py
 	python3 scripts/gen_pkg_docs.py
@@ -463,6 +464,9 @@ package: all
 	@$(MAKE) adf
 
 .PHONY: adf
+installer:
+	python3 scripts/gen_installer.py
+
 adf:
 	@echo "--- Building ADF Floppy Image (stripped binaries) ---"
 	@rm -rf $(BUILD)/adf-pkg
