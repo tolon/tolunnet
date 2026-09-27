@@ -5774,11 +5774,21 @@ static void tc_install_script(void)
         return;
     }
 
-    char buf[16384];
-    LONG bytes = Read(fh, buf, sizeof(buf) - 1);
+    /* 10b item 1: the generated script outgrew a 16 KB stack buffer -
+     * read the whole file into an AllocVec pool buffer instead. */
+    char *buf = AllocVec(65536, MEMF_CLEAR);
+    LONG bytes = 0;
+    if (buf == NULL) {
+        Close(fh);
+        TAP_NOTOK(label, "cannot allocate script buffer");
+        FreeVec(buf);
+        return;
+    }
+    bytes = Read(fh, buf, 65536 - 1);
     Close(fh);
     if (bytes <= 0) {
         TAP_NOTOK(label, "Cannot read Install_Tolunnet.script");
+        FreeVec(buf);
         return;
     }
     buf[bytes] = '\0';
@@ -5786,32 +5796,38 @@ static void tc_install_script(void)
     /* Verify DEVS:tolunnet.config write block is present */
     if (strstr(buf, "DEVS:tolunnet.config") == NULL) {
         TAP_NOTOK(label, "DEVS:tolunnet.config missing from install script");
+        FreeVec(buf);
         return;
     }
     if (strstr(buf, "DEVICE=") == NULL || strstr(buf, "UNIT=") == NULL) {
         TAP_NOTOK(label, "DEVICE=/UNIT= keys missing from install script");
+        FreeVec(buf);
         return;
     }
 
     /* Verify startup line is config-driven: Run <NIL: >NIL: C:tolunnet */
     if (strstr(buf, "Run <NIL: >NIL: C:tolunnet") == NULL) {
         TAP_NOTOK(label, "Run <NIL: >NIL: C:tolunnet startup line missing");
+        FreeVec(buf);
         return;
     }
 
     /* Verify buggy positional startup pattern is NOT present */
     if (strstr(buf, "C:tolunnet \" #device-name") != NULL) {
         TAP_NOTOK(label, "Positional device/unit arguments still present in startup line");
+        FreeVec(buf);
         return;
     }
 
     /* Item 5: CPU requirement text must say "68000 or higher", never "68020+" */
     if (strstr(buf, "68020+") != NULL) {
         TAP_NOTOK(label, "Install script still claims 68020+ requirement");
+        FreeVec(buf);
         return;
     }
     if (strstr(buf, "68000 or higher") == NULL) {
         TAP_NOTOK(label, "Install script missing '68000 or higher' CPU requirement");
+        FreeVec(buf);
         return;
     }
 
@@ -5832,7 +5848,8 @@ static void tc_install_script(void)
         if (strstr(buf, required_cmds[i]) == NULL) {
             tapf("# %s: missing installation entry for %s\n", label, required_cmds[i]);
             TAP_NOTOK(label, "Install script missing required command or tool");
-            return;
+            FreeVec(buf);
+        return;
         }
     }
 
@@ -5854,7 +5871,8 @@ static void tc_install_script(void)
         struct RDArgs *res = ReadArgs((CONST_STRPTR)template, opts, &rda);
         if (!res) {
             TAP_NOTOK(label, "ReadArgs rejected empty daemon arguments");
-            return;
+            FreeVec(buf);
+        return;
         }
         FreeArgs(res);
     }
@@ -5874,13 +5892,15 @@ static void tc_install_script(void)
         if (res != NULL) {
             FreeArgs(res);
             TAP_NOTOK(label, "Positional arguments unexpectedly parsed by WATCH/N template");
-            return;
+            FreeVec(buf);
+        return;
         }
         LONG err = IoErr();
         if (err != ERROR_BAD_NUMBER) {
             tapf("# %s: expected ERROR_BAD_NUMBER (226), got %ld\n", label, err);
             TAP_NOTOK(label, "Expected ERROR_BAD_NUMBER for positional device argument");
-            return;
+            FreeVec(buf);
+        return;
         }
     }
 
@@ -5893,10 +5913,12 @@ static void tc_install_script(void)
      */
     if (strstr(buf, "S:tolunnet-undo") == NULL) {
         TAP_NOTOK(label, "S:tolunnet-undo creation missing from install script");
+        FreeVec(buf);
         return;
     }
     if (strstr(buf, "LIBS:bsdsocket.library.") == NULL) {
         TAP_NOTOK(label, "LIBS:bsdsocket.library backup missing from install script");
+        FreeVec(buf);
         return;
     }
 
@@ -5906,7 +5928,8 @@ static void tc_install_script(void)
         BPTR fl_fh = Open((CONST_STRPTR)"LIBS:bsdsocket.library", MODE_NEWFILE);
         if (!fl_fh) {
             TAP_NOTOK(label, "Failed to create fake LIBS:bsdsocket.library");
-            return;
+            FreeVec(buf);
+        return;
         }
         Write(fl_fh, (CONST_APTR)fake_lib_text, strlen(fake_lib_text));
         Close(fl_fh);
@@ -5928,7 +5951,8 @@ static void tc_install_script(void)
         if (!tn_stack_apply_replacement(&ws)) {
             DeleteFile((CONST_STRPTR)"LIBS:bsdsocket.library");
             TAP_NOTOK(label, "tn_stack_apply_replacement returned FALSE");
-            return;
+            FreeVec(buf);
+        return;
         }
 
         /* 1. Assert original LIBS:bsdsocket.library is moved */
@@ -5937,7 +5961,8 @@ static void tc_install_script(void)
             UnLock(orig_lock);
             DeleteFile((CONST_STRPTR)"LIBS:bsdsocket.library");
             TAP_NOTOK(label, "Original LIBS:bsdsocket.library not moved during migration");
-            return;
+            FreeVec(buf);
+        return;
         }
 
         /* 2. Assert backup exists with correct content */
@@ -5947,7 +5972,8 @@ static void tc_install_script(void)
         }
         if (!bk_fh) {
             TAP_NOTOK(label, "Backup LIBS:bsdsocket.library.<stack> not created");
-            return;
+            FreeVec(buf);
+        return;
         }
         char bk_buf[64];
         LONG bk_read = Read(bk_fh, bk_buf, sizeof(bk_buf) - 1);
@@ -5956,14 +5982,16 @@ static void tc_install_script(void)
         bk_buf[bk_read] = '\0';
         if (strcmp(bk_buf, fake_lib_text) != 0) {
             TAP_NOTOK(label, "Backup content does not match original library");
-            return;
+            FreeVec(buf);
+        return;
         }
 
         /* 3. Assert S:tolunnet-undo exists and contains valid restore commands */
         BPTR undo_fh = Open((CONST_STRPTR)"S:tolunnet-undo", MODE_OLDFILE);
         if (!undo_fh) {
             TAP_NOTOK(label, "S:tolunnet-undo script not created");
-            return;
+            FreeVec(buf);
+        return;
         }
         char ubuf[1024];
         LONG ulen = Read(undo_fh, ubuf, sizeof(ubuf) - 1);
@@ -5973,20 +6001,23 @@ static void tc_install_script(void)
         if (strstr(ubuf, "LIBS:bsdsocket.library") == NULL ||
             strstr(ubuf, "S:User-Startup") == NULL) {
             TAP_NOTOK(label, "S:tolunnet-undo script missing restoration commands");
-            return;
+            FreeVec(buf);
+        return;
         }
 
         /* 4. Restore previous stack via migration engine */
         if (!tn_stack_undo_replacement()) {
             TAP_NOTOK(label, "tn_stack_undo_replacement returned FALSE");
-            return;
+            FreeVec(buf);
+        return;
         }
 
         /* 5. Assert LIBS:bsdsocket.library is restored with intact content */
         BPTR res_fh = Open((CONST_STRPTR)"LIBS:bsdsocket.library", MODE_OLDFILE);
         if (!res_fh) {
             TAP_NOTOK(label, "LIBS:bsdsocket.library not restored by undo");
-            return;
+            FreeVec(buf);
+        return;
         }
         LONG res_read = Read(res_fh, bk_buf, sizeof(bk_buf) - 1);
         Close(res_fh);
@@ -5994,7 +6025,8 @@ static void tc_install_script(void)
         bk_buf[res_read] = '\0';
         if (strcmp(bk_buf, fake_lib_text) != 0) {
             TAP_NOTOK(label, "Restored library content corrupted");
-            return;
+            FreeVec(buf);
+        return;
         }
 
         /* 6. Clean up fake test files */
@@ -6005,6 +6037,7 @@ static void tc_install_script(void)
         DeleteFile((CONST_STRPTR)"S:User-Startup.tolunnet-bak");
     }
 
+    FreeVec(buf);
     TAP_OK(label);
 }
 

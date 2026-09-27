@@ -87,7 +87,11 @@ if [ "${1:-}" = "soak" ]; then
     # Storage driver variants and the Storage drawer itself, plus C:
     # user tools. Roughly 200 KB freed; the wizard's runtime writes
     # (IFF captures, config rewrites) need the headroom.
-    for junk in arc cdboot All2Lha butcher Amigatool AllowBad bigcli ArchEdge BootPic Bounce; do
+    # 10b item 1: the generated installer script is ~27 KB (was ~11 KB);
+    # reclaim the stale typo'd tolunnet binaries, the packers and the
+    # unused Installer (no installer row since 10a-3) to keep the HDF
+    # writable for the wizard and undo rows.
+    for junk in arc cdboot All2Lha butcher Amigatool AllowBad bigcli ArchEdge BootPic Bounce tolunet TolunetGet TolunetPing TolunetStatus DiskSalv3 viewtek vt Installer; do
         xd delete C/$junk >/dev/null 2>&1
     done
     xd list Storage 2>/dev/null | tail -n +2 | sed 's/^[[:space:]]*//;s/ .*//' | while read -r entry; do
@@ -336,7 +340,11 @@ for cfg in $CONFIGS; do
     # Storage driver variants and the Storage drawer itself, plus C:
     # user tools. Roughly 200 KB freed; the wizard's runtime writes
     # (IFF captures, config rewrites) need the headroom.
-    for junk in arc cdboot All2Lha butcher Amigatool AllowBad bigcli ArchEdge BootPic Bounce; do
+    # 10b item 1: the generated installer script is ~27 KB (was ~11 KB);
+    # reclaim the stale typo'd tolunnet binaries, the packers and the
+    # unused Installer (no installer row since 10a-3) to keep the HDF
+    # writable for the wizard and undo rows.
+    for junk in arc cdboot All2Lha butcher Amigatool AllowBad bigcli ArchEdge BootPic Bounce tolunet TolunetGet TolunetPing TolunetStatus DiskSalv3 viewtek vt Installer; do
         xd delete C/$junk >/dev/null 2>&1
     done
     xd list Storage 2>/dev/null | tail -n +2 | sed 's/^[[:space:]]*//;s/ .*//' | while read -r entry; do
