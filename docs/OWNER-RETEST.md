@@ -74,3 +74,58 @@ Yukarıdaki DIAG prosedürü aynen geçerli (DIAG=YES). Ek olarak bu sürümde
    - Sayfa 5 (Test & Finish): 5 maddelik denetim listesi, butonlar ve onay kutuları
    (Her sayfada pencerenin ekranı ortaladığı, taşma olmadığı ve tüm kontrollerin okunabilir olduğu doğrulanacaktır.)
 
+---
+
+# Installer manuel prosedürü (10a-3 madde 4)
+
+Bench, Commodore Installer'ı asla çalıştıramaz: Installer bir GUI
+programıdır (welcome penceresi, her `(message)` ve novice açılış
+ekranı tıklama bekler). Bu yüzden installer'ı otomatik test yerine şu
+manuel adımlarla doğrula — önce WinUAE'de, sonra gerçek donanımda.
+
+Ön koşul: **temiz** bir Workbench 3.x HDF/diski (eski tolunnet kurulumu
+olmadan) ve sürüm paketinin (LhA) `WORK:tolunnet/` gibi bir çekmeceye
+açılmış olması.
+
+1. **Paketi aç** ve paket çekmecesi içine gir.
+2. **Novice kurulum:** `Install_Tolunnet`'e çift tıkla (veya çekmece
+   içinde bir shell'den `Installer Install_Tolunnet.script`
+   çalıştır). Hiçbir soru sorulmadan bittiğini doğrula: tek etkileşim
+   welcome sayfasıdır, başka hiçbir şey girdi beklemez ve kapanış
+   mesajı ek tıklama olmadan gelir.
+3. **Expert kurulum (ikinci, aynı paket kopyası üzerinde ya da 7.
+   adımdan sonra):** `Installer Install_Tolunnet.script EXPERT`
+   çalıştır. `SYS:Prefs/TolunnetSetup` sorusuna No (varsayılan) de.
+   Diğer her şey varsayılan kalsın.
+4. **SYS:C denetimi:** Shell'de `List SYS:C` çalıştır. SYS:C altında
+   komut adlarını taşıyan **alt çekmece olmamalı** (orada bir
+   `tolunnet` *çekmecesi* olması, eski bozuk script'in koştuğunu
+   gösterir) ve komut binary'leri (`tolunnet`, `ping`, `TolunnetGet`,
+   `hostname`, …) doğrudan SYS:C içinde düz dosya olarak durmalı.
+5. **Config denetimi:** `Type DEVS:tolunnet.config` — temiz sistemde
+   var olmalı ve `DEVICE=ethernet.device`, `UNIT=0`, `DHCP=YES`
+   yazmalı. Önceden var olan bir config'in varsa içeriğine
+   dokunulmamış olmalı.
+6. **User-Startup denetimi:** `Type S:User-Startup` — sona eklenmiş
+   tam olarak bir blok olmalı: `Stack 32768` ve
+   `Run <NIL: >NIL: C:tolunnet`. Bir de
+   `S:User-Startup.tolunnet-bak` yedeği var olmalı.
+7. **Undo script denetimi:** `Type S:tolunnet-undo` — içinde
+   `S:User-Startup.tolunnet-bak`,
+   `LIBS:bsdsocket.library.pre-tolunnet` yedeği ve
+   `DEVS:tolunnet.config` geçmeli.
+8. **Yeniden başlat** ve stack'in geldiğini doğrula: `ping 127.0.0.1`
+   cevap vermeli (kablolu SANA-II sürücü varsa gerçek arayüz de DHCP
+   ile gelmeli).
+9. **Geri alma:** `Execute S:tolunnet-undo` çalıştır ve eski durumun
+   döndüğünü kontrol et: User-Startup bloğu gitmiş (yedekten geri
+   gelmiş), `DEVS:tolunnet.config` silinmiş, yapılmışsa
+   `LIBS:bsdsocket.library.pre-tolunnet` yedeği
+   `LIBS:bsdsocket.library` olarak geri gelmiş ve yedek silinmiş
+   olmalı. Bir kez daha yeniden başlat; `ping 127.0.0.1` artık
+   başarısız olmalı (stack başlamıyor).
+
+Sonucu (adım adım geçti/kaldı, WinUAE mi donanım mı olduğunu) sürüm
+notlarına yaz.
+
+
