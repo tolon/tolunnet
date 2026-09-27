@@ -267,19 +267,30 @@ static ULONG tc_cfg_ip(const char *key, ULONG def)
     /* 10f item 3: a "Software Failure" requester means a task\
      * crashed during the row. First hit only: name the row, keep\
      * the screen as WORK:crash-<row>.iff, fail the row. */ \
-    if (!g_crash_reported && IntuitionBase != NULL) { \
-        ULONG cfkey = LockIBase(0); \
+    if (!g_crash_reported) { \
+        /* intuition may be closed at this point in the suite -\
+         * open it just for the scan, then let it go again. */ \
+        struct Library *cf_int = IntuitionBase; \
+        int cf_opened = 0; \
+        ULONG cfkey = 0; \
         struct Screen *cscr = NULL; \
         struct Window *cwin = NULL; \
-        for (cscr = IntuitionBase->FirstScreen; cscr && cwin == NULL;\
-             cscr = cscr->NextScreen) { \
-            for (cwin = cscr->FirstWindow; cwin; cwin = cwin->NextWindow) { \
-                if (cwin->Title != NULL && strstr((const char *)cwin->Title,\
-                    "Software Failure") != NULL) break; \
-            } \
+        if (cf_int == NULL) { \
+            cf_int = OpenLibrary((CONST_STRPTR)"intuition.library", 36); \
+            cf_opened = 1; \
         } \
-        UnlockIBase(cfkey); \
-        if (cwin != NULL) { \
+        if (cf_int != NULL) { \
+            cfkey = LockIBase(0); \
+            for (cscr = IntuitionBase->FirstScreen; cscr && cwin == NULL;\
+                 cscr = cscr->NextScreen) { \
+                for (cwin = cscr->FirstWindow; cwin; cwin = cwin->NextWindow) { \
+                    if (cwin->Title != NULL && strstr((const char *)cwin->Title,\
+                        "Software Failure") != NULL) break; \
+                } \
+            } \
+            UnlockIBase(cfkey); \
+        } \
+        if (cf_int != NULL && cwin != NULL) { \
             char cshot[72]; \
             g_crash_reported = 1; \
             snprintf(cshot, sizeof(cshot), "WORK:crash-%s.iff", #tc); \
@@ -288,6 +299,7 @@ static ULONG tc_cfg_ip(const char *key, ULONG def)
             g_count++; g_not_ok_count++; \
             tapf("not ok %d - %s # crash requester appeared\n", g_count, #tc); \
         } \
+        if (cf_opened) CloseLibrary(cf_int); \
     } \
     } } while (0)
 #define TAP_TODO(name, why)  do { g_count++; tapf("not ok %d - %s # TODO %s\n", g_count, name, why); } while (0)
