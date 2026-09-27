@@ -7943,8 +7943,8 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_ping_gw);
     TN_RUN(tc_net_cmd_nslookup_server);
     TN_RUN(tc_net_cmd_nslookup_ptr);
-    TN_RUN(tc_daemon_noconfig_start); /* 10b item 2: bare boot, no config */
-    TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
+    TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */    TN_RUN(tc_daemon_noconfig_start); /* 10b item 2: bare boot, no config (daemon already stopped) */
+
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
 
