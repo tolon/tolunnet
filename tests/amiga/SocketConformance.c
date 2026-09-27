@@ -6178,14 +6178,22 @@ static void tc_installer_run(void)
         }
     }
     if (rc < 0) {
-        Execute((CONST_STRPTR)"T:tn-inst-recover.cli", (BPTR)0, (BPTR)0);
+        SystemTags((CONST_STRPTR)"Execute T:tn-inst-recover.cli",
+                   SYS_Asynch, FALSE,
+                   SYS_Input, (BPTR)0,
+                   SYS_Output, (BPTR)0,
+                   TAG_END);
         TAP_TODO(label, "installer did not finish within 90 s (script-error "
                         "requester?): Install_Tolunnet.script is not valid "
                         "Installer 43 yet (item 3 rewrites it)");
         return;
     }
     if (rc != 0) {
-        Execute((CONST_STRPTR)"T:tn-inst-recover.cli", (BPTR)0, (BPTR)0);
+        SystemTags((CONST_STRPTR)"Execute T:tn-inst-recover.cli",
+                   SYS_Asynch, FALSE,
+                   SYS_Input, (BPTR)0,
+                   SYS_Output, (BPTR)0,
+                   TAG_END);
         TAP_TODO(label, "Installer RC != 0: Install_Tolunnet.script is not "
                         "valid Installer 43 yet (item 3 rewrites it)");
         return;
