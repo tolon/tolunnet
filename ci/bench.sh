@@ -91,7 +91,7 @@ if [ "${1:-}" = "soak" ]; then
     # reclaim the stale typo'd tolunnet binaries, the packers and the
     # unused Installer (no installer row since 10a-3) to keep the HDF
     # writable for the wizard and undo rows.
-    for junk in arc cdboot All2Lha butcher Amigatool AllowBad bigcli ArchEdge BootPic Bounce tolunet TolunetGet TolunetPing TolunetStatus DiskSalv3 viewtek vt Installer; do
+    for junk in arc cdboot All2Lha butcher Amigatool AllowBad bigcli ArchEdge BootPic Bounce tolunet TolunetGet TolunetPing TolunetStatus DiskSalv3 viewtek vt Installer LZX DMS SnoopDos3 UnZip PPShow Zip Prod_Prep PKAzip LhA gzip; do
         xd delete C/$junk >/dev/null 2>&1
     done
     xd list Storage 2>/dev/null | tail -n +2 | sed 's/^[[:space:]]*//;s/ .*//' | while read -r entry; do
@@ -344,7 +344,7 @@ for cfg in $CONFIGS; do
     # reclaim the stale typo'd tolunnet binaries, the packers and the
     # unused Installer (no installer row since 10a-3) to keep the HDF
     # writable for the wizard and undo rows.
-    for junk in arc cdboot All2Lha butcher Amigatool AllowBad bigcli ArchEdge BootPic Bounce tolunet TolunetGet TolunetPing TolunetStatus DiskSalv3 viewtek vt Installer; do
+    for junk in arc cdboot All2Lha butcher Amigatool AllowBad bigcli ArchEdge BootPic Bounce tolunet TolunetGet TolunetPing TolunetStatus DiskSalv3 viewtek vt Installer LZX DMS SnoopDos3 UnZip PPShow Zip Prod_Prep PKAzip LhA gzip; do
         xd delete C/$junk >/dev/null 2>&1
     done
     xd list Storage 2>/dev/null | tail -n +2 | sed 's/^[[:space:]]*//;s/ .*//' | while read -r entry; do
