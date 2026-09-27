@@ -3,8 +3,10 @@
 """Generate the repeated per-command backup/undo blocks in
 Install_Tolunnet.script from docs/commands.md (z.ai step 10b item 1).
 
-The command list is the docs/commands.md C: table, so the installer
-cannot drift from the documentation. `make installer` regenerates the
+The command list is the docs/commands.md C: table plus the
+script's own copyfiles sources, so the installer cannot drift from
+the documentation. (new-files bookkeeping was removed in 10c item 1:
+undo works per file.) `make installer` regenerates the
 marked sections in place; `gen_installer.py --check` (python-checks)
 fails when the file is stale.
 """
@@ -46,11 +48,6 @@ def backup_section(names):
                    ' (dest "SYS:Storage/tolunnet-backup/C")'
                    ' (newname "%s"))' % (n, n))
         out.append("    )")
-        out.append("  )")
-    for n in names:
-        out.append('  (if (not (exists "SYS:C/%s" (noreq)))' % n)
-        out.append('    (textfile (dest "SYS:Storage/tolunnet-backup/'
-                   'new-files") (append "%s%s"))' % (n, BSN))
         out.append("  )")
     out.append(END_B)
     return NL.join(out)

@@ -145,9 +145,7 @@ ve geri getirdiğini gerçek bir Roadshow kurulumuyla doğrula:
    `Online`, `Offline`, `NetShutdown`, `AddNetInterface`,
    `AddNetRoute`, `DeleteNetRoute`, `ConfigureNetInterface`,
    `GetNetStatus`, `ShowNetStatus` (tolunnet'in bunların üzerine
-   yazdığı isimler). `SYS:Storage/tolunnet-backup/new-files` içinde
-   Roadshow'da olmayan isimler (örn. `tolunnet`, `TolunnetControl`)
-   listelenmeli.
+   yazdığı isimler).
 4. **Geri alma:** `Execute S:tolunnet-undo` çalıştır, yeniden boot et.
    Roadshow yeniden çalışmalı: `ping 127.0.0.1` Roadshow'un ping'i ile
    cevap vermeli ve `ShowNetStatus` Roadshow'un çıktısını vermeli
