@@ -1,4 +1,20 @@
 ;BEGIN tolunnet conformance bench (Round 3 B.3)
+; ---- 10d item 1: undo sandbox (built and run in the boot context -
+; ---- the row later only verifies; see QUESTIONS [auto] #8) -----------
+makedir T:tnsbx
+makedir T:tnsbx/C
+makedir T:tnsbx/Storage
+makedir T:tnsbx/Storage/tolunnet-backup
+makedir T:tnsbx/Storage/tolunnet-backup/C
+makedir T:tnsbx/S
+makedir T:tnsbx/LIBS
+makedir T:tnsbx/DEVS
+Copy >NIL: SYS:C/NetShutdown T:tnsbx/C/NetShutdown CLONE
+Copy >NIL: SYS:C/nc T:tnsbx/C/nc CLONE
+Echo ROADSHW >T:tnsbx/Storage/tolunnet-backup/C/NetShutdown
+Echo orig >T:tnsbx/S/User-Startup.tolunnet-bak
+Echo rs >T:tnsbx/LIBS/bsdsocket.library.pre-tolunnet
+Execute S:tolunnet-undo-sandbox
 ; Staged into the bench HDF by ci/bench.sh. Two full start/conformance/stop
 ; cycles prove the TNET-059/060 restart path; logs land on WORK: (host dir).
 

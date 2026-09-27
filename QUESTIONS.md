@@ -126,3 +126,17 @@ Status: `open` · `answered` · `superseded`.
    20260927-021357). Host refusal is therefore not testable through slirp; the
    refusal semantics are proven on the guest loopback
    (tc_connect_refused / tc_connect_refused_nb), which involves no slirp.
+8. **[auto] 10d item 1: the undo sandbox runs from the boot script, not
+   the row.** The order prescribed the row run
+   `SystemTags("Execute S:tolunnet-undo-sandbox", SYS_Input NIL,
+   SYS_Output T:undo.out)`. Both that and in-process Execute() ran the
+   script with zero effect and rc 0 - T:undo.out empty (no command
+   error), backup untouched, nc untouched, dst unchanged (bench
+   20260927-211506, all four logs byte-identical), while the same
+   staged file executed from the boot shell restores everything
+   (manual UAE probe, rc=0). With the prescription failing twice and
+   the empty-output evidence pointing at the invocation context, the
+   sandbox build+Execute moved into ci/User-Startup-Conformance (the
+   proven context, same pattern as the 10a-2 between-cycles recovery);
+   tc_undo_sandbox keeps its five assertions and gains the missing-curl
+   check. Intent (undo proven end-to-end in the bench) is unchanged.

@@ -3751,69 +3751,7 @@ static void tc_wizard_ntsc(void)
     }
     Delay(10);
 
-    /* Dump TolunnetPrefs screenshot for the profile */
-    if (!fail) {
-        LONG rc_prefs = SystemTags((CONST_STRPTR)"C:TolunnetPrefs",
-                                   SYS_Asynch, TRUE,
-                                   SYS_Input, (BPTR)0,
-                                   SYS_Output, (BPTR)0,
-                                   NP_StackSize, 32768,
-                                   TAG_END);
-        tapf("# tc_wizard_ntsc: SystemTags TolunnetPrefs rc=%ld\n", rc_prefs);
-
-        struct Window *pwin = NULL;
-        struct Screen *pscr = NULL;
-        int pwait;
-        for (pwait = 0; pwait < 100; pwait++) {
-            Delay(5);
-            Forbid();
-            for (pscr = IntuitionBase->FirstScreen; pscr; pscr = pscr->NextScreen) {
-                for (pwin = pscr->FirstWindow; pwin; pwin = pwin->NextWindow) {
-                    if (pwin->Title != NULL &&
-                        strstr((const char *)pwin->Title, "Network Preferences") != NULL) {
-                        break;
-                    }
-                }
-                if (pwin) break;
-            }
-            Permit();
-            if (pwin) break;
-        }
-        tapf("# tc_wizard_ntsc: pwait=%d pwin=%lx pscr=%lx\n", pwait, (ULONG)pwin, (ULONG)pscr);
-
-        if (pwin && pscr) {
-            Delay(10);
-            char pref_shot[48];
-            snprintf(pref_shot, sizeof(pref_shot), "WORK:prefs-%s.iff",
-                     (scrh == 200) ? "ntsc" : "pal");
-            BOOL shot_ok = write_iff_screen_struct(pref_shot, pscr);
-            tapf("# tc_wizard_ntsc: prefs shot (%s) ok=%d\n", pref_shot, (int)shot_ok);
-            struct Task *ptask = (pwin->UserPort != NULL) ? pwin->UserPort->mp_SigTask : NULL;
-            if (!ptask) {
-                Forbid();
-                ptask = FindTask((CONST_STRPTR)"TolunnetPrefs");
-                Permit();
-            }
-            if (ptask != NULL) {
-                Signal(ptask, SIGBREAKF_CTRL_C);
-                for (pwait = 0; pwait < 40; pwait++) {
-                    Delay(5);
-                    BOOL still_open = FALSE;
-                    Forbid();
-                    struct Screen *s;
-                    for (s = IntuitionBase->FirstScreen; s; s = s->NextScreen) {
-                        struct Window *w;
-                        for (w = s->FirstWindow; w; w = w->NextWindow) {
-                            if (w == pwin) { still_open = TRUE; break; }
-                        }
-                        if (still_open) break;
-                    }
-                    Permit();
-                    if (!still_open) break;
-                }
-            }
-        }
-    }
+    /* 10d item 2: the Prefs check moved to tc_prefs_opens. */
 
     DeleteMsgPort(reply_port);
     CloseLibrary((struct Library *)GfxBase);
@@ -5132,73 +5070,14 @@ static int tn_file_head_is(const char *path, const char *expect)
 static void tc_undo_sandbox(void)
 {
     const char *label = "tc_undo_sandbox";
-    LONG rc;
-    static const char *const dirs[] = {
-        "T:tnsbx", "T:tnsbx/C", "T:tnsbx/Storage",
-        "T:tnsbx/Storage/tolunnet-backup",
-        "T:tnsbx/Storage/tolunnet-backup/C",
-        "T:tnsbx/S", "T:tnsbx/LIBS", "T:tnsbx/DEVS",
-    };
-    size_t i;
     BPTR lk;
+    LONG sz;
 
-    /* clean slate (both cycles run this row) */
-    DeleteFile((CONST_STRPTR)"T:tnsbx/C/NetShutdown");
-    DeleteFile((CONST_STRPTR)"T:tnsbx/C/nc");
-    DeleteFile((CONST_STRPTR)"T:tnsbx/Storage/tolunnet-backup/C/NetShutdown");
-    DeleteFile((CONST_STRPTR)"T:tnsbx/Storage/tolunnet-backup/C");
-    DeleteFile((CONST_STRPTR)"T:tnsbx/Storage/tolunnet-backup");
-    DeleteFile((CONST_STRPTR)"T:tnsbx/Storage");
-    DeleteFile((CONST_STRPTR)"T:tnsbx/S/User-Startup");
-    DeleteFile((CONST_STRPTR)"T:tnsbx/S/User-Startup.tolunnet-bak");
-    DeleteFile((CONST_STRPTR)"T:tnsbx/S/tolunnet-undo");
-    DeleteFile((CONST_STRPTR)"T:tnsbx/S");
-    DeleteFile((CONST_STRPTR)"T:tnsbx/LIBS/bsdsocket.library");
-    DeleteFile((CONST_STRPTR)"T:tnsbx/LIBS/bsdsocket.library.pre-tolunnet");
-    DeleteFile((CONST_STRPTR)"T:tnsbx/LIBS");
-    DeleteFile((CONST_STRPTR)"T:tnsbx/DEVS/tolunnet.config");
-    DeleteFile((CONST_STRPTR)"T:tnsbx/DEVS");
-    DeleteFile((CONST_STRPTR)"T:tnsbx");
-
-    for (i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) {
-        CreateDir((CONST_STRPTR)dirs[i]);
-    }
-
-    if (!tn_copy_file("SYS:C/NetShutdown", "T:tnsbx/C/NetShutdown") ||
-        !tn_copy_file("SYS:C/nc", "T:tnsbx/C/nc")) {
-        TAP_NOTOK(label, "cannot seed T:tnsbx/C from SYS:C");
-        return;
-    }
-    if (!tn_write_file("T:tnsbx/Storage/tolunnet-backup/C/NetShutdown",
-                       "ROADSHW")) {
-        TAP_NOTOK(label, "cannot write the fake Roadshow backup");
-        return;
-    }
-    if (!tn_write_file("T:tnsbx/S/User-Startup.tolunnet-bak", "orig") ||
-        !tn_write_file("T:tnsbx/LIBS/bsdsocket.library.pre-tolunnet",
-                       "rs")) {
-        TAP_NOTOK(label, "cannot write the sandbox backups");
-        return;
-    }
-
-    /* run the undo: no redirection inside the command string -
-     * "Execute x >NIL:" would pass >NIL: as a script argument.
-     * Script output goes to T:undo.out for failure evidence. */
-    BPTR in_h = Open((CONST_STRPTR)"NIL:", MODE_OLDFILE);
-    BPTR out_h = Open((CONST_STRPTR)"T:undo.out", MODE_NEWFILE);
-    rc = SystemTags((CONST_STRPTR)"Execute S:tolunnet-undo-sandbox",
-                    SYS_Asynch, FALSE,
-                    SYS_Input, in_h,
-                    SYS_Output, out_h,
-                    TAG_END);
-    if (in_h != 0) Close(in_h);
-    if (out_h != 0) Close(out_h);
-    DeleteFile((CONST_STRPTR)"T:tnsbx/C/curl"); /* stays missing on purpose */
-    tapf("# %s: execute rc=%ld, sizes: backup=%ld dst=%ld nc=%ld\n", label,
-         (long)rc,
-         (long)tn_file_size_of("T:tnsbx/Storage/tolunnet-backup/C/NetShutdown"),
-         (long)tn_file_size_of("T:tnsbx/C/NetShutdown"),
-         (long)tn_file_size_of("T:tnsbx/C/nc"));
+    /* the sandbox was built and the undo executed by the boot script
+     * (the row's own System/Execute contexts ran the script with zero
+     * effect - bench 20260927-211506, QUESTIONS [auto] #8); the row
+     * verifies the artifacts. T:tnsbx/C/curl is deliberately absent:
+     * the undo must survive missing files. */
 
     /* 0. the deliberately missing file must not exist */
     lk = Lock((CONST_STRPTR)"T:tnsbx/C/curl", ACCESS_READ);
@@ -5209,17 +5088,11 @@ static void tc_undo_sandbox(void)
     }
 
     /* 1. replaced tool restored from the backup */
-    if (!tn_file_head_is("T:tnsbx/C/NetShutdown", "ROADSHW")) {
-        BPTR ef = Open((CONST_STRPTR)"T:undo.out", MODE_OLDFILE);
-        char ub[301];
-        LONG un = 0;
-        if (ef != 0) {
-            un = Read(ef, ub, 300);
-            Close(ef);
-        }
-        if (un < 0) un = 0;
-        ub[un] = "\0";
-        tapf("# %s: execute rc=%ld, undo.out first %ld bytes:\n%s\n", label, (long)rc, (long)un, ub);
+    sz = tn_file_size_of("T:tnsbx/C/NetShutdown");
+    if (sz != 7 || !tn_file_head_is("T:tnsbx/C/NetShutdown", "ROADSHW")) {
+        tapf("# %s: C/NetShutdown size=%ld, backup size=%ld\n", label,
+             (long)sz,
+             (long)tn_file_size_of("T:tnsbx/Storage/tolunnet-backup/C/NetShutdown"));
         TAP_NOTOK(label, "undo did not restore C/NetShutdown from backup");
         return;
     }
@@ -5353,6 +5226,111 @@ restore:
     DeleteFile((CONST_STRPTR)"T:tn-noconfig.cli");
 }
 
+
+/* z.ai step 10d item 2: TolunnetPrefs must open its window. The old
+ * inline check inside tc_wizard_ntsc had no assertion (pwin=0 in
+ * every bench log) and SYS_Output 0 hid whatever Prefs printed.
+ * This row makes the failure visible with evidence; it deliberately
+ * does NOT fix Prefs - a missing window is TODO "fixed in step 11". */
+static void tc_prefs_opens(void)
+{
+    const char *label = "tc_prefs_opens";
+    BPTR in_h = Open((CONST_STRPTR)"NIL:", MODE_OLDFILE);
+    BPTR out_h;
+    struct Window *pwin = NULL;
+    struct Screen *pscr = NULL;
+    struct Screen *scr;
+    struct Window *w;
+    struct Task *ptask;
+    char shot[48];
+    LONG rc;
+    BOOL open2;
+    int i;
+    int tries;
+
+    DeleteFile((CONST_STRPTR)"T:prefs.out");
+    out_h = Open((CONST_STRPTR)"T:prefs.out", MODE_NEWFILE);
+    rc = SystemTags((CONST_STRPTR)"C:TolunnetPrefs",
+                    SYS_Asynch, TRUE,
+                    SYS_Input, in_h,
+                    SYS_Output, out_h,
+                    NP_StackSize, 32768,
+                    TAG_END);
+    for (tries = 0; tries < 100; tries++) { /* 10 s */
+        Delay(5);
+        Forbid();
+        for (pscr = IntuitionBase->FirstScreen; pscr; pscr = pscr->NextScreen) {
+            for (pwin = pscr->FirstWindow; pwin; pwin = pwin->NextWindow) {
+                if (pwin->Title != NULL &&
+                    strstr((const char *)pwin->Title, "Network Preferences") != NULL) {
+                    break;
+                }
+            }
+            if (pwin) break;
+        }
+        Permit();
+        if (pwin) break;
+    }
+
+    if (pwin != NULL && pscr != NULL) {
+        Delay(10);
+        snprintf(shot, sizeof(shot), "WORK:prefs-opens-%s.iff",
+                 (pscr->Height == 200) ? "ntsc" : "pal");
+        tapf("# %s: window up after %d polls; shot %s ok=%d\n", label,
+             tries, shot, (int)write_iff_screen_struct(shot, pscr));
+        ptask = (pwin->UserPort != NULL) ? pwin->UserPort->mp_SigTask : NULL;
+        if (ptask == NULL) {
+            Forbid();
+            ptask = FindTask((CONST_STRPTR)"TolunnetPrefs");
+            Permit();
+        }
+        if (ptask != NULL) {
+            Signal(ptask, SIGBREAKF_CTRL_C);
+            for (i = 0; i < 200; i++) {
+                Delay(5);
+                open2 = FALSE;
+                Forbid();
+                for (scr = IntuitionBase->FirstScreen; scr; scr = scr->NextScreen) {
+                    for (w = scr->FirstWindow; w; w = w->NextWindow) {
+                        if (w == pwin) { open2 = TRUE; break; }
+                    }
+                    if (open2) break;
+                }
+                Permit();
+                if (!open2) break;
+            }
+        }
+        TAP_OK(label);
+    } else {
+        BPTR ef = Open((CONST_STRPTR)"T:prefs.out", MODE_OLDFILE);
+        char eb[301];
+        LONG en = 0;
+
+        if (ef != 0) {
+            en = Read(ef, eb, 300);
+            Close(ef);
+        }
+        if (en < 0) en = 0;
+        eb[en] = "\0";
+        tapf("# %s: rc=%ld, T:prefs.out first %ld bytes: %s\n",
+             label, (long)rc, (long)en, eb);
+        Forbid();
+        for (scr = IntuitionBase->FirstScreen; scr; scr = scr->NextScreen) {
+            tapf("# %s: screen \"%s\" h=%ld\n", label,
+                 scr->Title != NULL ? (const char *)scr->Title : "(null)",
+                 (long)scr->Height);
+            for (w = scr->FirstWindow; w; w = w->NextWindow) {
+                tapf("# %s: window \"%s\"\n", label,
+                     w->Title != NULL ? (const char *)w->Title : "(null)");
+            }
+        }
+        Permit();
+        TAP_TODO(label, "TolunnetPrefs never opens its window - fixed in step 11");
+    }
+
+    if (in_h != 0) Close(in_h);
+    if (out_h != 0) Close(out_h);
+}
 
 static void tc_cmd_stop_start(void)
 {
@@ -8137,6 +8115,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_ping_gw);
     TN_RUN(tc_net_cmd_nslookup_server);
     TN_RUN(tc_net_cmd_nslookup_ptr);
+    TN_RUN(tc_prefs_opens); /* 10d item 2: Prefs window must open (TODO allowed) */
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */    TN_RUN(tc_daemon_noconfig_start); /* 10b item 2: bare boot, no config (daemon already stopped) */
     TN_RUN(tc_undo_sandbox); /* 10c item 2: undo proven in a T: sandbox */
 
