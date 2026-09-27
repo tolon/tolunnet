@@ -46,6 +46,7 @@ struct IntuitionBase *IntuitionBase = NULL;
 static BPTR            g_log_fh   = (BPTR)0;
 
 static int g_count = 0;
+static int g_crash_reported = 0; /* 10f item 3: first Software Failure only */
 static int g_not_ok_count = 0;
 
 static void vsnprintf_safe(char *buf, int size, const char *fmt, va_list ap);
@@ -263,6 +264,31 @@ static ULONG tc_cfg_ip(const char *key, ULONG def)
         g_count++; g_not_ok_count++; \
         tapf("not ok %d - %s # TIMEOUT: ipc watchdog fired during the test\n", \
                      g_count, #tc); \
+    /* 10f item 3: a "Software Failure" requester means a task\
+     * crashed during the row. First hit only: name the row, keep\
+     * the screen as WORK:crash-<row>.iff, fail the row. */ \
+    if (!g_crash_reported && IntuitionBase != NULL) { \
+        ULONG cfkey = LockIBase(0); \
+        struct Screen *cscr = NULL; \
+        struct Window *cwin = NULL; \
+        for (cscr = IntuitionBase->FirstScreen; cscr && cwin == NULL;\
+             cscr = cscr->NextScreen) { \
+            for (cwin = cscr->FirstWindow; cwin; cwin = cwin->NextWindow) { \
+                if (cwin->Title != NULL && strstr((const char *)cwin->Title,\
+                    "Software Failure") != NULL) break; \
+            } \
+        } \
+        UnlockIBase(cfkey); \
+        if (cwin != NULL) { \
+            char cshot[72]; \
+            g_crash_reported = 1; \
+            snprintf(cshot, sizeof(cshot), "WORK:crash-%s.iff", #tc); \
+            tapf("# CRASH requester after %s\n", #tc); \
+            write_iff_screen_struct(cshot, cscr); \
+            g_count++; g_not_ok_count++; \
+            tapf("not ok %d - %s # crash requester appeared\n", g_count, #tc); \
+        } \
+    } \
     } } while (0)
 #define TAP_TODO(name, why)  do { g_count++; tapf("not ok %d - %s # TODO %s\n", g_count, name, why); } while (0)
 #define TAP_SKIP(name, why)  do { g_count++; tapf("ok %d - %s # SKIP %s\n", g_count, name, why); } while (0)
