@@ -1,0 +1,160 @@
+# tolunnet SocketConformance (Round 3 Â§B.2)
+ok 1 - tc_lib_open_close
+ok 2 - tc_lib_expunge_survives
+ok 3 - tc_waitselect_fd40
+ok 4 - tc_listen_setsockopt
+# net_recv_ctrlc: signals BEFORE recv = 0x4000000
+# net_recv_ctrlc: signals AFTER recv = 0x84001100
+# net_recv_ctrlc: CTRL_C still set after EINTR (correct)
+# net_recv_ctrlc: recv rc=-1 errno=4 after 134 ticks
+ok 5 - net_recv_ctrlc
+# net_recv_ctrlc: post-CANCEL socket OK
+ok 6 - tc_socket_types
+ok 7 - tc_bind_udp
+ok 8 - tc_bind_reuse
+ok 9 - tc_sockopt_matrix
+ok 10 - tc_multicast_join
+ok 11 - tc_ioctl_ifconf
+ok 12 - tc_ioctl_fionread
+ok 13 - tc_listen_accept_loopback
+ok 14 - tc_connect_refused
+ok 15 - tc_connect_refused_nb
+# tc_nonblock_connect: rc=-1 errno=36 EINPROGRESS=36
+# tc_nonblock_connect: calling waitselect s=1
+# tc_nonblock_connect: waitselect returned 1 errno=36
+ok 16 - tc_nonblock_connect
+ok 17 - tc_shutdown_wr
+ok 18 - tc_getpeername
+ok 19 - tc_dns_a # SKIP external
+ok 20 - tc_dns_local
+ok 21 - tc_dns_fail
+ok 22 - tc_errno_ptr
+ok 23 - tc_dup2
+ok 24 - tc_waitselect_timeout
+ok 25 - tc_waitselect_eintr
+ok 26 - tc_waitselect_badf
+ok 27 - tc_waitselect_no_sigio
+ok 28 - tc_sigio
+ok 29 - tc_icmp_raw
+ok 30 - tc_sendmsg_iov
+# control: send=100 waitselect=1 recv=100
+# waitselect_rc=1 recv_rc=100 errno=45 retries=1
+ok 31 - tc_tcp_scatter_tnet115
+ok 32 - tc_recv_peek
+ok 33 - tc_socket_events
+ok 34 - tc_sbtc_full
+ok 35 - tc_release_obtain
+ok 36 - tc_every_vector_callable
+ok 37 - tc_stats_counters
+not ok 38 - tc_wizard_wired # TOLUNNETSETUP ARexx port not found
+not ok 39 - tc_wizard_ntsc # TOLUNNETSETUP port not found
+ok 40 - tc_wifi_scan_parse
+ok 41 - tc_reconfig_rc
+ok 42 - tc_probe_after_wizard_wired
+ok 43 - tc_probe_after_wizard_ntsc
+ok 44 - tc_probe_after_wifi_scan
+ok 45 - tc_probe_after_reconfig
+ok 46 - tc_link_events # SKIP link flip not enabled for this driver (create WORK:linktest-on)
+ok 47 - tc_cmd_hostname
+ok 48 - tc_cmd_nslookup
+ok 49 - tc_cmd_whois
+ok 50 - tc_cmd_traceroute
+ok 51 - tc_cmd_nc
+ok 52 - tc_cmd_sntp
+ok 53 - tc_cmd_telnet
+ok 54 - tc_cmd_tftp
+ok 55 - tc_cmd_ftp
+# tc_cmd_arp: gateway ARP resolves here: yes
+ok 56 - tc_cmd_arp
+ok 57 - tc_cmd_shownetstatus
+ok 58 - tc_cmd_tolunnetcontrol
+ok 59 - tc_cmd_getnetstatus
+# iperf loopback: 104552 bytes in ~2s = 1046 KB/s
+ok 60 - tc_iperf_loopback
+ok 61 - tc_cmd_ifctl
+ok 62 - tc_cmd_netshutdown
+ok 63 - tc_cmd_route
+# tc_usergroup: bsdsocket survived flush (socket ok)
+ok 64 - tc_usergroup
+ok 65 - tc_install_script
+ok 66 - net_tcp_blocking_recv
+ok 67 - net_udp_connected_send
+ok 68 - net_udp_unconnected_send
+ok 69 - net_udp_connected_sendto_eisconn
+ok 70 - net_tcp_unconnected_recvfrom
+ok 71 - net_tcp_connected_recvfrom
+ok 72 - net_tcp_unconnected_sendto
+ok 73 - net_tcp_connected_sendto_ignored_to
+ok 74 - net_tcp_shutdown_sendto_epipe
+# net_cmd_nc: rc=-100 out=:Ÿ
+
+not ok 75 - net_cmd_nc # no echo content or nonzero rc
+# net_cmd_nc_udp: rc=-100 out=:Ÿ
+
+not ok 76 - net_cmd_nc_udp # no udp echo content or nonzero rc
+# net_cmd_nc_listen: connect to listener failed, out=# nc rc=-100
+
+not ok 77 - net_cmd_nc_listen # no listener
+# net_cmd_whois: rc=-100 out=# nc rc=-100
+
+not ok 78 - net_cmd_whois # no banner or nonzero rc
+# net_cmd_telnet: rc=-100 out=# nc rc=-100
+
+not ok 79 - net_cmd_telnet # no echo content or nonzero rc
+# net_inet_ntoa: rc=-100 out=# nc rc=-100
+
+not ok 80 - net_inet_ntoa # Inet_NtoA output mismatch
+# net_cmd_wget: rc=-100
+# # nc rc=-100
+not ok 81 - net_cmd_wget # nonzero rc
+# net_cmd_wget_continue: rc=-100 len=5 (want 17)
+# # nc rc=-100
+not ok 82 - net_cmd_wget_continue # range resume mismatch
+# net_cmd_ftp: rc=-100 got_len=-1 (want 10/16)
+# # nc rc=-100
+not ok 83 - net_cmd_ftp # listing/550/file/rc mismatch
+# net_cmd_ftp_put: rc=-100 (want 0, 1500-byte report)
+# Û nc rc=-100
+not ok 84 - net_cmd_ftp_put # stor round trip failed
+# net_cmd_sntp: rc=-100 out=Û nc rc=-100
+
+not ok 85 - net_cmd_sntp # no synchronized reply
+ok 86 - net_cmd_traceroute
+# net_cmd_tftp: rc=-100 got_len=-1 (want 0/17)
+# ‚š
+not ok 87 - net_cmd_tftp # payload mismatch
+# net_cmd_tftp_big: rc=-100 off=0 mism=-1
+# ‚š
+not ok 88 - net_cmd_tftp_big # multi-block payload mismatch
+# net_cmd_status_live: addr_ok=0 gw_ok=0 out=10.0.2.2 15021 SCRIPT T:ftp_put.cmd
+not ok 89 - net_cmd_status_live # live address/gateway mismatch
+# net_cmd_status_down: down=0 up=0 out=‚š
+not ok 90 - net_cmd_status_down # interface flag not reflected
+# net_cmd_status_route: added=0 removed=0 out=
+not ok 91 - net_cmd_status_route # route add/delete not reflected
+# net_cmd_route_host: added=0 removed=0 out=
+not ok 92 - net_cmd_route_host # host route not reflected
+# net_cmd_netshutdown: busy=0 up_ok=1 stopped=0 restarted=0 r1=-100 r2=-100 out=‚š
+tolunnet: daemon is already running
+not ok 93 - net_cmd_netshutdown # stop contract violated
+# net_cmd_hostname_set: set=0 cfg=0 restored=0 r=-100 out=
+not ok 94 - net_cmd_hostname_set # hostname set/restore failed
+# net_cmd_ping_ttl: ttl=0 zero=0 r1=-100 r2=-100 out=
+not ok 95 - net_cmd_ping_ttl # TTL handling broken
+# net_cmd_ping_self: self=10.0.2.15 out=
+not ok 96 - net_cmd_ping_self # own-address ping failed
+# net_cmd_ping_gw: r=-100 out=
+not ok 97 - net_cmd_ping_gw # TODO slirp does not answer ICMP echo
+# net_cmd_nslookup_server: r=-100 out=
+not ok 98 - net_cmd_nslookup_server # A answer missing
+# net_cmd_nslookup_ptr: r=-100 out=
+not ok 99 - net_cmd_nslookup_ptr # PTR answer missing
+not ok 100 - tc_installer_run # TODO installer did not finish within 90 s (script-error requester?): Install_Tolunnet.script is not valid Installer 43 yet (item 3 rewrites it)
+# tc_cmd_stop_start: post-refusal TCP loopback OK (timers alive)
+tolunnet: cannot stop daemon: clients still open (EBUSY)
+ok 101 - tc_cmd_stop_start
+tolunnet: daemon stopped
+tolunnet: daemon started in background (32 KB stack)
+tolunnet: daemon stopped
+1..101
+# bench: asking daemon to stop (restart-cycle proof)
