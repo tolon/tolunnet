@@ -10,8 +10,10 @@ script safe to run unattended:
 - a `copyfiles` whose dest ends in a file name without `(newname)` fails
   (dest is a directory - the SYS:C/tolunnet/tolunnet bug of 10a-2);
 - `copylib` is allowed only for Libs/*.library;
-- a `run` touching SYS:Prefs/ must sit inside an `(if (> @user-level 0) ...)`
-  guard (the wizard is a GUI program; nobody clicks in an unattended run);
+- every command copied to SYS:C has a backup block under
+  SYS:Storage/tolunnet-backup/C/ and appears in the undo restore/delete
+  logic (restore from the backup, or delete when it was new);
+- the wizard run (SYS:Prefs/TolunnetSetup) comes after all copies;
 - every C: binary documented in docs/commands.md is copied.
 
 Exit codes: 0 = clean, 1 = findings or selftest mismatch, 2 = usage/IO
@@ -140,17 +142,6 @@ def subtree_tokens(nodes):
     return out
 
 
-def guarded_by_userlevel(ancestors):
-    for anc in ancestors:
-        if isinstance(anc, list) and anc and anc[0] == "if":
-            toks = subtree_tokens(anc[1:2])
-            for i in range(len(toks) - 2):
-                if toks[i] == ">" and toks[i + 1] == "@user-level" \
-                        and toks[i + 2] == "0":
-                    return True
-    return False
-
-
 def lint_top(top, findings):
     def walk(node, ancestors):
         if not (isinstance(node, list) and node):
@@ -189,13 +180,7 @@ def lint_top(top, findings):
                     findings.append(
                         "copylib is only allowed for Libs/*.library (got %s)"
                         % src)
-            elif head == "run":
-                cmd = next((c for c in kids if isinstance(c, Str)), None)
-                if cmd is not None and "SYS:Prefs/" in str(cmd):
-                    if not guarded_by_userlevel(ancestors):
-                        findings.append(
-                            "run of a SYS:Prefs/ tool outside an "
-                            "(if (> @user-level 0) ...) guard")
+
         for child in kids:
             walk(child, ancestors + [node])
 
@@ -240,6 +225,92 @@ def copied_sources(top):
     return out
 
 
+def all_strings(top):
+    out = []
+
+    def walk(node):
+        if isinstance(node, list):
+            for child in node:
+                if isinstance(child, Str):
+                    out.append(str(child))
+                else:
+                    walk(child)
+
+    for node in top:
+        walk(node)
+    return out
+
+
+def wizard_after_copies(top):
+    """Pre-order position of the wizard invocation must exceed every
+    copyfiles/copylib anywhere in the tree."""
+    wizard_pos = None
+    last_copy_pos = None
+    counter = [0]
+
+    def walk(node):
+        if not (isinstance(node, list) and node):
+            return
+        head = node[0]
+        pos = counter[0]
+        counter[0] += 1
+        if head in ("copyfiles", "copylib"):
+            globals_["last_copy"] = pos
+        if head in ("run", "execute"):
+            for child in node[1:]:
+                if isinstance(child, Str) and                         "SYS:Prefs/TolunnetSetup" in str(child):
+                    globals_["wizard"] = pos
+        for child in node[1:]:
+            walk(child)
+
+    globals_ = {"wizard": None, "last_copy": None}
+    for node in top:
+        walk(node)
+    wizard_pos = globals_["wizard"]
+    last_copy_pos = globals_["last_copy"]
+    if wizard_pos is None:
+        return "no wizard run (SYS:Prefs/TolunnetSetup) found"
+    if last_copy_pos is not None and wizard_pos < last_copy_pos:
+        return "the wizard run must come after the copies"
+    return None
+
+
+def backup_undo_coverage(top, names):
+    findings = []
+    strings = all_strings(top)
+    backed_up = set()
+
+    def walk(node):
+        if isinstance(node, list) and node:
+            if node[0] == "copyfiles":
+                dest = clause(node, "dest")
+                if isinstance(dest, Str) and                         str(dest) == "SYS:Storage/tolunnet-backup/C":
+                    newname = clause(node, "newname")
+                    src = clause(node, "source")
+                    if isinstance(newname, Str):
+                        backed_up.add(str(newname))
+                    elif isinstance(src, Str):
+                        backed_up.add(str(src).split("/")[-1])
+            for child in node[1:]:
+                walk(child)
+
+    for node in top:
+        walk(node)
+    for n in names:
+        if n not in backed_up:
+            findings.append("no backup block for SYS:C/%s" % n)
+            continue
+        undo_restore = any(
+            ("SYS:Storage/tolunnet-backup/C/" + n) in t and
+            ("SYS:C/" + n) in t for t in strings)
+        undo_delete = any(("Delete >NIL: SYS:C/" + n) in t for t in strings)
+        if not undo_restore:
+            findings.append("undo does not restore SYS:C/%s" % n)
+        if not undo_delete:
+            findings.append("undo does not handle new file SYS:C/%s" % n)
+    return findings
+
+
 def lint_text(script_text, doc_text):
     findings = []
     try:
@@ -248,9 +319,14 @@ def lint_text(script_text, doc_text):
         return [str(exc)]
     lint_top(top, findings)
     copied = copied_sources(top)
+    c_names = [c[2:] for c in sorted(copied) if c.startswith("C/")]
     for name in doc_c_commands(doc_text):
         if ("C/" + name) not in copied:
             findings.append("docs/commands.md C: binary not copied: %s" % name)
+    findings.extend(backup_undo_coverage(top, c_names))
+    wiz = wizard_after_copies(top)
+    if wiz:
+        findings.append(wiz)
     return findings
 
 
@@ -277,7 +353,7 @@ def selftest(script_path, doc_path):
     with open(doc_path, encoding="utf-8") as fh:
         doc_text = fh.read()
     for rev, expect_pass in (("fe3c61b", False), ("565fe26", False),
-                             ("HEAD", True)):
+                             ("1e88155", False), ("HEAD", True)):
         try:
             findings = lint_text(git_show(rev, script_path), doc_text)
         except LintError as exc:
