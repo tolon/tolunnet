@@ -57,3 +57,14 @@ tc_connect_refused_nb in 7c0be65. Red evidence kept:
 `…014650…g51bd828`, `…020141…g51bd828` (10a red, host refusal not
 testable). First post-fix ALL-GREEN: `…065646…g7c0be65` (99 ok + 1
 both profiles, 0 TODO).
+
+## Unattended Installer arc (10a-2 items 2/3) - abandoned, see 10a-3
+
+`…073408…g80396c5`, `…080809…g8bcbdb0`, `…082734…g2373f83`,
+`…084203…gff32e64`, `…091723…ge0147da`, `…095706…gf20095b`,
+`…103134…g17478ab`, `…111446…g48b477e`, `…114019…g565fe26`:
+unattended GUI Installer run - abandoned, see 10a-3. Installer 43 is a
+GUI program (welcome, messages and the novice start screen wait for a
+click); tc_installer_run was removed in 6bfb7a0 and the suite is back
+to the 7c0be65 row set (first post-revert ALL-GREEN:
+`…124728…gf41c8ae`).
