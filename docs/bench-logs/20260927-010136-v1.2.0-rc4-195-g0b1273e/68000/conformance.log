@@ -1,0 +1,130 @@
+# tolunnet SocketConformance (Round 3 §B.2)
+ok 1 - tc_lib_open_close
+ok 2 - tc_lib_expunge_survives
+ok 3 - tc_waitselect_fd40
+ok 4 - tc_listen_setsockopt
+# net_recv_ctrlc: signals BEFORE recv = 0x0
+# net_recv_ctrlc: signals AFTER recv = 0x80001100
+# net_recv_ctrlc: CTRL_C still set after EINTR (correct)
+# net_recv_ctrlc: recv rc=-1 errno=4 after 132 ticks
+ok 5 - net_recv_ctrlc
+# net_recv_ctrlc: post-CANCEL socket OK
+ok 6 - tc_socket_types
+ok 7 - tc_bind_udp
+ok 8 - tc_bind_reuse
+ok 9 - tc_sockopt_matrix
+ok 10 - tc_multicast_join
+ok 11 - tc_ioctl_ifconf
+ok 12 - tc_ioctl_fionread
+ok 13 - tc_listen_accept_loopback
+ok 14 - tc_connect_refused
+# tc_connect_refused_host: waitselect=0
+not ok 15 - tc_connect_refused_host # no refusal within 10 s
+# tc_nonblock_connect: rc=-1 errno=36 EINPROGRESS=36
+# tc_nonblock_connect: calling waitselect s=1
+# tc_nonblock_connect: waitselect returned 1 errno=36
+ok 16 - tc_nonblock_connect
+ok 17 - tc_shutdown_wr
+ok 18 - tc_getpeername
+ok 19 - tc_dns_a # SKIP external
+ok 20 - tc_dns_local
+ok 21 - tc_dns_fail
+ok 22 - tc_errno_ptr
+ok 23 - tc_dup2
+ok 24 - tc_waitselect_timeout
+ok 25 - tc_waitselect_eintr
+ok 26 - tc_waitselect_badf
+ok 27 - tc_waitselect_no_sigio
+ok 28 - tc_sigio
+ok 29 - tc_icmp_raw
+ok 30 - tc_sendmsg_iov
+# control: send=100 waitselect=1 recv=100
+# waitselect_rc=1 recv_rc=100 errno=45 retries=1
+ok 31 - tc_tcp_scatter_tnet115
+ok 32 - tc_recv_peek
+ok 33 - tc_socket_events
+ok 34 - tc_sbtc_full
+ok 35 - tc_release_obtain
+ok 36 - tc_every_vector_callable
+ok 37 - tc_stats_counters
+ok 38 - tc_wizard_wired
+# tc_wizard_ntsc: SystemTags TolunnetPrefs rc=0
+# tc_wizard_ntsc: pwait=100 pwin=0 pscr=0
+ok 39 - tc_wizard_ntsc
+ok 40 - tc_wifi_scan_parse
+ok 41 - tc_reconfig_rc
+ok 42 - tc_probe_after_wizard_wired
+ok 43 - tc_probe_after_wizard_ntsc
+ok 44 - tc_probe_after_wifi_scan
+ok 45 - tc_probe_after_reconfig
+ok 46 - tc_link_events # SKIP link flip not enabled for this driver (create WORK:linktest-on)
+ok 47 - tc_cmd_hostname
+ok 48 - tc_cmd_nslookup
+ok 49 - tc_cmd_whois
+ok 50 - tc_cmd_traceroute
+ok 51 - tc_cmd_nc
+ok 52 - tc_cmd_sntp
+ok 53 - tc_cmd_telnet
+ok 54 - tc_cmd_tftp
+ok 55 - tc_cmd_ftp
+# tc_cmd_arp: gateway ARP resolves here: yes
+ok 56 - tc_cmd_arp
+ok 57 - tc_cmd_shownetstatus
+ok 58 - tc_cmd_tolunnetcontrol
+ok 59 - tc_cmd_getnetstatus
+# iperf loopback: 104552 bytes in ~2s = 1046 KB/s
+ok 60 - tc_iperf_loopback
+ok 61 - tc_cmd_ifctl
+ok 62 - tc_cmd_netshutdown
+ok 63 - tc_cmd_route
+# tc_usergroup: bsdsocket survived flush (socket ok)
+ok 64 - tc_usergroup
+ok 65 - tc_install_script
+ok 66 - net_tcp_blocking_recv
+ok 67 - net_udp_connected_send
+ok 68 - net_udp_unconnected_send
+ok 69 - net_udp_connected_sendto_eisconn
+ok 70 - net_tcp_unconnected_recvfrom
+ok 71 - net_tcp_connected_recvfrom
+ok 72 - net_tcp_unconnected_sendto
+ok 73 - net_tcp_connected_sendto_ignored_to
+ok 74 - net_tcp_shutdown_sendto_epipe
+ok 75 - net_cmd_nc
+ok 76 - net_cmd_nc_udp
+ok 77 - net_cmd_nc_listen
+ok 78 - net_cmd_whois
+ok 79 - net_cmd_telnet
+ok 80 - net_inet_ntoa
+ok 81 - net_cmd_wget
+ok 82 - net_cmd_wget_continue
+ok 83 - net_cmd_ftp
+ok 84 - net_cmd_ftp_put
+ok 85 - net_cmd_sntp
+ok 86 - net_cmd_traceroute
+ok 87 - net_cmd_tftp
+ok 88 - net_cmd_tftp_big
+ok 89 - net_cmd_status_live
+ok 90 - net_cmd_status_down
+ok 91 - net_cmd_status_route
+ok 92 - net_cmd_route_host
+TolunnetControl: starting C:tolunnet...
+ok 93 - net_cmd_netshutdown
+tolunnet: daemon started in background (32 KB stack)
+ok 94 - net_cmd_hostname_set
+ok 95 - net_cmd_ping_ttl
+ok 96 - net_cmd_ping_self
+ok 97 - net_cmd_ping_gw
+ok 98 - net_cmd_nslookup_server
+ok 99 - net_cmd_nslookup_ptr
+TolunnetControl: STOP...
+# tc_cmd_stop_start: post-refusal TCP loopback OK (timers alive)
+tolunnet: cannot stop daemon: clients still open (EBUSY)
+TolunnetControl: STOP...
+tolunnet: daemon stopped
+TolunnetControl: starting C:tolunnet...
+tolunnet: daemon started in background (32 KB stack)
+TolunnetControl: STOP...
+ok 100 - tc_cmd_stop_start
+tolunnet: daemon stopped
+1..100
+# bench: asking daemon to stop (restart-cycle proof)

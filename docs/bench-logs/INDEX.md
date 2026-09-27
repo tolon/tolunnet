@@ -46,3 +46,14 @@ Per-commit evidence dirs. The newest full run per commit is the citable one;
   (conformance.log 33 ok + last line, conformance2 empty; daemon log ends
   normally → GUI/test-side hang, not the stack). First occurrence in ~40
   benches. Kept as evidence; rate tracked in ISSUES.md (TNET-153).
+
+## 10a host-refusal reds (step 10a-2 item 1)
+
+The 10a host-refusal row was unrunnable: WinUAE slirp never answers
+SYNs to closed host ports, so the nonblocking connect to 10.0.2.2:9 just
+timed out with SO_ERROR 0 (auto-question 7). Replaced by the loopback-only
+tc_connect_refused_nb in 7c0be65. Red evidence kept:
+`…010136…g0b1273e`, `…011454…g74922d6`, `…013018…g8a68425`,
+`…014650…g51bd828`, `…020141…g51bd828` (10a red, host refusal not
+testable). First post-fix ALL-GREEN: `…065646…g7c0be65` (99 ok + 1
+both profiles, 0 TODO).
