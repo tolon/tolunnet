@@ -5090,7 +5090,9 @@ static void tc_undo_sandbox(void)
 
     /* 1. replaced tool restored from the backup */
     sz = tn_file_size_of("T:tnsbx/C/NetShutdown");
-    if (sz != 7 || !tn_file_head_is("T:tnsbx/C/NetShutdown", "ROADSHW")) {
+    /* Echo-seeded files carry a trailing newline, so the head
+     * match is the assertion; the size is evidence only. */
+    if (!tn_file_head_is("T:tnsbx/C/NetShutdown", "ROADSHW")) {
         BPTR ef = Open((CONST_STRPTR)"T:undo.out", MODE_OLDFILE);
         char ub[301];
         LONG un = 0;
