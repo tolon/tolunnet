@@ -116,3 +116,13 @@ Status: `open` · `answered` · `superseded`.
 7. **[auto] ftp row asserts the 'received' line, not '226':** ftp.c's ftp_cmd_arg() consumes server reply lines and returns only their numeric codes; nothing prints the raw '226 Transfer complete' to stdout, and the 'ls' handler is a stub that never lists. The netsvc round trip (PASV + RETR test.bin + 17-byte payload) is proven via ftp's own unconditional 'ftp: test.bin received (N bytes)' line. Echoing server reply lines belongs with the ftp protocol work of step 8b.
 8. **[auto] ftp get hangs: PASV reply is read twice (step 8b scope):** With item 4's htons fix the ftp control connection finally reaches netsvc, which exposed a pre-existing protocol bug in the get path: it sends PASV and consumes the 227 via ftp_cmd(), then issues a second ftp_read_line() for a reply that never comes (ftp.c get handler, the 'Re-send PASV' comment block), deadlocking the row against any RFC-conformant server. The bench 20260925-220502 68000 profile timed out after row 78 because of this. The row now runs ls+quit without QUIET and asserts the 'connected (code 220)' greeting (proves the /N port + htons control connect round trip); TODO stays until step 8b fixes the PASV handling and the silent 'ls' stub.
 9. **[auto] netsvc HTTP body is 17 bytes, not 18:** The step 8b order says TolunnetGet must produce "exactly the 18 bytes", but ci/netsvc.py serves BODY = b"TOLUNNET_HTTP_OK\n" = 16 chars + LF = 17 bytes (the earlier bench rows failing with len=17 (want 18) confirm it). Both wget rows assert the exact body at 17 bytes.
+
+## Auto-Decisions (z.ai step 10a-2 — 2026-09-27)
+
+7. **[auto] Slirp does not answer SYNs to closed host ports:** the host-refusal
+   row (10.0.2.2 closed port, nonblocking connect + WaitSelect ≤ 10 s +
+   SO_ERROR) never sees a refusal on this bench — WaitSelect returns 0 for the
+   full window and SO_ERROR stays 0 (bench dirs 20260926-222249 through
+   20260927-021357). Host refusal is therefore not testable through slirp; the
+   refusal semantics are proven on the guest loopback
+   (tc_connect_refused / tc_connect_refused_nb), which involves no slirp.

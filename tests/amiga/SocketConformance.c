@@ -1198,67 +1198,58 @@ static void tc_connect_refused(void)
     }
     call_closesocket(s);
 }
-
-/* z.ai step 10a item 1: a closed port on the slirp host must refuse
- * within 10 s: non-blocking connect + WaitSelect + SO_ERROR. */
-static void tc_connect_refused_host(void)
+/* z.ai step 10a-2 item 1: nonblocking connect to a CLOSED GUEST-LOOPBACK
+ * port proves the err_cb/select path without slirp: WaitSelect (write)
+ * <= 5 s returns 1, SO_ERROR == ECONNREFUSED, and a second SO_ERROR read
+ * returns 0 (error consumed). */
+static void tc_connect_refused_nb(void)
 {
     LONG s = call_socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in sin;
-    LONG one = 1, soerr = 0;
-    char rx_probe[16];
+    LONG one = 1, soerr = -1, soerr2 = -2;
     LONG so_len = (LONG)sizeof(soerr);
     fd_set wfds;
     struct timeval tv;
     LONG rc, sel;
-    int i;
 
-    if (s < 0) { TAP_NOTOK("tc_connect_refused_host", "no socket"); return; }
+    if (s < 0) { TAP_NOTOK("tc_connect_refused_nb", "no socket"); return; }
     if (call_ioctl(s, FIONBIO, (APTR)&one) != 0) {
-        TAP_NOTOK("tc_connect_refused_host", "FIONBIO failed");
+        TAP_NOTOK("tc_connect_refused_nb", "FIONBIO failed");
         call_closesocket(s);
         return;
     }
-    for (i = 0; i < (int)sizeof(sin); i++) ((char *)&sin)[i] = 0;
-    sin.sin_len    = sizeof(sin);
-    sin.sin_family = AF_INET;
-    sin.sin_port   = htons(65530); /* certainly closed */
-    sin.sin_addr.s_addr = htonl(0x0A000202UL); /* 10.0.2.2, closed port */
-    rc = call_connect(s, (struct sockaddr *)&sin, sizeof(sin));
+    {
+        struct sockaddr_in dst;
+        int k;
+        for (k = 0; k < (int)sizeof(dst); k++) ((char *)&dst)[k] = 0;
+        dst.sin_len    = sizeof(dst);
+        dst.sin_family = AF_INET;
+        dst.sin_port   = htons(65530);
+        dst.sin_addr.s_addr = htonl(0x7F000001UL); /* guest loopback, closed */
+        rc = call_connect(s, (struct sockaddr *)&dst, sizeof(dst));
+    }
     if (rc == 0) {
-        TAP_NOTOK("tc_connect_refused_host", "closed port accepted");
+        TAP_NOTOK("tc_connect_refused_nb", "closed port accepted");
         call_closesocket(s);
         return;
     }
-    /* z.ai step 10a item 1: WaitSelect total <= 10 s in 1 s slices.
-     * Slirp accepts the guest connection optimistically and delivers the
-     * host refusal LATER as a close: the refusal is proven by SO_ERROR ==
-     * ECONNREFUSED or by a clean EOF (recv == 0) on the socket. */
-    soerr = -1;
-    sel = -1;
-    for (i = 0; i < 10; i++) {
-        LONG rcvd2;
-        fd_set rfds2;
-        FD_ZERO(&wfds);
-        FD_SET(s, &wfds);
-        tv.tv_secs = 1;
-        tv.tv_micro = 0;
-        sel = call_waitselect(s + 1, NULL, &wfds, NULL, &tv, NULL);
-        if (call_getsockopt(s, SOL_SOCKET, SO_ERROR,
-                            (APTR)&soerr, &so_len) != 0) break;
-        if (soerr == ECONNREFUSED) break;
-        if (soerr != 0 && soerr != EINPROGRESS) break;
-        rcvd2 = call_recv(s, rx_probe, sizeof(rx_probe), 0);
-        if (rcvd2 == 0) { /* EOF: slirp closed it - the refusal */
-            soerr = ECONNREFUSED;
-            break;
-        }
-    }
-    if (soerr == ECONNREFUSED) {
-        TAP_OK("tc_connect_refused_host");
+    FD_ZERO(&wfds);
+    FD_SET(s, &wfds);
+    tv.tv_secs = 5;
+    tv.tv_micro = 0;
+    sel = call_waitselect(s + 1, NULL, &wfds, NULL, &tv, NULL);
+    if (sel == 1 &&
+        call_getsockopt(s, SOL_SOCKET, SO_ERROR,
+                        (APTR)&soerr, &so_len) == 0 &&
+        soerr == ECONNREFUSED &&
+        call_getsockopt(s, SOL_SOCKET, SO_ERROR,
+                        (APTR)&soerr2, &so_len) == 0 &&
+        soerr2 == 0) {
+        TAP_OK("tc_connect_refused_nb");
     } else {
-        tapf("# tc_connect_refused_host: soerr=%ld sel=%ld\n", soerr, sel);
-        TAP_NOTOK("tc_connect_refused_host", "SO_ERROR != ECONNREFUSED");
+        tapf("# tc_connect_refused_nb: sel=%ld soerr=%ld soerr2=%ld\n",
+             sel, soerr, soerr2);
+        TAP_NOTOK("tc_connect_refused_nb", "err_cb/select path broken");
     }
     call_closesocket(s);
 }
@@ -7726,7 +7717,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_ioctl_fionread);
     TN_RUN(tc_listen_accept_loopback);
     TN_RUN(tc_connect_refused);
-    TN_RUN(tc_connect_refused_host);
+    TN_RUN(tc_connect_refused_nb);
     TN_RUN(tc_nonblock_connect);
     TN_RUN(tc_shutdown_wr);
     TN_RUN(tc_getpeername);
