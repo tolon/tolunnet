@@ -3095,8 +3095,8 @@ static void tc_release_obtain(void)
     DeleteFile((CONST_STRPTR)"WORK:child_obtain.ok");
     rc = SystemTags((CONST_STRPTR)cmd,
                     SYS_Asynch, FALSE,
-                    SYS_Input, (BPTR)0,
-                    SYS_Output, (BPTR)0,
+                    SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE),
+                    SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
                     TAG_END);
     if (rc != 0) {
         TAP_NOTOK("tc_release_obtain", "SystemTags child returned error");
@@ -3235,22 +3235,22 @@ static void tc_wizard_wired(void)
     /* Launch TolunnetSetup asynchronously */
     LONG rc = SystemTags((CONST_STRPTR)"C:TolunnetSetup",
                          SYS_Asynch, TRUE,
-                         SYS_Input, (BPTR)0,
-                         SYS_Output, (BPTR)0,
+                         SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE),
+                         SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
                          NP_StackSize, 32768,
                          TAG_END);
     if (rc != 0) {
         rc = SystemTags((CONST_STRPTR)"SYS:Prefs/TolunnetSetup",
                         SYS_Asynch, TRUE,
-                        SYS_Input, (BPTR)0,
-                        SYS_Output, (BPTR)0,
+                        SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE),
+                        SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
                         NP_StackSize, 32768,
                         TAG_END);
     }
     if (rc != 0) {
         SystemTags((CONST_STRPTR)"Run <NIL: >NIL: C:TolunnetSetup",
-                   SYS_Input, (BPTR)0,
-                   SYS_Output, (BPTR)0,
+                   SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE),
+                   SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
                    TAG_END);
     }
 
@@ -3359,17 +3359,17 @@ static void tc_wizard_wired(void)
 /* Find a screen by title, else fallback to the default public screen */
 static struct Screen *find_named_screen(const char *title, BOOL *from_publock)
 {
+    ULONG ibkey;
     struct Screen *s = NULL;
     *from_publock = FALSE;
-    Forbid();
+    ibkey = LockIBase(0);
     for (s = IntuitionBase->FirstScreen; s; s = s->NextScreen) {
         if (s->Title != NULL && title != NULL &&
             strcmp((const char *)s->Title, title) == 0) {
-            Permit();
-            return s;
+            break;
         }
     }
-    Permit();
+    UnlockIBase(ibkey);
     s = LockPubScreen(NULL);
     if (s) *from_publock = TRUE;
     return s;
@@ -3382,17 +3382,17 @@ static struct Screen *find_wizard_screen(BOOL *from_publock)
 
 static struct Window *find_wizard_window(struct Screen *scr)
 {
+    ULONG ibkey;
     struct Window *w;
     if (!scr) return NULL;
-    Forbid();
+    ibkey = LockIBase(0);
     for (w = scr->FirstWindow; w; w = w->NextWindow) {
         if (w->Title != NULL &&
             strstr((const char *)w->Title, "Network Setup") != NULL) {
-            Permit();
-            return w;
+            break;
         }
     }
-    Permit();
+    UnlockIBase(ibkey);
     return NULL;
 }
 
@@ -3585,14 +3585,14 @@ static void tc_wizard_ntsc(void)
 
     LONG rc = SystemTags((CONST_STRPTR)"C:TolunnetSetup",
                          SYS_Asynch, TRUE,
-                         SYS_Input, (BPTR)0,
-                         SYS_Output, (BPTR)0,
+                         SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE),
+                         SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
                          NP_StackSize, 32768,
                          TAG_END);
     if (rc != 0) {
         SystemTags((CONST_STRPTR)"Run <NIL: >NIL: C:TolunnetSetup",
-                   SYS_Input, (BPTR)0,
-                   SYS_Output, (BPTR)0,
+                   SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE),
+                   SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
                    TAG_END);
     }
 
@@ -4122,8 +4122,8 @@ static void tc_link_events(void)
 
     rc = SystemTags((CONST_STRPTR)"C:S2Toggle OFFLINE",
                     SYS_Asynch, TRUE,
-                    SYS_Input, (BPTR)0,
-                    SYS_Output, (BPTR)0,
+                    SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE),
+                    SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
                     TAG_END);
     if (rc != 0) {
         TAP_NOTOK("tc_link_events", "S2Toggle OFFLINE failed to start");
@@ -4135,7 +4135,7 @@ static void tc_link_events(void)
          * either it does not implement S2_ONEVENT or it flushed the request.
          * Bring the link back and report an honest SKIP. */
         SystemTags((CONST_STRPTR)"C:S2Toggle ONLINE",
-                   SYS_Asynch, TRUE, SYS_Input, (BPTR)0, SYS_Output, (BPTR)0,
+                   SYS_Asynch, TRUE, SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE), SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
                    TAG_END);
         tc_link_wait(&v2, 1, 50);
         TAP_SKIP("tc_link_events", "driver delivered no S2EVENT_OFFLINE (S2_ONEVENT unsupported?)");
@@ -4144,8 +4144,8 @@ static void tc_link_events(void)
 
     rc = SystemTags((CONST_STRPTR)"C:S2Toggle ONLINE",
                     SYS_Asynch, TRUE,
-                    SYS_Input, (BPTR)0,
-                    SYS_Output, (BPTR)0,
+                    SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE),
+                    SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
                     TAG_END);
     if (rc != 0) {
         TAP_NOTOK("tc_link_events", "S2Toggle ONLINE failed to start");
@@ -5158,8 +5158,8 @@ static void tc_daemon_noconfig_start(void)
     if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
         rc = SystemTags((CONST_STRPTR)"C:tolunnet STOP >NIL:",
                         SYS_Asynch, FALSE,
-                        SYS_Input, (BPTR)0,
-                        SYS_Output, (BPTR)0,
+                        SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE),
+                        SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
                         TAG_END);
         for (i = 0; i < 10; i++) {
             if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) == NULL) break;
@@ -5192,8 +5192,8 @@ static void tc_daemon_noconfig_start(void)
     Close(fh);
     SystemTags((CONST_STRPTR)"Execute T:tn-noconfig.cli",
                SYS_Asynch, TRUE,
-               SYS_Input, (BPTR)0,
-               SYS_Output, (BPTR)0,
+               SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE),
+               SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
                TAG_END);
     for (i = 0; i < 10; i++) {
         Delay(50); /* 1 s per poll, 10 s bound */
@@ -5255,6 +5255,7 @@ static void tc_prefs_opens(void)
     struct Window *pwin = NULL;
     struct Screen *pscr = NULL;
     struct Task *ptask;
+    ULONG ibkey;
     char shot[48];
     /* 10e item 1: titles are copied under Forbid and printed after
      * Permit - no DOS I/O inside a forbidden section. */
@@ -5279,7 +5280,7 @@ static void tc_prefs_opens(void)
 
     for (tries = 0; tries < 100; tries++) { /* 10 s */
         Delay(5);
-        Forbid();
+        ibkey = LockIBase(0);
         for (pscr = IntuitionBase->FirstScreen; pscr; pscr = pscr->NextScreen) {
             for (pwin = pscr->FirstWindow; pwin; pwin = pwin->NextWindow) {
                 if (pwin->Title != NULL &&
@@ -5289,7 +5290,7 @@ static void tc_prefs_opens(void)
             }
             if (pwin) break;
         }
-        Permit();
+        UnlockIBase(ibkey);
         if (pwin) break;
     }
 
@@ -5310,14 +5311,14 @@ static void tc_prefs_opens(void)
             for (i = 0; i < 200; i++) {
                 Delay(5);
                 BOOL open2 = FALSE;
-                Forbid();
+                ibkey = LockIBase(0);
                 for (struct Screen *s2 = IntuitionBase->FirstScreen; s2; s2 = s2->NextScreen) {
                     for (struct Window *w2 = s2->FirstWindow; w2; w2 = w2->NextWindow) {
                         if (w2 == pwin) { open2 = TRUE; break; }
                     }
                     if (open2) break;
                 }
-                Permit();
+                UnlockIBase(ibkey);
                 if (!open2) break;
             }
         }
@@ -5325,6 +5326,7 @@ static void tc_prefs_opens(void)
     } else {
         struct Screen *scr;
         struct Window *w;
+        ULONG ibkey;
         BPTR ef = Open((CONST_STRPTR)"T:prefs.out", MODE_OLDFILE);
         char eb[301];
         LONG en = 0;
@@ -5338,7 +5340,7 @@ static void tc_prefs_opens(void)
         tapf("# %s: rc=%ld, T:prefs.out first %ld bytes: %s\n",
              label, (long)rc, (long)en, eb);
         ntitles = 0;
-        Forbid();
+        ibkey = LockIBase(0);
         for (scr = IntuitionBase->FirstScreen; scr && ntitles < 8;
              scr = scr->NextScreen) {
             const char *t1 = (scr->Title != NULL) ?
@@ -5353,7 +5355,7 @@ static void tc_prefs_opens(void)
                 ntitles++;
             }
         }
-        Permit();
+        UnlockIBase(ibkey);
         for (i = 0; i < ntitles; i++) {
             tapf("# %s: title: %s\n", label, titles[i]);
         }
@@ -6855,8 +6857,8 @@ static void tc_net_cmd_nc_listen(void)
      * row so tc_cmd_stop_start never meets an open client. */
     SystemTags((CONST_STRPTR)"C:SocketConformance nc_listen_helper",
                SYS_Asynch, TRUE,
-               SYS_Input, (BPTR)0,
-               SYS_Output, (BPTR)0,
+               SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE),
+               SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
                NP_StackSize, 20000,
                TAG_END);
 
@@ -7848,8 +7850,8 @@ static void tc_net_recv_ctrlc(void)
                       "C:SocketConformance break_helper %ld", (LONG)(intptr_t)me);
         SystemTags((CONST_STRPTR)cmd,
                    SYS_Asynch, TRUE,
-                   SYS_Input, (BPTR)0,
-                   SYS_Output, (BPTR)0,
+                   SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE),
+                   SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
                    TAG_END);
         DateStamp(&ds);
         t0 = (ULONG)ds.ds_Days * 86400UL * 50UL + (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
