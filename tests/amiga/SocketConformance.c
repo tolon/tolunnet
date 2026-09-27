@@ -6070,6 +6070,31 @@ static int tn_count_occurrences(const char *path, const char *needle)
     return cnt;
 }
 
+/* Fire the staged recovery script asynchronously and wait at most 30 s
+ * for its done marker. Returns TRUE when the marker appeared. The
+ * recovery must never be able to block the suite (bench 20260927-084203:
+ * the synchronous variant hung both legs past the 900 s TIMEOUT). */
+static int tn_installer_recover(void)
+{
+    int i;
+    BPTR fh;
+
+    SystemTags((CONST_STRPTR)"Execute T:tn-inst-recover.cli",
+               SYS_Asynch, TRUE,
+               SYS_Input, (BPTR)0,
+               SYS_Output, (BPTR)0,
+               TAG_END);
+    for (i = 0; i < 15; i++) {
+        Delay(100); /* 2 s per poll, 30 s cap */
+        fh = Open((CONST_STRPTR)"T:tn-recover-done", MODE_OLDFILE);
+        if (fh != 0) {
+            Close(fh);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* Item 2 (z.ai step 10a-2): run the real Commodore Installer against
  * Install_Tolunnet.script (NOVICE, LOGFILE) and assert the artifacts:
  * RC 0, every package binary back in SYS:C at the package size,
@@ -6128,6 +6153,8 @@ static void tc_installer_run(void)
     snprintf_safe(cli, sizeof(cli),
                   "Copy >NIL: WORK:tolunnet-pkg/Libs/usergroup.library SYS:Libs/usergroup.library CLONE QUIET\n");
     Write(fh, (CONST_APTR)cli, strlen(cli));
+    snprintf_safe(cli, sizeof(cli), "Echo done >T:tn-recover-done\n");
+    Write(fh, (CONST_APTR)cli, strlen(cli));
     Close(fh);
     for (i = 0; i < sizeof(tn_pkg_c_bins) / sizeof(tn_pkg_c_bins[0]); i++) {
         snprintf_safe(pbuf, sizeof(pbuf), "SYS:C/%s", tn_pkg_c_bins[i]);
@@ -6140,6 +6167,7 @@ static void tc_installer_run(void)
     DeleteFile((CONST_STRPTR)"S:tolunnet-undo");
     DeleteFile((CONST_STRPTR)"S:User-Startup.tolunnet-bak");
     DeleteFile((CONST_STRPTR)"T:tn-installer-rc");
+    DeleteFile((CONST_STRPTR)"T:tn-recover-done");
 
     /* cd is process-local, so the installer sees cwd = package root;
      * $RC captures its return code for the row. ASYNCH + bounded poll:
@@ -6178,22 +6206,14 @@ static void tc_installer_run(void)
         }
     }
     if (rc < 0) {
-        SystemTags((CONST_STRPTR)"Execute T:tn-inst-recover.cli",
-                   SYS_Asynch, FALSE,
-                   SYS_Input, (BPTR)0,
-                   SYS_Output, (BPTR)0,
-                   TAG_END);
+        tn_installer_recover();
         TAP_TODO(label, "installer did not finish within 90 s (script-error "
                         "requester?): Install_Tolunnet.script is not valid "
                         "Installer 43 yet (item 3 rewrites it)");
         return;
     }
     if (rc != 0) {
-        SystemTags((CONST_STRPTR)"Execute T:tn-inst-recover.cli",
-                   SYS_Asynch, FALSE,
-                   SYS_Input, (BPTR)0,
-                   SYS_Output, (BPTR)0,
-                   TAG_END);
+        tn_installer_recover();
         TAP_TODO(label, "Installer RC != 0: Install_Tolunnet.script is not "
                         "valid Installer 43 yet (item 3 rewrites it)");
         return;
