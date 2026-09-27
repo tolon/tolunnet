@@ -5052,6 +5052,92 @@ static BPTR load_control_cmd(void)
     return seg;
 }
 
+/* z.ai step 10b item 2: a plain C:tolunnet start with no configuration
+ * anywhere (DEVS/ENV/ENVARC) must exit by itself with one clear log
+ * line and no requester. Runs after tc_cmd_stop_start (daemon already
+ * stopped, SocketBase closed); every store is moved aside within its
+ * own directory and put back on every path out of the row. */
+static void tc_daemon_noconfig_start(void)
+{
+    const char *label = "tc_daemon_noconfig_start";
+    BPTR fh;
+    char cli[160];
+    char buf[256];
+    LONG n;
+    LONG rc = 0;
+    int i;
+    int exited = 0;
+
+    Rename((CONST_STRPTR)"DEVS:tolunnet.config",
+           (CONST_STRPTR)"DEVS:tolunnet.config-tnbak");
+    Rename((CONST_STRPTR)"ENV:tolunnet.prefs",
+           (CONST_STRPTR)"ENV:tolunnet.prefs-tnbak");
+    Rename((CONST_STRPTR)"ENVARC:tolunnet.prefs",
+           (CONST_STRPTR)"ENVARC:tolunnet.prefs-tnbak");
+
+    DeleteFile((CONST_STRPTR)"T:tn-noconfig.log");
+    DeleteFile((CONST_STRPTR)"T:tn-noconfig.done");
+    fh = Open((CONST_STRPTR)"T:tn-noconfig.cli", MODE_NEWFILE);
+    if (fh == 0) {
+        TAP_NOTOK(label, "cannot write T:tn-noconfig.cli");
+        goto restore;
+    }
+    snprintf_safe(cli, sizeof(cli),
+                  "C:tolunnet >T:tn-noconfig.log\n"
+                  "Echo done >T:tn-noconfig.done\n");
+    Write(fh, (CONST_APTR)cli, strlen(cli));
+    Close(fh);
+    SystemTags((CONST_STRPTR)"Execute T:tn-noconfig.cli",
+               SYS_Asynch, TRUE,
+               SYS_Input, (BPTR)0,
+               SYS_Output, (BPTR)0,
+               TAG_END);
+    for (i = 0; i < 10; i++) {
+        Delay(50); /* 1 s per poll, 10 s bound */
+        fh = Open((CONST_STRPTR)"T:tn-noconfig.done", MODE_OLDFILE);
+        if (fh != 0) {
+            Close(fh);
+            exited = 1;
+            break;
+        }
+    }
+    if (!exited) {
+        TAP_NOTOK(label, "daemon did not exit within 10 s without config");
+        goto restore;
+    }
+
+    n = 0;
+    fh = Open((CONST_STRPTR)"T:tn-noconfig.log", MODE_OLDFILE);
+    if (fh != 0) {
+        n = Read(fh, buf, sizeof(buf) - 1);
+        Close(fh);
+    }
+    if (n <= 0) {
+        TAP_NOTOK(label, "no exit line printed without config");
+        goto restore;
+    }
+    buf[n] = '\0';
+    if (strstr(buf, "no configuration") == NULL) {
+        tapf("# %s: unexpected exit line: %s\n", label, buf);
+        TAP_NOTOK(label, "unexpected no-config exit line");
+        goto restore;
+    }
+
+    TAP_OK(label);
+
+restore:
+    Rename((CONST_STRPTR)"DEVS:tolunnet.config-tnbak",
+           (CONST_STRPTR)"DEVS:tolunnet.config");
+    Rename((CONST_STRPTR)"ENV:tolunnet.prefs-tnbak",
+           (CONST_STRPTR)"ENV:tolunnet.prefs");
+    Rename((CONST_STRPTR)"ENVARC:tolunnet.prefs-tnbak",
+           (CONST_STRPTR)"ENVARC:tolunnet.prefs");
+    DeleteFile((CONST_STRPTR)"T:tn-noconfig.log");
+    DeleteFile((CONST_STRPTR)"T:tn-noconfig.done");
+    DeleteFile((CONST_STRPTR)"T:tn-noconfig.cli");
+}
+
+
 static void tc_cmd_stop_start(void)
 {
     BPTR seg;
@@ -5799,12 +5885,6 @@ static void tc_install_script(void)
         FreeVec(buf);
         return;
     }
-    if (strstr(buf, "DEVICE=") == NULL || strstr(buf, "UNIT=") == NULL) {
-        TAP_NOTOK(label, "DEVICE=/UNIT= keys missing from install script");
-        FreeVec(buf);
-        return;
-    }
-
     /* Verify startup line is config-driven: Run <NIL: >NIL: C:tolunnet */
     if (strstr(buf, "Run <NIL: >NIL: C:tolunnet") == NULL) {
         TAP_NOTOK(label, "Run <NIL: >NIL: C:tolunnet startup line missing");
@@ -7841,6 +7921,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_ping_gw);
     TN_RUN(tc_net_cmd_nslookup_server);
     TN_RUN(tc_net_cmd_nslookup_ptr);
+    TN_RUN(tc_daemon_noconfig_start); /* 10b item 2: bare boot, no config */
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");

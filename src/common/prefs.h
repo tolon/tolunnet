@@ -88,6 +88,7 @@ void tn_prefs_default(TnPrefs *prefs);
  * 4. ENVARC:tolunnet.prefs blob   (last "Save")
  * Returns TRUE if any store was found and parsed. */
 BOOL tn_prefs_load(TnPrefs *prefs);
+BOOL tn_prefs_any_store_exists(void); /* 10b item 2: any of DEVS/ENV/ENVARC present */
 
 /* Save preferences per Amiga Prefs convention (TNET-064). */
 BOOL tn_prefs_save(const TnPrefs *prefs, TnPrefsSaveMode mode);

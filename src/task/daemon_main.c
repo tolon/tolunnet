@@ -1069,6 +1069,11 @@ int main(int argc, char *argv[])
                 CloseLibrary(dos_base);
                 return 5;
             }
+            if (!tn_prefs_any_store_exists()) {
+                PutStr((CONST_STRPTR)"tolunnet: no configuration found - run SYS:Prefs/TolunnetSetup\n");
+                CloseLibrary(dos_base);
+                return 5;
+            }
             SystemTags((CONST_STRPTR)"C:tolunnet",
                        SYS_Asynch, TRUE,
                        SYS_Input, (BPTR)0,
@@ -1092,6 +1097,19 @@ int main(int argc, char *argv[])
                 CloseLibrary(dos_base);
                 return 5;
             }
+        }
+
+        /* z.ai step 10b item 2: a plain start with no configuration
+         * anywhere (DEVS/ENV/ENVARC) and no device/IP on the command
+         * line boots a useless default stack - say one clear line and
+         * exit; the wizard (SYS:Prefs/TolunnetSetup) writes the config.
+         * Explicit START re-enters this path and gets the same answer. */
+        if (opts[OPT_DEVICE] == NULL && opts[OPT_IP] == NULL &&
+            !tn_prefs_any_store_exists()) {
+            PutStr((CONST_STRPTR)"tolunnet: no configuration found - run SYS:Prefs/TolunnetSetup\n");
+            FreeArgs(rdargs);
+            CloseLibrary(dos_base);
+            return 5;
         }
 
         /* z.ai step 7 item 6: FreeArgs invalidates the opts[] string

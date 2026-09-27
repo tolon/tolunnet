@@ -195,6 +195,29 @@ static BOOL tn_prefs_write_one(const char *path, const char *text)
     return TRUE;
 }
 
+/* z.ai step 10b item 2: TRUE when at least one configuration store
+ * exists (DEVS config, ENV live state, ENVARC last save). Used by
+ * the daemon so a plain start with no configuration says one clear
+ * line and exits instead of booting a useless default stack.
+ */
+BOOL tn_prefs_any_store_exists(void)
+{
+    static const char *const paths[] = {
+        TN_CONFIG_FILE_DEVS, TN_PREFS_FILE_ENV, TN_PREFS_FILE_ENVARC,
+    };
+    size_t i;
+    BPTR lk;
+
+    for (i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
+        lk = Lock((CONST_STRPTR)paths[i], ACCESS_READ);
+        if (lk != (BPTR)0) {
+            UnLock(lk);
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
 BOOL tn_prefs_save(const TnPrefs *prefs, TnPrefsSaveMode mode)
 {
     char text[TN_CONFIG_TEXT_MAX];

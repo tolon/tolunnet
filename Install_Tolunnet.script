@@ -551,35 +551,29 @@
   (command "Stack 32768\nRun <NIL: >NIL: C:tolunnet")
 )
 
-; ---- first-run configuration: a DHCP config is written only if none
-; ---- exists; the wizard offer is expert-only (novice: never asked,
-; ---- a note is written instead) ------------------------------------------
-(if (not (exists "DEVS:tolunnet.config" (noreq)))
-  (textfile
-    (dest "DEVS:tolunnet.config")
-    (append "DEVICE=ethernet.device\nUNIT=0\nDHCP=YES\n")
-  )
-)
+; ---- first-run configuration: no placeholder config is written. The
+; ---- wizard configures the network: novice runs it directly, other
+; ---- levels are asked (default Yes). -------------------------------
 (set #run-setup 0)
+(if (= @user-level 0)
+  (set #run-setup 1)
+)
 (if (> @user-level 0)
   (set #run-setup
     (askbool
       (prompt "Run SYS:Prefs/TolunnetSetup now to configure your network? (You can start it any time later from SYS:Prefs.)")
-      (default 0)
-      (help "tolunnet works out of the box with DHCP; the setup tool configures devices, wireless and static addresses.")
+      (default 1)
+      (help "tolunnet needs a device configuration before it can run; the setup wizard detects hardware, wireless and address settings.")
     )
   )
 )
-(if (= @user-level 0)
-  (textfile
-    (dest "T:tolunnet-install-note.txt")
-    (append "Novice install: SYS:Prefs/TolunnetSetup was not run. Start it any time from SYS:Prefs to configure the network.\n")
-  )
-)
-(if (> @user-level 0)
-  (if (= #run-setup 1)
-    (run "SYS:Prefs/TolunnetSetup")
-  )
+(if (= #run-setup 1)
+  (execute "SYS:Prefs/TolunnetSetup")
 )
 
-(exit "tolunnet installation complete. The stack starts automatically at next boot; configure it any time with SYS:Prefs/TolunnetSetup." (quiet))
+(if (exists "DEVS:tolunnet.config" (noreq))
+  (exit "tolunnet installation complete. The stack starts automatically at next boot." (quiet))
+)
+(if (not (exists "DEVS:tolunnet.config" (noreq)))
+  (exit "Network not configured yet - run SYS:Prefs/TolunnetSetup." (quiet))
+)
