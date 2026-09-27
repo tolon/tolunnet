@@ -19,6 +19,8 @@ script safe to run unattended:
 - `exit` never combines text with (quiet) (the text would be hidden);
 - every `makedir`'s parent is created or exists-checked first;
 - no `textfile` destination is written twice;
+- the undo starts with FailAt 21 and deletes C: files only inside
+  If EXISTS guards (Delete of a missing file aborts the script);
 - every C: binary documented in docs/commands.md is copied.
 
 Exit codes: 0 = clean, 1 = findings or selftest mismatch, 2 = usage/IO
@@ -352,10 +354,19 @@ def backup_undo_coverage(top, names):
             ("SYS:Storage/tolunnet-backup/C/" + n) in t and
             ("SYS:C/" + n) in t for t in strings)
         undo_delete = any(("Delete >NIL: SYS:C/" + n) in t for t in strings)
+        undo_guarded = any(("If EXISTS SYS:C/" + n) in t for t in strings)
         if not undo_restore:
             findings.append("undo does not restore SYS:C/%s" % n)
         if not undo_delete:
             findings.append("undo does not handle new file SYS:C/%s" % n)
+        if undo_delete and not undo_guarded:
+            findings.append(
+                "undo deletes SYS:C/%s outside an If EXISTS guard "
+                "(Delete of a missing file returns 20 and aborts at the "
+                "default FailAt)" % n)
+    if not any("FailAt 21" in t for t in strings):
+        findings.append(
+            "undo has no 'FailAt 21' (a missing file must not abort it)")
     return findings
 
 
@@ -402,7 +413,7 @@ def selftest(script_path, doc_path):
         doc_text = fh.read()
     for rev, expect_pass in (("fe3c61b", False), ("565fe26", False),
                              ("1e88155", False), ("e2d54e8", False),
-                             ("HEAD", True)):
+                             ("c83af21", False), ("HEAD", True)):
         try:
             findings = lint_text(git_show(rev, script_path), doc_text)
         except LintError as exc:

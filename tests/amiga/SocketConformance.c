@@ -5100,7 +5100,8 @@ static LONG tn_file_size_of(const char *path)
     LONG n = -1;
 
     if (fh != 0) {
-        n = Seek(fh, 0, OFFSET_END);
+        Seek(fh, 0, OFFSET_END);
+        n = Seek(fh, 0, OFFSET_CURRENT); /* size after both seeks */
         Close(fh);
     }
     return n;
@@ -5131,6 +5132,7 @@ static int tn_file_head_is(const char *path, const char *expect)
 static void tc_undo_sandbox(void)
 {
     const char *label = "tc_undo_sandbox";
+    LONG rc;
     static const char *const dirs[] = {
         "T:tnsbx", "T:tnsbx/C", "T:tnsbx/Storage",
         "T:tnsbx/Storage/tolunnet-backup",
@@ -5179,16 +5181,45 @@ static void tc_undo_sandbox(void)
         return;
     }
 
-    /* run the undo in-process: no System child layer between us and
-     * the script */
-    Execute((CONST_STRPTR)"S:tolunnet-undo-sandbox", (BPTR)0, (BPTR)0);
-    tapf("# %s: sizes: backup=%ld dst=%ld nc=%ld\n", label,
+    /* run the undo: no redirection inside the command string -
+     * "Execute x >NIL:" would pass >NIL: as a script argument.
+     * Script output goes to T:undo.out for failure evidence. */
+    BPTR in_h = Open((CONST_STRPTR)"NIL:", MODE_OLDFILE);
+    BPTR out_h = Open((CONST_STRPTR)"T:undo.out", MODE_NEWFILE);
+    rc = SystemTags((CONST_STRPTR)"Execute S:tolunnet-undo-sandbox",
+                    SYS_Asynch, FALSE,
+                    SYS_Input, in_h,
+                    SYS_Output, out_h,
+                    TAG_END);
+    if (in_h != 0) Close(in_h);
+    if (out_h != 0) Close(out_h);
+    DeleteFile((CONST_STRPTR)"T:tnsbx/C/curl"); /* stays missing on purpose */
+    tapf("# %s: execute rc=%ld, sizes: backup=%ld dst=%ld nc=%ld\n", label,
+         (long)rc,
          (long)tn_file_size_of("T:tnsbx/Storage/tolunnet-backup/C/NetShutdown"),
          (long)tn_file_size_of("T:tnsbx/C/NetShutdown"),
          (long)tn_file_size_of("T:tnsbx/C/nc"));
 
+    /* 0. the deliberately missing file must not exist */
+    lk = Lock((CONST_STRPTR)"T:tnsbx/C/curl", ACCESS_READ);
+    if (lk != (BPTR)0) {
+        UnLock(lk);
+        TAP_NOTOK(label, "T:tnsbx/C/curl should not exist");
+        return;
+    }
+
     /* 1. replaced tool restored from the backup */
     if (!tn_file_head_is("T:tnsbx/C/NetShutdown", "ROADSHW")) {
+        BPTR ef = Open((CONST_STRPTR)"T:undo.out", MODE_OLDFILE);
+        char ub[301];
+        LONG un = 0;
+        if (ef != 0) {
+            un = Read(ef, ub, 300);
+            Close(ef);
+        }
+        if (un < 0) un = 0;
+        ub[un] = "\0";
+        tapf("# %s: execute rc=%ld, undo.out first %ld bytes:\n%s\n", label, (long)rc, (long)un, ub);
         TAP_NOTOK(label, "undo did not restore C/NetShutdown from backup");
         return;
     }

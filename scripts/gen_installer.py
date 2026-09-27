@@ -54,14 +54,19 @@ def backup_section(names):
 
 
 def undo_tokens(names):
+    # 10d item 1: FailAt 21 first (a missing file must not abort the
+    # undo: Delete of a non-existent path returns 20 > default 10), and
+    # every C: Delete sits inside its own If EXISTS.
     out = [U_INDENT + Q + U_BEGIN_INNER + BSN + Q]
+    out.append(U_INDENT + Q + "FailAt 21" + BSN + Q)
     out.append(U_INDENT + Q + "; restore what we replaced, remove what we"
                " created" + BSN + Q)
     for n in names:
         for line in ("If EXISTS SYS:Storage/tolunnet-backup/C/" + n,
                      "  Copy >NIL: SYS:Storage/tolunnet-backup/C/" + n
                      + " SYS:C/" + n + " CLONE",
-                     "Else",
+                     "EndIf",
+                     "If EXISTS SYS:C/" + n,
                      "  Delete >NIL: SYS:C/" + n + " QUIET",
                      "EndIf"):
             out.append(U_INDENT + Q + line + BSN + Q)
