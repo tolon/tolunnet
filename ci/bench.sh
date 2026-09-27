@@ -414,6 +414,13 @@ for cfg in $CONFIGS; do
     # same script with every SYS:/S:/LIBS:/DEVS: path rewritten under T:tnsbx/
     python3 scripts/gen_installer.py --undo-root="T:tnsbx/" --undo-out="build/tolunnet-undo-sandbox" || die "undo sandbox generation failed"
     xd write build/tolunnet-undo-sandbox S/tolunnet-undo-sandbox || die "xdftool write tolunnet-undo-sandbox failed"
+    # 10e item 3: the wizard/undo rows need writable headroom - the
+    # 10b/10d HDF-full incidents must not come back silently.
+    HDF_FREE_BYTES=$(xd info 2>/dev/null | awk '/^free:/ {print $4}')
+    case "$HDF_FREE_BYTES" in (*[0-9]*) ;; (*) die "cannot read HDF free space" ;; esac
+    HDF_FREE_KB=$((HDF_FREE_BYTES / 1024))
+    say "hdf free: ${HDF_FREE_KB} KB"
+    [ "$HDF_FREE_KB" -ge 1024 ] || die "HDF headroom ${HDF_FREE_KB} KB < 1024 KB after staging"
     xd write "$BENCH_CFG" Devs/tolunnet.config          || die "xdftool write tolunnet.config failed"
     say "staged: tolunnet + SocketConformance + bsdsocktest + cmds + usergroup.library + TolunnetSetup + TolunnetPrefs + Conformance-Script + User-Startup + tolunnet.config -> $HDF_WIN"
 
@@ -492,6 +499,7 @@ for cfg in $CONFIGS; do
     } > "$OUT/README.txt"
     {
         echo "config: ci/tolunnet-$cfg.uae (HDF copy staged from the pristine WB3.0 image)"
+        echo "hdf free: ${HDF_FREE_KB} KB"
         echo "commit: $(git rev-parse HEAD 2>/dev/null)"
         echo "describe: $GIT_DESC"
         echo "dirty: $([ $IS_DIRTY -eq 1 ] && echo YES || echo NO)"
