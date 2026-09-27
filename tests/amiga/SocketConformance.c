@@ -242,6 +242,7 @@ static ULONG tc_cfg_ip(const char *key, ULONG def)
  * reply fails the blocked call with ETIMEDOUT and is flagged here. */
 #define TN_RUN(tc) do { \
     uint32_t tn_wd0 = (SocketBase != NULL) ? ((TnSocketBase *)SocketBase)->ipc_timeouts : 0; \
+    tapf("# enter %s\n", #tc); \
     if ((SetSignal(0, 0) & SIGBREAKF_CTRL_C) != 0) { \
         g_count++; g_not_ok_count++; \
         tapf("not ok %d - %s # stray CTRL_C before test\n", g_count, #tc); \
@@ -5056,7 +5057,7 @@ static int tn_file_head_is(const char *path, const char *expect)
     n = Read(fh, buf, sizeof(buf) - 1);
     Close(fh);
     if (n < len) return 0;
-    buf[n] = "\0";
+    buf[n] = '\0';
     return strncmp(buf, expect, (size_t)len) == 0;
 }
 
@@ -5237,16 +5238,21 @@ static void tc_prefs_opens(void)
     const char *label = "tc_prefs_opens";
     BPTR in_h = Open((CONST_STRPTR)"NIL:", MODE_OLDFILE);
     BPTR out_h;
+    struct Library *OldIntuitionBase = IntuitionBase;
     struct Window *pwin = NULL;
     struct Screen *pscr = NULL;
-    struct Screen *scr;
-    struct Window *w;
     struct Task *ptask;
     char shot[48];
+    /* 10e item 1: titles are copied under Forbid and printed after
+     * Permit - no DOS I/O inside a forbidden section. */
+    char titles[8][40];
     LONG rc;
-    BOOL open2;
     int i;
     int tries;
+    int ntitles;
+
+    IntuitionBase = (struct IntuitionBase *)
+        OpenLibrary((CONST_STRPTR)"intuition.library", 36);
 
     DeleteFile((CONST_STRPTR)"T:prefs.out");
     out_h = Open((CONST_STRPTR)"T:prefs.out", MODE_NEWFILE);
@@ -5256,6 +5262,8 @@ static void tc_prefs_opens(void)
                     SYS_Output, out_h,
                     NP_StackSize, 32768,
                     TAG_END);
+    /* in_h/out_h belong to the async child now - never Close them. */
+
     for (tries = 0; tries < 100; tries++) { /* 10 s */
         Delay(5);
         Forbid();
@@ -5288,11 +5296,11 @@ static void tc_prefs_opens(void)
             Signal(ptask, SIGBREAKF_CTRL_C);
             for (i = 0; i < 200; i++) {
                 Delay(5);
-                open2 = FALSE;
+                BOOL open2 = FALSE;
                 Forbid();
-                for (scr = IntuitionBase->FirstScreen; scr; scr = scr->NextScreen) {
-                    for (w = scr->FirstWindow; w; w = w->NextWindow) {
-                        if (w == pwin) { open2 = TRUE; break; }
+                for (struct Screen *s2 = IntuitionBase->FirstScreen; s2; s2 = s2->NextScreen) {
+                    for (struct Window *w2 = s2->FirstWindow; w2; w2 = w2->NextWindow) {
+                        if (w2 == pwin) { open2 = TRUE; break; }
                     }
                     if (open2) break;
                 }
@@ -5302,6 +5310,8 @@ static void tc_prefs_opens(void)
         }
         TAP_OK(label);
     } else {
+        struct Screen *scr;
+        struct Window *w;
         BPTR ef = Open((CONST_STRPTR)"T:prefs.out", MODE_OLDFILE);
         char eb[301];
         LONG en = 0;
@@ -5311,25 +5321,34 @@ static void tc_prefs_opens(void)
             Close(ef);
         }
         if (en < 0) en = 0;
-        eb[en] = "\0";
+        eb[en] = '\0';
         tapf("# %s: rc=%ld, T:prefs.out first %ld bytes: %s\n",
              label, (long)rc, (long)en, eb);
+        ntitles = 0;
         Forbid();
-        for (scr = IntuitionBase->FirstScreen; scr; scr = scr->NextScreen) {
-            tapf("# %s: screen \"%s\" h=%ld\n", label,
-                 scr->Title != NULL ? (const char *)scr->Title : "(null)",
-                 (long)scr->Height);
-            for (w = scr->FirstWindow; w; w = w->NextWindow) {
-                tapf("# %s: window \"%s\"\n", label,
-                     w->Title != NULL ? (const char *)w->Title : "(null)");
+        for (scr = IntuitionBase->FirstScreen; scr && ntitles < 8;
+             scr = scr->NextScreen) {
+            const char *t1 = (scr->Title != NULL) ?
+                (const char *)scr->Title : "(null)";
+            snprintf(titles[ntitles], sizeof(titles[0]),
+                     "%.39s h=%ld", t1, (long)scr->Height);
+            ntitles++;
+            for (w = scr->FirstWindow; w && ntitles < 8; w = w->NextWindow) {
+                const char *t2 = (w->Title != NULL) ?
+                    (const char *)w->Title : "(null)";
+                snprintf(titles[ntitles], sizeof(titles[0]), "%.39s", t2);
+                ntitles++;
             }
         }
         Permit();
+        for (i = 0; i < ntitles; i++) {
+            tapf("# %s: title: %s\n", label, titles[i]);
+        }
         TAP_TODO(label, "TolunnetPrefs never opens its window - fixed in step 11");
     }
 
-    if (in_h != 0) Close(in_h);
-    if (out_h != 0) Close(out_h);
+    CloseLibrary((struct Library *)IntuitionBase);
+    IntuitionBase = OldIntuitionBase;
 }
 
 static void tc_cmd_stop_start(void)
@@ -8116,7 +8135,8 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_nslookup_server);
     TN_RUN(tc_net_cmd_nslookup_ptr);
     TN_RUN(tc_prefs_opens); /* 10d item 2: Prefs window must open (TODO allowed) */
-    TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */    TN_RUN(tc_daemon_noconfig_start); /* 10b item 2: bare boot, no config (daemon already stopped) */
+    TN_RUN(tc_cmd_stop_start); /* LAST-but-one: stops the daemon */
+    TN_RUN(tc_daemon_noconfig_start); /* 10b item 2: bare boot, no config (daemon already stopped) */
     TN_RUN(tc_undo_sandbox); /* 10c item 2: undo proven in a T: sandbox */
 
     tapf("1..%d\n", g_count);
