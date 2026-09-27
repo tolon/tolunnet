@@ -1,61 +1,65 @@
 ; tolunnet - Official AmigaOS Installation Script
 ; Commodore Installer 43.x, AmigaOS 3.0+, 68000 or higher.
 ; The script lives in the package root; all source paths are relative
-; to it (C/, Libs/, TolunnetPrefs, TolunnetSetup). Destinations are
-; absolute. No questions about IPs: a missing DEVS:tolunnet.config is
-; written as DHCP, and SYS:Prefs/TolunnetSetup is offered at the end.
+; to it (C/, Libs/, TolunnetPrefs, TolunnetSetup).
+;
+; GUI discipline (10a-3): welcome takes plain strings, every (message)
+; and the wizard offer are gated on @user-level so novice installs
+; never open a window, copyfiles destinations are directories, and a
+; note is written for novice runs instead of asking.
 
 (welcome
-  (text "Welcome to the tolunnet TCP/IP Stack Installation.\n\n"
-        "tolunnet is a lightweight TCP/IP stack and bsdsocket.library v4.1\n"
-        "implementation for the Commodore Amiga.\n\n"
-        "Author: Tolon\n"
-        "Requirements: AmigaOS 3.0+, 68000 or higher CPU, SANA-II network driver.\n")
+  "Welcome to the tolunnet TCP/IP Stack Installation.\n\ntolunnet is a lightweight TCP/IP stack and bsdsocket.library v4.1 implementation for the Commodore Amiga.\n\nAuthor: Tolon\nRequirements: AmigaOS 3.0+, 68000 or higher CPU, SANA-II network driver.\n"
 )
 
-(message "Installing tolunnet binaries to SYS:C/ ...")
+(if (> @user-level 0)
+  (message "Installing tolunnet binaries to SYS:C/ ...")
+)
 
-(copyfiles (source "C/tolunnet") (dest "SYS:C/tolunnet"))
-(copyfiles (source "C/TolunnetControl") (dest "SYS:C/TolunnetControl"))
-(copyfiles (source "C/ping") (dest "SYS:C/ping"))
-(copyfiles (source "C/TolunnetPing") (dest "SYS:C/TolunnetPing"))
-(copyfiles (source "C/ifconfig") (dest "SYS:C/ifconfig"))
-(copyfiles (source "C/netstat") (dest "SYS:C/netstat"))
-(copyfiles (source "C/TolunnetStatus") (dest "SYS:C/TolunnetStatus"))
-(copyfiles (source "C/route") (dest "SYS:C/route"))
-(copyfiles (source "C/AddNetRoute") (dest "SYS:C/AddNetRoute"))
-(copyfiles (source "C/DeleteNetRoute") (dest "SYS:C/DeleteNetRoute"))
-(copyfiles (source "C/AddNetInterface") (dest "SYS:C/AddNetInterface"))
-(copyfiles (source "C/ConfigureNetInterface") (dest "SYS:C/ConfigureNetInterface"))
-(copyfiles (source "C/Online") (dest "SYS:C/Online"))
-(copyfiles (source "C/Offline") (dest "SYS:C/Offline"))
-(copyfiles (source "C/CheckNetConfig") (dest "SYS:C/CheckNetConfig"))
-(copyfiles (source "C/NetShutdown") (dest "SYS:C/NetShutdown"))
-(copyfiles (source "C/wget") (dest "SYS:C/wget"))
-(copyfiles (source "C/curl") (dest "SYS:C/curl"))
-(copyfiles (source "C/TolunnetGet") (dest "SYS:C/TolunnetGet"))
-(copyfiles (source "C/iperf") (dest "SYS:C/iperf"))
-(copyfiles (source "C/tftp") (dest "SYS:C/tftp"))
-(copyfiles (source "C/ftp") (dest "SYS:C/ftp"))
-(copyfiles (source "C/hostname") (dest "SYS:C/hostname"))
-(copyfiles (source "C/nslookup") (dest "SYS:C/nslookup"))
-(copyfiles (source "C/whois") (dest "SYS:C/whois"))
-(copyfiles (source "C/traceroute") (dest "SYS:C/traceroute"))
-(copyfiles (source "C/nc") (dest "SYS:C/nc"))
-(copyfiles (source "C/arp") (dest "SYS:C/arp"))
-(copyfiles (source "C/sntp") (dest "SYS:C/sntp"))
-(copyfiles (source "C/telnet") (dest "SYS:C/telnet"))
-(copyfiles (source "C/GetNetStatus") (dest "SYS:C/GetNetStatus"))
-(copyfiles (source "C/ShowNetStatus") (dest "SYS:C/ShowNetStatus"))
-(copyfiles (source "C/TestSocket") (dest "SYS:C/TestSocket"))
-(copyfiles (source "C/TolunnetSetup") (dest "SYS:C/TolunnetSetup"))
+(copyfiles (source "C/tolunnet") (dest "SYS:C"))
+(copyfiles (source "C/TolunnetControl") (dest "SYS:C"))
+(copyfiles (source "C/ping") (dest "SYS:C"))
+(copyfiles (source "C/TolunnetPing") (dest "SYS:C"))
+(copyfiles (source "C/ifconfig") (dest "SYS:C"))
+(copyfiles (source "C/netstat") (dest "SYS:C"))
+(copyfiles (source "C/TolunnetStatus") (dest "SYS:C"))
+(copyfiles (source "C/route") (dest "SYS:C"))
+(copyfiles (source "C/AddNetRoute") (dest "SYS:C"))
+(copyfiles (source "C/DeleteNetRoute") (dest "SYS:C"))
+(copyfiles (source "C/AddNetInterface") (dest "SYS:C"))
+(copyfiles (source "C/ConfigureNetInterface") (dest "SYS:C"))
+(copyfiles (source "C/Online") (dest "SYS:C"))
+(copyfiles (source "C/Offline") (dest "SYS:C"))
+(copyfiles (source "C/CheckNetConfig") (dest "SYS:C"))
+(copyfiles (source "C/NetShutdown") (dest "SYS:C"))
+(copyfiles (source "C/wget") (dest "SYS:C"))
+(copyfiles (source "C/curl") (dest "SYS:C"))
+(copyfiles (source "C/TolunnetGet") (dest "SYS:C"))
+(copyfiles (source "C/iperf") (dest "SYS:C"))
+(copyfiles (source "C/tftp") (dest "SYS:C"))
+(copyfiles (source "C/ftp") (dest "SYS:C"))
+(copyfiles (source "C/hostname") (dest "SYS:C"))
+(copyfiles (source "C/nslookup") (dest "SYS:C"))
+(copyfiles (source "C/whois") (dest "SYS:C"))
+(copyfiles (source "C/traceroute") (dest "SYS:C"))
+(copyfiles (source "C/nc") (dest "SYS:C"))
+(copyfiles (source "C/arp") (dest "SYS:C"))
+(copyfiles (source "C/sntp") (dest "SYS:C"))
+(copyfiles (source "C/telnet") (dest "SYS:C"))
+(copyfiles (source "C/GetNetStatus") (dest "SYS:C"))
+(copyfiles (source "C/ShowNetStatus") (dest "SYS:C"))
+(copyfiles (source "C/TestSocket") (dest "SYS:C"))
 
-(message "Installing usergroup.library to SYS:Libs/ ...")
+(if (> @user-level 0)
+  (message "Installing usergroup.library to SYS:Libs/ ...")
+)
 (copylib (source "Libs/usergroup.library") (dest "SYS:Libs"))
 
-(message "Installing preference tools to SYS:Prefs/ ...")
-(copyfiles (source "TolunnetPrefs") (dest "SYS:Prefs/TolunnetPrefs"))
-(copyfiles (source "TolunnetSetup") (dest "SYS:Prefs/TolunnetSetup"))
+(if (> @user-level 0)
+  (message "Installing preference tools to SYS:Prefs/ ...")
+)
+(copyfiles (source "TolunnetPrefs") (dest "SYS:Prefs"))
+(copyfiles (source "TolunnetSetup") (dest "SYS:Prefs"))
 
 ; ---- replace an existing bsdsocket.library: back it up first, and
 ; ---- delete the original only once the backup exists ------------------
@@ -76,45 +80,45 @@
 )
 (textfile
   (dest "S:tolunnet-undo")
-  (append (cat "; tolunnet-undo - remove tolunnet and restore the previous stack\n"
-               "If EXISTS S:User-Startup.tolunnet-bak\n"
-               "  Copy >NIL: S:User-Startup.tolunnet-bak S:User-Startup CLONE\n"
-               "EndIf\n"
-               "If EXISTS LIBS:bsdsocket.library.pre-tolunnet\n"
-               "  Copy >NIL: LIBS:bsdsocket.library.pre-tolunnet LIBS:bsdsocket.library CLONE\n"
-               "  Delete >NIL: LIBS:bsdsocket.library.pre-tolunnet QUIET\n"
-               "EndIf\n"
-               "Delete >NIL: DEVS:tolunnet.config QUIET\n"))
+  (append "; tolunnet-undo - remove tolunnet and restore the previous stack\nIf EXISTS S:User-Startup.tolunnet-bak\n  Copy >NIL: S:User-Startup.tolunnet-bak S:User-Startup CLONE\nEndIf\nIf EXISTS LIBS:bsdsocket.library.pre-tolunnet\n  Copy >NIL: LIBS:bsdsocket.library.pre-tolunnet LIBS:bsdsocket.library CLONE\n  Delete >NIL: LIBS:bsdsocket.library.pre-tolunnet QUIET\nEndIf\nDelete >NIL: DEVS:tolunnet.config QUIET\n")
 )
 
 ; ---- boot line: stack size + daemon ------------------------------------
 (startup "tolunnet"
   (prompt "Add tolunnet to S:User-Startup (start the stack at boot)?")
-  (help "Writes 'Stack 32768' and 'Run <NIL: >NIL: C:tolunnet' into S:User-Startup so the stack starts on every boot.")
+  (help "Writes Stack 32768 and Run <NIL: >NIL: C:tolunnet into S:User-Startup so the stack starts on every boot.")
   (command "Stack 32768\nRun <NIL: >NIL: C:tolunnet")
 )
 
 ; ---- first-run configuration: a DHCP config is written only if none
-; ---- exists, then SYS:Prefs/TolunnetSetup is offered (novice: skip) ----
+; ---- exists; the wizard offer is expert-only (novice: never asked,
+; ---- a note is written instead) ------------------------------------------
 (if (not (exists "DEVS:tolunnet.config" (noreq)))
   (textfile
     (dest "DEVS:tolunnet.config")
     (append "DEVICE=ethernet.device\nUNIT=0\nDHCP=YES\n")
   )
 )
-(set #run-setup
-  (askbool
-    (prompt "Run SYS:Prefs/TolunnetSetup now to configure your network?\n"
-            "(You can start it any time later from SYS:Prefs.)")
-    (default 1)
-    (help "tolunnet works out of the box with DHCP; the setup tool configures devices, wireless and static addresses. Default is No: novice runs skip this.")
+(set #run-setup 0)
+(if (> @user-level 0)
+  (set #run-setup
+    (askbool
+      (prompt "Run SYS:Prefs/TolunnetSetup now to configure your network? (You can start it any time later from SYS:Prefs.)")
+      (default 0)
+      (help "tolunnet works out of the box with DHCP; the setup tool configures devices, wireless and static addresses.")
+    )
   )
 )
-(if (= #run-setup 1)
-  (run "SYS:Prefs/TolunnetSetup")
+(if (= @user-level 0)
+  (textfile
+    (dest "T:tolunnet-install-note.txt")
+    (append "Novice install: SYS:Prefs/TolunnetSetup was not run. Start it any time from SYS:Prefs to configure the network.\n")
+  )
 )
-(if (not (= #run-setup 1))
-  (message "Not running setup now. Start SYS:Prefs/TolunnetSetup whenever you are ready to configure the network.")
+(if (> @user-level 0)
+  (if (= #run-setup 1)
+    (run "SYS:Prefs/TolunnetSetup")
+  )
 )
 
-(exit "tolunnet installation complete.\n\nThe stack starts automatically at next boot; configure it any time with SYS:Prefs/TolunnetSetup." (quiet))
+(exit "tolunnet installation complete. The stack starts automatically at next boot; configure it any time with SYS:Prefs/TolunnetSetup." (quiet))
