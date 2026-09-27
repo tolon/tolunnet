@@ -6008,6 +6008,193 @@ static void tc_install_script(void)
     TAP_OK(label);
 }
 
+/* ------------------------------------------------ Installer run (10a-2 item 2) */
+
+/* Package binaries per docs/commands.md (mirrors the Makefile 'package'
+ * target, aliases included). ci/bench.sh stages the same tree into
+ * WORK:tolunnet-pkg — the bench HDF has no room for a second copy of the
+ * binaries — and the row deletes the SYS: copies first, so only a real
+ * Installer run can put them back. */
+static const char *const tn_pkg_c_bins[] = {
+    "tolunnet", "TolunnetControl", "ping", "TolunnetPing",
+    "ifconfig", "netstat", "TolunnetStatus", "route",
+    "AddNetRoute", "DeleteNetRoute", "AddNetInterface",
+    "ConfigureNetInterface", "Online", "Offline",
+    "CheckNetConfig", "NetShutdown", "wget", "curl",
+    "TolunnetGet", "iperf", "tftp", "ftp",
+    "hostname", "nslookup", "whois", "traceroute",
+    "nc", "arp", "sntp", "telnet",
+    "GetNetStatus", "ShowNetStatus", "TestSocket", "TolunnetSetup"
+};
+
+static LONG tn_file_size(const char *path)
+{
+    BPTR lk;
+    struct FileInfoBlock fib;
+    LONG sz = -1;
+
+    lk = Lock((CONST_STRPTR)path, ACCESS_READ);
+    if (lk != (BPTR)0) {
+        memset(&fib, 0, sizeof(fib));
+        if (Examine(lk, &fib)) {
+            sz = (LONG)fib.fib_Size;
+        }
+        UnLock(lk);
+    }
+    return sz;
+}
+
+static int tn_count_occurrences(const char *path, const char *needle)
+{
+    BPTR fh;
+    char buf[8192];
+    LONG n;
+    int cnt = 0;
+    const char *p;
+
+    fh = Open((CONST_STRPTR)path, MODE_OLDFILE);
+    if (fh == 0) {
+        return -1;
+    }
+    n = Read(fh, buf, sizeof(buf) - 1);
+    Close(fh);
+    if (n <= 0) {
+        return 0;
+    }
+    buf[n] = '\0';
+    p = buf;
+    while ((p = strstr(p, needle)) != NULL) {
+        cnt++;
+        p++;
+    }
+    return cnt;
+}
+
+/* Item 2 (z.ai step 10a-2): run the real Commodore Installer against
+ * Install_Tolunnet.script (NOVICE, LOGFILE) and assert the artifacts:
+ * RC 0, every package binary back in SYS:C at the package size,
+ * SYS:Prefs/TolunnetSetup + TolunnetPrefs, DEVS:tolunnet.config, exactly
+ * one C:tolunnet line in S:User-Startup, S:tolunnet-undo. The installer
+ * runs with cwd = package root so the script's relative sources resolve
+ * inside WORK:tolunnet-pkg. Item 3 rewrites the script into valid
+ * Installer 43; until then a non-zero RC is a TODO (this commit only). */
+static void tc_installer_run(void)
+{
+    const char *label = "tc_installer_run";
+    BPTR lk;
+    BPTR fh;
+    char cli[512];
+    char pbuf[96];
+    char rbuf[16];
+    LONG got;
+    LONG rc = -1;
+    size_t i;
+
+    lk = Lock((CONST_STRPTR)"C:Installer", ACCESS_READ);
+    if (lk == (BPTR)0) {
+        TAP_SKIP(label, "no C:Installer in the bench HDF and nothing staged "
+                        "(ci/tools/Installer, INSTALLER_BIN)");
+        return;
+    }
+    UnLock(lk);
+
+    if (tn_file_size("WORK:tolunnet-pkg/C/tolunnet") < 0) {
+        TAP_NOTOK(label, "package tree WORK:tolunnet-pkg missing (bench staging)");
+        return;
+    }
+
+    /* clean slate: remove everything the installer must (re)create */
+    for (i = 0; i < sizeof(tn_pkg_c_bins) / sizeof(tn_pkg_c_bins[0]); i++) {
+        snprintf_safe(pbuf, sizeof(pbuf), "SYS:C/%s", tn_pkg_c_bins[i]);
+        DeleteFile((CONST_STRPTR)pbuf);
+    }
+    DeleteFile((CONST_STRPTR)"SYS:Prefs/TolunnetPrefs");
+    DeleteFile((CONST_STRPTR)"SYS:Prefs/TolunnetPrefs.info");
+    DeleteFile((CONST_STRPTR)"SYS:Prefs/TolunnetSetup");
+    DeleteFile((CONST_STRPTR)"SYS:Prefs/TolunnetSetup.info");
+    DeleteFile((CONST_STRPTR)"S:tolunnet-undo");
+    DeleteFile((CONST_STRPTR)"S:User-Startup.tolunnet-bak");
+    DeleteFile((CONST_STRPTR)"T:tn-installer-rc");
+
+    /* cd is process-local, so the installer sees cwd = package root;
+     * $RC captures its return code for the row. */
+    fh = Open((CONST_STRPTR)"T:tn-installer.cli", MODE_NEWFILE);
+    if (fh == 0) {
+        TAP_NOTOK(label, "cannot write T:tn-installer.cli");
+        return;
+    }
+    snprintf_safe(cli, sizeof(cli),
+                  "cd WORK:tolunnet-pkg\n"
+                  "Installer S:Install_Tolunnet.script NOVICE LOGFILE WORK:tolunnet-install.log\n"
+                  "Echo $RC >T:tn-installer-rc\n");
+    Write(fh, (CONST_APTR)cli, strlen(cli));
+    Close(fh);
+    SystemTags((CONST_STRPTR)"Execute T:tn-installer.cli",
+               SYS_Asynch, FALSE,
+               SYS_Input, (BPTR)0,
+               SYS_Output, (BPTR)0,
+               TAG_END);
+
+    got = 0;
+    fh = Open((CONST_STRPTR)"T:tn-installer-rc", MODE_OLDFILE);
+    if (fh != 0) {
+        got = Read(fh, rbuf, sizeof(rbuf) - 1);
+        Close(fh);
+    }
+    if (got > 0) {
+        rbuf[got] = '\0';
+        rc = atol(rbuf);
+    }
+    if (rc != 0) {
+        /* keep the bench runnable for the rows after this one */
+        Execute((CONST_STRPTR)"Copy >NIL: WORK:tolunnet-pkg/C/tolunnet SYS:C/tolunnet CLONE QUIET",
+                (BPTR)0, (BPTR)0);
+        TAP_TODO(label, "Installer RC != 0: Install_Tolunnet.script is not "
+                        "valid Installer 43 yet (item 3 rewrites it)");
+        return;
+    }
+
+    /* every package binary restored to SYS:C at the package size */
+    for (i = 0; i < sizeof(tn_pkg_c_bins) / sizeof(tn_pkg_c_bins[0]); i++) {
+        LONG sz_sys;
+        LONG sz_pkg;
+        snprintf_safe(pbuf, sizeof(pbuf), "SYS:C/%s", tn_pkg_c_bins[i]);
+        sz_sys = tn_file_size(pbuf);
+        snprintf_safe(pbuf, sizeof(pbuf), "WORK:tolunnet-pkg/C/%s", tn_pkg_c_bins[i]);
+        sz_pkg = tn_file_size(pbuf);
+        if (sz_sys < 0 || sz_sys != sz_pkg) {
+            tapf("# %s: SYS:C/%s size %ld, package %ld\n",
+                 label, tn_pkg_c_bins[i], (long)sz_sys, (long)sz_pkg);
+            TAP_NOTOK(label, "package binary missing or size mismatch in SYS:C");
+            return;
+        }
+    }
+
+    if (tn_file_size("SYS:Prefs/TolunnetSetup") !=
+        tn_file_size("WORK:tolunnet-pkg/TolunnetSetup")) {
+        TAP_NOTOK(label, "SYS:Prefs/TolunnetSetup missing or wrong size");
+        return;
+    }
+    if (tn_file_size("SYS:Prefs/TolunnetPrefs") < 0) {
+        TAP_NOTOK(label, "SYS:Prefs/TolunnetPrefs missing");
+        return;
+    }
+    if (tn_file_size("DEVS:tolunnet.config") < 0) {
+        TAP_NOTOK(label, "DEVS:tolunnet.config missing");
+        return;
+    }
+    if (tn_count_occurrences("S:User-Startup", "C:tolunnet") != 1) {
+        TAP_NOTOK(label, "S:User-Startup must hold exactly one C:tolunnet line");
+        return;
+    }
+    if (tn_file_size("S:tolunnet-undo") < 0) {
+        TAP_NOTOK(label, "S:tolunnet-undo missing");
+        return;
+    }
+
+    TAP_OK(label);
+}
+
 /* ------------------------------------------------ Phase 1b: net_* test group */
 #define SLIRP_HOST_ADDR 0x0A000202UL /* 10.0.2.2 slirp host */
 
@@ -7807,6 +7994,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_ping_gw);
     TN_RUN(tc_net_cmd_nslookup_server);
     TN_RUN(tc_net_cmd_nslookup_ptr);
+    TN_RUN(tc_installer_run); /* z.ai step 10a-2 item 2: real Installer run */
     TN_RUN(tc_cmd_stop_start); /* LAST: stops the daemon */
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");

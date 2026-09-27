@@ -403,6 +403,64 @@ for cfg in $CONFIGS; do
     xd write ci/User-Startup-Boot S/User-Startup || die "xdftool write User-Startup failed"
     xd write Install_Tolunnet.script S/Install_Tolunnet.script || die "xdftool write Install_Tolunnet.script failed"
     xd write "$BENCH_CFG" Devs/tolunnet.config          || die "xdftool write tolunnet.config failed"
+
+    # ---- z.ai step 10a-2 item 2: real Installer + package tree ----------
+    # The row SKIPs unless the HDF has C:Installer. If absent, stage 43.3
+    # from ci/tools/ (only if the licence allows redistribution), else via
+    # INSTALLER_BIN; otherwise warn — the row SKIPs with that reason.
+    if ! xd list C 2>/dev/null | awk '{print $1}' | grep -qix 'Installer'; then
+        if [ -f ci/tools/Installer ]; then
+            xd write ci/tools/Installer C/Installer || die "installer staging failed"
+        elif [ -n "${INSTALLER_BIN:-}" ] && [ -f "$INSTALLER_BIN" ]; then
+            xd write "$INSTALLER_BIN" C/Installer || die "installer staging failed"
+        else
+            say "WARNING: no C:Installer in HDF, no ci/tools/Installer, no INSTALLER_BIN -> tc_installer_run SKIPs"
+        fi
+    fi
+    # Package tree for the installer to copy from. The bench HDF has no room
+    # for a second copy of the binaries (99.9% full), so it lives on WORK:
+    # (host dir, Amiga-visible): the installer copies WORK:tolunnet-pkg -> SYS:.
+    rm -rf "$WORK_DIR/tolunnet-pkg"
+    mkdir -p "$WORK_DIR/tolunnet-pkg/C" "$WORK_DIR/tolunnet-pkg/Libs" || die "pkg staging: mkdir"
+    pkg_bin() { cp "build/$2" "$WORK_DIR/tolunnet-pkg/C/$1" || die "pkg staging: $1"; }
+    pkg_bin tolunnet tolunnet
+    pkg_bin TolunnetControl TolunnetControl
+    pkg_bin TolunnetPing TolunnetPing
+    pkg_bin ping TolunnetPing
+    pkg_bin TolunnetStatus TolunnetStatus
+    pkg_bin ifconfig TolunnetStatus
+    pkg_bin netstat TolunnetStatus
+    pkg_bin route route
+    pkg_bin AddNetRoute AddNetRoute
+    pkg_bin DeleteNetRoute DeleteNetRoute
+    pkg_bin AddNetInterface AddNetInterface
+    pkg_bin ConfigureNetInterface ConfigureNetInterface
+    pkg_bin Online Online
+    pkg_bin Offline Offline
+    pkg_bin CheckNetConfig CheckNetConfig
+    pkg_bin NetShutdown NetShutdown
+    pkg_bin TolunnetGet TolunnetGet
+    pkg_bin wget TolunnetGet
+    pkg_bin curl TolunnetGet
+    pkg_bin iperf iperf
+    pkg_bin tftp tftp
+    pkg_bin ftp ftp
+    pkg_bin hostname hostname
+    pkg_bin nslookup nslookup
+    pkg_bin whois whois
+    pkg_bin traceroute traceroute
+    pkg_bin nc nc
+    pkg_bin arp arp
+    pkg_bin sntp sntp
+    pkg_bin telnet telnet
+    pkg_bin GetNetStatus GetNetStatus
+    pkg_bin ShowNetStatus ShowNetStatus
+    pkg_bin TestSocket TestSocket
+    pkg_bin TolunnetSetup TolunnetSetup
+    cp build/usergroup.library "$WORK_DIR/tolunnet-pkg/Libs/" || die "pkg staging: usergroup.library"
+    cp build/TolunnetPrefs "$WORK_DIR/tolunnet-pkg/TolunnetPrefs" || die "pkg staging: TolunnetPrefs"
+    cp build/TolunnetSetup "$WORK_DIR/tolunnet-pkg/TolunnetSetup" || die "pkg staging: TolunnetSetup"
+
     say "staged: tolunnet + SocketConformance + bsdsocktest + cmds + usergroup.library + TolunnetSetup + TolunnetPrefs + Conformance-Script + User-Startup + tolunnet.config -> $HDF_WIN"
 
     # ---- run headless ---------------------------------------------------
@@ -439,6 +497,8 @@ for cfg in $CONFIGS; do
     cp "$WORK_DIR/daemon.log"        "$OUT/" 2>/dev/null || true
     cp "$WORK_DIR/daemon2.log"       "$OUT/" 2>/dev/null || true
     cp "$WORK_DIR/tolunnet-task.log" "$OUT/" 2>/dev/null || true
+    # z.ai step 10a-2 item 2: Installer transcript (tc_installer_run)
+    cp "$WORK_DIR/tolunnet-install.log" "$OUT/" 2>/dev/null || true
     # TN_DIAG trap capture (TNET-139): copied from RAM: by the boot script
     cp "$WORK_DIR/tolunnet-crash.log"  "$OUT/" 2>/dev/null || true
     cp "$WORK_DIR/tolunnet-crash2.log" "$OUT/" 2>/dev/null || true
