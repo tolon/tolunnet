@@ -6104,7 +6104,31 @@ static void tc_installer_run(void)
         return;
     }
 
-    /* clean slate: remove everything the installer must (re)create */
+    /* clean slate: remove everything the installer must (re)create. A
+     * recovery script is staged first: if the installer fails, the full
+     * package goes back - otherwise cycle 2 runs against a gutted SYS:C
+     * (bench 20260927-080809: 27 cascaded cycle-2 failures). */
+    fh = Open((CONST_STRPTR)"T:tn-inst-recover.cli", MODE_NEWFILE);
+    if (fh == 0) {
+        TAP_NOTOK(label, "cannot write T:tn-inst-recover.cli");
+        return;
+    }
+    for (i = 0; i < sizeof(tn_pkg_c_bins) / sizeof(tn_pkg_c_bins[0]); i++) {
+        snprintf_safe(cli, sizeof(cli),
+                      "Copy >NIL: WORK:tolunnet-pkg/C/%s SYS:C/%s CLONE QUIET\n",
+                      tn_pkg_c_bins[i], tn_pkg_c_bins[i]);
+        Write(fh, (CONST_APTR)cli, strlen(cli));
+    }
+    snprintf_safe(cli, sizeof(cli),
+                  "Copy >NIL: WORK:tolunnet-pkg/TolunnetPrefs SYS:Prefs/TolunnetPrefs CLONE QUIET\n");
+    Write(fh, (CONST_APTR)cli, strlen(cli));
+    snprintf_safe(cli, sizeof(cli),
+                  "Copy >NIL: WORK:tolunnet-pkg/TolunnetSetup SYS:Prefs/TolunnetSetup CLONE QUIET\n");
+    Write(fh, (CONST_APTR)cli, strlen(cli));
+    snprintf_safe(cli, sizeof(cli),
+                  "Copy >NIL: WORK:tolunnet-pkg/Libs/usergroup.library SYS:Libs/usergroup.library CLONE QUIET\n");
+    Write(fh, (CONST_APTR)cli, strlen(cli));
+    Close(fh);
     for (i = 0; i < sizeof(tn_pkg_c_bins) / sizeof(tn_pkg_c_bins[0]); i++) {
         snprintf_safe(pbuf, sizeof(pbuf), "SYS:C/%s", tn_pkg_c_bins[i]);
         DeleteFile((CONST_STRPTR)pbuf);
@@ -6154,18 +6178,14 @@ static void tc_installer_run(void)
         }
     }
     if (rc < 0) {
-        /* keep the bench runnable for the rows after this one */
-        Execute((CONST_STRPTR)"Copy >NIL: WORK:tolunnet-pkg/C/tolunnet SYS:C/tolunnet CLONE QUIET",
-                (BPTR)0, (BPTR)0);
+        Execute((CONST_STRPTR)"T:tn-inst-recover.cli", (BPTR)0, (BPTR)0);
         TAP_TODO(label, "installer did not finish within 90 s (script-error "
                         "requester?): Install_Tolunnet.script is not valid "
                         "Installer 43 yet (item 3 rewrites it)");
         return;
     }
     if (rc != 0) {
-        /* keep the bench runnable for the rows after this one */
-        Execute((CONST_STRPTR)"Copy >NIL: WORK:tolunnet-pkg/C/tolunnet SYS:C/tolunnet CLONE QUIET",
-                (BPTR)0, (BPTR)0);
+        Execute((CONST_STRPTR)"T:tn-inst-recover.cli", (BPTR)0, (BPTR)0);
         TAP_TODO(label, "Installer RC != 0: Install_Tolunnet.script is not "
                         "valid Installer 43 yet (item 3 rewrites it)");
         return;
