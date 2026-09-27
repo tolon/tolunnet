@@ -91,8 +91,13 @@ if [ "${1:-}" = "soak" ]; then
     # reclaim the stale typo'd tolunnet binaries, the packers and the
     # unused Installer (no installer row since 10a-3) to keep the HDF
     # writable for the wizard and undo rows.
-    for junk in arc cdboot All2Lha butcher Amigatool AllowBad bigcli ArchEdge BootPic Bounce tolunet TolunetGet TolunetPing TolunetStatus DiskSalv3 viewtek vt Installer LZX DMS SnoopDos3 UnZip PPShow Zip Prod_Prep PKAzip LhA gzip; do
+    for junk in arc cdboot All2Lha butcher Amigatool AllowBad bigcli ArchEdge BootPic Bounce tolunet TolunetGet TolunetPing TolunetStatus DiskSalv3 viewtek vt Installer LZX DMS SnoopDos3 UnZip PPShow Zip Prod_Prep PKAzip LhA gzip ConfigOpus zoo specconvert DOpus_Disk ZShell KEY-MAPPER Lhwarp DOpus_Print DiskExpander MousoMeter flick lharc id Ed MagicWB-Demon keymapper2 UnDeletev2 PicBoot SystemTakeover Edit MuchMore UnARJ UUxT PlaySample intuitracker NUKE1.5 simdisk Lhunarc Startup-Menu DOpus_Icon lister TUDE Splice; do
         xd delete C/$junk >/dev/null 2>&1
+    done
+    # 10f item 2: stock Tools-drawer binaries and the Utilities
+    # packers - heavy, and the headless bench never launches them.
+for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/MEmacs Tools/IconEdit Tools/PrepCard Utilities/Packers/BlitzDms Utilities/Packers/CrM Utilities/Packers/CrMData Utilities/Packers/dirii 'Utilities/Packers/DiskMasher(GUI)'; do
+        xd delete "$junk" >/dev/null 2>&1
     done
     xd list Storage 2>/dev/null | tail -n +2 | sed 's/^[[:space:]]*//;s/ .*//' | while read -r entry; do
         [ -z "$entry" ] && continue
@@ -344,8 +349,13 @@ for cfg in $CONFIGS; do
     # reclaim the stale typo'd tolunnet binaries, the packers and the
     # unused Installer (no installer row since 10a-3) to keep the HDF
     # writable for the wizard and undo rows.
-    for junk in arc cdboot All2Lha butcher Amigatool AllowBad bigcli ArchEdge BootPic Bounce tolunet TolunetGet TolunetPing TolunetStatus DiskSalv3 viewtek vt Installer LZX DMS SnoopDos3 UnZip PPShow Zip Prod_Prep PKAzip LhA gzip; do
+    for junk in arc cdboot All2Lha butcher Amigatool AllowBad bigcli ArchEdge BootPic Bounce tolunet TolunetGet TolunetPing TolunetStatus DiskSalv3 viewtek vt Installer LZX DMS SnoopDos3 UnZip PPShow Zip Prod_Prep PKAzip LhA gzip ConfigOpus zoo specconvert DOpus_Disk ZShell KEY-MAPPER Lhwarp DOpus_Print DiskExpander MousoMeter flick lharc id Ed MagicWB-Demon keymapper2 UnDeletev2 PicBoot SystemTakeover Edit MuchMore UnARJ UUxT PlaySample intuitracker NUKE1.5 simdisk Lhunarc Startup-Menu DOpus_Icon lister TUDE Splice; do
         xd delete C/$junk >/dev/null 2>&1
+    done
+    # 10f item 2: stock Tools-drawer binaries and the Utilities
+    # packers - heavy, and the headless bench never launches them.
+for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/MEmacs Tools/IconEdit Tools/PrepCard Utilities/Packers/BlitzDms Utilities/Packers/CrM Utilities/Packers/CrMData Utilities/Packers/dirii 'Utilities/Packers/DiskMasher(GUI)'; do
+        xd delete "$junk" >/dev/null 2>&1
     done
     xd list Storage 2>/dev/null | tail -n +2 | sed 's/^[[:space:]]*//;s/ .*//' | while read -r entry; do
         [ -z "$entry" ] && continue
