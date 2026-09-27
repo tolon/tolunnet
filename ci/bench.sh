@@ -422,7 +422,12 @@ for cfg in $CONFIGS; do
     # (host dir, Amiga-visible): the installer copies WORK:tolunnet-pkg -> SYS:.
     rm -rf "$WORK_DIR/tolunnet-pkg"
     mkdir -p "$WORK_DIR/tolunnet-pkg/C" "$WORK_DIR/tolunnet-pkg/Libs" || die "pkg staging: mkdir"
-    pkg_bin() { cp "build/$2" "$WORK_DIR/tolunnet-pkg/C/$1" || die "pkg staging: $1"; }
+    RECOVER="$WORK_DIR/installer-recover.cli"
+    : > "$RECOVER"
+    pkg_bin() {
+        cp "build/$2" "$WORK_DIR/tolunnet-pkg/C/$1" || die "pkg staging: $1"
+        printf 'Copy >NIL: WORK:tolunnet-pkg/C/%s SYS:C/%s CLONE QUIET\n' "$1" "$1" >> "$RECOVER"
+    }
     pkg_bin tolunnet tolunnet
     pkg_bin TolunnetControl TolunnetControl
     pkg_bin TolunnetPing TolunnetPing
@@ -457,9 +462,12 @@ for cfg in $CONFIGS; do
     pkg_bin ShowNetStatus ShowNetStatus
     pkg_bin TestSocket TestSocket
     pkg_bin TolunnetSetup TolunnetSetup
-    cp build/usergroup.library "$WORK_DIR/tolunnet-pkg/Libs/" || die "pkg staging: usergroup.library"
     cp build/TolunnetPrefs "$WORK_DIR/tolunnet-pkg/TolunnetPrefs" || die "pkg staging: TolunnetPrefs"
     cp build/TolunnetSetup "$WORK_DIR/tolunnet-pkg/TolunnetSetup" || die "pkg staging: TolunnetSetup"
+    cp build/usergroup.library "$WORK_DIR/tolunnet-pkg/Libs/" || die "pkg staging: usergroup.library"
+    printf 'Copy >NIL: WORK:tolunnet-pkg/TolunnetPrefs SYS:Prefs/TolunnetPrefs CLONE QUIET\n' >> "$RECOVER"
+    printf 'Copy >NIL: WORK:tolunnet-pkg/TolunnetSetup SYS:Prefs/TolunnetSetup CLONE QUIET\n' >> "$RECOVER"
+    printf 'Copy >NIL: WORK:tolunnet-pkg/Libs/usergroup.library SYS:Libs/usergroup.library CLONE QUIET\n' >> "$RECOVER"
 
     say "staged: tolunnet + SocketConformance + bsdsocktest + cmds + usergroup.library + TolunnetSetup + TolunnetPrefs + Conformance-Script + User-Startup + tolunnet.config -> $HDF_WIN"
 

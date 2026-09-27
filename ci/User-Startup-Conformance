@@ -35,6 +35,14 @@ If EXISTS WORK:
   EndIf
 
 
+  ; ---- z.ai step 10a-2 item 2: if the tc_installer_run row failed, put
+  ; the staged package back before cycle 2 runs (the row itself only
+  ; touches a marker; copies here run sequentially, no cycle-2 race) -----
+  If EXISTS WORK:installer-failed
+    Execute WORK:installer-recover.cli
+    Delete >NIL: WORK:installer-failed QUIET
+  EndIf
+
   ; ---- cycle 2: restart without reboot (TNET-059/060 proof) -------------
   Run >WORK:daemon2.log C:tolunnet
   Wait 15
