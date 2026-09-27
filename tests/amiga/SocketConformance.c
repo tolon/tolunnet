@@ -5094,6 +5094,18 @@ static int tn_write_file(const char *path, const char *text)
     return 1;
 }
 
+static LONG tn_file_size_of(const char *path)
+{
+    BPTR fh = Open((CONST_STRPTR)path, MODE_OLDFILE);
+    LONG n = -1;
+
+    if (fh != 0) {
+        n = Seek(fh, 0, OFFSET_END);
+        Close(fh);
+    }
+    return n;
+}
+
 static int tn_file_head_is(const char *path, const char *expect)
 {
     BPTR fh = Open((CONST_STRPTR)path, MODE_OLDFILE);
@@ -5167,11 +5179,13 @@ static void tc_undo_sandbox(void)
         return;
     }
 
-    SystemTags((CONST_STRPTR)"Execute S:tolunnet-undo-sandbox >NIL:",
-               SYS_Asynch, FALSE,
-               SYS_Input, (BPTR)0,
-               SYS_Output, (BPTR)0,
-               TAG_END);
+    /* run the undo in-process: no System child layer between us and
+     * the script */
+    Execute((CONST_STRPTR)"S:tolunnet-undo-sandbox", (BPTR)0, (BPTR)0);
+    tapf("# %s: sizes: backup=%ld dst=%ld nc=%ld\n", label,
+         (long)tn_file_size_of("T:tnsbx/Storage/tolunnet-backup/C/NetShutdown"),
+         (long)tn_file_size_of("T:tnsbx/C/NetShutdown"),
+         (long)tn_file_size_of("T:tnsbx/C/nc"));
 
     /* 1. replaced tool restored from the backup */
     if (!tn_file_head_is("T:tnsbx/C/NetShutdown", "ROADSHW")) {
