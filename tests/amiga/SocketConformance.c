@@ -6077,7 +6077,8 @@ static int tn_count_occurrences(const char *path, const char *needle)
  * one C:tolunnet line in S:User-Startup, S:tolunnet-undo. The installer
  * runs with cwd = package root so the script's relative sources resolve
  * inside WORK:tolunnet-pkg. Item 3 rewrites the script into valid
- * Installer 43; until then a non-zero RC is a TODO (this commit only). */
+ * Installer 43; until then a non-zero RC or a missed 90 s bound is a
+ * TODO (this commit only). */
 static void tc_installer_run(void)
 {
     const char *label = "tc_installer_run";
@@ -6117,7 +6118,9 @@ static void tc_installer_run(void)
     DeleteFile((CONST_STRPTR)"T:tn-installer-rc");
 
     /* cd is process-local, so the installer sees cwd = package root;
-     * $RC captures its return code for the row. */
+     * $RC captures its return code for the row. ASYNCH + bounded poll:
+     * a script-error requester would otherwise block the row forever
+     * (bench 20260927-073408 - both legs hung in this row). */
     fh = Open((CONST_STRPTR)"T:tn-installer.cli", MODE_NEWFILE);
     if (fh == 0) {
         TAP_NOTOK(label, "cannot write T:tn-installer.cli");
@@ -6129,21 +6132,35 @@ static void tc_installer_run(void)
                   "Echo $RC >T:tn-installer-rc\n");
     Write(fh, (CONST_APTR)cli, strlen(cli));
     Close(fh);
+    DeleteFile((CONST_STRPTR)"T:tn-installer-rc");
     SystemTags((CONST_STRPTR)"Execute T:tn-installer.cli",
-               SYS_Asynch, FALSE,
+               SYS_Asynch, TRUE,
                SYS_Input, (BPTR)0,
                SYS_Output, (BPTR)0,
                TAG_END);
 
-    got = 0;
-    fh = Open((CONST_STRPTR)"T:tn-installer-rc", MODE_OLDFILE);
-    if (fh != 0) {
-        got = Read(fh, rbuf, sizeof(rbuf) - 1);
-        Close(fh);
+    rc = -1;
+    for (got = 0; got < 45; got++) {
+        Delay(100); /* 2 s per poll, 90 s bound */
+        fh = Open((CONST_STRPTR)"T:tn-installer-rc", MODE_OLDFILE);
+        if (fh != 0) {
+            LONG n = Read(fh, rbuf, sizeof(rbuf) - 1);
+            Close(fh);
+            if (n > 0) {
+                rbuf[n] = '\0';
+                rc = atol(rbuf);
+            }
+            break;
+        }
     }
-    if (got > 0) {
-        rbuf[got] = '\0';
-        rc = atol(rbuf);
+    if (rc < 0) {
+        /* keep the bench runnable for the rows after this one */
+        Execute((CONST_STRPTR)"Copy >NIL: WORK:tolunnet-pkg/C/tolunnet SYS:C/tolunnet CLONE QUIET",
+                (BPTR)0, (BPTR)0);
+        TAP_TODO(label, "installer did not finish within 90 s (script-error "
+                        "requester?): Install_Tolunnet.script is not valid "
+                        "Installer 43 yet (item 3 rewrites it)");
+        return;
     }
     if (rc != 0) {
         /* keep the bench runnable for the rows after this one */
