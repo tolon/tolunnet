@@ -6200,8 +6200,8 @@ static void tc_installer_run(void)
                TAG_END);
 
     rc = -1;
-    for (got = 0; got < 45; got++) {
-        Delay(100); /* 2 s per poll, 90 s bound */
+    for (got = 0; got < 150; got++) {
+        Delay(100); /* 2 s per poll, 300 s bound (37 host-fs copies are slow) */
         fh = Open((CONST_STRPTR)"T:tn-installer-rc", MODE_OLDFILE);
         if (fh != 0) {
             LONG n = Read(fh, rbuf, sizeof(rbuf) - 1);
@@ -6214,7 +6214,7 @@ static void tc_installer_run(void)
         }
     }
     if (rc < 0) {
-        tn_installer_fail(label, "installer did not finish within 90 s "
+        tn_installer_fail(label, "installer did not finish within 300 s "
                                  "(requester or copy stall; see "
                                  "WORK:tolunnet-install.log)");
         return;
