@@ -5568,7 +5568,25 @@ static void tc_prefs_layout(void)
         ptask = FindTask((CONST_STRPTR)"TolunnetPrefs");
         Permit();
     }
-    if (ptask != NULL) Signal(ptask, SIGBREAKF_CTRL_C);
+    if (ptask != NULL) {
+        Signal(ptask, SIGBREAKF_CTRL_C);
+        /* wait for the GUI task to actually exit (<= 20 s): a
+         * lingering instance keeps bsdsocket.library open and
+         * derails the rows that follow. */
+        for (i = 0; i < 200; i++) {
+            Delay(5);
+            BOOL still = FALSE;
+            Forbid();
+            for (struct Screen *s3 = IntuitionBase->FirstScreen; s3; s3 = s3->NextScreen) {
+                for (struct Window *w3 = s3->FirstWindow; w3; w3 = w3->NextWindow) {
+                    if (w3 == pwin) { still = TRUE; break; }
+                }
+                if (still) break;
+            }
+            Permit();
+            if (!still) break;
+        }
+    }
 
     if (violations > 0) {
         TAP_NOTOK(label, "layout violations found (see # lines above)");
