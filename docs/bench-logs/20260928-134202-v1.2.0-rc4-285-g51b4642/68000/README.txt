@@ -1,0 +1,10 @@
+68000: Mon Sep 28 13:53:29 TSS 2026
+conformance.log: core: 102 ok / 0 not ok; external: 1 skipped
+conformance2.log: core: 102 ok / 0 not ok; external: 1 skipped
+bench services: hermetic slirp host services (ci/netsvc.py); DNS_PORT=15353
+config: ci/tolunnet-68000.uae (HDF copy staged from the pristine WB3.0 image)
+hdf free: 2242 KB
+commit: 51b464258c85188a1b7c1fc524bda075fc07b6eb
+describe: v1.2.0-rc4-285-g51b4642
+dirty: NO
+MuForce pass: SKIP (MuForce/Enforcer not present on this bench; MUFORCE_ADF unset)
