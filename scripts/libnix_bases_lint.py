@@ -74,6 +74,40 @@ def git_show(rev, path):
     return out.stdout
 
 
+def suite_bases_outside_main(text, path="tests/amiga/SocketConformance.c"):
+    """11d item 1: (IntuitionBase|GfxBase|GadToolsBase) = assignments
+    outside main() fail; the file-scope NULL definitions and main()'s
+    own opens/closes are the only allowed sites."""
+    findings = []
+    m = re.search("^int main\\(", text, re.M)
+    if m is None:
+        findings.append(path + ": main() not found")
+        return findings
+    body_start = text.index("{", m.start())
+    depth = 0
+    body_end = body_start
+    for i in range(body_start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                body_end = i
+                break
+    assign_re = re.compile(r"^ *(IntuitionBase|GfxBase|GadToolsBase) *=[^=]", re.M)
+    pre = text[:body_start]
+    def_ok = re.compile(r"^struct\s+\w+\s*\*(?:IntuitionBase|GfxBase|GadToolsBase)\s*=\s*NULL;", re.M)
+    for mm in assign_re.finditer(pre):
+        if def_ok.search(pre[max(0, mm.start() - 90):mm.start() + 1]):
+            continue
+        line = pre.count("\n", 0, mm.start()) + 1
+        findings.append("%s:%d: base assignment outside main()" % (path, line))
+    post = text[body_end:]
+    for mm in assign_re.finditer(post):
+        line = body_end + post.count("\n", 0, mm.start()) + 1
+        findings.append("%s:%d: base assignment after main()" % (path, line))
+    return findings
+
 def selftest(target="src/cmds/TolunnetPrefs.c"):
     """The source at d219076 must FAIL (the bug) and HEAD must PASS."""
     ok = True
@@ -85,6 +119,25 @@ def selftest(target="src/cmds/TolunnetPrefs.c"):
     print("libnix_bases_lint d219076: %s (expected FAIL)" %
           ("FAIL" if old_bad else "PASS"))
     ok = ok and old_bad
+
+    sc_old = suite_bases_outside_main(
+        git_show("bfa7d44", "tests/amiga/SocketConformance.c"),
+        "tests/amiga/SocketConformance.c (bfa7d44)")
+    sc_old_bad = bool(sc_old)
+    print("libnix_bases_lint SocketConformance bfa7d44: %s (expected FAIL)" %
+          ("FAIL" if sc_old_bad else "PASS"))
+    for f in sc_old[:2]:
+        print("   - %s" % f)
+    ok = ok and sc_old_bad
+
+    sc_new = suite_bases_outside_main(
+        git_show("HEAD", "tests/amiga/SocketConformance.c"),
+        "tests/amiga/SocketConformance.c (HEAD)")
+    print("libnix_bases_lint SocketConformance HEAD: %s (expected PASS)" %
+          ("FAIL" if sc_new else "PASS"))
+    for f in sc_new[:2]:
+        print("   - %s" % f)
+    ok = ok and not sc_new
 
     with open(target, encoding="utf-8") as fh:
         text = fh.read()

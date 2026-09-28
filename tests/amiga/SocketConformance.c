@@ -3503,52 +3503,27 @@ out:
  * the globals are NULL, restores them at the end. First hit only. */
 static void tn_crash_guard(const char *row)
 {
-    struct Library *cf_int = IntuitionBase;
-    struct Library *cf_gfx = (struct Library *)GfxBase;
-    int opened_int = 0;
-    int opened_gfx = 0;
+    /* 11d item 1: the suite owns intuition/graphics - main opens
+     * them once and closes them after the last row. */
     ULONG key;
     struct Screen *s;
     struct Window *w;
     struct Screen *found = NULL;
     int count = 0;
 
-
-    if (cf_int == NULL) {
-        cf_int = OpenLibrary((CONST_STRPTR)"intuition.library", 36);
-        opened_int = 1;
-        IntuitionBase = (struct IntuitionBase *)cf_int;
-    }
-    if (cf_int == NULL) return;
-    if (cf_gfx == NULL) {
-        cf_gfx = OpenLibrary((CONST_STRPTR)"graphics.library", 36);
-        opened_gfx = 1;
-        GfxBase = (struct GfxBase *)cf_gfx;
-    }
-    if (cf_gfx == NULL) {
-        if (opened_int) {
-            IntuitionBase = NULL;
-            CloseLibrary(cf_int);
-        }
-        return;
-    }
-
+    if (g_crash_baseline >= 0 && g_crash_seen >= g_crash_baseline &&
+        g_crash_seen == 0 && count == 0) return; /* 0/0: nothing ever */
     key = LockIBase(0);
     for (s = IntuitionBase->FirstScreen; s != NULL; s = s->NextScreen) {
         for (w = s->FirstWindow; w != NULL; w = w->NextWindow) {
             if (w->Title != NULL &&
                 strstr((const char *)w->Title, "Software Failure") != NULL) {
                 count++;
-                if (found == NULL) {
-                    found = s; /* saved BEFORE the break: no extra NextScreen */
-                }
+                if (found == NULL) found = s;
             }
         }
     }
     UnlockIBase(key);
-
-    /* 11a item 1: snapshot the count at suite start; fire on every
-     * increase so a second requester is not swallowed by the flag. */
     if (g_crash_baseline < 0) {
         g_crash_baseline = count;
         g_crash_seen = count;
@@ -3562,15 +3537,6 @@ static void tn_crash_guard(const char *row)
         g_count++;
         g_not_ok_count++;
         tapf("not ok %d - %s # crash requester appeared\n", g_count, row);
-    }
-
-    if (opened_gfx) {
-        GfxBase = NULL;
-        CloseLibrary(cf_gfx);
-    }
-    if (opened_int) {
-        IntuitionBase = NULL;
-        CloseLibrary(cf_int);
     }
 }
 
@@ -3649,16 +3615,10 @@ static void tc_wizard_ntsc(void)
     LONG winw = 0, winh = 0, wintop = 0, scrw = 0, scrh = 0, maxbottom = 0;
     const char *fail = NULL;
 
-    GfxBase = (struct GfxBase *)OpenLibrary((CONST_STRPTR)"graphics.library", 36);
-    IntuitionBase = (struct IntuitionBase *)OpenLibrary((CONST_STRPTR)"intuition.library", 36);
-
+    /* 11d item 1: the suite owns the bases (main opened them). */
     reply_port = CreateMsgPort();
     if (!reply_port || !GfxBase || !IntuitionBase) {
         if (reply_port) DeleteMsgPort(reply_port);
-        if (GfxBase) CloseLibrary((struct Library *)GfxBase);
-        if (IntuitionBase) CloseLibrary((struct Library *)IntuitionBase);
-        GfxBase = NULL;
-        IntuitionBase = NULL;
         TAP_NOTOK("tc_wizard_ntsc", "bases/port open failed");
         return;
     }
@@ -3687,10 +3647,6 @@ static void tc_wizard_ntsc(void)
     }
     if (!wizard_port) {
         DeleteMsgPort(reply_port);
-        CloseLibrary((struct Library *)GfxBase);
-        CloseLibrary((struct Library *)IntuitionBase);
-        GfxBase = NULL;
-        IntuitionBase = NULL;
         TAP_NOTOK("tc_wizard_ntsc", "TOLUNNETSETUP port not found");
         return;
     }
@@ -3837,10 +3793,6 @@ static void tc_wizard_ntsc(void)
     /* 10d item 2: the Prefs check moved to tc_prefs_opens. */
 
     DeleteMsgPort(reply_port);
-    CloseLibrary((struct Library *)GfxBase);
-    CloseLibrary((struct Library *)IntuitionBase);
-    GfxBase = NULL;
-    IntuitionBase = NULL;
 
     if (fail) {
         snprintf(reason, sizeof(reason),
@@ -5333,7 +5285,6 @@ static void tc_prefs_opens(void)
     const char *label = "tc_prefs_opens";
     BPTR in_h = Open((CONST_STRPTR)"NIL:", MODE_OLDFILE);
     BPTR out_h;
-    struct Library *OldIntuitionBase = IntuitionBase;
     struct Window *pwin = NULL;
     struct Screen *pscr = NULL;
     struct Task *ptask;
@@ -5347,16 +5298,8 @@ static void tc_prefs_opens(void)
     int tries;
     int ntitles;
 
-    IntuitionBase = (struct IntuitionBase *)
-        OpenLibrary((CONST_STRPTR)"intuition.library", 36);
-
     DeleteFile((CONST_STRPTR)"T:prefs.out");
     out_h = Open((CONST_STRPTR)"T:prefs.out", MODE_NEWFILE);
-    /* the IFF shot needs graphics.library - the wizard rows close
-     * the global by the time this row runs */
-    if (GfxBase == NULL) {
-        GfxBase = (struct GfxBase *)OpenLibrary((CONST_STRPTR)"graphics.library", 36);
-    }
     rc = SystemTags((CONST_STRPTR)"C:TolunnetPrefs",
                     SYS_Asynch, TRUE,
                     SYS_Input, in_h,
@@ -5453,8 +5396,6 @@ static void tc_prefs_opens(void)
         TAP_TODO(label, "TolunnetPrefs never opens its window - fixed in step 11");
     }
 
-    CloseLibrary((struct Library *)IntuitionBase);
-    IntuitionBase = OldIntuitionBase;
 }
 
 /* z.ai step 11c item 2: Prefs layout assertion. Launches Prefs, waits
@@ -8234,6 +8175,17 @@ int main(int argc, char *argv[])
     int not_ok;
 
     if (DOSBase == NULL) return 20;
+    /* 11d item 1: the suite owns intuition and graphics - opened once
+     * here, closed after the last row. Rows must not touch these. */
+    IntuitionBase = (struct IntuitionBase *)
+        OpenLibrary((CONST_STRPTR)"intuition.library", 36);
+    GfxBase = (struct GfxBase *)
+        OpenLibrary((CONST_STRPTR)"graphics.library", 36);
+    if (IntuitionBase == NULL || GfxBase == NULL) {
+        tapf("# FATAL: suite base open failed\n");
+        CloseLibrary(DOSBase);
+        return 20;
+    }
 
     /* Child mode for cross-process obtain test */
     if (argc >= 3 && strcmp(argv[1], "child_obtain") == 0) {        LONG target_id = parse_long(argv[2]);
@@ -8431,6 +8383,10 @@ int main(int argc, char *argv[])
     request_daemon_stop();
 
     if (g_log_fh) Close(g_log_fh);
+    CloseLibrary((struct Library *)GfxBase);
+    GfxBase = NULL;
+    CloseLibrary((struct Library *)IntuitionBase);
+    IntuitionBase = NULL;
     CloseLibrary(DOSBase);
 
     not_ok = g_not_ok_count;
