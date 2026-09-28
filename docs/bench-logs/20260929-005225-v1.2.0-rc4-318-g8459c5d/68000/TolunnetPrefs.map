@@ -1,0 +1,416 @@
+Archive member included to satisfy reference by file (symbol)
+
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__mulsi3.o)
+                              build/src/common/inet_parse.o (__mulsi3)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__nocommandline.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o (__nocommandline)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__udivsi3.o)
+                              build/src/common/log_format.o (__umodsi3)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnixmain.a(__stdiowin.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__nocommandline.o) (__stdiowin)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__initcpp.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o (__initcpp)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__initlibraries.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o (__initlibraries)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(_ctype_.o)
+                              build/src/setup/stack_detect.o (_ctype_)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(memcpy.o)
+                              build/src/setup/stack_detect.o (memcpy)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(snprintf.o)
+                              build/src/cmds/TolunnetPrefs.o (snprintf)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(strchr.o)
+                              build/src/common/config_text.o (strchr)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(strlen.o)
+                              build/src/common/prefs.o (strlen)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(strncpy.o)
+                              build/src/setup/stack_detect.o (strncpy)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(strstr.o)
+                              build/src/setup/stack_detect.o (strstr)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(vsnprintf.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(snprintf.o) (vsnprintf)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__vfprintf_total_size.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(vsnprintf.o) (__vfprintf_total_size)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(putc.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__vfprintf_total_size.o) (putc)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__swbuf.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(putc.o) (__swbuf)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__ulldivus.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__vfprintf_total_size.o) (__ulldivus)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__fflush.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__swbuf.o) (__fflush)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(write.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__fflush.o) (write)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__chkabort.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(write.o) (__chkabort)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__seterrno.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(write.o) (__seterrno)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(raise.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__chkabort.o) (raise)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__signalfunc.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(raise.o) (__signalfunc)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/lib//libstubs.a(dos.o)
+                              build/src/cmds/TolunnetPrefs.o (DOSBase)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/lib//libstubs.a(utility.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__mulsi3.o) (UtilityBase)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__initstdio.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(write.o) (_lx_fhfromfd)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__sf.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__swbuf.o) (__errno)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__bufsiz.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__initstdio.o) (__BUFSIZE)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(malloc.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__initstdio.o) (malloc)
+/home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(_MSTEP.o)
+                              /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(malloc.o) (__MEMORY_STEP)
+
+Allocating common symbols
+Common symbol       size              file
+
+_WBenchMsg          0x4               /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o
+__memsema           0x4               /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(malloc.o)
+__stdfiledes        0x4               /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__initstdio.o)
+__memorylist        0xc               /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(malloc.o)
+__argv              0x4               /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o
+__stdfilesize       0x4               /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__initstdio.o)
+__commandlen        0x4               /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o
+__commandline       0x4               /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o
+__env               0x4               /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o
+__argc              0x4               /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+*default*        0x0000000000000000 0xffffffffffffffff
+
+Linker script and memory map
+
+LOAD /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o
+LOAD build/src/cmds/TolunnetPrefs.o
+LOAD build/src/common/prefs.o
+LOAD build/src/common/log.o
+LOAD build/src/common/log_format.o
+LOAD build/src/common/config_text.o
+LOAD build/src/common/inet_parse.o
+LOAD build/src/common/sbtc_dispatch.o
+LOAD build/src/common/fdset_util.o
+LOAD build/src/common/ipc_client.o
+LOAD build/src/setup/stack_detect.o
+LOAD build/src/task/crash_log.o
+LOAD build/src/task/crash_trap.o
+START GROUP
+LOAD /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a
+LOAD /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnixmain.a
+LOAD /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a
+LOAD /home/tolon/opt/m68k-amigaos/m68k-amigaos/lib//libstubs.a
+LOAD /home/tolon/opt/m68k-amigaos/m68k-amigaos/lib//libamiga.a
+LOAD /home/tolon/opt/m68k-amigaos/lib/gcc/m68k-amigaos/6.5.0b/libgcc.a
+END GROUP
+                [!provide]                        PROVIDE (___machtype = 0x0)
+                0x0000000000000000                . = 0x0
+
+.text           0x0000000000000000     0xa668
+                0x0000000000000000                __stext = .
+ *(.text)
+ .text          0x0000000000000000       0xd8 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o
+                0x0000000000000000                start
+                0x0000000000000064                _exit
+                0x0000000000000064                exit
+                0x000000000000007c                _Exit
+                0x000000000000007c                ___exit
+                0x00000000000000d4                __main
+ .text          0x00000000000000d8     0x1c98 build/src/cmds/TolunnetPrefs.o
+                0x0000000000000726                main
+ .text          0x0000000000001d70      0x174 build/src/cmds/TolunnetPrefs.o
+ .text          0x0000000000001ee4      0x6f8 build/src/common/prefs.o
+                0x00000000000020a6                tn_prefs_load
+                0x0000000000002514                tn_prefs_any_store_exists
+                0x000000000000254e                tn_prefs_save
+ .text          0x00000000000025dc      0x284 build/src/common/log.o
+                0x00000000000025dc                tn_log_ring_enable
+                0x00000000000025e6                tn_log_ring_snapshot
+                0x00000000000025ee                tn_log_ring_count
+                0x00000000000025f6                tn_log
+                0x00000000000026fc                tn_log_open_file
+                0x00000000000027f0                tn_log_close_file
+                0x000000000000280e                tn_logf
+ .text          0x0000000000002860      0x6b0 build/src/common/log_format.o
+                0x000000000000288a                tn_logf_vformat
+ .text          0x0000000000002f10     0x207c build/src/common/config_text.o
+                0x0000000000002f26                tn_prefs_default
+                0x0000000000002fbc                tn_str_equal_nocase
+                0x0000000000003042                tn_str_copy_clean
+                0x00000000000031fc                tn_config_parse_line
+                0x0000000000004252                tn_config_format
+                0x00000000000048f8                tn_recfg_effective_loglevel
+                0x000000000000491c                tn_recfg_diff
+                0x0000000000004afe                tn_recfg_key_name
+                0x0000000000004cc0                tn_config_key_known
+                0x0000000000004cd4                tn_config_value_class
+                0x0000000000004d28                tn_config_merge_preserve
+ .text          0x0000000000004f8c       0x9c build/src/common/config_text.o
+ .text          0x0000000000005028      0x26c build/src/common/inet_parse.o
+                0x0000000000005028                tn_inet_addr_parse_ex
+                0x000000000000503c                tn_inet_addr_parse
+ .text          0x0000000000005294      0x6a4 build/src/common/sbtc_dispatch.o
+                0x0000000000005294                tn_sbtc_dispatch_tag
+ .text          0x0000000000005938       0x80 build/src/common/fdset_util.o
+                0x0000000000005938                tn_fdset_check_nfds
+                0x0000000000005946                tn_waitselect_timeout_ms
+ .text          0x00000000000059b8      0x1e4 build/src/common/ipc_client.o
+                0x00000000000059c6                tn_ipc_oneshot_ex
+                0x0000000000005b7c                tn_ipc_oneshot
+ .text          0x0000000000005b9c     0x1b58 build/src/setup/stack_detect.o
+                0x0000000000005ccc                tn_parse_startup_script
+                0x0000000000005fb2                tn_uncomment_startup_script
+                0x00000000000063c2                tn_stack_detect_all
+                0x0000000000006d3a                tn_stack_apply_replacement
+                0x000000000000711c                tn_stack_undo_replacement
+                0x000000000000738c                tn_stack_request_quit
+ .text          0x00000000000076f4     0x1060 build/src/task/crash_log.o
+                0x0000000000007844                tn_crash_entry
+                0x00000000000086b0                tn_crash_arm
+                0x00000000000086bc                tn_crash_arm_path
+                0x0000000000008738                tn_crash_last
+ .text          0x0000000000008754       0x1c build/src/task/crash_trap.o
+                0x0000000000008754                tn_crash_trap_asm
+ .text          0x0000000000008770       0x10 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__mulsi3.o)
+                0x0000000000008770                __mulsi3
+ .text          0x0000000000008780      0x28c /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__nocommandline.o)
+                0x0000000000008780                __nocommandline
+                0x0000000000008982                __exitcommandline
+ .text          0x0000000000008a0c       0x1c /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__udivsi3.o)
+                0x0000000000008a0c                __umodsi3
+                0x0000000000008a18                __udivsi3
+ .text          0x0000000000008a28       0x1c /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnixmain.a(__stdiowin.o)
+ .text          0x0000000000008a44       0x40 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__initcpp.o)
+                0x0000000000008a44                __initcpp
+                0x0000000000008a68                __exitcpp
+ .text          0x0000000000008a84       0xe0 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__initlibraries.o)
+                0x0000000000008acc                __initlibraries
+                0x0000000000008b22                __exitlibraries
+ .text          0x0000000000008b64       0x80 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__initlibraries.o)
+ .text          0x0000000000008be4      0x10c /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(_ctype_.o)
+                0x0000000000008be4                _ctype___data
+                0x0000000000008ce8                __locale_ctype_
+ .text          0x0000000000008cf0       0x24 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(memcpy.o)
+                0x0000000000008cf0                memcpy
+ .text          0x0000000000008d14       0x20 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(snprintf.o)
+                0x0000000000008d14                snprintf
+ .text          0x0000000000008d34       0x1c /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(strchr.o)
+                0x0000000000008d34                strchr
+                0x0000000000008d34                index
+ .text          0x0000000000008d50       0x10 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(strlen.o)
+                0x0000000000008d50                strlen
+ .text          0x0000000000008d60       0x24 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(strncpy.o)
+                0x0000000000008d60                strncpy
+ .text          0x0000000000008d84       0x34 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(strstr.o)
+                0x0000000000008d84                strstr
+ .text          0x0000000000008db8       0x9c /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(vsnprintf.o)
+                0x0000000000008db8                vsnprintf
+ .text          0x0000000000008e54      0xb48 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__vfprintf_total_size.o)
+                0x0000000000008e5c                __vfprintf_total_size
+ .text          0x000000000000999c       0x44 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(putc.o)
+                0x000000000000999c                putc
+ .text          0x00000000000099e0       0xe0 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__swbuf.o)
+                0x00000000000099e0                __swbuf
+ .text          0x0000000000009ac0       0xb8 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__ulldivus.o)
+                0x0000000000009ac0                __ulldivus
+ .text          0x0000000000009b78       0x84 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__fflush.o)
+                0x0000000000009b78                __fflush
+ .text          0x0000000000009bfc       0x9c /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(write.o)
+                0x0000000000009bfc                write
+ .text          0x0000000000009c98       0x30 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__chkabort.o)
+                0x0000000000009c98                __chkabort
+ .text          0x0000000000009cc8       0x3c /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__seterrno.o)
+                0x0000000000009cc8                __seterrno
+ .text          0x0000000000009d04       0xe4 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(raise.o)
+                0x0000000000009d0e                raise
+ .text          0x0000000000009de8        0x0 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__signalfunc.o)
+ .text          0x0000000000009de8        0xc /home/tolon/opt/m68k-amigaos/m68k-amigaos/lib//libstubs.a(dos.o)
+ .text          0x0000000000009df4       0x10 /home/tolon/opt/m68k-amigaos/m68k-amigaos/lib//libstubs.a(utility.o)
+ .text          0x0000000000009e04      0x5c4 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__initstdio.o)
+                0x0000000000009e04                _setup_file
+                0x0000000000009e44                isatty
+                0x0000000000009e78                _lx_fhfromfd
+                0x0000000000009ea0                fdopen
+                0x0000000000009fc2                __fclose
+                0x000000000000a106                __initstdio
+                0x000000000000a24e                close
+                0x000000000000a2ba                fclose
+                0x000000000000a34a                __exitstdio
+ .text          0x000000000000a3c8        0x0 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__sf.o)
+ .text          0x000000000000a3c8        0x0 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__bufsiz.o)
+ .text          0x000000000000a3c8      0x23c /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(malloc.o)
+                0x000000000000a3c8                malloc
+                0x000000000000a4ca                free
+                0x000000000000a56a                __initmalloc
+                0x000000000000a5ac                __exitmalloc
+ .text          0x000000000000a604        0x0 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(_MSTEP.o)
+ *(.text.main)
+ *(.text*)
+ *(_*)
+ *(.rodata*)
+ *(.data.rel.ro*)
+ *(.gnu.linkonce.t.*)
+ *(.gnu.linkonce.r.*)
+ *(.gcc_except_table*)
+ *(SORT_BY_NAME(.list___EH_FRAME*))
+ *(SORT_BY_NAME(.list_*))
+ .list___CTOR_LIST__
+                0x000000000000a604        0x4 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o
+                0x000000000000a604                __CTOR_LIST__
+ .list___DTOR_LIST__
+                0x000000000000a608        0x4 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o
+                0x000000000000a608                __DTOR_LIST__
+ .list___EXIT_LIST__
+                0x000000000000a60c        0x4 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o
+                0x000000000000a60c                __EXIT_LIST__
+ .list___EXIT_LIST__
+                0x000000000000a610        0x8 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__nocommandline.o)
+ .list___EXIT_LIST__
+                0x000000000000a618        0x8 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__initcpp.o)
+ .list___EXIT_LIST__
+                0x000000000000a620        0x8 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__initlibraries.o)
+ .list___EXIT_LIST__
+                0x000000000000a628        0x8 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__initstdio.o)
+ .list___EXIT_LIST__
+                0x000000000000a630        0x8 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(malloc.o)
+ .list___INIT_LIST__
+                0x000000000000a638        0x4 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o
+                0x000000000000a638                __INIT_LIST__
+ .list___INIT_LIST__
+                0x000000000000a63c        0x8 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__nocommandline.o)
+ .list___INIT_LIST__
+                0x000000000000a644        0x8 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__initcpp.o)
+ .list___INIT_LIST__
+                0x000000000000a64c        0x8 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__initlibraries.o)
+ .list___INIT_LIST__
+                0x000000000000a654        0x8 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__initstdio.o)
+ .list___INIT_LIST__
+                0x000000000000a65c        0x8 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(malloc.o)
+ *(.end_of_lists)
+ .end_of_lists  0x000000000000a664        0x4 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o
+                0x000000000000a668                ___datadata_relocs = .
+                0x000000000000a668                __etext = .
+                0x000000000000a668                ___text_size = SIZEOF (.text)
+                0x000000000000a668                . = ALIGN (0x0)
+
+.data           0x000000000000a668      0x164
+                0x000000000000a668                __sdata = .
+ *(.data)
+ .data          0x000000000000a668        0xc /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o
+                0x000000000000a668                SysBase
+                0x000000000000a66c                __SaveSP
+ .data          0x000000000000a674       0x3c build/src/cmds/TolunnetPrefs.o
+                0x000000000000a674                __stack
+ .data          0x000000000000a6b0        0x4 build/src/task/crash_log.o
+ .data          0x000000000000a6b4        0x4 build/src/task/crash_trap.o
+ .data          0x000000000000a6b8        0x4 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnixmain.a(__stdiowin.o)
+                0x000000000000a6b8                __stdiowin
+ .data          0x000000000000a6bc        0x4 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(_ctype_.o)
+                0x000000000000a6bc                _ctype_
+ .data          0x000000000000a6c0       0xd0 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__seterrno.o)
+ .data          0x000000000000a790        0xc /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__initstdio.o)
+                0x000000000000a790                ___filelist
+ .data          0x000000000000a79c        0x8 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__sf.o)
+                0x000000000000a79c                __errno
+                0x000000000000a7a0                __sF
+ .data          0x000000000000a7a4        0x8 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__bufsiz.o)
+                0x000000000000a7a4                __BUFSIZ__data
+                0x000000000000a7a8                __BUFSIZE
+ .data          0x000000000000a7ac        0x8 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(_MSTEP.o)
+                0x000000000000a7ac                ___MEMORY_STEP__data
+                0x000000000000a7b0                __MEMORY_STEP
+ *(SORT_BY_NAME(.data.*))
+ *(SORT_BY_NAME(.dlist___EH_FRAME_OBJECT*))
+ *(SORT_BY_NAME(.dlist_*))
+ .dlist___LIB_LIST__
+                0x000000000000a7b4        0x4 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o
+                0x000000000000a7b4                __LIB_LIST__
+ .dlist___LIB_LIST__
+                0x000000000000a7b8        0x8 /home/tolon/opt/m68k-amigaos/m68k-amigaos/lib//libstubs.a(dos.o)
+                0x000000000000a7b8                DOSBase
+ .dlist___LIB_LIST__
+                0x000000000000a7c0        0x8 /home/tolon/opt/m68k-amigaos/m68k-amigaos/lib//libstubs.a(utility.o)
+                0x000000000000a7c0                UtilityBase
+ *(.end_of_dlists)
+ .end_of_dlists
+                0x000000000000a7c8        0x4 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o
+ *(.data.__EH_FRAME_OBJECT__*)
+ *(.gnu.linkonce.d.*)
+                0x000000000000a7cc                __edata = .
+                0x0000000000000164                ___data_size = SIZEOF (.data)
+
+.bss            0x000000000000a7cc     0x17ac
+                0x000000000000a7cc                __bss_start = .
+ *(.bss)
+ .bss           0x000000000000a7cc        0x4 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o
+ .bss           0x000000000000a7d0       0x10 build/src/cmds/TolunnetPrefs.o
+                0x000000000000a7d0                IntuitionBase
+                0x000000000000a7d4                GfxBase
+                0x000000000000a7d8                GadToolsBase
+                0x000000000000a7dc                IconBase
+ .bss           0x000000000000a7e0        0x4 build/src/common/prefs.o
+                0x000000000000a7e0                tn_prefs_last_stage
+ .bss           0x000000000000a7e4      0x61c build/src/common/log.o
+                0x000000000000a7e4                g_log_dos
+                0x000000000000a7e8                g_log_file
+                0x000000000000a7ec                g_log_level
+                0x000000000000a7f0                g_log_sink
+ .bss           0x000000000000ae00     0x1108 build/src/task/crash_log.o
+ .bss           0x000000000000bf08        0xc /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__nocommandline.o)
+ .bss           0x000000000000bf14       0x20 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(__signalfunc.o)
+                0x000000000000bf14                __signalfunc
+                0x000000000000bf2c                __signalpending
+                0x000000000000bf30                __signalmask
+ .bss           0x000000000000bf34        0x4 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__initstdio.o)
+ .bss           0x000000000000bf38       0x10 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__sf.o)
+                0x000000000000bf38                ___stdin
+                0x000000000000bf38                _impure_ptr__data
+                0x000000000000bf38                __errno__data
+                0x000000000000bf3c                __sF__data
+ .bss           0x000000000000bf48        0x0 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(malloc.o)
+ *(.bss.*)
+ *(COMMON)
+ COMMON         0x000000000000bf48       0x18 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/ncrt0.o
+                0x000000000000bf48                _WBenchMsg
+                0x000000000000bf4c                __argv
+                0x000000000000bf50                __commandlen
+                0x000000000000bf54                __commandline
+                0x000000000000bf58                __env
+                0x000000000000bf5c                __argc
+ COMMON         0x000000000000bf60        0x8 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix20.a(__initstdio.o)
+                0x000000000000bf60                __stdfiledes
+                0x000000000000bf64                __stdfilesize
+ COMMON         0x000000000000bf68       0x10 /home/tolon/opt/m68k-amigaos/m68k-amigaos/libnix/lib/libnix.a(malloc.o)
+                0x000000000000bf68                __memsema
+                0x000000000000bf6c                __memorylist
+                0x000000000000bf78                __end = .
+                0x00000000000017ac                ___bss_size = SIZEOF (.bss)
+
+.datachip
+ *(.datachip)
+
+.bsschip
+ *(.bsschip)
+
+.dwarf2         0x000000000000bf78        0x0
+                0x000000000000bf78                __debug_frame_start = .
+ *(.debug_frame)
+                0x000000000000bf78                __debug_info_start = .
+ *(.debug_info)
+                0x000000000000bf78                __debug_abbrev_start = .
+ *(.debug_abbrev)
+                0x000000000000bf78                __debug_loclists_start = .
+ *(.debug_loclists)
+                0x000000000000bf78                __debug_aranges_start = .
+ *(.debug_aranges)
+                0x000000000000bf78                __debug_rgnlists_start = .
+ *(.debug_rnglists)
+                0x000000000000bf78                __debug_line_start = .
+ *(.debug_line)
+                0x000000000000bf78                __debug_str_start = .
+ *(.debug_str)
+                0x000000000000bf78                __debug_line_str_start = .
+ *(.debug_line_str)
+OUTPUT(build/TolunnetPrefs amiga)
