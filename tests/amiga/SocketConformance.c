@@ -46,7 +46,8 @@ struct IntuitionBase *IntuitionBase = NULL;
 static BPTR            g_log_fh   = (BPTR)0;
 
 static int g_count = 0;
-static int g_crash_reported = 0; /* 10f item 3: first Software Failure only */
+static int g_crash_seen = 0; /* 11a item 1: highest requester count already reported */
+static int g_crash_baseline = -1; /* requester count at suite start */
 static int g_not_ok_count = 0;
 
 static void vsnprintf_safe(char *buf, int size, const char *fmt, va_list ap);
@@ -3508,8 +3509,11 @@ static void tn_crash_guard(const char *row)
     struct Screen *s;
     struct Window *w;
     struct Screen *found = NULL;
+    int count = 0;
 
-    if (g_crash_reported) return;
+    /* 11a item 1: once the baseline is snapped, only scan while
+     * there are unreported requesters left to catch. */
+    if (g_crash_baseline >= 0 && g_crash_seen >= g_crash_baseline && g_crash_seen == count) return;
     if (cf_int == NULL) {
         cf_int = OpenLibrary((CONST_STRPTR)"intuition.library", 36);
         opened_int = 1;
@@ -3530,22 +3534,30 @@ static void tn_crash_guard(const char *row)
     }
 
     key = LockIBase(0);
-    for (s = IntuitionBase->FirstScreen; s != NULL && found == NULL; s = s->NextScreen) {
+    for (s = IntuitionBase->FirstScreen; s != NULL; s = s->NextScreen) {
         for (w = s->FirstWindow; w != NULL; w = w->NextWindow) {
             if (w->Title != NULL &&
                 strstr((const char *)w->Title, "Software Failure") != NULL) {
-                found = s; /* saved BEFORE the break: no extra NextScreen */
-                break;
+                count++;
+                if (found == NULL) {
+                    found = s; /* saved BEFORE the break: no extra NextScreen */
+                }
             }
         }
     }
     UnlockIBase(key);
 
-    if (found != NULL) {
-        char cshot[72];
-        g_crash_reported = 1;
-        snprintf(cshot, sizeof(cshot), "WORK:crash-%s.iff", row);
-        tapf("# CRASH requester after %s\n", row);
+    /* 11a item 1: snapshot the count at suite start; fire on every
+     * increase so a second requester is not swallowed by the flag. */
+    if (g_crash_baseline < 0) {
+        g_crash_baseline = count;
+        g_crash_seen = count;
+    }
+    if (count > g_crash_seen) {
+        char cshot[96];
+        g_crash_seen = count;
+        snprintf(cshot, sizeof(cshot), "WORK:crash-%d-%s.iff", count, row);
+        tapf("# CRASH #%d requester after %s\n", count, row);
         write_iff_screen_struct(cshot, found);
         g_count++;
         g_not_ok_count++;
