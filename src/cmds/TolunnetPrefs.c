@@ -359,16 +359,18 @@ static void compute_layout(PrefsLayout *lo, struct Screen *scr)
         lo->btn_gap = gap;
         lo->btn_x = TN_BORDER_PAD;
         {
-            /* leftover after the clamped gap goes to the outer
-             * margins evenly: widen each button a share of it. */
-            UWORD used = (UWORD)(2 * TN_BORDER_PAD + 7 * lo->btn_gap);
+            /* 11i item 1: the leftover after the clamped gap is
+             * spread evenly: every button gets left/8, the first
+             * left%8 buttons get one extra px - never all to one. */
+            UWORD used = (UWORD)(7 * lo->btn_gap);
+            UWORD left, share;
             int k2;
+            for (k2 = 0; k2 < 8; k2++) used = (UWORD)(used + lo->btn_ws[k2]);
+            left = (UWORD)(lo->win_w - 2 * TN_BORDER_PAD - used);
+            share = (UWORD)(left / 8);
             for (k2 = 0; k2 < 8; k2++) {
-                UWORD left = (UWORD)(lo->win_w - 2 * TN_BORDER_PAD - used);
-                if (left == 0) break;
-                lo->btn_ws[k2] = (UWORD)(lo->btn_ws[k2] + left / 8 + (k2 == 0 ? left % 8 : 0));
-                used = (UWORD)(2 * TN_BORDER_PAD + 7 * lo->btn_gap);
-                used = (UWORD)(used + left);
+                lo->btn_ws[k2] = (UWORD)(lo->btn_ws[k2] + share +
+                                         (k2 < (int)(left % 8) ? 1 : 0));
             }
         }
     }
