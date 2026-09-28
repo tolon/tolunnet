@@ -5428,10 +5428,8 @@ static void tc_prefs_layout(void)
         if (gd->Width == 0 || gd->Height == 0) {
             continue; /* GadTools context gadget: invisible, no rect */
         }
-        if ((WORD)(gd->LeftEdge & 0x8000) == 0x8000 || (WORD)(gd->TopEdge & 0x8000) == 0x8000 ||
-            (WORD)(gd->Width & 0x8000) == 0x8000 || (WORD)(gd->Height & 0x8000) == 0x8000) {
-            continue; /* window border/chrome gadget (anchored to
-                          the right/bottom edge, negative coords) */
+        if (gd->GadgetType & GTYP_SYSGADGET) {
+            continue; /* Intuition-allocated chrome gadget */
         }
         g[ng].x = gd->LeftEdge;
         g[ng].y = gd->TopEdge;
