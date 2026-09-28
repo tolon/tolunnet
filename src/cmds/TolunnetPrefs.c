@@ -548,7 +548,9 @@ int main(int argc, char *argv[])
 
     /* Unit Number */
     ng.ng_LeftEdge   = (WORD)lo.col2_x;
-    ng.ng_Width      = (UWORD)(6 * lo.fh / 2);
+    /* 11e item 3: wide enough for the value + GadTools chrome */
+    ng.ng_Width      = (UWORD)(TextLength(&scr->RastPort,
+                            (STRPTR)"000", 3) + 16);
     ng.ng_GadgetText = (STRPTR)"Unit:";
     ng.ng_GadgetID   = GID_UNIT;
     gad_unit = CreateGadget(INTEGER_KIND, gad_dev, &ng,
@@ -574,7 +576,7 @@ int main(int argc, char *argv[])
     /* MTU (TNET-063) */
     ng.ng_LeftEdge   = (WORD)lo.col2_x;
     ng.ng_Width      = (UWORD)(TextLength(&scr->RastPort,
-                                 (STRPTR)"65535", 5) + 8);
+                                 (STRPTR)"65535", 5) + 24);
     ng.ng_GadgetText = (STRPTR)"MTU:";
     ng.ng_GadgetID   = GID_MTU;
     /* 11e item 3: show the effective default (1500) when the
