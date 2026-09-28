@@ -15,6 +15,7 @@
 #include "../../include/ipc.h"
 
 void tn_crash_arm(void);          /* install handler + record segments */
+void tn_crash_arm_path(const char *path); /* arm with a custom log path */
 const char *tn_crash_last(void);  /* path of the crash log (diagnostics) */
 
 #endif /* TOLUNNET_CRASH_LOG_H */

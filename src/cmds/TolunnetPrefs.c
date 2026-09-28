@@ -24,6 +24,7 @@
 #include "../../include/ipc.h"
 
 #include <proto/exec.h>
+#include "task/crash_log.h"
 #include <proto/intuition.h>
 #include <proto/gadtools.h>
 #include <proto/graphics.h>
@@ -345,16 +346,29 @@ static void render_gui_frames(struct Window *win, APTR vi, const PrefsLayout *lo
 /* 10f item 4: one unbuffered line per init stage on Output(). Write() only - no stdio\n * buffering, so a crash leaves every completed stage visible.\n */
 static void pf_trace(const char *msg)
 {
-    BPTR out = Output();
+    struct DosLibrary *d = DOSBase;
+    BPTR out;
     LONG len = (LONG)strlen(msg);
 
+    /* 11a item 2: early stages run before main opens DOSBase -
+     * open dos.library ourselves for those. */
+    if (d == NULL) {
+        d = (struct DosLibrary *)OpenLibrary((CONST_STRPTR)"dos.library", 36);
+        if (d == NULL) return;
+    }
+    out = Output();
     if (out != 0 && len > 0) {
-        Write(out, (CONST_APTR)msg, len);
+        Write((BPTR)out, (CONST_APTR)msg, len);
+    }
+    if (d != DOSBase) {
+        CloseLibrary((struct Library *)d);
     }
 }
 
 int main(int argc, char *argv[])
 {
+    /* 11a item 2: FIRST statement - catch everything after it. */
+    tn_crash_arm_path("T:prefs-crash.log");
     struct Screen *scr = NULL;
     struct Window *win = NULL;
     APTR vi = NULL;
@@ -402,6 +416,7 @@ int main(int argc, char *argv[])
     }
 
     GfxBase = (struct GfxBase *)OpenLibrary((CONST_STRPTR)"graphics.library", 36);
+    pf_trace("prefs-trace: graphics.library opened\n");
     if (!GfxBase) {
         CloseLibrary((struct Library *)IntuitionBase);
         CloseLibrary((struct Library *)DOSBase);
@@ -409,6 +424,7 @@ int main(int argc, char *argv[])
     }
 
     GadToolsBase = OpenLibrary((CONST_STRPTR)"gadtools.library", 36);
+    pf_trace("prefs-trace: gadtools.library opened\n");
     if (!GadToolsBase) {
         CloseLibrary((struct Library *)GfxBase);
         CloseLibrary((struct Library *)IntuitionBase);
@@ -417,6 +433,7 @@ int main(int argc, char *argv[])
     }
 
     IconBase = OpenLibrary((CONST_STRPTR)"icon.library", 36);
+    pf_trace("prefs-trace: icon.library opened\n");
 
     /* TNET-072: WBStartup and ToolTypes handling */
     if (IconBase != NULL) {
@@ -427,7 +444,8 @@ int main(int argc, char *argv[])
             struct WBStartup *wbmsg = (struct WBStartup *)argv;
             if (wbmsg->sm_NumArgs > 0 && wbmsg->sm_ArgList != NULL) {
                 old_dir = CurrentDir(wbmsg->sm_ArgList[0].wa_Lock);
-                dobj = GetDiskObject(wbmsg->sm_ArgList[0].wa_Name);
+                pf_trace("prefs-trace: before GetDiskObject\n");
+            dobj = GetDiskObject(wbmsg->sm_ArgList[0].wa_Name);
             }
         } else {
             dobj = GetDiskObject((CONST_STRPTR)"PROGDIR:TolunnetPrefs");
@@ -446,6 +464,7 @@ int main(int argc, char *argv[])
                     }
                 }
             }
+            pf_trace("prefs-trace: after GetDiskObject block\n");
             FreeDiskObject(dobj);
         }
 

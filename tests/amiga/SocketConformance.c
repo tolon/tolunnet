@@ -5374,6 +5374,10 @@ static void tc_prefs_opens(void)
         if (pwin) break;
     }
 
+    /* 11a item 2: the trap capture lives on RAM: (T:) - copy it to
+     * WORK: so ci/bench.sh can collect it. */
+    Execute((CONST_STRPTR)"Copy >NIL: T:prefs-crash.log WORK:prefs-crash.log CLONE", (BPTR)0, (BPTR)0);
+
     if (pwin != NULL && pscr != NULL) {
         Delay(10);
         snprintf(shot, sizeof(shot), "WORK:prefs-opens-%s.iff",

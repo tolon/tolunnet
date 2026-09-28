@@ -21,6 +21,9 @@
 #define TN_CRASH_LOG_PATH "RAM:tolunnet-crash.log"
 #define TN_MAX_SEGS 32
 
+/* 11a item 2: per-task log path; tn_crash_arm keeps the RAM: default. */
+static const char *g_crash_path = TN_CRASH_LOG_PATH;
+
 /* Recorded at arm time; read-only in trap context. */
 static APTR  g_old_trap;
 static ULONG g_seg_base[TN_MAX_SEGS];
@@ -73,7 +76,20 @@ void tn_crash_entry(const unsigned short *regs, const unsigned short *frame)
 
     put(buf, sizeof(buf), &len, "tolunnet DIAG crash report\nCPU: ");
     put(buf, sizeof(buf), &len, is010 ? "68010+ frame\n" : "68000 frame\n");
-
+    /* 11a item 2: the handler is armed on tc_TrapCode, which routes
+     * the CPU exceptions vectors 2-12: bus (2), address (3), illegal
+     * (4), div0 (5), CHK (6), TRAPV (7), privilege (8), trace (9),
+     * Line-A (10) and Line-F (11). The 68010+ frame/format word
+     * carries the vector number - print it when it looks sane. */
+    if (is010) {
+        ULONG fv = ((ULONG)frame[0] << 16) | frame[1];
+        ULONG vec = fv & 0xFFF;
+        put(buf, sizeof(buf), &len, "VECTOR=");
+        puthex(buf, sizeof(buf), &len, vec, 2);
+        if (vec == 10) put(buf, sizeof(buf), &len, " (Line-A)");
+        if (vec == 11) put(buf, sizeof(buf), &len, " (Line-F)");
+        put(buf, sizeof(buf), &len, "\n");
+    }
     put(buf, sizeof(buf), &len, "PC(68000 read) =$");  puthex(buf, sizeof(buf), &len, pc000, 8);
     put(buf, sizeof(buf), &len, " PC(68010+ read) =$"); puthex(buf, sizeof(buf), &len, pc010, 8);
     put(buf, sizeof(buf), &len, "\nSR=$"); puthex(buf, sizeof(buf), &len, frame[is010 ? 4 : 0], 4);
@@ -121,7 +137,7 @@ void tn_crash_entry(const unsigned short *regs, const unsigned short *frame)
     }
 
     /* Best-effort write; RAM: needs no interaction. */
-    fh = Open((CONST_STRPTR)TN_CRASH_LOG_PATH, MODE_NEWFILE);
+    fh = Open((CONST_STRPTR)g_crash_path, MODE_NEWFILE);
     if (fh != (BPTR)0) {
         Write(fh, (CONST APTR)buf, (LONG)len);
         Close(fh);
@@ -132,6 +148,11 @@ void tn_crash_entry(const unsigned short *regs, const unsigned short *frame)
  * trap-entry state so the normal Software Failure still happens. */
 
 void tn_crash_arm(void)
+{
+    tn_crash_arm_path(TN_CRASH_LOG_PATH);
+}
+
+void tn_crash_arm_path(const char *path)
 {
     struct Process *pr = (struct Process *)FindTask(NULL);
     BPTR seg;
@@ -148,6 +169,8 @@ void tn_crash_arm(void)
     }
     g_seg_count = n;
 
+    if (path != NULL) g_crash_path = path;
+
     g_old_trap = pr->pr_Task.tc_TrapCode;
     pr->pr_Task.tc_TrapCode = tn_crash_trap_asm;
 }
@@ -160,6 +183,7 @@ const char *tn_crash_last(void)
 #else /* !__AMIGA__ */
 
 void tn_crash_arm(void) {}
+void tn_crash_arm_path(const char *path) { (void)path; }
 const char *tn_crash_last(void) { return ""; }
 
 #endif
