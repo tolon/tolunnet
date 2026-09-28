@@ -5515,7 +5515,7 @@ static void tc_prefs_layout(void)
                  label, i, (int)g[i].w, g[i].lab, (long)lab_w + 8);
             violations++;
         }
-        if (g[i].x - lab_w < 8) {
+        if (g[i].x - lab_w < pwin->BorderLeft + 8) {
             tapf("# %s: (b) label of gadget %d (%s) starts at %ld < 8\n",
                  label, i, g[i].lab, (long)(g[i].x - lab_w));
             violations++;

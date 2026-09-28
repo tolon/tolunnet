@@ -295,7 +295,10 @@ static void compute_layout(PrefsLayout *lo, struct Screen *scr)
         lo->col1_w = (UWORD)(val_w + 8);
         lo->col2_w = (UWORD)(val_w + 16);
     }
-    lo->col1_x = TN_LABEL_PAD + lab_w;
+    /* 11h item 1: the label column starts at the window's inner left
+     * edge (scr->WBorLeft, same screen-field derivation as the
+     * BorderTop estimate) plus the 8 px label pad. */
+    lo->col1_x = (UWORD)(scr->WBorLeft + TN_LABEL_PAD + lab_w);
     lo->col2_x = lo->col1_x + lo->col1_w + TN_COL_GAP + lab_w;
 
     /* 11e item 3: rows start BELOW the window title bar
