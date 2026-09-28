@@ -98,6 +98,7 @@ typedef struct PrefsLayout {
     UWORD  btn_y, btn_h;        /* button bar geometry    */
     UWORD  btn_ws[8];           /* per-button widths (11f item 2) */
     UWORD  btn_gap;             /* shrunk inter-button gap (11g item 2) */
+    UWORD  btn_x, cb_y;         /* button row start, checkbox row (11h item 2) */
 } PrefsLayout;
 
 /* ------------------------------------------------------------------ helpers */
@@ -305,10 +306,16 @@ static void compute_layout(PrefsLayout *lo, struct Screen *scr)
      * (BorderTop estimate + 4), not at y=6. */
     {
         UWORD top = (UWORD)(scr->WBorTop + lo->fh + 1 + 4);
+        UWORD box_bot;
         for (i = 0; i < 6; i++) {
             lo->row_y[i] = (UWORD)(top + i * lo->pitch);
         }
-        lo->btn_y = (UWORD)(top + 6 * lo->pitch + 4);
+        /* 11h item 2: the checkbox gets fh/2+2 px below the fields
+         * bevel box, and the button row fh/2+2 px below the
+         * checkbox - no more touching bevel lines. */
+        box_bot = (UWORD)(lo->row_y[4] + lo->gh + 3);
+        lo->cb_y = (UWORD)(box_bot + lo->fh / 2 + 2);
+        lo->btn_y = (UWORD)(lo->cb_y + lo->gh + lo->fh / 2 + 2);
     }
 
     lo->btn_h = lo->gh + 2;
@@ -350,12 +357,27 @@ static void compute_layout(PrefsLayout *lo, struct Screen *scr)
             for (i = 0; i < 8; i++) need = (UWORD)(need + lo->btn_ws[i]);
         }
         lo->btn_gap = gap;
+        lo->btn_x = TN_BORDER_PAD;
+        {
+            /* leftover after the clamped gap goes to the outer
+             * margins evenly: widen each button a share of it. */
+            UWORD used = (UWORD)(2 * TN_BORDER_PAD + 7 * lo->btn_gap);
+            int k2;
+            for (k2 = 0; k2 < 8; k2++) {
+                UWORD left = (UWORD)(lo->win_w - 2 * TN_BORDER_PAD - used);
+                if (left == 0) break;
+                lo->btn_ws[k2] = (UWORD)(lo->btn_ws[k2] + left / 8 + (k2 == 0 ? left % 8 : 0));
+                used = (UWORD)(2 * TN_BORDER_PAD + 7 * lo->btn_gap);
+                used = (UWORD)(used + left);
+            }
+        }
     }
 
     /* Window OUTER height: rows + button bar + Intuition chrome estimate
      * (title bar + bottom border) so OpenWindow never overflows NTSC. */
-    lo->win_h = (UWORD)(lo->btn_y + lo->btn_h + 8 +   /* interior bottom pad */
-                        (scr->WBorTop + lo->fh + 1) + scr->WBorBottom + 4);
+    /* 11h item 2: bottom margin = side margin (no empty band) */
+    lo->win_h = (UWORD)(lo->btn_y + lo->btn_h + TN_BORDER_PAD +
+                        (scr->WBorTop + lo->fh + 1) + scr->WBorBottom);
 
     /* Centre on the visible area; never hard-code WA_Top (TNET-062) */
     {
@@ -703,7 +725,7 @@ int main(int argc, char *argv[])
     if (!gad_host) goto cleanup;
 
     /* Large text (TNET-110): TolunnetSetup font override via FONT=topaz/11 */
-    ng.ng_TopEdge    = (WORD)lo.row_y[5];
+    ng.ng_TopEdge    = (WORD)lo.cb_y;
     ng.ng_LeftEdge   = TN_BORDER_PAD;
     ng.ng_Width      = lo.gh;
     ng.ng_Height     = lo.gh;
@@ -724,7 +746,7 @@ int main(int argc, char *argv[])
     ng.ng_Height     = lo.btn_h;
     ng.ng_Flags      = PLACETEXT_IN;
 
-    ng.ng_LeftEdge   = (WORD)(TN_BORDER_PAD);
+    ng.ng_LeftEdge   = (WORD)(lo.btn_x);
     ng.ng_Width      = lo.btn_ws[0];
     ng.ng_GadgetText = (STRPTR)"Save";
     ng.ng_GadgetID   = GID_SAVE;

@@ -5555,6 +5555,50 @@ static void tc_prefs_layout(void)
         }
     }
 
+    /* 11h item 2 assertions (c)/(d)/(e), all with # diagnostics: */
+    {
+        UWORD cb_top = 0, fields_bot = 0, last_right = 0, btn_bot = 0;
+        int cb_seen = 0;
+        for (i = 0; i < ng; i++) {
+            if (g[i].lab[0] != 0 && strstr(g[i].lab, "Large text") != NULL) {
+                cb_top = g[i].y;
+                cb_seen = 1;
+            }
+        }
+        if (cb_seen) {
+            for (i = 0; i < ng; i++) {
+                if (g[i].y + g[i].h <= cb_top + 2 && g[i].y + g[i].h > fields_bot)
+                    fields_bot = g[i].y + g[i].h;
+            }
+            if (cb_top - fields_bot < 4) {
+                tapf("# %s: (c) checkbox top %d - fields bottom %d = %ld < 4\n",
+                     label, (int)cb_top, (int)fields_bot, (long)(cb_top - fields_bot));
+                violations++;
+            }
+        }
+        for (i = (ng >= 8 ? ng - 8 : 0); i < ng; i++) {
+            if (g[i].x + g[i].w > last_right) {
+                last_right = g[i].x + g[i].w;
+                btn_bot = g[i].y + g[i].h;
+            }
+        }
+        if (last_right > 0) {
+            LONG inner_right = (LONG)pwin->Width - pwin->BorderRight;
+            LONG diff = inner_right - ((LONG)last_right + 8);
+            if (diff < 0) diff = -diff;
+            if (diff > 2) {
+                tapf("# %s: (d) last button right %d + 8 vs inner right %ld: off %ld > 2\n",
+                     label, (int)last_right, (long)inner_right, (long)diff);
+                violations++;
+            }
+            if ((LONG)pwin->Height - pwin->BorderBottom - btn_bot > 2 * 8) {
+                tapf("# %s: (e) bottom margin %ld > 16\n",
+                     label, (long)(pwin->Height - pwin->BorderBottom - btn_bot));
+                violations++;
+            }
+        }
+    }
+
     /* done: close Prefs (bounded wait) so later rows start clean */
     ptask = (pwin->UserPort != NULL) ? pwin->UserPort->mp_SigTask : NULL;
     if (ptask == NULL) {
