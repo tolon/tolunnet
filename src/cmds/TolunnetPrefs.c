@@ -273,20 +273,46 @@ static void compute_layout(PrefsLayout *lo, struct Screen *scr)
     }
     lab_w += TN_LABEL_PAD;
 
-    lo->col1_w = (UWORD)(17 * lo->fh / 2);   /* "ethernet.device" = 15 chars */
-    lo->col2_w = (UWORD)(17 * lo->fh / 2);
+    /* 11e item 3: column width from real metrics - the widest value
+     * the column can show ("255.255.255.255" for strings, the cycle
+     * choices for the mode gadget) plus 8 px of padding. No more
+     * font-height-as-width truncation. */
+    {
+        UWORD val_w = 0;
+        static const char *const vals[] = {
+            "255.255.255.255", "ethernet.device", "DHCP (Automatic)",
+            "Static IP (Manual)", NULL
+        };
+        for (i = 0; vals[i] != NULL; i++) {
+            UWORD w = (UWORD)(rp != NULL ?
+                             TextLength(rp, (STRPTR)vals[i],
+                             (LONG)strlen_local(vals[i])) :
+                             strlen_local(vals[i]) * lo->fh);
+            if (w > val_w) val_w = w;
+        }
+        lo->col1_w = (UWORD)(val_w + 8);
+        lo->col2_w = (UWORD)(val_w + 8);
+    }
     lo->col1_x = TN_BORDER_PAD + lab_w;
     lo->col2_x = lo->col1_x + lo->col1_w + TN_COL_GAP + lab_w;
 
-    for (i = 0; i < 6; i++) {
-        lo->row_y[i] = (UWORD)(6 + i * lo->pitch);
+    /* 11e item 3: rows start BELOW the window title bar
+     * (BorderTop estimate + 4), not at y=6. */
+    {
+        UWORD top = (UWORD)(scr->WBorTop + lo->fh + 1 + 4);
+        for (i = 0; i < 6; i++) {
+            lo->row_y[i] = (UWORD)(top + i * lo->pitch);
+        }
+        lo->btn_y = (UWORD)(top + 6 * lo->pitch + 4);
     }
 
     lo->btn_h = lo->gh + 2;
-    lo->btn_y = (UWORD)(6 + 6 * lo->pitch + 4);
     lo->win_w = lo->col2_x + lo->col2_w + TN_BORDER_PAD;
     if (lo->win_w < 520) {
         lo->win_w = 520;
+    }
+    if (lo->win_w > (UWORD)(scr->Width - 2 * TN_BORDER_PAD)) {
+        lo->win_w = (UWORD)(scr->Width - 2 * TN_BORDER_PAD);
     }
 
     /* Eight equal buttons across the bottom (TNET-079/081, Step W) */
@@ -547,11 +573,14 @@ int main(int argc, char *argv[])
 
     /* MTU (TNET-063) */
     ng.ng_LeftEdge   = (WORD)lo.col2_x;
-    ng.ng_Width      = (UWORD)(6 * lo.fh / 2);
+    ng.ng_Width      = (UWORD)(TextLength(&scr->RastPort,
+                                 (STRPTR)"65535", 5) + 8);
     ng.ng_GadgetText = (STRPTR)"MTU:";
     ng.ng_GadgetID   = GID_MTU;
+    /* 11e item 3: show the effective default (1500) when the
+     * config has no MTU instead of a meaningless 0. */
     gad_mtu = CreateGadget(INTEGER_KIND, gad_mode, &ng,
-                           GTIN_Number, prefs.mtu,
+                           GTIN_Number, (prefs.mtu != 0) ? prefs.mtu : 1500,
                            GTIN_MaxChars, 5,
                            TAG_END);
     pf_trace("prefs-trace: gadget mtu\n");
