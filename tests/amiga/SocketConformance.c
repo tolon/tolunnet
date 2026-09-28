@@ -5463,8 +5463,8 @@ static void tc_prefs_layout(void)
 
     tapf("# %s: %d gadgets copied\n", label, ng);
     for (i = 0; i < ng; i++) {
-        tapf("# %s: gadget %d type=0x%04x rect=(%d,%d,%d,%d) lab=%s text=%s%s\n",
-             label, i, (unsigned)g[i].type, (int)g[i].x, (int)g[i].y,
+        tapf("# %s: gadget %d type=%d rect=(%d,%d,%d,%d) lab=%s text=%s\n",
+             label, i, (int)g[i].type, (int)g[i].x, (int)g[i].y,
              (int)g[i].w, (int)g[i].h,
              g[i].lab, g[i].strkind ? g[i].text : "(n/a)");
     }
@@ -5503,6 +5503,11 @@ static void tc_prefs_layout(void)
      * (b) the leftmost label rect must start at x >= 8. */
     for (i = 0; i < ng; i++) {
         if (g[i].lab[0] == 0) continue;
+        /* (b) applies only to labels placed LEFT of the gadget
+         * (STRGADGET and the cycle); buttons place text inside,
+         * the checkbox places it right. */
+        if (!(g[i].cycle || (g[i].type & GTYP_GTYPEMASK) == GTYP_STRGADGET))
+            continue;
         LONG lab_w = TextLength(&pscr->RastPort, (STRPTR)g[i].lab,
                                (LONG)strlen(g[i].lab));
         if (g[i].cycle && g[i].w < lab_w + 8) {
