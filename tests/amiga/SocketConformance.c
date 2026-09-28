@@ -5428,6 +5428,11 @@ static void tc_prefs_layout(void)
         if (gd->Width == 0 || gd->Height == 0) {
             continue; /* GadTools context gadget: invisible, no rect */
         }
+        if ((SWORD)gd->LeftEdge < 0 || (SWORD)gd->TopEdge < 0 ||
+            (SWORD)gd->Width < 0 || (SWORD)gd->Height < 0) {
+            continue; /* window border/chrome gadget (anchored to
+                          the right/bottom edge, negative coords) */
+        }
         g[ng].x = gd->LeftEdge;
         g[ng].y = gd->TopEdge;
         g[ng].w = gd->Width;
