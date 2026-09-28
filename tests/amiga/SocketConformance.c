@@ -5334,28 +5334,6 @@ static void tc_prefs_opens(void)
                  (pscr->Height == 200) ? "ntsc" : "pal");
         tapf("# %s: window up after %d polls; shot %s ok=%d\n", label,
              tries, shot, (int)write_iff_screen_struct(shot, pscr));
-        ptask = (pwin->UserPort != NULL) ? pwin->UserPort->mp_SigTask : NULL;
-        if (ptask == NULL) {
-            Forbid();
-            ptask = FindTask((CONST_STRPTR)"TolunnetPrefs");
-            Permit();
-        }
-        if (ptask != NULL) {
-            Signal(ptask, SIGBREAKF_CTRL_C);
-            for (i = 0; i < 200; i++) {
-                Delay(5);
-                BOOL open2 = FALSE;
-                ibkey = LockIBase(0);
-                for (struct Screen *s2 = IntuitionBase->FirstScreen; s2; s2 = s2->NextScreen) {
-                    for (struct Window *w2 = s2->FirstWindow; w2; w2 = w2->NextWindow) {
-                        if (w2 == pwin) { open2 = TRUE; break; }
-                    }
-                    if (open2) break;
-                }
-                UnlockIBase(ibkey);
-                if (!open2) break;
-            }
-        }
         TAP_OK(label);
     } else {
         struct Screen *scr;
@@ -5398,24 +5376,15 @@ static void tc_prefs_opens(void)
 
 }
 
-/* z.ai step 11c item 2: Prefs layout assertion. Launches Prefs, waits
- * for the window, copies the gadget list under LockIBase, then checks:
- * every gadget and its GadgetText lies inside the window below
- * BorderTop and above the bottom border; no two gadget/label rects
- * overlap; every string/cycle gadget is at least TextLength(text)+8
- * wide. Expected RED on the current fixed-pixel layout. */
 static void tc_prefs_layout(void)
 {
     const char *label = "tc_prefs_layout";
-    BPTR in_h = Open((CONST_STRPTR)"NIL:", MODE_OLDFILE);
-    BPTR out_h;
     struct Window *pwin = NULL;
     struct Screen *pscr = NULL;
     struct Screen *scr;
     struct Window *w;
     struct Gadget *gd;
     struct Task *ptask;
-    LONG rc;
     ULONG key;
     int tries;
     int i;
@@ -5429,17 +5398,11 @@ static void tc_prefs_layout(void)
         char text[40];
         char lab[40];
         int strkind;
+        int cycle;
     } g[TN_LG_MAX];
 
-    DeleteFile((CONST_STRPTR)"T:prefs-layout.out");
-    out_h = Open((CONST_STRPTR)"T:prefs-layout.out", MODE_NEWFILE);
-    rc = SystemTags((CONST_STRPTR)"C:TolunnetPrefs",
-                    SYS_Asynch, TRUE,
-                    SYS_Input, in_h,
-                    SYS_Output, out_h,
-                    NP_StackSize, 32768,
-                    TAG_END);
-    key = 0;
+    /* 11e item 2: the window tc_prefs_opens left open is reused - no
+     * second launch. */
     for (tries = 0; tries < 100 && pwin == NULL; tries++) { /* 10 s */
         Delay(5);
         key = LockIBase(0);
@@ -5455,7 +5418,7 @@ static void tc_prefs_layout(void)
         UnlockIBase(key);
     }
     if (pwin == NULL) {
-        TAP_NOTOK(label, "prefs window never opened");
+        TAP_NOTOK(label, "prefs window not found (tc_prefs_opens row)");
         return;
     }
     Delay(10); /* let GadTools render the gadgets */
@@ -5470,29 +5433,23 @@ static void tc_prefs_layout(void)
         g[ng].w = gd->Width;
         g[ng].h = gd->Height;
         g[ng].type = gd->GadgetType;
-        g[ng].text[0] = "\0";
-        g[ng].lab[0] = "\0";
+        g[ng].text[0] = '\0';
+        g[ng].lab[0] = '\0';
         g[ng].strkind = 0;
-        if (gd->GadgetText != NULL) {
-            strncpy(g[ng].lab, (const char *)gd->GadgetText, sizeof(g[ng].lab) - 1);
+        g[ng].cycle = 0;
+        /* GadgetText is struct IntuiText *: the label text is IText. */
+        if (gd->GadgetText != NULL && gd->GadgetText->IText != NULL) {
+            strncpy(g[ng].lab, (const char *)gd->GadgetText->IText,
+                    sizeof(g[ng].lab) - 1);
+            if (strstr(g[ng].lab, "Config Mode") != NULL) {
+                g[ng].cycle = 1; /* the CYCLE_KIND gadget */
+            }
         }
-        if (((gd->GadgetType & 0xFF) == STRGADGET ||
-             (gd->GadgetType & 0xFF) == 12) && gd->SpecialInfo != NULL) {
+        if ((gd->GadgetType & GTYP_GTYPEMASK) == GTYP_STRGADGET &&
+            gd->SpecialInfo != NULL) {
             struct StringInfo *si = (struct StringInfo *)gd->SpecialInfo;
             if (si->Buffer != NULL) {
-                strncpy(g[ng].text, (const char *)si->Buffer, sizeof(g[ng].text) - 1);
-                g[ng].strkind = 1;
-            }
-        } else if (gd->SpecialInfo != NULL && (gd->GadgetType & 0xFF) != STRGADGET &&
-                   gd->GadgetText != NULL) {
-            /* the one CYCLE_KIND gadget: CycleInfo = {size, labels,
-             * active}; size is a small byte count (12), unlike a
-             * pointer. */
-            struct tn_cycleinfo { ULONG size; STRPTR *labels; WORD active; };
-            struct tn_cycleinfo *ci = (struct tn_cycleinfo *)gd->SpecialInfo;
-            if (ci->size >= 8 && ci->size <= 64 && ci->labels != NULL &&
-                ci->active >= 0 && ci->labels[ci->active] != NULL) {
-                strncpy(g[ng].text, (const char *)ci->labels[ci->active],
+                strncpy(g[ng].text, (const char *)si->Buffer,
                         sizeof(g[ng].text) - 1);
                 g[ng].strkind = 1;
             }
@@ -5503,31 +5460,18 @@ static void tc_prefs_layout(void)
 
     tapf("# %s: %d gadgets copied\n", label, ng);
     for (i = 0; i < ng; i++) {
-        tapf("# %s: gadget %d type=0x%04x rect=(%d,%d,%d,%d) lab=%s\n", label, i,
-             (unsigned)g[i].type, (int)g[i].x, (int)g[i].y, (int)g[i].w, (int)g[i].h,
-             g[i].lab);
-        /* min width: STRING gadgets (intuition STRGADGET or gadtools\
-         * STRING_KIND) are read via StringInfo.Buffer; the CYCLE\
-         * gadget uses the widest compile-time label - no SpecialInfo\
-         * dereference for unknown type codes. */\
-        if (((g[i].type & 0xFF) == STRGADGET || (g[i].type & 0xFF) == 12) &&\
-            g[i].strkind && g[i].text[0] != 0) {\
-            LONG need = TextLength(&pscr->RastPort, (STRPTR)g[i].text,\
-                                   (LONG)strlen(g[i].text)) + 8;\
-            if (g[i].w < need) {\
-                tapf("# %s: gadget %d (%s) width %d < TextLength(%s)+8=%ld\n",\
-                     label, i, g[i].lab[0] ? g[i].lab : "(none)", (int)g[i].w,\
-                     g[i].text, (long)need);\
-                violations++;\
-            }\
-        }\
+        tapf("# %s: gadget %d type=0x%04x rect=(%d,%d,%d,%d) lab=%s text=%s%s\n",
+             label, i, (unsigned)g[i].type, (int)g[i].x, (int)g[i].y,
+             (int)g[i].w, (int)g[i].h,
+             g[i].lab, g[i].strkind ? g[i].text : "(n/a)");
     }
 
     /* bounds: inside the window, below BorderTop, above bottom border */
     for (i = 0; i < ng; i++) {
         if (g[i].y < pwin->BorderTop) {
             tapf("# %s: gadget %d (%s) TopEdge %d < BorderTop %d\n", label, i,
-                 g[i].lab[0] ? g[i].lab : "(none)", (int)g[i].y, (int)pwin->BorderTop);
+                 g[i].lab[0] ? g[i].lab : "(none)", (int)g[i].y,
+                 (int)pwin->BorderTop);
             violations++;
         }
         if (g[i].y + g[i].h > pwin->Height - pwin->BorderBottom) {
@@ -5538,21 +5482,7 @@ static void tc_prefs_layout(void)
         }
     }
 
-    /* min width for string/cycle gadgets with a current text */
-    for (i = 0; i < ng; i++) {
-        if (g[i].strkind && g[i].text[0] != 0) {
-            LONG need = TextLength(&pscr->RastPort, (STRPTR)g[i].text,
-                                   (LONG)strlen(g[i].text)) + 8;
-            if (g[i].w < need) {
-                tapf("# %s: gadget %d (%s) width %d < TextLength(%s)+8=%ld\n",
-                     label, i, g[i].lab[0] ? g[i].lab : "(none)", (int)g[i].w,
-                     g[i].text, (long)need);
-                violations++;
-            }
-        }
-    }
-
-    /* overlap: no two gadget rects, no two label rects */
+    /* no two gadget rects overlap */
     for (i = 0; i < ng; i++) {
         for (j = i + 1; j < ng; j++) {
             if (g[i].x < g[j].x + g[j].w && g[j].x < g[i].x + g[i].w &&
@@ -5563,6 +5493,29 @@ static void tc_prefs_layout(void)
         }
     }
 
+    /* min width: STR gadgets vs their buffer text; the cycle gadget vs
+     * its widest fixed choice. */
+    for (i = 0; i < ng; i++) {
+        LONG need = -1;
+        const char *what = NULL;
+        if (g[i].strkind && g[i].text[0] != 0) {
+            what = g[i].text;
+            need = TextLength(&pscr->RastPort, (STRPTR)g[i].text,
+                              (LONG)strlen(g[i].text)) + 8;
+        } else if (g[i].cycle) {
+            what = "DHCP (Automatic)";
+            need = TextLength(&pscr->RastPort, (STRPTR)what,
+                              (LONG)strlen(what)) + 8;
+        }
+        if (need >= 0 && g[i].w < need) {
+            tapf("# %s: gadget %d (%s) width %d < TextLength(%s)+8=%ld\n",
+                 label, i, g[i].lab[0] ? g[i].lab : "(none)", (int)g[i].w,
+                 what, (long)need);
+            violations++;
+        }
+    }
+
+    /* done: close Prefs (bounded wait) so later rows start clean */
     ptask = (pwin->UserPort != NULL) ? pwin->UserPort->mp_SigTask : NULL;
     if (ptask == NULL) {
         Forbid();
@@ -5571,16 +5524,13 @@ static void tc_prefs_layout(void)
     }
     if (ptask != NULL) {
         Signal(ptask, SIGBREAKF_CTRL_C);
-        /* wait for the GUI task to actually exit (<= 20 s): a
-         * lingering instance keeps bsdsocket.library open and
-         * derails the rows that follow. */
         for (i = 0; i < 200; i++) {
             Delay(5);
             BOOL still = FALSE;
             ULONG cwkey = LockIBase(0);
-            for (struct Screen *s3 = IntuitionBase->FirstScreen; s3; s3 = s3->NextScreen) {
-                for (struct Window *w3 = s3->FirstWindow; w3; w3 = w3->NextWindow) {
-                    if (w3 == pwin) { still = TRUE; break; }
+            for (scr = IntuitionBase->FirstScreen; scr; scr = scr->NextScreen) {
+                for (w = scr->FirstWindow; w; w = w->NextWindow) {
+                    if (w == pwin) { still = TRUE; break; }
                 }
                 if (still) break;
             }
@@ -5594,7 +5544,6 @@ static void tc_prefs_layout(void)
     } else {
         TAP_OK(label);
     }
-
 }
 
 static void tc_cmd_stop_start(void)
