@@ -5350,6 +5350,11 @@ static void tc_prefs_opens(void)
 
     DeleteFile((CONST_STRPTR)"T:prefs.out");
     out_h = Open((CONST_STRPTR)"T:prefs.out", MODE_NEWFILE);
+    /* the IFF shot needs graphics.library - the wizard rows close
+     * the global by the time this row runs */
+    if (GfxBase == NULL) {
+        GfxBase = (struct GfxBase *)OpenLibrary((CONST_STRPTR)"graphics.library", 36);
+    }
     rc = SystemTags((CONST_STRPTR)"C:TolunnetPrefs",
                     SYS_Asynch, TRUE,
                     SYS_Input, in_h,
