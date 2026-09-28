@@ -5542,6 +5542,19 @@ static void tc_prefs_layout(void)
         }
     }
 
+    /* 11g item 2: every button must satisfy TextLength(label)+8 <= W.
+     * The buttons are the last 8 gadgets (created last). */
+    for (i = (ng >= 8 ? ng - 8 : 0); i < ng; i++) {
+        if (g[i].lab[0] == 0) continue;
+        LONG need = TextLength(&pscr->RastPort, (STRPTR)g[i].lab,
+                               (LONG)strlen(g[i].lab)) + 8;
+        if (g[i].w < need) {
+            tapf("# %s: (button) gadget %d (%s) width %d < %ld\n",
+                 label, i, g[i].lab, (int)g[i].w, (long)need);
+            violations++;
+        }
+    }
+
     /* done: close Prefs (bounded wait) so later rows start clean */
     ptask = (pwin->UserPort != NULL) ? pwin->UserPort->mp_SigTask : NULL;
     if (ptask == NULL) {
