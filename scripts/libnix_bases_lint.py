@@ -8,13 +8,13 @@ them stops libnix's __initlibraries from opening dos.library, and
 pre-main constructors (__initstdio) then dereference a NULL base -
 the TolunnetPrefs Line-F #8000000B crash.
 
-Scans every .c under src/cmds/ and fails when a file both defines
-`DOSBase`/`SysBase` at file scope AND references stdio - that
-combination pulls libnix's __initstdio constructor, which runs before
-main and dereferences the NULL base. Files that define the base but
-never touch stdio open it themselves and are safe (TestSocket,
-TolunnetGet/Ping/Status); Install_Tolunnet_Launcher.c is not linked
-by any build rule and is exempt.
+Scans every .c under src/cmds/ and fails on ANY file-scope
+definition of `DOSBase`/`SysBase`: __initstdio can be pulled in by
+another object, so even a definition without local stdio breaks the
+pre-main run (11c item 1). Files that define the base but open it
+before any use remain safe at runtime; the lint is deliberately
+strict. Install_Tolunnet_Launcher.c is not linked by any build rule
+and is exempt.
 
 `--selftest` re-checks the TolunnetPrefs.c at d219076 (must FAIL -
 that is the commit that carried the bug) and the working tree
@@ -30,7 +30,7 @@ import sys
 # at the start of a line (column 0), not an extern declaration.
 DEF_RE = re.compile(
     r'^(?!.*extern)\s*(?:struct\s+\w+\s*\*+\s*|APTR\s+|void\s*\*\s*)'
-    r'(DOSBase|SysBase)\s*(?:=[^;]*)?\s*;',
+    r'(DOSBase|SysBase)\s*(?:=\s*(?:NULL|0))?\s*;',
     re.M)
 
 
@@ -56,15 +56,13 @@ def scan_files(paths):
             continue
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
-        # The dangerous combination: a self-defined base PLUS a stdio
-        # reference. The stdio pull-in brings libnix's __initstdio
-        # constructor, which runs before main and dereferences the
-        # (now NULL) base - the TolunnetPrefs #8000000B crash.
+        # 11c item 1: ANY definition of DOSBase/SysBase in a
+        # libnix-startup program fails - __initstdio can be pulled in by
+        # another object (log.o, ...), so a stdio reference in the same
+        # file is not required for the pre-main crash.
         defs = []
         scan_text(text, path, defs)
-        has_stdio = STDIO_RE.search(text) is not None
-        if has_stdio:
-            findings.extend(defs)
+        findings.extend(defs)
     return findings
 
 

@@ -82,7 +82,6 @@ static ULONG isqrt(ULONG n)
 
 int main(int argc, char *argv[])
 {
-    struct Library *DOSBase;
     struct MsgPort *tm_port = NULL;
     struct timerequest *tm_io = NULL;
     struct sockaddr_in dst_sin;
@@ -102,12 +101,6 @@ int main(int argc, char *argv[])
     LONG opts[OPT_NUM_OPTS];
     int i;
     (void)argc; (void)argv;
-
-    DOSBase = OpenLibrary((CONST_STRPTR)"dos.library", 36);
-    if (DOSBase == NULL) {
-        DOSBase = OpenLibrary((CONST_STRPTR)"dos.library", 0);
-        if (DOSBase == NULL) return 20;
-    }
 
     g_log_dos = DOSBase;
     g_log_level = TN_LOG_VERBOSE;

@@ -112,7 +112,6 @@ static LONG call_errno(VOID)
 
 int main(int argc, char *argv[])
 {
-    struct Library *DOSBase;
     BPTR log_fh = (BPTR)0;
     LONG sock, rc;
     STRPTR str_ip;
@@ -125,9 +124,6 @@ int main(int argc, char *argv[])
     ULONG rfds = 0, wfds = 0, sigs = 0;
     BOOL all_passed = TRUE;
     (void)argc; (void)argv;
-
-    DOSBase = OpenLibrary((CONST_STRPTR)"dos.library", 0);
-    if (DOSBase == NULL) return 20;
 
     log_fh = Open((CONST_STRPTR)"WORK:tolunnet-m3.log", MODE_NEWFILE);
     g_log_dos = DOSBase;

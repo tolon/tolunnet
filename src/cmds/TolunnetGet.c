@@ -93,7 +93,6 @@ enum {
 
 int main(void)
 {
-    struct Library *DOSBase;
     struct RDArgs *rdargs;
     LONG opts[OPT_NUM_OPTS];
     struct TnUrl current_url, next_url;
@@ -109,9 +108,6 @@ int main(void)
     LONG total_written = 0;
     LONG last_progress_bytes = 0;
     int exit_code = 0;
-
-    DOSBase = OpenLibrary((CONST_STRPTR)"dos.library", 0);
-    if (DOSBase == NULL) return 20;
 
     g_log_dos = DOSBase;
     g_log_level = TN_LOG_BASIC;

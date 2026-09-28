@@ -435,7 +435,7 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
     say "staged: tolunnet + SocketConformance + bsdsocktest + cmds + usergroup.library + TolunnetSetup + TolunnetPrefs + Conformance-Script + User-Startup + tolunnet.config -> $HDF_WIN"
 
     # ---- run headless ---------------------------------------------------
-    rm -f "$WORK_DIR/conformance.log" "$WORK_DIR/conformance2.log" "$WORK_DIR/bench-done" "$WORK_DIR/tolunnet-task.log" "$WORK_DIR/bsdsocktest.log" "$WORK_DIR"/wizard-*.iff "$WORK_DIR"/prefs-*.iff
+    rm -f "$WORK_DIR/conformance.log" "$WORK_DIR/conformance2.log" "$WORK_DIR/bench-done" "$WORK_DIR/tolunnet-task.log" "$WORK_DIR/bsdsocktest.log" "$WORK_DIR"/wizard-*.iff "$WORK_DIR"/prefs-*.iff "$WORK_DIR"/crash-*.iff "$WORK_DIR"/prefs-crash.log "$WORK_DIR"/TolunnetPrefs.map
     CFG_WIN=$(cygpath -w "$REPO_ROOT/ci/tolunnet-$cfg.uae")
     say "launching WinUAE headless ($CFG_WIN), timeout ${TIMEOUT_SECS}s"
     "$WINUAE" -f "$CFG_WIN" >/dev/null 2>&1 &

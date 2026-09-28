@@ -71,7 +71,6 @@ static void format_ip_port(ULONG ip, UWORD port, char *buf)
 
 int main(int argc, char *argv[])
 {
-    struct Library *DOSBase;
     struct Library *SocketBase;
     static TnIfInfo if_list[8];
     static TnRouteInfo rt_list[16];
@@ -82,9 +81,6 @@ int main(int argc, char *argv[])
     int active_socks = 0;
     char ip_str[24], nm_str[24], gw_str[24];
     (void)argc;
-
-    DOSBase = OpenLibrary((CONST_STRPTR)"dos.library", 0);
-    if (DOSBase == NULL) return 20;
 
     g_log_dos = DOSBase;
     g_log_level = TN_LOG_VERBOSE;
