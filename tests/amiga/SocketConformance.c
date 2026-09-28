@@ -5455,8 +5455,6 @@ static void tc_prefs_layout(void)
         UnlockIBase(key);
     }
     if (pwin == NULL) {
-        if (out_h != 0) Close(out_h);
-        if (in_h != 0) Close(in_h);
         TAP_NOTOK(label, "prefs window never opened");
         return;
     }
@@ -5464,6 +5462,9 @@ static void tc_prefs_layout(void)
 
     key = LockIBase(0);
     for (gd = pwin->FirstGadget; gd != NULL && ng < TN_LG_MAX; gd = gd->NextGadget) {
+        if (gd->Width == 0 || gd->Height == 0) {
+            continue; /* GadTools context gadget: invisible, no rect */
+        }
         g[ng].x = gd->LeftEdge;
         g[ng].y = gd->TopEdge;
         g[ng].w = gd->Width;
@@ -5576,14 +5577,14 @@ static void tc_prefs_layout(void)
         for (i = 0; i < 200; i++) {
             Delay(5);
             BOOL still = FALSE;
-            Forbid();
+            ULONG cwkey = LockIBase(0);
             for (struct Screen *s3 = IntuitionBase->FirstScreen; s3; s3 = s3->NextScreen) {
                 for (struct Window *w3 = s3->FirstWindow; w3; w3 = w3->NextWindow) {
                     if (w3 == pwin) { still = TRUE; break; }
                 }
                 if (still) break;
             }
-            Permit();
+            UnlockIBase(cwkey);
             if (!still) break;
         }
     }
@@ -5594,8 +5595,6 @@ static void tc_prefs_layout(void)
         TAP_OK(label);
     }
 
-    if (out_h != 0) Close(out_h);
-    if (in_h != 0) Close(in_h);
 }
 
 static void tc_cmd_stop_start(void)
