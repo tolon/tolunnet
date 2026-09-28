@@ -21,6 +21,8 @@
 #include <devices/timer.h>
 #include <graphics/gfx.h>
 #include <intuition/screens.h>
+#include <intuition/intuition.h>
+#include <libraries/gadtools.h>
 #include <libraries/bsdsocket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -5455,6 +5457,166 @@ static void tc_prefs_opens(void)
     IntuitionBase = OldIntuitionBase;
 }
 
+/* z.ai step 11c item 2: Prefs layout assertion. Launches Prefs, waits
+ * for the window, copies the gadget list under LockIBase, then checks:
+ * every gadget and its GadgetText lies inside the window below
+ * BorderTop and above the bottom border; no two gadget/label rects
+ * overlap; every string/cycle gadget is at least TextLength(text)+8
+ * wide. Expected RED on the current fixed-pixel layout. */
+static void tc_prefs_layout(void)
+{
+    const char *label = "tc_prefs_layout";
+    BPTR in_h = Open((CONST_STRPTR)"NIL:", MODE_OLDFILE);
+    BPTR out_h;
+    struct Window *pwin = NULL;
+    struct Screen *pscr = NULL;
+    struct Screen *scr;
+    struct Window *w;
+    struct Gadget *gd;
+    struct Task *ptask;
+    LONG rc;
+    ULONG key;
+    int tries;
+    int i;
+    int j;
+    int violations = 0;
+    int ng = 0;
+    enum { TN_LG_MAX = 24 };
+    static struct {
+        UWORD x, y, w, h;
+        char text[40];
+        char lab[40];
+        int strkind;
+    } g[TN_LG_MAX];
+
+    DeleteFile((CONST_STRPTR)"T:prefs-layout.out");
+    out_h = Open((CONST_STRPTR)"T:prefs-layout.out", MODE_NEWFILE);
+    rc = SystemTags((CONST_STRPTR)"C:TolunnetPrefs",
+                    SYS_Asynch, TRUE,
+                    SYS_Input, in_h,
+                    SYS_Output, out_h,
+                    NP_StackSize, 32768,
+                    TAG_END);
+    key = 0;
+    for (tries = 0; tries < 100 && pwin == NULL; tries++) { /* 10 s */
+        Delay(5);
+        key = LockIBase(0);
+        for (pscr = IntuitionBase->FirstScreen; pscr; pscr = pscr->NextScreen) {
+            for (pwin = pscr->FirstWindow; pwin; pwin = pwin->NextWindow) {
+                if (pwin->Title != NULL &&
+                    strstr((const char *)pwin->Title, "Network Preferences") != NULL) {
+                    break;
+                }
+            }
+            if (pwin) break;
+        }
+        UnlockIBase(key);
+    }
+    if (pwin == NULL) {
+        if (out_h != 0) Close(out_h);
+        if (in_h != 0) Close(in_h);
+        TAP_NOTOK(label, "prefs window never opened");
+        return;
+    }
+    Delay(10); /* let GadTools render the gadgets */
+
+    key = LockIBase(0);
+    for (gd = pwin->FirstGadget; gd != NULL && ng < TN_LG_MAX; gd = gd->NextGadget) {
+        g[ng].x = gd->LeftEdge;
+        g[ng].y = gd->TopEdge;
+        g[ng].w = gd->Width;
+        g[ng].h = gd->Height;
+        g[ng].text[0] = "\0";
+        g[ng].lab[0] = "\0";
+        g[ng].strkind = 0;
+        if (gd->GadgetText != NULL) {
+            strncpy(g[ng].lab, (const char *)gd->GadgetText, sizeof(g[ng].lab) - 1);
+        }
+        if ((gd->GadgetType & 0xFF) == STRGADGET && gd->SpecialInfo != NULL) {
+            struct StringInfo *si = (struct StringInfo *)gd->SpecialInfo;
+            if (si->Buffer != NULL) {
+                strncpy(g[ng].text, (const char *)si->Buffer, sizeof(g[ng].text) - 1);
+                g[ng].strkind = 1;
+            }
+        } else if (gd->SpecialInfo != NULL && (gd->GadgetType & 0xFF) != STRGADGET &&
+                   gd->GadgetText != NULL) {
+            /* the one CYCLE_KIND gadget: CycleInfo = {size, labels,
+             * active}; size is a small byte count (12), unlike a
+             * pointer. */
+            struct tn_cycleinfo { ULONG size; STRPTR *labels; WORD active; };
+            struct tn_cycleinfo *ci = (struct tn_cycleinfo *)gd->SpecialInfo;
+            if (ci->size >= 8 && ci->size <= 64 && ci->labels != NULL &&
+                ci->active >= 0 && ci->labels[ci->active] != NULL) {
+                strncpy(g[ng].text, (const char *)ci->labels[ci->active],
+                        sizeof(g[ng].text) - 1);
+                g[ng].strkind = 1;
+            }
+        }
+        tapf("# %s: gadget %d type=0x%04x rect=(%d,%d,%d,%d)\n", label, ng,
+             (unsigned)gd->GadgetType, (int)g[ng].x, (int)g[ng].y,
+             (int)g[ng].w, (int)g[ng].h);
+        ng++;
+    }
+    UnlockIBase(key);
+
+    /* bounds: inside the window, below BorderTop, above bottom border */
+    for (i = 0; i < ng; i++) {
+        if (g[i].y < pwin->BorderTop) {
+            tapf("# %s: gadget %d (%s) TopEdge %d < BorderTop %d\n", label, i,
+                 g[i].lab[0] ? g[i].lab : "(none)", (int)g[i].y, (int)pwin->BorderTop);
+            violations++;
+        }
+        if (g[i].y + g[i].h > pwin->Height - pwin->BorderBottom) {
+            tapf("# %s: gadget %d (%s) bottom %d > %d\n", label, i,
+                 g[i].lab[0] ? g[i].lab : "(none)",
+                 (int)(g[i].y + g[i].h), (int)(pwin->Height - pwin->BorderBottom));
+            violations++;
+        }
+    }
+
+    /* min width for string/cycle gadgets with a current text */
+    for (i = 0; i < ng; i++) {
+        if (g[i].strkind && g[i].text[0] != 0) {
+            LONG need = TextLength(&pscr->RastPort, (STRPTR)g[i].text,
+                                   (LONG)strlen(g[i].text)) + 8;
+            if (g[i].w < need) {
+                tapf("# %s: gadget %d (%s) width %d < TextLength(%s)+8=%ld\n",
+                     label, i, g[i].lab[0] ? g[i].lab : "(none)", (int)g[i].w,
+                     g[i].text, (long)need);
+                violations++;
+            }
+        }
+    }
+
+    /* overlap: no two gadget rects, no two label rects */
+    for (i = 0; i < ng; i++) {
+        for (j = i + 1; j < ng; j++) {
+            if (g[i].x < g[j].x + g[j].w && g[j].x < g[i].x + g[i].w &&
+                g[i].y < g[j].y + g[j].h && g[j].y < g[i].y + g[i].h) {
+                tapf("# %s: gadgets %d and %d overlap\n", label, i, j);
+                violations++;
+            }
+        }
+    }
+
+    ptask = (pwin->UserPort != NULL) ? pwin->UserPort->mp_SigTask : NULL;
+    if (ptask == NULL) {
+        Forbid();
+        ptask = FindTask((CONST_STRPTR)"TolunnetPrefs");
+        Permit();
+    }
+    if (ptask != NULL) Signal(ptask, SIGBREAKF_CTRL_C);
+
+    if (violations > 0) {
+        TAP_NOTOK(label, "layout violations found (see # lines above)");
+    } else {
+        TAP_OK(label);
+    }
+
+    if (out_h != 0) Close(out_h);
+    if (in_h != 0) Close(in_h);
+}
+
 static void tc_cmd_stop_start(void)
 {
     BPTR seg;
@@ -8234,6 +8396,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_nslookup_server);
     TN_RUN(tc_net_cmd_nslookup_ptr);
     TN_RUN(tc_prefs_opens); /* 10d item 2: Prefs window must open (TODO allowed) */
+    TN_RUN(tc_prefs_layout); /* 11c item 2: layout assertion (expected red) */
     TN_RUN(tc_cmd_stop_start); /* LAST-but-one: stops the daemon */
     TN_RUN(tc_daemon_noconfig_start); /* 10b item 2: bare boot, no config (daemon already stopped) */
     TN_RUN(tc_undo_sandbox); /* 10c item 2: undo proven in a T: sandbox */
