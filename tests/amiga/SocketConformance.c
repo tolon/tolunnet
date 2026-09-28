@@ -264,49 +264,9 @@ static ULONG tc_cfg_ip(const char *key, ULONG def)
         g_count++; g_not_ok_count++; \
         tapf("not ok %d - %s # TIMEOUT: ipc watchdog fired during the test\n", \
                      g_count, #tc); \
-    /* 10f item 3: a "Software Failure" requester means a task\
-     * crashed during the row. First hit only: name the row, keep\
-     * the screen as WORK:crash-<row>.iff, fail the row. */ \
-    if (!g_crash_reported) { \
-        /* intuition may be closed at this point in the suite -\
-         * open it just for the scan, then let it go again. */ \
-        struct Library *cf_int = IntuitionBase; \
-        int cf_opened = 0; \
-        ULONG cfkey = 0; \
-        struct Screen *cscr = NULL; \
-        struct Window *cwin = NULL; \
-        if (cf_int == NULL) { \
-            cf_int = OpenLibrary((CONST_STRPTR)"intuition.library", 36); \
-            cf_opened = 1; \
-            /* the scan and the IFF dump read the global base */ \
-            IntuitionBase = (struct IntuitionBase *)cf_int; \
-        } \
-        if (cf_int != NULL) { \
-            cfkey = LockIBase(0); \
-            for (cscr = IntuitionBase->FirstScreen; cscr && cwin == NULL;\
-                 cscr = cscr->NextScreen) { \
-                for (cwin = cscr->FirstWindow; cwin; cwin = cwin->NextWindow) { \
-                    if (cwin->Title != NULL && strstr((const char *)cwin->Title,\
-                        "Software Failure") != NULL) break; \
-                } \
-            } \
-            UnlockIBase(cfkey); \
-        } \
-        if (cf_int != NULL && cwin != NULL) { \
-            char cshot[72]; \
-            g_crash_reported = 1; \
-            snprintf(cshot, sizeof(cshot), "WORK:crash-%s.iff", #tc); \
-            tapf("# CRASH requester after %s\n", #tc); \
-            write_iff_screen_struct(cshot, cscr); \
-            g_count++; g_not_ok_count++; \
-            tapf("not ok %d - %s # crash requester appeared\n", g_count, #tc); \
-        } \
-        if (cf_opened) { \
-            IntuitionBase = NULL; \
-            CloseLibrary(cf_int); \
-        } \
     } \
-    } } while (0)
+    tn_crash_guard(#tc); \
+} while (0)
 #define TAP_TODO(name, why)  do { g_count++; tapf("not ok %d - %s # TODO %s\n", g_count, name, why); } while (0)
 #define TAP_SKIP(name, why)  do { g_count++; tapf("ok %d - %s # SKIP %s\n", g_count, name, why); } while (0)
 
@@ -3533,6 +3493,73 @@ out:
     if (buf) FreeVec(buf);
     if (rgb) FreeVec(rgb);
     return ok;
+}
+/* 10g item 1: the crash guard as a real function (it used to sit
+ * inside the watchdog if, and its scan left the screen pointer on
+ * the next list entry). Opens intuition and graphics itself when
+ * the globals are NULL, restores them at the end. First hit only. */
+static void tn_crash_guard(const char *row)
+{
+    struct Library *cf_int = IntuitionBase;
+    struct Library *cf_gfx = (struct Library *)GfxBase;
+    int opened_int = 0;
+    int opened_gfx = 0;
+    ULONG key;
+    struct Screen *s;
+    struct Window *w;
+    struct Screen *found = NULL;
+
+    if (g_crash_reported) return;
+    if (cf_int == NULL) {
+        cf_int = OpenLibrary((CONST_STRPTR)"intuition.library", 36);
+        opened_int = 1;
+        IntuitionBase = (struct IntuitionBase *)cf_int;
+    }
+    if (cf_int == NULL) return;
+    if (cf_gfx == NULL) {
+        cf_gfx = OpenLibrary((CONST_STRPTR)"graphics.library", 36);
+        opened_gfx = 1;
+        GfxBase = (struct GfxBase *)cf_gfx;
+    }
+    if (cf_gfx == NULL) {
+        if (opened_int) {
+            IntuitionBase = NULL;
+            CloseLibrary(cf_int);
+        }
+        return;
+    }
+
+    key = LockIBase(0);
+    for (s = IntuitionBase->FirstScreen; s != NULL && found == NULL; s = s->NextScreen) {
+        for (w = s->FirstWindow; w != NULL; w = w->NextWindow) {
+            if (w->Title != NULL &&
+                strstr((const char *)w->Title, "Software Failure") != NULL) {
+                found = s; /* saved BEFORE the break: no extra NextScreen */
+                break;
+            }
+        }
+    }
+    UnlockIBase(key);
+
+    if (found != NULL) {
+        char cshot[72];
+        g_crash_reported = 1;
+        snprintf(cshot, sizeof(cshot), "WORK:crash-%s.iff", row);
+        tapf("# CRASH requester after %s\n", row);
+        write_iff_screen_struct(cshot, found);
+        g_count++;
+        g_not_ok_count++;
+        tapf("not ok %d - %s # crash requester appeared\n", g_count, row);
+    }
+
+    if (opened_gfx) {
+        GfxBase = NULL;
+        CloseLibrary(cf_gfx);
+    }
+    if (opened_int) {
+        IntuitionBase = NULL;
+        CloseLibrary(cf_int);
+    }
 }
 
 static BOOL write_iff_named_screen(const char *path, const char *title)
