@@ -47,7 +47,6 @@ struct IntuitionBase *IntuitionBase = NULL;
 struct GfxBase       *GfxBase       = NULL;
 struct Library       *GadToolsBase  = NULL;
 struct Library       *IconBase      = NULL;
-struct DosLibrary    *DOSBase       = NULL;
 
 unsigned long __stack = 32768;
 
@@ -346,24 +345,15 @@ static void render_gui_frames(struct Window *win, APTR vi, const PrefsLayout *lo
 /* 10f item 4: one unbuffered line per init stage on Output(). Write() only - no stdio\n * buffering, so a crash leaves every completed stage visible.\n */
 static void pf_trace(const char *msg)
 {
-    struct DosLibrary *d = DOSBase;
-    BPTR out;
+    /* 11b item 1: DOSBase is libnix's own - valid from startup. */
+    BPTR out = Output();
     LONG len = (LONG)strlen(msg);
 
-    /* 11a item 2: early stages run before main opens DOSBase -
-     * open dos.library ourselves for those. */
-    if (d == NULL) {
-        d = (struct DosLibrary *)OpenLibrary((CONST_STRPTR)"dos.library", 36);
-        if (d == NULL) return;
-    }
-    out = Output();
     if (out != 0 && len > 0) {
-        Write((BPTR)out, (CONST_APTR)msg, len);
-    }
-    if (d != DOSBase) {
-        CloseLibrary((struct Library *)d);
+        Write(out, (CONST_APTR)msg, len);
     }
 }
+
 
 int main(int argc, char *argv[])
 {
@@ -406,12 +396,9 @@ int main(int argc, char *argv[])
 
     FindTask(NULL)->tc_Node.ln_Name = (char *)"TolunnetPrefs";
 
-    DOSBase = (struct DosLibrary *)OpenLibrary((CONST_STRPTR)"dos.library", 36);
-    if (!DOSBase) return 20;
-
+    pf_trace("prefs-trace: dos.library ready (libnix base)\n");
     IntuitionBase = (struct IntuitionBase *)OpenLibrary((CONST_STRPTR)"intuition.library", 36);
     if (!IntuitionBase) {
-        CloseLibrary((struct Library *)DOSBase);
         return 20;
     }
 
@@ -419,7 +406,6 @@ int main(int argc, char *argv[])
     pf_trace("prefs-trace: graphics.library opened\n");
     if (!GfxBase) {
         CloseLibrary((struct Library *)IntuitionBase);
-        CloseLibrary((struct Library *)DOSBase);
         return 20;
     }
 
@@ -428,7 +414,6 @@ int main(int argc, char *argv[])
     if (!GadToolsBase) {
         CloseLibrary((struct Library *)GfxBase);
         CloseLibrary((struct Library *)IntuitionBase);
-        CloseLibrary((struct Library *)DOSBase);
         return 20;
     }
 
@@ -927,7 +912,5 @@ cleanup:
     if (GadToolsBase) CloseLibrary(GadToolsBase);
     if (GfxBase) CloseLibrary((struct Library *)GfxBase);
     if (IntuitionBase) CloseLibrary((struct Library *)IntuitionBase);
-    if (DOSBase) CloseLibrary((struct Library *)DOSBase);
-
     return 0;
 }
