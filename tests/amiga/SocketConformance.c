@@ -5498,6 +5498,25 @@ static void tc_prefs_layout(void)
 
     /* min width: STR gadgets vs their buffer text; the cycle gadget vs
      * its widest fixed choice. */
+    /* 11f item 2 assertions:
+     * (a) button/cycle gadgets must fit their IText label + 8;
+     * (b) the leftmost label rect must start at x >= 8. */
+    for (i = 0; i < ng; i++) {
+        if (g[i].lab[0] == 0) continue;
+        LONG lab_w = TextLength(&pscr->RastPort, (STRPTR)g[i].lab,
+                               (LONG)strlen(g[i].lab));
+        if (g[i].cycle && g[i].w < lab_w + 8) {
+            tapf("# %s: (a) cycle gadget %d width %d < TextLength(%s)+8=%ld\n",
+                 label, i, (int)g[i].w, g[i].lab, (long)lab_w + 8);
+            violations++;
+        }
+        if (g[i].x - lab_w < 8) {
+            tapf("# %s: (b) label of gadget %d (%s) starts at %ld < 8\n",
+                 label, i, g[i].lab, (long)(g[i].x - lab_w));
+            violations++;
+        }
+    }
+
     for (i = 0; i < ng; i++) {
         LONG need = -1;
         const char *what = NULL;

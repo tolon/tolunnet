@@ -584,10 +584,11 @@ int main(int argc, char *argv[])
     pf_trace("prefs-trace: gadget unit\n");
     if (!gad_unit) goto cleanup;
 
-    /* Addressing Mode Cycle */
+    /* Addressing Mode Cycle - 11f item 2: wide enough for the widest
+     * choice plus the selector glyph (see col2_w). */
     ng.ng_LeftEdge   = (WORD)lo.col1_x;
     ng.ng_TopEdge    = (WORD)lo.row_y[1];
-    ng.ng_Width      = lo.col1_w;
+    ng.ng_Width      = (UWORD)(lo.col1_w + 16);
     ng.ng_GadgetText = (STRPTR)"Config Mode:";
     ng.ng_GadgetID   = GID_MODE;
     gad_mode = CreateGadget(CYCLE_KIND, gad_unit, &ng,
