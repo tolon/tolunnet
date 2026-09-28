@@ -5398,11 +5398,11 @@ static void tc_prefs_opens(void)
         struct Window *w;
         ULONG ibkey;
         BPTR ef = Open((CONST_STRPTR)"T:prefs.out", MODE_OLDFILE);
-        char eb[301];
+        char eb[1001];
         LONG en = 0;
 
         if (ef != 0) {
-            en = Read(ef, eb, 300);
+            en = Read(ef, eb, 1000);
             Close(ef);
         }
         if (en < 0) en = 0;

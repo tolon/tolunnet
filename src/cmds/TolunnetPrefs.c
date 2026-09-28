@@ -342,6 +342,17 @@ static void render_gui_frames(struct Window *win, APTR vi, const PrefsLayout *lo
 
 /* -------------------------------------------------------------------- main */
 
+/* 10f item 4: one unbuffered line per init stage on Output(). Write() only - no stdio\n * buffering, so a crash leaves every completed stage visible.\n */
+static void pf_trace(const char *msg)
+{
+    BPTR out = Output();
+    LONG len = (LONG)strlen(msg);
+
+    if (out != 0 && len > 0) {
+        Write(out, (CONST_APTR)msg, len);
+    }
+}
+
 int main(int argc, char *argv[])
 {
     struct Screen *scr = NULL;
@@ -444,7 +455,9 @@ int main(int argc, char *argv[])
     }
 
     /* Load persistent preferences */
+    pf_trace("prefs-trace: libs\n");
     tn_prefs_load(&prefs);
+    pf_trace("prefs-trace: prefs loaded\n");
 
     BOOL owns_screen = FALSE;
     if (pubscreen_name != NULL) {
@@ -466,14 +479,17 @@ int main(int argc, char *argv[])
         }
     }
     if (!scr) goto cleanup;
+    pf_trace("prefs-trace: screen\n");
 
     compute_layout(&lo, scr);
 
     vi = GetVisualInfo(scr, TAG_END);
+    pf_trace("prefs-trace: visualinfo\n");
     if (!vi) goto cleanup;
 
     /* Initialize GadTools gadget context */
     gad = CreateContext(&glist);
+    pf_trace("prefs-trace: context\n");
     if (!gad) goto cleanup;
 
     /* Base NewGadget defaults */
@@ -497,6 +513,7 @@ int main(int argc, char *argv[])
                            GTST_String, (ULONG)prefs.device,
                            GTST_MaxChars, 63,
                            TAG_END);
+    pf_trace("prefs-trace: gadget dev\n");
     if (!gad_dev) goto cleanup;
 
     /* Unit Number */
@@ -508,6 +525,7 @@ int main(int argc, char *argv[])
                             GTIN_Number, prefs.unit,
                             GTIN_MaxChars, 5,
                             TAG_END);
+    pf_trace("prefs-trace: gadget unit\n");
     if (!gad_unit) goto cleanup;
 
     /* Addressing Mode Cycle */
@@ -520,6 +538,7 @@ int main(int argc, char *argv[])
                             GTCY_Labels, (ULONG)g_mode_labels,
                             GTCY_Active, prefs.use_dhcp ? 0 : 1,
                             TAG_END);
+    pf_trace("prefs-trace: gadget mode\n");
     if (!gad_mode) goto cleanup;
 
     /* MTU (TNET-063) */
@@ -531,6 +550,7 @@ int main(int argc, char *argv[])
                            GTIN_Number, prefs.mtu,
                            GTIN_MaxChars, 5,
                            TAG_END);
+    pf_trace("prefs-trace: gadget mtu\n");
     if (!gad_mtu) goto cleanup;
 
     /* =========================================================================
@@ -547,6 +567,7 @@ int main(int argc, char *argv[])
                           GTST_String, (ULONG)prefs.ip_addr,
                           GTST_MaxChars, 19,
                           TAG_END);
+    pf_trace("prefs-trace: gadget ip\n");
     if (!gad_ip) goto cleanup;
 
     /* Subnet Mask */
@@ -558,6 +579,7 @@ int main(int argc, char *argv[])
                           GTST_String, (ULONG)prefs.netmask,
                           GTST_MaxChars, 19,
                           TAG_END);
+    pf_trace("prefs-trace: gadget nm\n");
     if (!gad_nm) goto cleanup;
 
     /* Default Gateway */
@@ -570,6 +592,7 @@ int main(int argc, char *argv[])
                           GTST_String, (ULONG)prefs.gateway,
                           GTST_MaxChars, 19,
                           TAG_END);
+    pf_trace("prefs-trace: gadget gw\n");
     if (!gad_gw) goto cleanup;
 
     /* Primary DNS */
@@ -581,6 +604,7 @@ int main(int argc, char *argv[])
                             GTST_String, (ULONG)prefs.dns_server,
                             GTST_MaxChars, 19,
                             TAG_END);
+    pf_trace("prefs-trace: gadget dns1\n");
     if (!gad_dns1) goto cleanup;
 
     /* Secondary DNS (TNET-063: bound to TnPrefs, persisted as DNS2=) */
@@ -593,6 +617,7 @@ int main(int argc, char *argv[])
                             GTST_String, (ULONG)prefs.dns2,
                             GTST_MaxChars, 19,
                             TAG_END);
+    pf_trace("prefs-trace: gadget dns2\n");
     if (!gad_dns2) goto cleanup;
 
     /* Host Name (TNET-063: bound to TnPrefs, DHCP option 12 + gethostname) */
@@ -604,6 +629,7 @@ int main(int argc, char *argv[])
                             GTST_String, (ULONG)prefs.hostname,
                             GTST_MaxChars, 63,
                             TAG_END);
+    pf_trace("prefs-trace: gadget host\n");
     if (!gad_host) goto cleanup;
 
     /* Large text (TNET-110): TolunnetSetup font override via FONT=topaz/11 */
@@ -617,6 +643,7 @@ int main(int argc, char *argv[])
     gad_largetext = CreateGadget(CHECKBOX_KIND, gad_host, &ng,
                                  GTCB_Checked, (prefs.font[0] != '\0') ? TRUE : FALSE,
                                  TAG_END);
+    pf_trace("prefs-trace: gadget largetext\n");
     if (!gad_largetext) goto cleanup;
 
     /* =========================================================================
@@ -638,6 +665,7 @@ int main(int argc, char *argv[])
     ng.ng_GadgetText = (STRPTR)"Use";
     ng.ng_GadgetID   = GID_USE;
     gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
+    pf_trace("prefs-trace: gadget buttons\n");
     if (!gad) goto cleanup;
 
     ng.ng_LeftEdge  += (WORD)(lo.btn_w + 6);
@@ -696,6 +724,7 @@ int main(int argc, char *argv[])
                          TAG_END);
 
     if (!win) goto cleanup;
+    pf_trace("prefs-trace: window\n");
 
     /* Set up 1-second non-blocking timer for polling daemon state (TNET-079) */
     timer_port = CreateMsgPort();
@@ -718,6 +747,7 @@ int main(int argc, char *argv[])
     GT_RefreshWindow(win, NULL);
     render_gui_frames(win, vi, &lo);
 
+    pf_trace("prefs-trace: entering loop\n");
     /* Event Message Loop (TNET-079: non-blocking timer in Wait mask) */
     while (running) {
         ULONG sigs = Wait((1UL << win->UserPort->mp_SigBit) | timer_sig | SIGBREAKF_CTRL_C);
