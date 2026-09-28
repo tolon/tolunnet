@@ -5534,7 +5534,8 @@ static void tc_prefs_layout(void)
         if (gd->GadgetText != NULL) {
             strncpy(g[ng].lab, (const char *)gd->GadgetText, sizeof(g[ng].lab) - 1);
         }
-        if ((gd->GadgetType & 0xFF) == STRGADGET && gd->SpecialInfo != NULL) {
+        if (((gd->GadgetType & 0xFF) == STRGADGET ||
+             (gd->GadgetType & 0xFF) == 12) && gd->SpecialInfo != NULL) {
             struct StringInfo *si = (struct StringInfo *)gd->SpecialInfo;
             if (si->Buffer != NULL) {
                 strncpy(g[ng].text, (const char *)si->Buffer, sizeof(g[ng].text) - 1);
@@ -5560,9 +5561,24 @@ static void tc_prefs_layout(void)
 
     tapf("# %s: %d gadgets copied\n", label, ng);
     for (i = 0; i < ng; i++) {
-        tapf("# %s: gadget %d type=0x%04x rect=(%d,%d,%d,%d) text=%s lab=%s\n", label, i,
+        tapf("# %s: gadget %d type=0x%04x rect=(%d,%d,%d,%d) lab=%s\n", label, i,
              (unsigned)g[i].type, (int)g[i].x, (int)g[i].y, (int)g[i].w, (int)g[i].h,
-             g[i].text, g[i].lab);
+             g[i].lab);
+        /* min width: STRING gadgets (intuition STRGADGET or gadtools\
+         * STRING_KIND) are read via StringInfo.Buffer; the CYCLE\
+         * gadget uses the widest compile-time label - no SpecialInfo\
+         * dereference for unknown type codes. */\
+        if (((g[i].type & 0xFF) == STRGADGET || (g[i].type & 0xFF) == 12) &&\
+            g[i].strkind && g[i].text[0] != 0) {\
+            LONG need = TextLength(&pscr->RastPort, (STRPTR)g[i].text,\
+                                   (LONG)strlen(g[i].text)) + 8;\
+            if (g[i].w < need) {\
+                tapf("# %s: gadget %d (%s) width %d < TextLength(%s)+8=%ld\n",\
+                     label, i, g[i].lab[0] ? g[i].lab : "(none)", (int)g[i].w,\
+                     g[i].text, (long)need);\
+                violations++;\
+            }\
+        }\
     }
 
     /* bounds: inside the window, below BorderTop, above bottom border */
