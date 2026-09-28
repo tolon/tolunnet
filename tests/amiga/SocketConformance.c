@@ -5484,6 +5484,7 @@ static void tc_prefs_layout(void)
     enum { TN_LG_MAX = 24 };
     static struct {
         UWORD x, y, w, h;
+        UWORD type;
         char text[40];
         char lab[40];
         int strkind;
@@ -5526,6 +5527,7 @@ static void tc_prefs_layout(void)
         g[ng].y = gd->TopEdge;
         g[ng].w = gd->Width;
         g[ng].h = gd->Height;
+        g[ng].type = gd->GadgetType;
         g[ng].text[0] = "\0";
         g[ng].lab[0] = "\0";
         g[ng].strkind = 0;
@@ -5552,12 +5554,16 @@ static void tc_prefs_layout(void)
                 g[ng].strkind = 1;
             }
         }
-        tapf("# %s: gadget %d type=0x%04x rect=(%d,%d,%d,%d)\n", label, ng,
-             (unsigned)gd->GadgetType, (int)g[ng].x, (int)g[ng].y,
-             (int)g[ng].w, (int)g[ng].h);
         ng++;
     }
     UnlockIBase(key);
+
+    tapf("# %s: %d gadgets copied\n", label, ng);
+    for (i = 0; i < ng; i++) {
+        tapf("# %s: gadget %d type=0x%04x rect=(%d,%d,%d,%d) text=%s lab=%s\n", label, i,
+             (unsigned)g[i].type, (int)g[i].x, (int)g[i].y, (int)g[i].w, (int)g[i].h,
+             g[i].text, g[i].lab);
+    }
 
     /* bounds: inside the window, below BorderTop, above bottom border */
     for (i = 0; i < ng; i++) {
