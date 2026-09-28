@@ -1,63 +1,79 @@
-# STOP-REPORT — z.ai step 11d, item 1 (suite-owned library bases), 2026-09-28
+# STOP-REPORT — z.ai step 11e, item 3 (layout from font metrics), 2026-09-28
 
-State: HEAD `fd78888`. Item 1's code is in but the bench is red three
-times (171926, 175538, 183012); per the order's rule I stop. Items 2
-and 3 not started.
+State: HEAD `7b40347`. Items 1 and 2 are done and verified. Item 3's
+rework is in (`66a14bd` + `94743dd` + `7b40347`) and fixed the ordered
+faults (a)/(b)/(c) — the Device/Unit/MTU/cycle rows now have metric
+widths and sit below BorderTop — but tc_prefs_layout is still not ok:
+the only remaining violations are the WINDOW'S OWN TITLE-BAR CHROME
+gadgets (two window border gadgets with TopEdge 0, anchored to the
+right edge with negative coordinates), which the row counts as
+overlays. Two consecutive red benches on this item (221403, 223053)
+→ per the order's rule I stop with no third run.
 
 ## Item status
 
-1. `test: the suite owns the library bases` — code in (`fae1d8f` +
-   close-wait follow-up `fd78888`), lint rule in, selftest green —
-   but the bench does NOT reach `1..N`: NOT DONE as a verified item.
-2. `test: tc_prefs_layout reads gadgets correctly` — NOT DONE.
-3. `fix(prefs): layout from font metrics` — NOT DONE.
+1. `test: tc_prefs_layout never closes async handles` — DONE:
+   `e7c5756`. Bench `20260928-213554-v1.2.0-rc4-301-g5562aa8`:
+   `conformance.log: core: 102 ok / 1 not ok; external: 1 skipped (skip=2 todo=0)`
+   `conformance2.log: core: 102 ok / 1 not ok; external: 1 skipped (skip=2 todo=0)`
+   (68000 legs identical.) 1..104 in all four logs; the one not-ok is
+   the expected tc_prefs_layout red. Logs commit `23d924d`.
 
-## Final bench 20260928-183012-v1.2.0-rc4-297-gfd78888 (HAS-FAILURES)
+2. `test: tc_prefs_layout reads gadgets correctly` — DONE:
+   `7889bb6`. Bench `20260928-215535-v1.2.0-rc4-303-g7889bb6`:
+   `conformance.log: core: 102 ok / 1 not ok; external: 1 skipped (skip=2 todo=0)`
+   `conformance2.log: core: 102 ok / 1 not ok; external: 1 skipped (skip=2 todo=0)`
+   (68000 legs identical.) Real evidence captured: `TopEdge 9 <
+   BorderTop 11`, `Device gadget width 56 < 128`, `MTU:0`. Labels
+   come back empty — GadTools stores GadgetText as IntuiText whose
+   IText is rendered but the row's dump shows the label buffer empty;
+   the item-3 layout rework makes the label contents moot. Logs
+   commit `2579a4b`.
 
-- a1200: `conformance.log: core: 99 ok / 1 not ok; external: 1 skipped (skip=2 todo=0)`
-- a1200 conformance2.log: (missing) — cycle 2 never started.
-- 68000: no artifacts — its leg also timed out.
-- Both legs: TIMEOUT waiting for bench-done after 900 s.
+3. `fix(prefs): layout from font metrics` — code in, bench RED ×2:
+   NOT DONE as a verified item.
+   - `66a14bd`: rows start at the BorderTop estimate (scr->WBorTop +
+     fh + 1 + 4); value column = max(TextLength("255.255.255.255"),
+     "DHCP (Automatic)", "Static IP (Manual)", "ethernet.device") + 8;
+     win_w clamped to the screen; MTU shows 1500 when the config has
+     none.
+   - Bench `20260928-221403-v1.2.0-rc4-305-g66a14bd`: ordered faults
+     (a)/(b) gone, MTU shows 1500 — remaining: Unit gadget 12 px <
+     16, MTU gadget 36 px < 40.
+   - `94743dd`: Unit sized from "000"+16, MTU from "65535"+24.
+   - Bench `20260928-223053-v1.2.0-rc4-306-g94743dd`: Unit/MTU fixed —
+     remaining: only gadgets 0/1, TopEdge 0, the window's own
+     title-bar border gadgets (negative right-anchored coordinates).
+   - `7b40347`: skip negative-coordinate (sign-bit) gadgets in the
+     copy loop. NOT benched (no third run allowed).
 
-## Last lines of a1200/conformance.log (verbatim)
+## Last lines of a1200/conformance.log (verbatim, bench 223053)
 
 ```
-# tc_prefs_layout: gadget 3 (Ġ) TopEdge 0 < BorderTop 11
-# tc_prefs_layout: gadget 4 () TopEdge 9 < BorderTop 11
-# tc_prefs_layout: gadget 5 () TopEdge 9 < BorderTop 11
-# tc_prefs_layout: gadget 4 () width 56 < TextLength(ethernet.device)+8=128
-# tc_prefs_layout: gadget 5 () width 12 < TextLength(0)+8=16
-# tc_prefs_layout: gadget 7 () width 12 < TextLength(0)+8=16
-# tc_prefs_layout: gadget 11 () width 56 < TextLength(127.0.0.1)+8=80
+# tc_prefs_layout: gadget 0 ((none)) TopEdge 0 < BorderTop 11
+# tc_prefs_layout: gadget 1 ((none)) TopEdge 0 < BorderTop 11
 not ok 101 - tc_prefs_layout # layout violations found (see # lines above)
+# enter tc_daemon_noconfig_start
+ok 103 - tc_daemon_noconfig_start
+# enter tc_undo_sandbox
+ok 104 - tc_undo_sandbox
+1..104
+# bench: asking daemon to stop (restart-cycle proof)
 ```
-(the log's true tail — nothing follows the not-ok; there is no
-`# enter tc_cmd_stop_start` in this run.)
+(All four logs reach 1..104; the suite no longer hangs. The only not
+ok is tc_prefs_layout on the two chrome gadgets.)
 
-Bench dirs: `20260928-171926-gfae1d8f` (attempt 1), `20260928-175538`
-(attempt 2, close-wait not yet in), `20260928-183012-gfd78888`
-(attempt 3, close-wait in).
+## The one remaining violation, precisely
 
-## The remaining hang (same in all three)
+The window's own chrome: OpenWindow installs two border gadgets
+(drag/depth bar pieces) with TopEdge 0 and huge/negative left edges
+anchored to the right edge. They are Intuition chrome, not prefs
+layout. `7b40347` skips negative-coordinate gadgets in the copy loop
+(sign-bit test) and has NOT been benched. If the next step prefers a
+positive identification: skip gadgets with
+`gd->GadgetType & GTYP_SYSGADGET` or those whose IText is NULL AND
+whose rect intersects the window's border strips
+(y < BorderTop or x >= Width - BorderRight).
 
-tc_prefs_layout completes (violations printed, row marked not ok) and
-then the whole leg stops producing output — this run even before
-`# enter tc_cmd_stop_start`. The close-wait follow-up (waiting <= 20 s
-for the TolunnetPrefs window/task to disappear) did not cure it, so
-the lingering-GUI theory is dead or incomplete.
-
-Next investigation, in order:
-1. The crash guard + leak checks run after tc_prefs_layout's tc()
-   under the NEW always-open IntuitionBase — dump a marker between the
-   row's not-ok and TN_RUN's leak/watchdog checks, and between those
-   and tn_crash_guard, to find which post-row step stalls.
-2. tc_prefs_layout signals CTRL_C but its TolunnetPrefs child may sit
-   on the Software-Failure/exit path with the window list changing;
-   check whether LockIBase inside a LATER row's TN_RUN is now
-   re-entering while intuition holds an internal lock during GUI
-   teardown.
-3. Try suspending (not killing) TolunnetPrefs — SetTaskPri to -128 —
-   instead of CTRL_C, so nothing tears down while the assertions run.
-
-No further benches were run for item 1 after the second consecutive
+No further benches were run for item 3 after the second consecutive
 red, per the order's rule.
