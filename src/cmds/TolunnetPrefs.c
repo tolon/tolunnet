@@ -95,7 +95,8 @@ typedef struct PrefsLayout {
     UWORD  col1_x, col2_x;      /* gadget column left edges */
     UWORD  col1_w, col2_w;      /* gadget column widths   */
     UWORD  row_y[6];            /* y of data rows 0..5    */
-    UWORD  btn_y, btn_w, btn_h; /* button bar geometry    */
+    UWORD  btn_y, btn_h;        /* button bar geometry    */
+    UWORD  btn_ws[8];           /* per-button widths (11f item 2) */
 } PrefsLayout;
 
 /* ------------------------------------------------------------------ helpers */
@@ -291,9 +292,9 @@ static void compute_layout(PrefsLayout *lo, struct Screen *scr)
             if (w > val_w) val_w = w;
         }
         lo->col1_w = (UWORD)(val_w + 8);
-        lo->col2_w = (UWORD)(val_w + 8);
+        lo->col2_w = (UWORD)(val_w + 16);
     }
-    lo->col1_x = TN_BORDER_PAD + lab_w;
+    lo->col1_x = TN_LABEL_PAD + lab_w;
     lo->col2_x = lo->col1_x + lo->col1_w + TN_COL_GAP + lab_w;
 
     /* 11e item 3: rows start BELOW the window title bar
@@ -315,8 +316,31 @@ static void compute_layout(PrefsLayout *lo, struct Screen *scr)
         lo->win_w = (UWORD)(scr->Width - 2 * TN_BORDER_PAD);
     }
 
-    /* Eight equal buttons across the bottom (TNET-079/081, Step W) */
-    lo->btn_w = (UWORD)((lo->win_w - 2 * TN_BORDER_PAD - 7 * 6) / 8);
+    /* 11f item 2: eight buttons, each sized for its own label
+     * (TextLength + 16). If the row would not fit 640 px, the
+     * inter-button gap shrinks - never the text. */
+    {
+        static const char *const btns[] = {
+            "Save", "Use", "Start", "Stop", "Setup...", "Undo",
+            "Ping", "Cancel", NULL
+        };
+        UWORD gap = 6;
+        UWORD need = 0;
+        for (i = 0; btns[i] != NULL; i++) {
+            UWORD w = (UWORD)(rp != NULL ?
+                             TextLength(rp, (STRPTR)btns[i],
+                             (LONG)strlen_local(btns[i])) :
+                             strlen_local(btns[i]) * lo->fh);
+            lo->btn_ws[i] = (UWORD)(w + 16);
+        }
+        need = 2 * TN_BORDER_PAD + 7 * gap;
+        for (i = 0; i < 8; i++) need = (UWORD)(need + lo->btn_ws[i]);
+        while (need > lo->win_w && gap > 2) {
+            gap--;
+            need = (UWORD)(2 * TN_BORDER_PAD + 7 * gap);
+            for (i = 0; i < 8; i++) need = (UWORD)(need + lo->btn_ws[i]);
+        }
+    }
 
     /* Window OUTER height: rows + button bar + Intuition chrome estimate
      * (title bar + bottom border) so OpenWindow never overflows NTSC. */
@@ -690,20 +714,22 @@ int main(int argc, char *argv[])
     ng.ng_Flags      = PLACETEXT_IN;
 
     ng.ng_LeftEdge   = (WORD)(TN_BORDER_PAD);
-    ng.ng_Width      = lo.btn_w;
+    ng.ng_Width      = lo.btn_ws[0];
     ng.ng_GadgetText = (STRPTR)"Save";
     ng.ng_GadgetID   = GID_SAVE;
     gad = CreateGadget(BUTTON_KIND, gad_largetext, &ng, TAG_END);
     if (!gad) goto cleanup;
 
-    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 6);
+    ng.ng_LeftEdge  += (WORD)(lo.btn_ws[0] + 6);
+
     ng.ng_GadgetText = (STRPTR)"Use";
     ng.ng_GadgetID   = GID_USE;
     gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
     pf_trace("prefs-trace: gadget buttons\n");
     if (!gad) goto cleanup;
 
-    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 6);
+    ng.ng_LeftEdge  += (WORD)(lo.btn_ws[1] + 6);
+
     ng.ng_GadgetText = (STRPTR)"Start";
     ng.ng_GadgetID   = GID_START;
     gad_start = CreateGadget(BUTTON_KIND, gad, &ng,
@@ -711,7 +737,8 @@ int main(int argc, char *argv[])
                              TAG_END);
     if (!gad_start) goto cleanup;
 
-    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 6);
+    ng.ng_LeftEdge  += (WORD)(lo.btn_ws[2] + 6);
+
     ng.ng_GadgetText = (STRPTR)"Stop";
     ng.ng_GadgetID   = GID_STOP;
     gad_stop = CreateGadget(BUTTON_KIND, gad_start, &ng,
@@ -719,25 +746,29 @@ int main(int argc, char *argv[])
                             TAG_END);
     if (!gad_stop) goto cleanup;
 
-    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 6);
+    ng.ng_LeftEdge  += (WORD)(lo.btn_ws[3] + 6);
+
     ng.ng_GadgetText = (STRPTR)"Setup...";
     ng.ng_GadgetID   = GID_SETUP;
     gad = CreateGadget(BUTTON_KIND, gad_stop, &ng, TAG_END);
     if (!gad) goto cleanup;
 
-    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 6);
+    ng.ng_LeftEdge  += (WORD)(lo.btn_ws[4] + 6);
+
     ng.ng_GadgetText = (STRPTR)"Undo";
     ng.ng_GadgetID   = GID_UNDO;
     gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
     if (!gad) goto cleanup;
 
-    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 6);
+    ng.ng_LeftEdge  += (WORD)(lo.btn_ws[5] + 6);
+
     ng.ng_GadgetText = (STRPTR)"Ping";
     ng.ng_GadgetID   = GID_PING;
     gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
     if (!gad) goto cleanup;
 
-    ng.ng_LeftEdge  += (WORD)(lo.btn_w + 6);
+    ng.ng_LeftEdge  += (WORD)(lo.btn_ws[6] + 6);
+
     ng.ng_GadgetText = (STRPTR)"Cancel";
     ng.ng_GadgetID   = GID_CANCEL;
     gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
