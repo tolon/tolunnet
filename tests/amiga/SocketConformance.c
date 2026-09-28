@@ -3511,9 +3511,7 @@ static void tn_crash_guard(const char *row)
     struct Screen *found = NULL;
     int count = 0;
 
-    /* 11a item 1: once the baseline is snapped, only scan while
-     * there are unreported requesters left to catch. */
-    if (g_crash_baseline >= 0 && g_crash_seen >= g_crash_baseline && g_crash_seen == count) return;
+
     if (cf_int == NULL) {
         cf_int = OpenLibrary((CONST_STRPTR)"intuition.library", 36);
         opened_int = 1;
