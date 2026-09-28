@@ -1,0 +1,182 @@
+[2026-09-28 12:58:14] [main] starting hermetic slirp host services
+[2026-09-28 12:58:14] [udp_echo] listening on UDP 15007
+[2026-09-28 12:58:14] [tcp_silent] listening on TCP 15011
+[2026-09-28 12:58:14] [tcp_echo] listening on TCP 15007
+[2026-09-28 12:58:14] [tcp_delay] listening on TCP 15009
+[2026-09-28 12:58:14] [sntp] listening on UDP 15123
+[2026-09-28 12:58:14] [dns] listening on UDP 15353
+[2026-09-28 12:58:14] [tftp] listening on UDP 15069
+[2026-09-28 12:58:14] [ftp] listening on TCP 15021 (PASV port: 15020)
+[2026-09-28 12:58:14] [main] all 7 service threads started, ready for traffic
+[2026-09-28 12:58:14] [whois] listening on TCP 15043
+[2026-09-28 12:58:14] [http] listening on TCP 15080
+[2026-09-28 12:58:14] [tcp_delay] accepted from ('127.0.0.1', 34654), sleeping 1.0 s before reply
+[2026-09-28 12:58:14] [ftp] connected from ('127.0.0.1', 34655)
+[2026-09-28 12:58:14] [ftp] session error: [WinError 10053] Kurulan bir bağlantı, ana makinenizdeki yazılım tarafından iptal edildi
+[2026-09-28 12:58:14] [whois] query '' from ('127.0.0.1', 34656)
+[2026-09-28 12:58:14] [http] request '' from ('127.0.0.1', 34657)
+[2026-09-28 12:58:14] [tcp_silent] accepted from ('127.0.0.1', 34659), staying silent
+[2026-09-28 13:00:12] [tcp_delay] accepted from ('127.0.0.1', 44315), sleeping 1.0 s before reply
+[2026-09-28 13:00:13] [udp_echo] echoing 9 bytes to ('127.0.0.1', 58986)
+[2026-09-28 13:00:13] [tcp_delay] accepted from ('127.0.0.1', 44316), sleeping 1.0 s before reply
+[2026-09-28 13:00:14] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 44317)
+[2026-09-28 13:00:15] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 44319)
+[2026-09-28 13:00:17] [udp_echo] echoing 6 bytes to ('127.0.0.1', 58987)
+[2026-09-28 13:00:22] [whois] query 'example.com' from ('127.0.0.1', 57520)
+[2026-09-28 13:00:22] [tcp_echo] echoing 9 bytes to ('127.0.0.1', 57521)
+[2026-09-28 13:00:22] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 57521)
+[2026-09-28 13:00:23] [tcp_echo] echoing 3 bytes to ('127.0.0.1', 57521)
+[2026-09-28 13:00:23] [tcp_echo] echoing 3 bytes to ('127.0.0.1', 57521)
+[2026-09-28 13:00:23] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 57521)
+[2026-09-28 13:00:23] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 57522)
+[2026-09-28 13:00:23] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 57523)
+[2026-09-28 13:00:23] [ftp] connected from ('127.0.0.1', 57524)
+[2026-09-28 13:00:23] [ftp] command: USER anonymous
+[2026-09-28 13:00:23] [ftp] command: PASS tolunnet@
+[2026-09-28 13:00:23] [ftp] command: TYPE A
+[2026-09-28 13:00:23] [ftp] command: PASV 
+[2026-09-28 13:00:23] [ftp] command: LIST 
+[2026-09-28 13:00:23] [ftp] command: TYPE I
+[2026-09-28 13:00:23] [ftp] command: PASV 
+[2026-09-28 13:00:23] [ftp] command: RETR test.bin
+[2026-09-28 13:00:23] [ftp] command: TYPE I
+[2026-09-28 13:00:23] [ftp] command: PASV 
+[2026-09-28 13:00:23] [ftp] command: RETR nosuchfile
+[2026-09-28 13:00:23] [ftp] RETR nosuchfile: no such file
+[2026-09-28 13:00:23] [ftp] command: QUIT 
+[2026-09-28 13:00:24] [ftp] connected from ('127.0.0.1', 57528)
+[2026-09-28 13:00:24] [ftp] command: USER anonymous
+[2026-09-28 13:00:24] [ftp] command: PASS tolunnet@
+[2026-09-28 13:00:24] [ftp] command: TYPE I
+[2026-09-28 13:00:24] [ftp] command: PASV 
+[2026-09-28 13:00:24] [ftp] command: STOR uploaded.bin
+[2026-09-28 13:00:24] [ftp] STOR received 1500 bytes
+[2026-09-28 13:00:24] [ftp] command: QUIT 
+[2026-09-28 13:00:24] [sntp] replying NTP packet to ('127.0.0.1', 54377)
+[2026-09-28 13:00:29] [tftp] RRQ for testfile (octet) from ('127.0.0.1', 63760)
+[2026-09-28 13:00:32] [tftp] RRQ for bigfile (octet) from ('127.0.0.1', 62036)
+[2026-09-28 13:00:50] [dns] query tolunbench.test type=1 from ('127.0.0.1', 49632)
+[2026-09-28 13:00:53] [dns] query 2.2.0.10.in-addr.arpa type=12 from ('127.0.0.1', 53081)
+[2026-09-28 13:01:42] [tcp_delay] accepted from ('127.0.0.1', 5489), sleeping 1.0 s before reply
+[2026-09-28 13:01:43] [udp_echo] echoing 9 bytes to ('127.0.0.1', 62339)
+[2026-09-28 13:01:43] [tcp_delay] accepted from ('127.0.0.1', 5490), sleeping 1.0 s before reply
+[2026-09-28 13:01:44] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 5491)
+[2026-09-28 13:01:44] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 5493)
+[2026-09-28 13:01:45] [udp_echo] echoing 6 bytes to ('127.0.0.1', 62340)
+[2026-09-28 13:01:51] [whois] query 'example.com' from ('127.0.0.1', 5495)
+[2026-09-28 13:01:51] [tcp_echo] echoing 9 bytes to ('127.0.0.1', 5496)
+[2026-09-28 13:01:51] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 5496)
+[2026-09-28 13:01:51] [tcp_echo] echoing 3 bytes to ('127.0.0.1', 5496)
+[2026-09-28 13:01:51] [tcp_echo] echoing 3 bytes to ('127.0.0.1', 5496)
+[2026-09-28 13:01:51] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 5496)
+[2026-09-28 13:01:52] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 5497)
+[2026-09-28 13:01:52] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 5498)
+[2026-09-28 13:01:52] [ftp] connected from ('127.0.0.1', 5499)
+[2026-09-28 13:01:52] [ftp] command: USER anonymous
+[2026-09-28 13:01:52] [ftp] command: PASS tolunnet@
+[2026-09-28 13:01:52] [ftp] command: TYPE A
+[2026-09-28 13:01:52] [ftp] command: PASV 
+[2026-09-28 13:01:52] [ftp] command: LIST 
+[2026-09-28 13:01:52] [ftp] command: TYPE I
+[2026-09-28 13:01:52] [ftp] command: PASV 
+[2026-09-28 13:01:52] [ftp] command: RETR test.bin
+[2026-09-28 13:01:52] [ftp] command: TYPE I
+[2026-09-28 13:01:52] [ftp] command: PASV 
+[2026-09-28 13:01:52] [ftp] command: RETR nosuchfile
+[2026-09-28 13:01:52] [ftp] RETR nosuchfile: no such file
+[2026-09-28 13:01:52] [ftp] command: QUIT 
+[2026-09-28 13:01:53] [ftp] connected from ('127.0.0.1', 5503)
+[2026-09-28 13:01:53] [ftp] command: USER anonymous
+[2026-09-28 13:01:53] [ftp] command: PASS tolunnet@
+[2026-09-28 13:01:53] [ftp] command: TYPE I
+[2026-09-28 13:01:53] [ftp] command: PASV 
+[2026-09-28 13:01:53] [ftp] command: STOR uploaded.bin
+[2026-09-28 13:01:53] [ftp] STOR received 1500 bytes
+[2026-09-28 13:01:53] [ftp] command: QUIT 
+[2026-09-28 13:01:53] [sntp] replying NTP packet to ('127.0.0.1', 57867)
+[2026-09-28 13:01:58] [tftp] RRQ for testfile (octet) from ('127.0.0.1', 57869)
+[2026-09-28 13:02:01] [tftp] RRQ for bigfile (octet) from ('127.0.0.1', 49528)
+[2026-09-28 13:02:09] [dns] query tolunbench.test type=1 from ('127.0.0.1', 56963)
+[2026-09-28 13:02:12] [dns] query 2.2.0.10.in-addr.arpa type=12 from ('127.0.0.1', 55644)
+[2026-09-28 13:06:40] [tcp_delay] accepted from ('127.0.0.1', 57107), sleeping 1.0 s before reply
+[2026-09-28 13:06:42] [udp_echo] echoing 9 bytes to ('127.0.0.1', 60246)
+[2026-09-28 13:06:42] [tcp_delay] accepted from ('127.0.0.1', 57108), sleeping 1.0 s before reply
+[2026-09-28 13:06:43] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 57109)
+[2026-09-28 13:06:43] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 57113)
+[2026-09-28 13:06:43] [udp_echo] echoing 6 bytes to ('127.0.0.1', 60873)
+[2026-09-28 13:06:50] [whois] query 'example.com' from ('127.0.0.1', 40576)
+[2026-09-28 13:06:50] [tcp_echo] echoing 9 bytes to ('127.0.0.1', 40577)
+[2026-09-28 13:06:50] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 40577)
+[2026-09-28 13:06:50] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 40577)
+[2026-09-28 13:06:50] [tcp_echo] echoing 3 bytes to ('127.0.0.1', 40577)
+[2026-09-28 13:06:50] [tcp_echo] echoing 3 bytes to ('127.0.0.1', 40577)
+[2026-09-28 13:06:51] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 40578)
+[2026-09-28 13:06:52] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 40579)
+[2026-09-28 13:06:52] [ftp] connected from ('127.0.0.1', 40580)
+[2026-09-28 13:06:52] [ftp] command: USER anonymous
+[2026-09-28 13:06:52] [ftp] command: PASS tolunnet@
+[2026-09-28 13:06:52] [ftp] command: TYPE A
+[2026-09-28 13:06:52] [ftp] command: PASV 
+[2026-09-28 13:06:52] [ftp] command: LIST 
+[2026-09-28 13:06:52] [ftp] command: TYPE I
+[2026-09-28 13:06:52] [ftp] command: PASV 
+[2026-09-28 13:06:53] [ftp] command: RETR test.bin
+[2026-09-28 13:06:53] [ftp] command: TYPE I
+[2026-09-28 13:06:53] [ftp] command: PASV 
+[2026-09-28 13:06:53] [ftp] command: RETR nosuchfile
+[2026-09-28 13:06:53] [ftp] RETR nosuchfile: no such file
+[2026-09-28 13:06:53] [ftp] command: QUIT 
+[2026-09-28 13:06:55] [ftp] connected from ('127.0.0.1', 40584)
+[2026-09-28 13:06:55] [ftp] command: USER anonymous
+[2026-09-28 13:06:56] [ftp] command: PASS tolunnet@
+[2026-09-28 13:06:56] [ftp] command: TYPE I
+[2026-09-28 13:06:56] [ftp] command: PASV 
+[2026-09-28 13:06:56] [ftp] command: STOR uploaded.bin
+[2026-09-28 13:06:56] [ftp] STOR received 1500 bytes
+[2026-09-28 13:06:56] [ftp] command: QUIT 
+[2026-09-28 13:06:56] [sntp] replying NTP packet to ('127.0.0.1', 60875)
+[2026-09-28 13:07:02] [tftp] RRQ for testfile (octet) from ('127.0.0.1', 60877)
+[2026-09-28 13:07:05] [tftp] RRQ for bigfile (octet) from ('127.0.0.1', 64630)
+[2026-09-28 13:07:31] [dns] query tolunbench.test type=1 from ('127.0.0.1', 62314)
+[2026-09-28 13:07:31] [dns] query 2.2.0.10.in-addr.arpa type=12 from ('127.0.0.1', 62315)
+[2026-09-28 13:08:53] [tcp_delay] accepted from ('127.0.0.1', 40326), sleeping 1.0 s before reply
+[2026-09-28 13:08:55] [udp_echo] echoing 9 bytes to ('127.0.0.1', 51876)
+[2026-09-28 13:08:55] [tcp_delay] accepted from ('127.0.0.1', 40327), sleeping 1.0 s before reply
+[2026-09-28 13:08:56] [tcp_echo] echoing 8 bytes to ('127.0.0.1', 40328)
+[2026-09-28 13:08:56] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 40330)
+[2026-09-28 13:08:58] [udp_echo] echoing 6 bytes to ('127.0.0.1', 51882)
+[2026-09-28 13:09:05] [whois] query 'example.com' from ('127.0.0.1', 40331)
+[2026-09-28 13:09:06] [tcp_echo] echoing 9 bytes to ('127.0.0.1', 40332)
+[2026-09-28 13:09:06] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 40332)
+[2026-09-28 13:09:06] [tcp_echo] echoing 6 bytes to ('127.0.0.1', 40332)
+[2026-09-28 13:09:06] [tcp_echo] echoing 3 bytes to ('127.0.0.1', 40332)
+[2026-09-28 13:09:06] [tcp_echo] echoing 3 bytes to ('127.0.0.1', 40332)
+[2026-09-28 13:09:06] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 40339)
+[2026-09-28 13:09:07] [http] request 'GET /test HTTP/1.1' from ('127.0.0.1', 40342)
+[2026-09-28 13:09:07] [ftp] connected from ('127.0.0.1', 40343)
+[2026-09-28 13:09:07] [ftp] command: USER anonymous
+[2026-09-28 13:09:07] [ftp] command: PASS tolunnet@
+[2026-09-28 13:09:07] [ftp] command: TYPE A
+[2026-09-28 13:09:07] [ftp] command: PASV 
+[2026-09-28 13:09:07] [ftp] command: LIST 
+[2026-09-28 13:09:07] [ftp] command: TYPE I
+[2026-09-28 13:09:07] [ftp] command: PASV 
+[2026-09-28 13:09:08] [ftp] command: RETR test.bin
+[2026-09-28 13:09:08] [ftp] command: TYPE I
+[2026-09-28 13:09:08] [ftp] command: PASV 
+[2026-09-28 13:09:08] [ftp] command: RETR nosuchfile
+[2026-09-28 13:09:08] [ftp] RETR nosuchfile: no such file
+[2026-09-28 13:09:08] [ftp] command: QUIT 
+[2026-09-28 13:09:10] [ftp] connected from ('127.0.0.1', 40347)
+[2026-09-28 13:09:10] [ftp] command: USER anonymous
+[2026-09-28 13:09:10] [ftp] command: PASS tolunnet@
+[2026-09-28 13:09:10] [ftp] command: TYPE I
+[2026-09-28 13:09:10] [ftp] command: PASV 
+[2026-09-28 13:09:10] [ftp] command: STOR uploaded.bin
+[2026-09-28 13:09:11] [ftp] STOR received 1500 bytes
+[2026-09-28 13:09:11] [ftp] command: QUIT 
+[2026-09-28 13:09:11] [sntp] replying NTP packet to ('127.0.0.1', 58457)
+[2026-09-28 13:09:16] [tftp] RRQ for testfile (octet) from ('127.0.0.1', 50363)
+[2026-09-28 13:09:20] [tftp] RRQ for bigfile (octet) from ('127.0.0.1', 63132)
+[2026-09-28 13:09:37] [dns] query tolunbench.test type=1 from ('127.0.0.1', 50902)
+[2026-09-28 13:09:37] [dns] query 2.2.0.10.in-addr.arpa type=12 from ('127.0.0.1', 50904)
