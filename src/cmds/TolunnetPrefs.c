@@ -375,9 +375,11 @@ static void compute_layout(PrefsLayout *lo, struct Screen *scr)
 
     /* Window OUTER height: rows + button bar + Intuition chrome estimate
      * (title bar + bottom border) so OpenWindow never overflows NTSC. */
-    /* 11h item 2: bottom margin = side margin (no empty band) */
+    /* 11h item 2: bottom margin = side margin (no empty band).
+     * btn_y is already measured below the title bar - the title
+     * height must NOT be added a second time. */
     lo->win_h = (UWORD)(lo->btn_y + lo->btn_h + TN_BORDER_PAD +
-                        (scr->WBorTop + lo->fh + 1) + scr->WBorBottom);
+                        scr->WBorBottom);
 
     /* Centre on the visible area; never hard-code WA_Top (TNET-062) */
     {
