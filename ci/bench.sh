@@ -474,6 +474,7 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
     # TNET-110: wizard page screenshots (PAL + NTSC) from tc_wizard_ntsc
     cp "$WORK_DIR"/wizard-*.iff "$OUT/" 2>/dev/null || true
     cp "$WORK_DIR"/prefs-*.iff  "$OUT/" 2>/dev/null || true
+    cp "$WORK_DIR"/crash-*.iff "$OUT/" 2>/dev/null || true
     # ANX-01: third-party bsdsocktest log (does not gate the bench)
     cp "$WORK_DIR/bsdsocktest.log" "$OUT/" 2>/dev/null \
         || echo "(missing)" > "$OUT/bsdsocktest.log"

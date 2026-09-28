@@ -7862,6 +7862,15 @@ static void tc_net_cmd_ping_gw(void)
     }
 }
 
+/* 10g item 2: in-process break helper for net_recv_ctrlc. */
+static struct Task *tn_break_target;
+static void tn_break_entry(void)
+{
+    Delay(50);
+    if (tn_break_target != NULL) Signal(tn_break_target, SIGBREAKF_CTRL_C);
+}
+
+
 static void tc_net_recv_ctrlc(void)
 {
     LONG lst = -1, cli = -1, conn = -1;
@@ -7910,19 +7919,20 @@ static void tc_net_recv_ctrlc(void)
     (void)call_recv(cli, buf, 1, 0);
 
     /* helper child: Signal CTRL_C to us after ~1 s */
+    /* helper child: Signal CTRL_C to us after ~1 s (in-process -
+     * the 68000 disk load of the helper binary ate the budget) */
     {
-        struct Task *me = FindTask((CONST_STRPTR)NULL);
-        char cmd[96];
         LONG ret;
         struct DateStamp ds;
         ULONG t0, t1;
-        snprintf_safe(cmd, sizeof(cmd),
-                      "C:SocketConformance break_helper %ld", (LONG)(intptr_t)me);
-        SystemTags((CONST_STRPTR)cmd,
-                   SYS_Asynch, TRUE,
-                   SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE),
-                   SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
-                   TAG_END);
+        tn_break_target = FindTask((CONST_STRPTR)NULL);
+        if (CreateNewProcTags(NP_Entry, (ULONG)tn_break_entry,
+                              NP_Name, (ULONG)"tn-break",
+                              TAG_END) == NULL) {
+            call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
+            TAP_NOTOK("net_recv_ctrlc", "cannot create tn-break child");
+            return;
+        }
         DateStamp(&ds);
         t0 = (ULONG)ds.ds_Days * 86400UL * 50UL + (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
         tapf("# net_recv_ctrlc: signals BEFORE recv = 0x%lx\n", (unsigned)SetSignal(0, 0));
@@ -7969,12 +7979,6 @@ static void tc_net_recv_ctrlc(void)
 }
 
 /* helper child mode: Signal CTRL_C to the parent after ~1 s */
-static void tc_break_helper_child(char *taskp)
-{
-    struct Task *t = (struct Task *)(unsigned long)strtoul_ptr(taskp);
-    Delay(50);
-    if (t != NULL) Signal(t, SIGBREAKF_CTRL_C);
-}
 
 /* z.ai step 4 item 4: Expunge must NOT remove the live library. Flush-
  * class AllocMem fails with a live daemon holding the library, so the
@@ -8027,15 +8031,6 @@ int main(int argc, char *argv[])
     int not_ok;
 
     if (DOSBase == NULL) return 20;
-
-    /* child mode: break helper for net_recv_ctrlc */
-    if (argc >= 3 && strcmp(argv[1], "break_helper") == 0) {
-        struct Task *t = (struct Task *)(uintptr_t)strtoul_ptr(argv[2]);
-        Delay(50);
-        if (t != NULL) Signal(t, SIGBREAKF_CTRL_C);
-        CloseLibrary(DOSBase);
-        return 0;
-    }
 
     /* Child mode for cross-process obtain test */
     if (argc >= 3 && strcmp(argv[1], "child_obtain") == 0) {        LONG target_id = parse_long(argv[2]);
