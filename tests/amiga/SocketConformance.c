@@ -278,6 +278,8 @@ static ULONG tc_cfg_ip(const char *key, ULONG def)
         if (cf_int == NULL) { \
             cf_int = OpenLibrary((CONST_STRPTR)"intuition.library", 36); \
             cf_opened = 1; \
+            /* the scan and the IFF dump read the global base */ \
+            IntuitionBase = (struct IntuitionBase *)cf_int; \
         } \
         if (cf_int != NULL) { \
             cfkey = LockIBase(0); \
@@ -299,7 +301,10 @@ static ULONG tc_cfg_ip(const char *key, ULONG def)
             g_count++; g_not_ok_count++; \
             tapf("not ok %d - %s # crash requester appeared\n", g_count, #tc); \
         } \
-        if (cf_opened) CloseLibrary(cf_int); \
+        if (cf_opened) { \
+            IntuitionBase = NULL; \
+            CloseLibrary(cf_int); \
+        } \
     } \
     } } while (0)
 #define TAP_TODO(name, why)  do { g_count++; tapf("not ok %d - %s # TODO %s\n", g_count, name, why); } while (0)
