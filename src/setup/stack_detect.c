@@ -562,13 +562,22 @@ BOOL tn_stack_undo_replacement(void)
         snprintf(path, sizeof(path), "LIBS:bsdsocket.library.%s", suffixes[i]);
         if (file_exists(path)) {
             snprintf(park_path, sizeof(park_path), "LIBS:bsdsocket.library.tolunnet-prev");
-            DeleteFile((CONST_STRPTR)park_path);
-            if (Rename((CONST_STRPTR)"LIBS:bsdsocket.library", (CONST_STRPTR)park_path)) {
-                if (Rename((CONST_STRPTR)path, (CONST_STRPTR)"LIBS:bsdsocket.library")) {
-                    DeleteFile((CONST_STRPTR)park_path);
-                } else {
-                    Rename((CONST_STRPTR)park_path, (CONST_STRPTR)"LIBS:bsdsocket.library");
+            if (file_exists("LIBS:bsdsocket.library")) {
+                /* park the replacement, put the original back, and
+                 * delete the park only after the original is in
+                 * place. */
+                DeleteFile((CONST_STRPTR)park_path);
+                if (Rename((CONST_STRPTR)"LIBS:bsdsocket.library", (CONST_STRPTR)park_path)) {
+                    if (Rename((CONST_STRPTR)path, (CONST_STRPTR)"LIBS:bsdsocket.library")) {
+                        DeleteFile((CONST_STRPTR)park_path);
+                    } else {
+                        Rename((CONST_STRPTR)park_path, (CONST_STRPTR)"LIBS:bsdsocket.library");
+                    }
                 }
+            } else {
+                /* nothing to protect: the original goes straight back
+                 * (the plain undo case - apply already moved it). */
+                Rename((CONST_STRPTR)path, (CONST_STRPTR)"LIBS:bsdsocket.library");
             }
             break;
         }
