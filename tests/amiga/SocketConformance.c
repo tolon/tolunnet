@@ -6002,8 +6002,14 @@ static void tc_net_checks_ok(void)
     char det[160];
     int a, p, d, t;
 
+    /* 11n: these checks mean nothing while the daemon is down, and
+     * later rows stop it - guard the position first. */
     a = tn_check_address(det, sizeof(det));
     tapf("# %s: address %d - %s\n", label, a, det);
+    if (!a) {
+        TAP_NOTOK(label, "stack not live at this point");
+        return;
+    }
     p = tn_check_ping("127.0.0.1", det, sizeof(det));
     tapf("# %s: ping %d - %s\n", label, p, det);
     d = tn_check_dns("test.tolunnet.lan", det, sizeof(det));
@@ -6022,8 +6028,16 @@ static void tc_net_checks_fail(void)
 {
     const char *label = "tc_net_checks_fail";
     char det[160];
-    int p, d, t;
+    int a, p, d, t;
 
+    /* 11n: with a dead stack every check fails for the wrong
+     * reason - guard the position first. */
+    a = tn_check_address(det, sizeof(det));
+    tapf("# %s: address %d - %s\n", label, a, det);
+    if (!a) {
+        TAP_NOTOK(label, "stack not live at this point");
+        return;
+    }
     p = tn_check_ping("10.255.255.1", det, sizeof(det));
     tapf("# %s: ping %d - %s\n", label, p, det);
     d = tn_check_dns("nx.invalid", det, sizeof(det));
@@ -8827,6 +8841,8 @@ int main(int argc, char *argv[])
     TN_RUN(tc_net_cmd_ping_gw);
     TN_RUN(tc_net_cmd_nslookup_server);
     TN_RUN(tc_net_cmd_nslookup_ptr);
+    TN_RUN(tc_net_checks_ok); /* 11n: real checks - only while the stack is live */
+    TN_RUN(tc_net_checks_fail); /* 11n: unreachable targets must fail - only while live */
     TN_RUN(tc_prefs_opens); /* 10d item 2: Prefs window must open (TODO allowed) */
     TN_RUN(tc_prefs_layout); /* 11c item 2: layout assertion (expected red) */
     TN_RUN(tc_cmd_stop_start); /* LAST-but-one: stops the daemon */
@@ -8835,8 +8851,6 @@ int main(int argc, char *argv[])
     TN_RUN(tc_prefs_save_keeps_old); /* 11j item 2: overwrite keeps the old file in .bak */
     TN_RUN(tc_safe_replace); /* 11k item 1: one safe-replace helper (RAM: sandbox) */
     TN_RUN(tc_boot_block); /* 11l item 2: byte-exact boot block editor (RAM: sandbox) */
-    TN_RUN(tc_net_checks_ok); /* 11m item 1: real checks pass on hermetic targets */
-    TN_RUN(tc_net_checks_fail); /* 11m item 1: real checks fail on unreachable targets */
 
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");

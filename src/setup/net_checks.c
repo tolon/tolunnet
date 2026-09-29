@@ -26,12 +26,12 @@
 #define TN_CHECK_TMP "T:tn-check.out"
 
 /* Load the command and run it with RunCommand, capturing stdout.
- * This mirrors the conformance suite's run_cmd: System() starts a
- * fresh CLI process whose command line makes ReadArgs /N scans
- * misparse here (ping rc=20, dns/tcp rc=10 across the board in
- * bench 164439), while RunCommand in-process works for every C:
- * command the suite already drives. The command line MUST end with
- * a newline or /N numeric scans hit garbage. */
+ * This mirrors the conformance suite's run_cmd. The command line
+ * MUST end with a newline or /N numeric scans hit garbage.
+ * (History note, 11n: the earlier bench failures in 164439/170403
+ * were a DEAD STACK - the rows ran after tc_cmd_stop_start - not
+ * System()/ReadArgs; both spawn mechanisms returned the same
+ * rc=20/10/10/10 signature for that reason.) */
 static LONG run_cmd_capture(const char *path, const char *args,
                             char *out, size_t outn)
 {
