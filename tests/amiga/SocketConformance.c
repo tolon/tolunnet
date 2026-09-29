@@ -5586,6 +5586,41 @@ static void tc_prefs_layout(void)
                  ng - 8 + bmax, btn_names[bmax], (long)emax);
             violations++;
         }
+
+        /* 11j item 1 assertion (g): the row is centred between the
+         * inner edges. Gadget coordinates include the borders, so
+         * the inner left edge is at x = BorderLeft and the inner
+         * right edge at x = Width - BorderRight. Also the checkbox
+         * must start at the same x as the first button. */
+        {
+            int fi = ng - 8;
+            int li = ng - 1;
+            int cb = -1;
+            LONG first_mar, last_right, inner_right, last_mar;
+            for (i = 0; i < ng; i++) {
+                if (strstr(g[i].lab, "Large text") != NULL) { cb = i; break; }
+            }
+            first_mar = (LONG)g[fi].x - pwin->BorderLeft;
+            last_right = (LONG)g[li].x + g[li].w;
+            inner_right = (LONG)pwin->Width - pwin->BorderRight;
+            last_mar = inner_right - last_right;
+            tapf("# %s: (g) first x=%ld margin %ld, last right %ld, inner right %ld margin %ld\n",
+                 label, (long)g[fi].x, (long)first_mar,
+                 (long)last_right, (long)inner_right, (long)last_mar);
+            if (first_mar < 0 || last_mar < 0 ||
+                first_mar - last_mar > 2 || last_mar - first_mar > 2) {
+                tapf("# %s: (g) margins differ by more than 2 px\n", label);
+                violations++;
+            }
+            if (cb < 0) {
+                tapf("# %s: (g) checkbox gadget not found in dump\n", label);
+                violations++;
+            } else if (g[cb].x != g[fi].x) {
+                tapf("# %s: (g) checkbox x %d != first button x %d\n",
+                     label, (int)g[cb].x, (int)g[fi].x);
+                violations++;
+            }
+        }
     }
 
     /* 11h item 2 assertions (c)/(d)/(e), all with # diagnostics: */

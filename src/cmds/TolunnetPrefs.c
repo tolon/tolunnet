@@ -357,7 +357,7 @@ static void compute_layout(PrefsLayout *lo, struct Screen *scr)
             for (i = 0; i < 8; i++) need = (UWORD)(need + lo->btn_ws[i]);
         }
         lo->btn_gap = gap;
-        lo->btn_x = TN_BORDER_PAD;
+        lo->btn_x = (UWORD)(scr->WBorLeft + TN_BORDER_PAD);
         {
             /* 11i item 1: the leftover after the clamped gap is
              * spread evenly: every button gets left/8, the first
@@ -733,7 +733,7 @@ int main(int argc, char *argv[])
 
     /* Large text (TNET-110): TolunnetSetup font override via FONT=topaz/11 */
     ng.ng_TopEdge    = (WORD)lo.cb_y;
-    ng.ng_LeftEdge   = TN_BORDER_PAD;
+    ng.ng_LeftEdge   = (WORD)(scr->WBorLeft + TN_BORDER_PAD);
     ng.ng_Width      = lo.gh;
     ng.ng_Height     = lo.gh;
     ng.ng_GadgetText = (STRPTR)"Large text (wizard)";
