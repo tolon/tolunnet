@@ -3929,7 +3929,8 @@ static void tc_wizard_layout(void)
             for (scr = IntuitionBase->FirstScreen; scr; scr = scr->NextScreen) {
                 for (win = scr->FirstWindow; win; win = win->NextWindow) {
                     if (win->Title != NULL &&
-                        strstr((const char *)win->Title, "tolunnet Network Setup") != NULL) {
+                        strstr((const char *)win->Title, "Network Setup") != NULL &&
+                        strstr((const char *)win->Title, "Advanced") == NULL) {
                         break;
                     }
                 }
