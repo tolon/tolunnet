@@ -1542,7 +1542,7 @@ static void rebuild_page_gadgets(void)
         ng.ng_TopEdge    = ct + 5 * g_m.pitch + g_m.pitch / 2;
         ng.ng_Width      = 26;
         ng.ng_Height     = g_m.fy + 6;
-        ng.ng_GadgetText = (STRPTR)"Also write _Roadshow DEVS:NetInterfaces/";
+        ng.ng_GadgetText = (STRPTR)"Also write _Roadshow NetInterfaces file (backed up first)";
         ng.ng_GadgetID   = GID_P4_ROADSHOW_CHK;
         ng.ng_Flags      = PLACETEXT_RIGHT;
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
@@ -1678,12 +1678,17 @@ static void apply_wizard_finish(void)
     }
 
     /* 3. Write tolunnet configuration (also writes DEVS:Internet/ files
-     * when the Advanced checkbox is set) */
-    tn_write_tolunnet_config(&g_ws);
+     * when the Advanced checkbox is set). 11l item 3: failures are
+     * shown in the log instead of being swallowed. */
+    if (!tn_write_tolunnet_config(&g_ws)) {
+        wlog("config: FAILED to write DEVS:tolunnet.config");
+    }
 
     /* 4. Write Roadshow interface if requested */
     if (g_ws.write_roadshow) {
-        tn_write_roadshow_interface(&g_ws);
+        if (!tn_write_roadshow_interface(&g_ws)) {
+            wlog("roadshow: FAILED to write DEVS:NetInterfaces (old file kept)");
+        }
     }
 
     /* 5. Install boot block if requested */
@@ -1792,7 +1797,10 @@ int main(int argc, char **argv)
 {
     memset(&g_ws, 0, sizeof(g_ws));
     g_ws.replace_stacks = TRUE;
-    g_ws.write_roadshow = TRUE;
+    /* 11l item 3: Roadshow files are written only on request; a
+     * real Roadshow DEVS:NetInterfaces config is never clobbered
+     * by default. */
+    g_ws.write_roadshow = FALSE;
     g_ws.start_at_boot  = TRUE;
     g_ws.ip_mode        = 0; /* DHCP default */
     g_ws.task_priority  = 5;

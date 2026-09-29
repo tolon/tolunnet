@@ -8,6 +8,7 @@
 
 #include "net_test.h"
 #include "boot_block.h"
+#include "../common/safe_replace.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -52,12 +53,31 @@ int tn_format_roadshow_interface(const char *dev, ULONG unit, BOOL is_dhcp,
 
 static BOOL write_text(const char *path, const char *text)
 {
-    BPTR fh = Open((CONST_STRPTR)path, MODE_NEWFILE);
-    if (!fh) return FALSE;
+    /* 11l item 3: never overwrite in place - the text goes to
+     * <file>.tolunnet-new and tn_safe_replace swaps it in, keeping
+     * the old content in <file>.tolunnet-bak (one generation). */
+    char new_path[300];
+    char bak_path[300];
+    LONG plen = (LONG)strlen(path);
     LONG len = (LONG)strlen(text);
-    LONG w = Write(fh, (CONST_APTR)text, len);
+    LONG w;
+    BPTR fh;
+
+    if (plen <= 0 || plen + 20 >= (LONG)sizeof(new_path)) return FALSE;
+    strcpy(new_path, path);
+    strcat(new_path, ".tolunnet-new");
+    strcpy(bak_path, path);
+    strcat(bak_path, ".tolunnet-bak");
+
+    fh = Open((CONST_STRPTR)new_path, MODE_NEWFILE);
+    if (fh == (BPTR)0) return FALSE;
+    w = (len > 0) ? Write(fh, (CONST_APTR)text, len) : 0;
     Close(fh);
-    return (w == len);
+    if (w != len) {
+        DeleteFile((CONST_STRPTR)new_path);
+        return FALSE;
+    }
+    return tn_safe_replace(new_path, path, bak_path);
 }
 
 BOOL tn_write_tolunnet_config(const WizardState *ws)

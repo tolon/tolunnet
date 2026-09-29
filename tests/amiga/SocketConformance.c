@@ -3241,6 +3241,13 @@ static void tc_wizard_wired(void)
         Close(us_fh);
     }
 
+    /* 11l item 3: clear the Roadshow interface file first, so the
+     * post-FINISH check below proves the default is unchecked and
+     * the wizard did not write it. */
+    DeleteFile((CONST_STRPTR)"DEVS:NetInterfaces/Ethernet");
+    DeleteFile((CONST_STRPTR)"DEVS:NetInterfaces/Ethernet.tolunnet-new");
+    DeleteFile((CONST_STRPTR)"DEVS:NetInterfaces/Ethernet.tolunnet-bak");
+
     /* Launch TolunnetSetup asynchronously */
     LONG rc = SystemTags((CONST_STRPTR)"C:TolunnetSetup",
                          SYS_Asynch, TRUE,
@@ -3324,6 +3331,18 @@ static void tc_wizard_wired(void)
         return;
     }
     UnLock(lock);
+
+    /* 11l item 3: write_roadshow defaults to unchecked - the wizard
+     * must NOT have created DEVS:NetInterfaces/Ethernet on FINISH
+     * (the file was deleted before the launch). */
+    lock = Lock((CONST_STRPTR)"DEVS:NetInterfaces/Ethernet", ACCESS_READ);
+    if (lock != (BPTR)0) {
+        UnLock(lock);
+        tapf("# tc_wizard_wired: write_roadshow default UNCHECKED violated - DEVS:NetInterfaces/Ethernet was written\n");
+        TAP_NOTOK("tc_wizard_wired", "write_roadshow default is not unchecked: Roadshow interface file was written");
+        return;
+    }
+    tapf("# tc_wizard_wired: write_roadshow default unchecked - no DEVS:NetInterfaces/Ethernet written\n");
 
     /* 2. Verify S:User-Startup.tolunnet-bak exists */
     BPTR bak_lock = Lock((CONST_STRPTR)"S:User-Startup.tolunnet-bak", ACCESS_READ);
