@@ -1,76 +1,70 @@
-# STOP-REPORT — z.ai step 11i, item 1 (button row leftover), 2026-09-29
+# STOP-REPORT — z.ai step 11m, item 1 (Test-page checks), 2026-09-29
 
-State: HEAD `5aa4267`. Item 1 is red twice in a row (benches `024216`,
-`030421`) — per the order's rule I stop, with no third run. Item 2 not
-started.
+State: HEAD `36ab316` (logs for 5ad7ef3). Item 1 is red twice in a row
+(benches `164439`, `170403`) — per the order's rule I stop, with no
+third run. Item 2 not started.
 
 ## Item status
 
-1. `fix(prefs): spread the button row leftover over all buttons` —
-   code in (`93fed5f` + follow-up `5aa4267`), assertion (f) added.
-   RED ×2, signatures below. NOT DONE as a verified item.
-2. `fix(prefs): config overwrite keeps the old file until the new one
-   is in place` — NOT STARTED (no third run allowed).
+1. `refactor(setup): each Test-page check is a function returning a
+   result` — code in (`e3541b8` + `56d0643` include fix +
+   `5ad7ef3` RunCommand switch), rows `tc_net_checks_ok` /
+   `tc_net_checks_fail` registered. RED ×2. NOT DONE as a verified
+   item.
+2. `fix(setup): Test page shows real results and advice` — NOT
+   STARTED (no third run allowed).
 
-Bench budget: 2 of 3 runs used. A red is not expected in this step;
-both reds are honestly reported.
+Counted runs: 2 (a `FATAL: make all failed` before any TAP line —
+missing dos/dostags.h — does not count per the step rule; it was
+fixed in `56d0643`).
 
-## Attempt 1 (`93fed5f`, bench `20260929-024216-v1.2.0-rc4-325-g93fed5f`)
+## The evidence, precisely
 
-Two violations on all four legs (`102 ok / 1 not ok`):
-
-```
-# tc_prefs_layout: (f) uneven button extras: gadget 12 () +33 vs gadget 15 () +72
-# tc_prefs_layout: (d) last button right 548 + 8 vs inner right 552: off 4 > 2
-```
-
-Root causes found and fixed in `5aa4267`:
-
-- The row target used `win_w - 2*TN_BORDER_PAD` while the real window
-  borders are narrower than the pad (WBorLeft/Right 4, pad 8).
-- Assertion (f) computed the natural width from the gadget label, but
-  GadTools BUTTON_KIND labels are NOT exposed via `GadgetText` (the
-  `lab` field has been empty in every dump since step 11f — the 11f
-  button-width check silently skipped for the same reason). With an
-  empty label the natural width degenerated to 16 px and the extras
-  compared raw widths. (f) now falls back to the known button names
-  (Save/Use/Start/Stop/Setup.../Undo/Ping/Cancel), and the app and
-  the test measure with the same `&scr->RastPort`, so the TextLength
-  values agree.
-
-## Attempt 2 (`5aa4267`, bench `20260929-030421-v1.2.0-rc4-326-g5aa4267`)
-
-`(f)` is now GREEN (no diagnostic printed; extras are uniform 7/8 px
-across the eight buttons). `(c)` and `(e)` stay green. One violation
-remains on all four legs:
+Both red benches show an IDENTICAL failure signature, across two
+different spawn mechanisms:
 
 ```
-# tc_prefs_layout: (d) last button right 540 + 8 vs inner right 552: off 4 > 2
+# tc_net_checks_ok: address 0 - no address: stack reports offline
+# tc_net_checks_ok: ping 0 - ping 127.0.0.1 got no reply (rc=20)
+# tc_net_checks_ok: dns 0 - cannot resolve test.tolunnet.lan (rc=10)
+# tc_net_checks_ok: tcp 0 - tcp 10.0.2.2:15080 refused or failed (rc=10)
+not ok 108 - tc_net_checks_ok
+```
+(`tc_net_checks_fail` passes in both — unreachable targets are
+correctly reported as failures.)
+
+In the SAME bench, the suite's own rows drive the SAME C: commands
+green seconds earlier, from the same task, with the same
+LoadSeg+RunCommand pattern:
+
+```
+ok 48 - tc_cmd_nslookup          (run_cmd C:nslookup)
+ok 51 - tc_cmd_nc                (run_cmd C:nc)
+ok 59 - tc_cmd_getnetstatus      (run_cmd C:GetNetStatus)
+ok 89 - net_cmd_status_live      (run_cmd C:GetNetStatus ADDRESS -> 10.0.2.15)
+ok 95 - net_cmd_ping_ttl         (run_cmd C:TolunnetPing 127.0.0.1 COUNT 3)
+ok 97 - net_cmd_ping_gw
 ```
 
-Evidence that the WINDOW is right and the ASSERTION formula is wrong:
+Attempt 1 used System() (benches died rc=20/10/10/10); I blamed the
+spawn mechanism, switched net_checks.c to the suite's exact
+LoadSeg+RunCommand pattern (`5ad7ef3`), and got the identical
+signature (`170403`). Two mechanisms, one signature: the difference
+is NOT how the command is spawned. What differs between the suite's
+run_cmd and my copy is the INPUT side: run_cmd also opens T:cmd.in
+and SelectInput()s it before RunCommand, mine leaves the suite's own
+Input selected. ReadArgs falls back to reading Input when the
+RunCommand buffer is exhausted, and a console-backed Input can make
+every /N keyword scan misbehave - which matches rc=20 (usage) on
+ping exactly.
 
-- Dump: gadget 18 rect `(469,138,71)` → the button row ends at inner
-  x = 540. The window inner width is `Width - BorderLeft - BorderRight`
-  = 556 - 4 - 4 = 548, so the right margin inside the window is
-  548 - 540 = 8 px — exactly TN_BORDER_PAD, symmetric with the 8 px
-  left margin. The row spans the real interior minus one pad per side.
-- The assertion computes `inner right = pwin->Width - pwin->BorderLeft`
-  = 552 — it forgets `BorderRight` (4), so it expects the row to end
-  at 552 - 8 = 544.
-- Step 11h item 2 did not catch this because the then-buggy spread
-  (the Save button swallowing the leftover: `110/40/...` widths in the
-  `021208` dump) put the row at 544 by accident. Fixing the spread
-  exposed the assertion's own off-by-BorderRight.
+## Next step I did NOT take (no third run)
 
-Suggested one-line fix (NOT applied — no third run): in
-`tc_prefs_layout`, compute the inner right edge as
-`pwin->Width - pwin->BorderLeft - pwin->BorderRight`. With the current
-window that makes (d) `540 + 8 == 548`, off 0, green on the existing
-layout without touching TolunnetPrefs.c.
+Make run_cmd_capture/run_cmd_silent byte-identical to the suite's
+run_cmd: open T:cmd.in, SelectInput it (and SelectInput back after),
+keep SelectOutput, newline-terminated command line. That is the one
+untested variable and it is visible in the diff against
+`SocketConformance.c:7391`.
 
-## What I did not do
-
-- No third bench run (rule).
-- Item 2 (`src/common/prefs.c` rewrite + `tc_prefs_save_keeps_old`) —
-  not started; the working tree is clean at `5aa4267`.
+No further benches were run for item 1 after the second consecutive
+red, per the order's rule. The working tree is clean at `36ab316`.
