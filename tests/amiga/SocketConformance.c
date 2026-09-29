@@ -5557,14 +5557,22 @@ static void tc_prefs_layout(void)
 
     /* 11i item 1 assertion (f): the button-row leftover is spread
      * evenly - the extra width beyond TextLength(label)+16 differs
-     * by at most 1 px between any two of the last 8 gadgets. */
+     * by at most 1 px between any two of the last 8 gadgets.
+     * GadTools BUTTON_KIND labels are not visible via GadgetText
+     * (lab is empty), so the label names come from the known row. */
     if (ng >= 8) {
+        static const char *const btn_names[8] = {
+            "Save", "Use", "Start", "Stop", "Setup...", "Undo",
+            "Ping", "Cancel"
+        };
         LONG extras[8];
         LONG emin, emax;
         int bi, bmin = 0, bmax = 0;
         for (bi = 0; bi < 8; bi++) {
-            LONG nw = TextLength(&pscr->RastPort, (STRPTR)g[ng - 8 + bi].lab,
-                                 (LONG)strlen(g[ng - 8 + bi].lab)) + 16;
+            const char *bl = g[ng - 8 + bi].lab[0] ?
+                g[ng - 8 + bi].lab : btn_names[bi];
+            LONG nw = TextLength(&pscr->RastPort, (STRPTR)bl,
+                                 (LONG)strlen(bl)) + 16;
             extras[bi] = (LONG)g[ng - 8 + bi].w - nw;
         }
         emin = emax = extras[0];
@@ -5574,8 +5582,8 @@ static void tc_prefs_layout(void)
         }
         if (emax - emin > 1) {
             tapf("# %s: (f) uneven button extras: gadget %d (%s) +%ld vs gadget %d (%s) +%ld\n",
-                 label, ng - 8 + bmin, g[ng - 8 + bmin].lab, (long)emin,
-                 ng - 8 + bmax, g[ng - 8 + bmax].lab, (long)emax);
+                 label, ng - 8 + bmin, btn_names[bmin], (long)emin,
+                 ng - 8 + bmax, btn_names[bmax], (long)emax);
             violations++;
         }
     }
