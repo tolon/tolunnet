@@ -332,7 +332,7 @@ $(PREFS_BIN): $(BUILD)/src/cmds/TolunnetPrefs.o $(BUILD)/src/common/prefs.o $(BU
 
 # Target: TolunnetSetup First-Run Network Wizard
 SETUP_OBJS = $(BUILD)/src/cmds/TolunnetSetup.o \
-             $(BUILD)/src/setup/stack_detect.o \
+             $(BUILD)/src/setup/stack_detect.o $(BUILD)/src/common/safe_replace.o \
              $(BUILD)/src/setup/hw_detect.o \
              $(BUILD)/src/setup/wifi_mgr.o \
              $(BUILD)/src/setup/net_test.o \
