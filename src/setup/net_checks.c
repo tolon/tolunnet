@@ -18,6 +18,7 @@
 #include <proto/dos.h>
 #include <exec/types.h>
 #include <dos/dos.h>
+#include <dos/dostags.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
