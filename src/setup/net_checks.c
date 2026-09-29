@@ -25,34 +25,66 @@
 
 #define TN_CHECK_TMP "T:tn-check.out"
 
-/* Run cmd, capture its stdout into out, return its return code.
- * System() is synchronous, so the SYS_Input/SYS_Output handles stay
- * ours to close (only SYS_Asynch would transfer them). */
-static LONG run_capture(const char *cmd, char *out, size_t outn)
+/* Load the command and run it with RunCommand, capturing stdout.
+ * This mirrors the conformance suite's run_cmd: System() starts a
+ * fresh CLI process whose command line makes ReadArgs /N scans
+ * misparse here (ping rc=20, dns/tcp rc=10 across the board in
+ * bench 164439), while RunCommand in-process works for every C:
+ * command the suite already drives. The command line MUST end with
+ * a newline or /N numeric scans hit garbage. */
+static LONG run_cmd_capture(const char *path, const char *args,
+                            char *out, size_t outn)
 {
-    BPTR in_h, out_h, fh;
-    LONG rc;
-    LONG got;
+    BPTR seg, old_out, out_fh, r;
+    LONG ret = -1, got, total;
+    char cmdline[160];
 
     out[0] = '\0';
-    DeleteFile((CONST_STRPTR)TN_CHECK_TMP);
-    out_h = Open((CONST_STRPTR)TN_CHECK_TMP, MODE_NEWFILE);
-    if (out_h == (BPTR)0) return -1;
-    in_h = Open((CONST_STRPTR)"NIL:", MODE_OLDFILE);
-    rc = SystemTags(cmd, SYS_Input, in_h, SYS_Output, out_h,
-                    NP_StackSize, 20000, TAG_END);
-    Close(out_h);
-    if (in_h != (BPTR)0) Close(in_h);
+    seg = LoadSeg((CONST_STRPTR)path);
+    if (seg == (BPTR)0) return -100;
+    out_fh = Open((CONST_STRPTR)TN_CHECK_TMP, MODE_NEWFILE);
+    if (out_fh == (BPTR)0) {
+        UnLoadSeg(seg);
+        return -101;
+    }
+    old_out = SelectOutput(out_fh);
+    snprintf(cmdline, sizeof(cmdline), "%s\n", args ? args : "");
+    ret = RunCommand(seg, 32768, (CONST_STRPTR)cmdline, (LONG)strlen(cmdline));
+    SelectOutput(old_out);
+    Close(out_fh);
+    UnLoadSeg(seg);
 
-    fh = Open((CONST_STRPTR)TN_CHECK_TMP, MODE_OLDFILE);
-    if (fh != (BPTR)0) {
-        got = Read(fh, out, (LONG)outn - 1);
-        if (got < 0) got = 0;
-        out[got] = '\0';
-        Close(fh);
+    r = Open((CONST_STRPTR)TN_CHECK_TMP, MODE_OLDFILE);
+    if (r != (BPTR)0) {
+        total = 0;
+        while (total < (LONG)outn - 1 &&
+               (got = Read(r, out + total, (LONG)outn - 1 - total)) > 0) {
+            total += got;
+        }
+        Close(r);
+        out[total] = '\0';
     }
     DeleteFile((CONST_STRPTR)TN_CHECK_TMP);
-    return rc;
+    return ret;
+}
+
+/* Same, with stdout sent to NIL (no output wanted). */
+static LONG run_cmd_silent(const char *path, const char *args)
+{
+    BPTR seg, old_out, null_out;
+    LONG ret = -1;
+    char cmdline[160];
+
+    seg = LoadSeg((CONST_STRPTR)path);
+    if (seg == (BPTR)0) return -100;
+    null_out = Open((CONST_STRPTR)"NIL:", MODE_NEWFILE);
+    old_out = SelectOutput(null_out != (BPTR)0 ? null_out : Output());
+    snprintf(cmdline, sizeof(cmdline), "%s\n", args ? args : "");
+    ret = RunCommand(seg, 32768, (CONST_STRPTR)cmdline, (LONG)strlen(cmdline));
+    SelectOutput(old_out);
+    if (null_out != (BPTR)0) Close(null_out);
+    UnLoadSeg(seg);
+    return ret;
 }
 
 /* digits and dots, or a plain host name (RFC-952-ish): no shell
@@ -122,7 +154,7 @@ int tn_check_address(char *detail, size_t n)
 {
     char out[128];
     unsigned a, b, c, d;
-    LONG rc = run_capture("C:GetNetStatus ADDRESS", out, sizeof(out));
+    LONG rc = run_cmd_capture("C:GetNetStatus", "ADDRESS", out, sizeof(out));
 
     if (rc != 0) {
         snprintf(detail, n, "no address: stack reports offline");
@@ -147,16 +179,15 @@ int tn_check_address(char *detail, size_t n)
 
 int tn_check_ping(const char *host, char *detail, size_t n)
 {
-    char cmd[160];
+    char args[120];
     LONG rc;
 
     if (!tn_host_ok(host)) {
         snprintf(detail, n, "invalid host string");
         return 0;
     }
-    snprintf(cmd, sizeof(cmd),
-             "C:TolunnetPing %s COUNT=1 TIMEOUT=5 >NIL: <NIL:", host);
-    rc = SystemTags(cmd, TAG_END);
+    snprintf(args, sizeof(args), "%s COUNT 1 TIMEOUT 5", host);
+    rc = run_cmd_silent("C:TolunnetPing", args);
     if (rc == 0) {
         snprintf(detail, n, "ping %s replied", host);
         return 1;
@@ -167,7 +198,7 @@ int tn_check_ping(const char *host, char *detail, size_t n)
 
 int tn_check_dns(const char *name, char *detail, size_t n)
 {
-    char cmd[160];
+    char args[120];
     char out[512];
     unsigned a, b, c, d;
     LONG rc;
@@ -176,8 +207,8 @@ int tn_check_dns(const char *name, char *detail, size_t n)
         snprintf(detail, n, "invalid name string");
         return 0;
     }
-    snprintf(cmd, sizeof(cmd), "C:nslookup %s", name);
-    rc = run_capture(cmd, out, sizeof(out));
+    snprintf(args, sizeof(args), "%s", name);
+    rc = run_cmd_capture("C:nslookup", args, out, sizeof(out));
     if (rc == 0 && scan_ipv4(out, &a, &b, &c, &d)) {
         snprintf(detail, n, "resolved %s to %u.%u.%u.%u",
                  name, a, b, c, d);
@@ -189,16 +220,15 @@ int tn_check_dns(const char *name, char *detail, size_t n)
 
 int tn_check_tcp(const char *host, unsigned port, char *detail, size_t n)
 {
-    char cmd[160];
+    char args[120];
     LONG rc;
 
     if (!tn_host_ok(host) || port == 0 || port > 65535) {
         snprintf(detail, n, "invalid connect target");
         return 0;
     }
-    snprintf(cmd, sizeof(cmd),
-             "C:nc %s %u TIMEOUT=5 >NIL: <NIL:", host, port);
-    rc = SystemTags(cmd, TAG_END);
+    snprintf(args, sizeof(args), "%s %u TIMEOUT 5", host, port);
+    rc = run_cmd_silent("C:nc", args);
     if (rc == 0) {
         snprintf(detail, n, "tcp %s:%u connected", host, port);
         return 1;
