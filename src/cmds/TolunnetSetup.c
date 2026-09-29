@@ -1573,7 +1573,7 @@ static void rebuild_page_gadgets(void)
         ng.ng_TopEdge    = ct + 5 * g_m.pitch + g_m.pitch / 2;
         ng.ng_Width      = 26;
         ng.ng_Height     = g_m.fy + 6;
-        ng.ng_GadgetText = (STRPTR)"Also write _Roadshow NetInterfaces (backup kept)";
+        ng.ng_GadgetText = (STRPTR)TN_CHK_ROADSHOW;
         ng.ng_GadgetID   = GID_P4_ROADSHOW_CHK;
         ng.ng_Flags      = PLACETEXT_RIGHT;
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
@@ -1650,7 +1650,7 @@ static void rebuild_page_gadgets(void)
         ng.ng_TopEdge    = ct + g_m.pitch + g_m.pitch * 5 + 6 + 4;
         ng.ng_Width      = 26;
         ng.ng_Height     = g_m.fy + 6;
-        ng.ng_GadgetText = (STRPTR)"Start at _boot";
+        ng.ng_GadgetText = (STRPTR)TN_CHK_BOOT;
         ng.ng_GadgetID   = GID_P5_BOOT_CHK;
         ng.ng_Flags      = PLACETEXT_RIGHT;
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
@@ -1660,7 +1660,7 @@ static void rebuild_page_gadgets(void)
         ng.ng_LeftEdge   = cl + g_m.pane_w * 35 / 100;
         ng.ng_Width      = 26;
         ng.ng_Height     = g_m.fy + 6;
-        ng.ng_GadgetText = (STRPTR)"Open _Prefs after finish";
+        ng.ng_GadgetText = (STRPTR)TN_CHK_PREFS;
         ng.ng_GadgetID   = GID_P5_PREFS_CHK;
         ng.ng_Flags      = PLACETEXT_RIGHT;
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,

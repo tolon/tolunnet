@@ -125,4 +125,12 @@ typedef struct WizardState {
     struct Message *rexx_finish_msg;
 } WizardState;
 
+/* 11r item 2: the three checkbox labels, shared by the wizard and
+ * the tc_wizard_layout row so the test can never go stale against a
+ * label change. The mnemonic underscores are printed literally on
+ * these checkboxes (no GT_Underscore tag), so TextLength sees them. */
+#define TN_CHK_ROADSHOW "Also write _Roadshow NetInterfaces (backup kept)"
+#define TN_CHK_BOOT     "Start at _boot"
+#define TN_CHK_PREFS    "Open _Prefs after finish"
+
 #endif /* TOLUNNET_SETUP_TYPES_H */

@@ -41,6 +41,7 @@
 #include "../../src/common/safe_replace.h"
 #include "../../src/setup/boot_block.h"
 #include "../../src/setup/net_checks.h"
+#include "../../src/setup/setup_types.h"
 #include "../../src/setup/wifi_mgr.h"
 #include "../../src/setup/stack_detect.h"
 #include <net/if_arp.h>
@@ -3885,9 +3886,9 @@ static void tc_wizard_layout(void)
 {
     const char *label = "tc_wizard_layout";
     static const struct { UWORD gid; const char *text; } chk_labels[3] = {
-        { 147, "Also write Roadshow NetInterfaces (backup kept)" },
-        { 151, "Start at boot" },
-        { 154, "Open Prefs after finish" },
+        { 147, TN_CHK_ROADSHOW },
+        { 151, TN_CHK_BOOT },
+        { 154, TN_CHK_PREFS },
     };
     enum { TN_WL_MAX = 32 };
     static struct {
@@ -3905,11 +3906,32 @@ static void tc_wizard_layout(void)
     LONG bl, br, bt, bb, winw, winh;
     int bl_ = 0, br_ = 0, bt_ = 0, bb_ = 0;
 
+    /* 11r item 2: a previous wizard still busy in its checks holds
+     * TOLUNNETSETUP - wait up to 30 s for it to disappear and log
+     * how long it took. */
+    {
+        int t, last_seen = -1;
+        for (t = 0; t < 1500; t++) {
+            int found;
+            Forbid();
+            found = (FindPort((CONST_STRPTR)"TOLUNNETSETUP") != NULL);
+            Permit();
+            if (!found) break;
+            last_seen = t;
+            Delay(2);
+        }
+        if (last_seen >= 0) {
+            tapf("# %s: waited %d s for a previous TOLUNNETSETUP port\n",
+                 label, (last_seen * 2 + 49) / 50);
+        }
+    }
+
     if (!reply_port) {
         TAP_NOTOK(label, "CreateMsgPort failed");
         return;
     }
 
+    tapf("# %s: stage: launching wizard\n", label);
     {
         LONG rc = SystemTags((CONST_STRPTR)"C:TolunnetSetup",
                              SYS_Asynch, TRUE,
@@ -3923,6 +3945,7 @@ static void tc_wizard_layout(void)
             return;
         }
     }
+    tapf("# %s: stage: waiting for TOLUNNETSETUP port\n", label);
     for (i = 0; i < 100; i++) {
         Delay(5);
         Forbid();
@@ -3940,6 +3963,7 @@ static void tc_wizard_layout(void)
         char cmd[16];
 
         snprintf(cmd, sizeof(cmd), "PAGE %d", pg);
+        tapf("# %s: stage: page %d\n", label, pg);
         if (!wizard_msg(wizard_port, reply_port, cmd)) {
             violations++;
             tapf("# %s: page %d: no reply to PAGE\n", label, pg);
@@ -3947,6 +3971,7 @@ static void tc_wizard_layout(void)
         }
         Delay(8);                     /* rebuild + geom write + repaint */
 
+        tapf("# %s: stage: scanning gadgets (page %d)\n", label, pg);
         ng = 0; winw = winh = 0; bl = br = bt = bb = 0;
         {
             ULONG key = LockIBase(0);
@@ -3986,6 +4011,23 @@ static void tc_wizard_layout(void)
             UnlockIBase(key);
         }
         if (winw == 0) {
+            /* 11r item 2: never fail silently - dump every screen and
+             * window title and the state of the ARexx port. */
+            ULONG key = LockIBase(0);
+            struct Screen *s2;
+            struct Window *w2;
+            for (s2 = IntuitionBase->FirstScreen; s2; s2 = s2->NextScreen) {
+                tapf("# %s: page %d: screen \"%s\"\n", label, pg,
+                     s2->Title ? (const char *)s2->Title : "(no title)");
+                for (w2 = s2->FirstWindow; w2; w2 = w2->NextWindow) {
+                    tapf("# %s: page %d: window \"%s\"\n", label, pg,
+                         w2->Title ? (const char *)w2->Title : "(no title)");
+                }
+            }
+            UnlockIBase(key);
+            tapf("# %s: page %d: TOLUNNETSETUP port %s\n", label, pg,
+                 (FindPort((CONST_STRPTR)"TOLUNNETSETUP") != NULL)
+                     ? "still exists" : "gone");
             violations++;
             tapf("# %s: page %d: wizard window not found\n", label, pg);
             continue;
@@ -4047,9 +4089,15 @@ static void tc_wizard_layout(void)
             }
         }
 
-        /* (c) no two gadgets on a page overlap */
+        /* (c) no two gadgets on a page overlap. Pairs sharing a
+         * GadgetID are GadTools LISTVIEW parts - the scroller and
+         * arrow gadgets inherit the listview's GadgetID and sit
+         * legitimately inside its frame (verified in TolunnetSetup.c:
+         * 222 = GID_P2_LIST+100, 122 = GID_P2_LIST, 134 =
+         * GID_P3_NETLIST, 151 = GID_P5_CHECKLIST). */
         for (i = 0; i < ng; i++) {
             for (j = i + 1; j < ng; j++) {
+                if (g[i].gid == g[j].gid) continue;
                 if (g[i].x < g[j].x + g[j].w && g[j].x < g[i].x + g[i].w &&
                     g[i].y < g[j].y + g[j].h && g[j].y < g[i].y + g[i].h) {
                     tapf("# %s: (c) page %d gadgets %d and %d (gid %u/%u) overlap\n",
@@ -4060,6 +4108,7 @@ static void tc_wizard_layout(void)
         }
     }
 
+    tapf("# %s: stage: cancelling wizard\n", label);
     wizard_msg(wizard_port, reply_port, "CANCEL");
     for (i = 0; i < 30; i++) {
         Delay(5);
@@ -9036,7 +9085,8 @@ int main(int argc, char *argv[])
     TN_RUN(tc_release_obtain);
     TN_RUN(tc_every_vector_callable);
     TN_RUN(tc_stats_counters);
-    /* TN_RUN(tc_wizard_layout); */ /* 11r item 1: re-enabled next item - keep the message fixes isolated first */
+    TN_RUN(tc_wizard_layout); /* 11r item 2: per-page layout check (CANCELs, writes no config) */
+    TN_RUN(tc_wizard_wired);
     TN_RUN(tc_wizard_wired);
     TN_RUN(tc_wizard_ntsc);
     TN_RUN(tc_wifi_scan_parse);
