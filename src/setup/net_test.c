@@ -307,9 +307,14 @@ void tn_run_network_tests(WizardState *ws)
                                      sizeof(ws->test_details[2])) ? 1 : 0;
     ws->test_advice[2][0] = '\0';
 
-    /* 4. DNS Lookup Test - 11m item 1: a real lookup now */
-    ws->test_dns_ok = tn_check_dns(TN_TEST_DNS_NAME, ws->test_details[3],
-                                   sizeof(ws->test_details[3])) ? 1 : 0;
+    /* 4. DNS Lookup Test - 11o item 1: the configured server is
+     * queried directly (port 0 = the standard port 53). */
+    ws->test_dns_ok = tn_check_dns(TN_TEST_DNS_NAME,
+                                   (ws->dns1_str[0] ? ws->dns1_str
+                                                    : "10.0.2.2"),
+                                   0, ws->test_details[3],
+                                   sizeof(ws->test_details[3]),
+                                   NULL, 0) ? 1 : 0;
     ws->test_advice[3][0] = '\0';
 
     /* 5. HTTP Check Test - 11m item 1: a real connect now */
