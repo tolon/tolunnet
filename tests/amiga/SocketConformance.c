@@ -3895,7 +3895,7 @@ static void tc_wizard_layout(void)
         WORD x, y, w, h;
         ULONG flags;
         UWORD gid;
-        char lab[48];
+        char lab[192];
     } g[TN_WL_MAX];
     struct MsgPort *reply_port = CreateMsgPort();
     struct MsgPort *wizard_port = NULL;
@@ -4071,21 +4071,21 @@ static void tc_wizard_layout(void)
             if (text == NULL) continue;
             tl = TextLength(&scr->RastPort, (STRPTR)text, (LONG)strlen(text));
 
-            if (placetext == PLACETEXT_RIGHT &&
+            if ((placetext & PLACETEXT_RIGHT) &&
                 g[i].x + g[i].w + tl > winw - br) {
                 tapf("# %s: (b) page %d gadget %d (gid %u) right label ends at %ld > inner right %ld (\"%s\")\n",
                      label, pg, i, g[i].gid,
                      (long)(g[i].x + g[i].w + tl), winw - br, text);
                 violations++;
             }
-            if (placetext == PLACETEXT_LEFT &&
+            if ((placetext & PLACETEXT_LEFT) &&
                 g[i].x - tl < bl) {
                 tapf("# %s: (b) page %d gadget %d (gid %u) left label starts at %ld < inner left %ld (\"%s\")\n",
                      label, pg, i, g[i].gid,
                      (long)(g[i].x - tl), bl, text);
                 violations++;
             }
-            if (placetext == PLACETEXT_ABOVE &&
+            if ((placetext & PLACETEXT_ABOVE) &&
                 g[i].x + tl > winw - br) {
                 tapf("# %s: (b) page %d gadget %d (gid %u) above label ends at %ld > inner right %ld (\"%s\")\n",
                      label, pg, i, g[i].gid,
