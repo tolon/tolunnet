@@ -1688,7 +1688,10 @@ static void apply_wizard_finish(void)
 
     /* 5. Install boot block if requested */
     if (g_ws.start_at_boot) {
-        tn_install_boot_block(TRUE);
+        /* 11l item 2: a failed rewrite must be visible in the log */
+        if (!tn_install_boot_block(TRUE)) {
+            wlog("boot block: FAILED to update S:User-Startup (original kept)");
+        }
     }
 
     /* 6. Optionally hand over to the Prefs editor (TNET-110 part 3) */

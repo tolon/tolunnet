@@ -39,6 +39,7 @@
 #include "../../src/task/route.h"
 #include "../../src/common/prefs.h"
 #include "../../src/common/safe_replace.h"
+#include "../../src/setup/boot_block.h"
 #include "../../src/setup/wifi_mgr.h"
 #include "../../src/setup/stack_detect.h"
 #include <net/if_arp.h>
@@ -5815,6 +5816,158 @@ static void tc_safe_replace(void)
     }
 }
 
+/* z.ai step 11l item 2: the byte-exact boot-block editor, proven on
+ * a RAM: sandbox file (never S:). (a) a 70 KB file with one 400-char
+ * line keeps every other byte and gains exactly one block; (b) a
+ * second enable still leaves one block; (c) disable removes it and
+ * restores the original bytes; (d) a file with no trailing newline
+ * survives; (e) an unwritable path returns FALSE. */
+static char *tn_file_read_all(const char *path, LONG *out_len)
+{
+    __attribute__((aligned(4))) struct FileInfoBlock fib;
+    BPTR fh = Open((CONST_STRPTR)path, MODE_OLDFILE);
+    char *buf;
+    LONG size, total = 0;
+
+    if (fh == 0) return NULL;
+    memset(&fib, 0, sizeof(fib));
+    if (!ExamineFH(fh, &fib)) { Close(fh); return NULL; }
+    size = fib.fib_Size;
+    buf = (char *)AllocVec(size + 1, MEMF_CLEAR);
+    if (buf == NULL) { Close(fh); return NULL; }
+    while (total < size) {
+        LONG got = Read(fh, buf + total, size - total);
+        if (got <= 0) break;
+        total += got;
+    }
+    Close(fh);
+    buf[total] = '\0';
+    *out_len = total;
+    return buf;
+}
+
+static int tn_count_occurrences(const char *hay, const char *needle)
+{
+    int n = 0;
+    size_t nl = strlen(needle);
+    while ((hay = strstr(hay, needle)) != NULL) {
+        n++;
+        hay += nl;
+    }
+    return n;
+}
+
+static void tc_boot_block(void)
+{
+    const char *label = "tc_boot_block";
+    const char *path = "RAM:tnbb-startup";
+    char *orig = NULL, *after = NULL, *after2 = NULL;
+    LONG orig_len = 0, a1_len = 0, a2_len = 0;
+    char line400[401];
+    char big[256];
+    int i;
+    LONG off = 0;
+    char *body;
+    LONG body_len;
+    int ok_a = 0, ok_b = 0, ok_c = 0, ok_d = 0, ok_e = 0;
+
+    DeleteFile((CONST_STRPTR)path);
+    DeleteFile((CONST_STRPTR)"RAM:tnbb-startup.tolunnet-new");
+    DeleteFile((CONST_STRPTR)"RAM:tnbb-startup.tolunnet-prev");
+    DeleteFile((CONST_STRPTR)"RAM:tnbb-startup.tolunnet-bak");
+
+    /* build the 70 KB original: numbered lines plus one 400-char line */
+    memset(line400, 'x', 400);
+    line400[399] = '\n';
+    line400[400] = '\0';
+    body = (char *)AllocVec(76000, MEMF_CLEAR);
+    if (body == NULL) {
+        TAP_NOTOK(label, "cannot allocate build buffer");
+        return;
+    }
+    for (i = 0; i < 160; i++) {
+        int w = snprintf(big, sizeof(big), "line %d of the original startup script\n", i);
+        memcpy(body + off, big, w);
+        off += w;
+        if (i == 80) {
+            memcpy(body + off, line400, 400);
+            off += 400;
+        }
+    }
+    body_len = off;
+    if (!tn_write_file(path, body)) {
+        FreeVec(body);
+        TAP_NOTOK(label, "cannot write the sandbox file");
+        return;
+    }
+
+    /* (a) enable: every other byte identical, one block */
+    ok_a = tn_boot_block_apply(path, TRUE) &&
+           (after = tn_file_read_all(path, &a1_len)) != NULL &&
+           a1_len > body_len &&
+           memcmp(after, body, body_len) == 0 &&
+           tn_count_occurrences(after, "; BEGIN tolunnet") == 1 &&
+           tn_count_occurrences(after, "; END tolunnet") == 1 &&
+           strstr(after, line400) != NULL;
+
+    /* (b) enable twice: still one block */
+    ok_b = tn_boot_block_apply(path, TRUE) &&
+           (after2 = tn_file_read_all(path, &a2_len)) != NULL &&
+           tn_count_occurrences(after2, "; BEGIN tolunnet") == 1 &&
+           a2_len == a1_len &&
+           memcmp(after2, after, a1_len) == 0;
+
+    /* (c) disable: block gone, original bytes restored */
+    ok_c = tn_boot_block_apply(path, FALSE);
+    FreeVec(after);
+    FreeVec(after2);
+    after = tn_file_read_all(path, &a1_len);
+    ok_c = ok_c && after != NULL && a1_len == body_len &&
+           memcmp(after, body, body_len) == 0;
+
+    /* (d) file with no trailing newline survives */
+    tn_write_file(path, "first line\nsecond line no newline");
+    ok_d = tn_boot_block_apply(path, TRUE);
+    FreeVec(after);
+    after = tn_file_read_all(path, &a1_len);
+    ok_d = ok_d && after != NULL &&
+           tn_count_occurrences(after, "; BEGIN tolunnet") == 1 &&
+           strstr(after, "second line no newline") != NULL &&
+           strstr(after, "no newline\n; BEGIN tolunnet") != NULL;
+    ok_d = ok_d && tn_boot_block_apply(path, FALSE);
+    FreeVec(after);
+    after = tn_file_read_all(path, &a1_len);
+    orig = (char *)AllocVec(40, MEMF_CLEAR);
+    if (orig != NULL) {
+        strcpy(orig, "first line\nsecond line no newline");
+        ok_d = ok_d && after != NULL && a1_len == (LONG)strlen(orig) &&
+               memcmp(after, orig, a1_len) == 0;
+    } else {
+        ok_d = 0;
+    }
+
+    /* (e) unwritable directory path returns FALSE */
+    ok_e = !tn_boot_block_apply("RAM:tnbb-nodir/startup", TRUE);
+
+    tapf("# %s: (a)=%d (b)=%d (c)=%d (d)=%d (e)=%d orig_len=%ld\n",
+         label, ok_a, ok_b, ok_c, ok_d, ok_e, (long)body_len);
+    if (ok_a && ok_b && ok_c && ok_d && ok_e) {
+        TAP_OK(label);
+    } else {
+        TAP_NOTOK(label, "boot block editor damaged the file or lied about it");
+    }
+
+    FreeVec(body);
+    if (after != NULL) FreeVec(after);
+    if (orig != NULL) FreeVec(orig);
+
+    /* leave the sandbox clean */
+    DeleteFile((CONST_STRPTR)path);
+    DeleteFile((CONST_STRPTR)"RAM:tnbb-startup.tolunnet-new");
+    DeleteFile((CONST_STRPTR)"RAM:tnbb-startup.tolunnet-prev");
+    DeleteFile((CONST_STRPTR)"RAM:tnbb-startup.tolunnet-bak");
+}
+
 static void tc_cmd_stop_start(void)
 {
     BPTR seg;
@@ -8611,6 +8764,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_undo_sandbox); /* 10c item 2: undo proven in a T: sandbox */
     TN_RUN(tc_prefs_save_keeps_old); /* 11j item 2: overwrite keeps the old file in .bak */
     TN_RUN(tc_safe_replace); /* 11k item 1: one safe-replace helper (RAM: sandbox) */
+    TN_RUN(tc_boot_block); /* 11l item 2: byte-exact boot block editor (RAM: sandbox) */
 
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");

@@ -7,6 +7,7 @@
  */
 
 #include "net_test.h"
+#include "boot_block.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -212,78 +213,9 @@ BOOL tn_write_roadshow_interface(const WizardState *ws)
 
 BOOL tn_install_boot_block(BOOL enable)
 {
-    BPTR fh = Open((CONST_STRPTR)"S:User-Startup", MODE_OLDFILE);
-    if (!fh) return FALSE;
-
-    char *buf = (char *)malloc(65536);
-    char *out = (char *)malloc(65536);
-    if (!buf || !out) {
-        if (buf) free(buf);
-        if (out) free(out);
-        Close(fh);
-        return FALSE;
-    }
-
-    LONG r = Read(fh, buf, 65535);
-    Close(fh);
-    if (r < 0) r = 0;
-    buf[r] = '\0';
-
-    /* If tolunnet startup line is already present, do not touch or disrupt the active script */
-    if (enable && strstr(buf, "C:tolunnet") != NULL) {
-        free(buf);
-        free(out);
-        return TRUE;
-    }
-
-    /* Filter out any existing ; BEGIN tolunnet ... ; END tolunnet */
-    int out_len = 0;
-    const char *p = buf;
-    BOOL inside_block = FALSE;
-
-    while (*p) {
-        const char *start = p;
-        while (*p && *p != '\n') p++;
-        int len = (int)(p - start);
-        if (*p == '\n') p++;
-
-        char line[256];
-        if (len >= (int)sizeof(line)) len = (int)sizeof(line) - 1;
-        memcpy(line, start, len);
-        line[len] = '\0';
-
-        if (strstr(line, "; BEGIN tolunnet")) {
-            inside_block = TRUE;
-            continue;
-        }
-        if (inside_block) {
-            if (strstr(line, "; END tolunnet")) {
-                inside_block = FALSE;
-            }
-            continue;
-        }
-
-        int written = snprintf(out + out_len, 65530 - out_len, "%s\n", line);
-        if (written > 0) out_len += written;
-    }
-    free(buf);
-
-    if (enable) {
-        int written = snprintf(out + out_len, 65530 - out_len,
-                               "; BEGIN tolunnet\n"
-                               "Stack 32768\n"
-                               "Run <NIL: >NIL: C:tolunnet\n"
-                               "; END tolunnet\n");
-        if (written > 0) out_len += written;
-    }
-
-    fh = Open((CONST_STRPTR)"S:User-Startup", MODE_NEWFILE);
-    if (fh) {
-        Write(fh, out, out_len);
-        Close(fh);
-    }
-    free(out);
-    return TRUE;
+    /* 11l item 2: the byte-exact editor in boot_block.c - the old
+     * 64 KB / 256-byte-line in-place rewrite is gone. */
+    return tn_boot_block_apply("S:User-Startup", enable);
 }
 
 void tn_run_network_tests(WizardState *ws)
