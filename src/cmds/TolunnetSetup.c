@@ -1549,7 +1549,16 @@ static void rebuild_page_gadgets(void)
         ng.ng_GadgetID   = GID_P4_DOMAIN_STR;
         ng.ng_GadgetText = (STRPTR)"Domain:";
         ng.ng_LeftEdge   = col2_x;
-        ng.ng_Width      = col_w;
+        {
+            /* 11r item 2: the Advanced button lives on this row's
+             * right edge - the Domain field must stop before it
+             * (tc_wizard_layout (c) caught the two rects overlapping
+             * by ~4 px, leaving only the button's edge visible). */
+            LONG dom_end = cl + cw - (g_m.pane_w * 20 / 100) - g_m.fx;
+            LONG dom_w   = col_w;
+            if (dom_end - col2_x < dom_w) dom_w = dom_end - col2_x;
+            ng.ng_Width = (UWORD)dom_w;
+        }
         prev = CreateGadget(STRING_KIND, prev, &ng,
                             GTST_String, (ULONG)g_ws.domain_str,
                             GTST_MaxChars, sizeof(g_ws.domain_str) - 1,

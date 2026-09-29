@@ -4052,6 +4052,11 @@ static void tc_wizard_layout(void)
             ULONG placetext = g[i].flags & (PLACETEXT_LEFT | PLACETEXT_RIGHT |
                                             PLACETEXT_ABOVE | PLACETEXT_IN);
 
+            if (pg == 3 && g[i].gid == 147) {
+                tapf("# %s: diag page3 gid147 flags=%lx placetext=%lx lab=\"%s\"\n",
+                     label, (long)g[i].flags, (long)placetext, g[i].lab);
+            }
+
             if (g[i].lab[0]) {
                 text = g[i].lab;
             } else {
