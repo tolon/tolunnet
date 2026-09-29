@@ -107,6 +107,7 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
 
     xd delete C/tolunnet        >/dev/null 2>&1
     xd delete C/TolunnetPing    >/dev/null 2>&1
+    xd delete C/ping            >/dev/null 2>&1
     xd delete C/TolunnetGet     >/dev/null 2>&1
     xd delete C/TolunnetControl >/dev/null 2>&1
     xd delete S/User-Startup    >/dev/null 2>&1
@@ -115,6 +116,7 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
     xd delete Devs/tolunnet.config >/dev/null 2>&1
     xd write build/tolunnet C/tolunnet          || die "soak staging: tolunnet"
     xd write build/TolunnetPing C/TolunnetPing  || die "soak staging: TolunnetPing"
+    xd write build/TolunnetPing C/ping          || die "soak staging: ping"
     xd write build/TolunnetGet C/TolunnetGet    || die "soak staging: TolunnetGet"
     xd write build/TolunnetControl C/TolunnetControl || die "soak staging: TolunnetControl"
     xd write ci/Soak-Cycle S/Soak-Cycle         || die "soak staging: cycle script"
@@ -375,6 +377,7 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
     xd delete C/nslookup        >/dev/null 2>&1
     xd delete C/hostname        >/dev/null 2>&1
     xd delete C/TolunnetPing   >/dev/null 2>&1
+    xd delete C/ping           >/dev/null 2>&1
     xd delete C/GetNetStatus    >/dev/null 2>&1
     xd delete C/ShowNetStatus   >/dev/null 2>&1
     xd delete C/route           >/dev/null 2>&1
@@ -404,6 +407,7 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
     xd write build/nslookup C/nslookup         || die "xdftool write nslookup failed"
     xd write build/hostname C/hostname         || die "xdftool write hostname failed"
     xd write build/TolunnetPing C/TolunnetPing || die "xdftool write TolunnetPing failed"
+    xd write build/TolunnetPing C/ping         || die "xdftool write ping failed"
     xd write build/GetNetStatus C/GetNetStatus || die "xdftool write GetNetStatus failed"
     xd write build/ShowNetStatus C/ShowNetStatus || die "xdftool write ShowNetStatus failed"
     xd write build/route C/route               || die "xdftool write route failed"

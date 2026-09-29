@@ -196,10 +196,14 @@ int tn_check_ping(const char *host, char *detail, size_t n)
         snprintf(detail, n, "invalid host string");
         return 0;
     }
-    snprintf(args, sizeof(args), "%s COUNT 1 TIMEOUT 10", host);
-    /* 11o item 2: C:ping - the name the user types (the package
-     * installs it next to C:TolunnetPing); same binary. */
+    snprintf(args, sizeof(args), "%s COUNT 1 TIMEOUT 5", host);
+    /* C:ping - the name the user types (the package installs it
+     * next to C:TolunnetPing; ci/bench.sh stages it too). */
     rc = run_cmd_silent("C:ping", args);
+    if (rc == -100) {
+        snprintf(detail, n, "C:ping not found");
+        return 0;
+    }
     if (rc == 0) {
         snprintf(detail, n, "ping %s replied", host);
         return 1;
@@ -251,6 +255,10 @@ int tn_check_tcp(const char *host, unsigned port, char *detail, size_t n)
     }
     snprintf(args, sizeof(args), "%s %u TIMEOUT 5", host, port);
     rc = run_cmd_silent("C:nc", args);
+    if (rc == -100) {
+        snprintf(detail, n, "C:nc not found");
+        return 0;
+    }
     if (rc == 0) {
         snprintf(detail, n, "tcp %s:%u connected", host, port);
         return 1;
