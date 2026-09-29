@@ -5999,7 +5999,9 @@ static void tc_boot_block(void)
 static void tc_net_checks_ok(void)
 {
     const char *label = "tc_net_checks_ok";
+    unsigned dns_port = (unsigned)tc_cfg_long("DNS_PORT", 15353);
     char det[160];
+    char ip[32];
     int a, p, d, t;
 
     /* 11n: these checks mean nothing while the daemon is down, and
@@ -6012,9 +6014,12 @@ static void tc_net_checks_ok(void)
     }
     p = tn_check_ping("127.0.0.1", det, sizeof(det));
     tapf("# %s: ping %d - %s\n", label, p, det);
-    d = tn_check_dns("test.tolunnet.lan", det, sizeof(det));
+    /* 11o: the configured server is queried directly - the bench
+     * netsvc zone answers tolunbench.test -> 10.0.2.55. */
+    d = tn_check_dns("tolunbench.test", "10.0.2.2", dns_port,
+                     det, sizeof(det), ip, sizeof(ip));
     tapf("# %s: dns %d - %s\n", label, d, det);
-    t = tn_check_tcp("10.0.2.2", NETSVC_HTTP_PORT, det, sizeof(det));
+    t = tn_check_tcp(ip[0] ? ip : "10.0.2.2", NETSVC_HTTP_PORT, det, sizeof(det));
     tapf("# %s: tcp %d - %s\n", label, t, det);
 
     if (a && p && d && t) {
@@ -6027,7 +6032,9 @@ static void tc_net_checks_ok(void)
 static void tc_net_checks_fail(void)
 {
     const char *label = "tc_net_checks_fail";
+    unsigned dns_port = (unsigned)tc_cfg_long("DNS_PORT", 15353);
     char det[160];
+    char ip[32];
     int a, p, d, t;
 
     /* 11n: with a dead stack every check fails for the wrong
@@ -6040,7 +6047,9 @@ static void tc_net_checks_fail(void)
     }
     p = tn_check_ping("10.255.255.1", det, sizeof(det));
     tapf("# %s: ping %d - %s\n", label, p, det);
-    d = tn_check_dns("nx.invalid", det, sizeof(det));
+    /* 11o: nx.invalid is a name the bench zone does not know */
+    d = tn_check_dns("nx.invalid", "10.0.2.2", dns_port,
+                     det, sizeof(det), ip, sizeof(ip));
     tapf("# %s: dns %d - %s\n", label, d, det);
     t = tn_check_tcp("127.0.0.1", 1, det, sizeof(det));
     tapf("# %s: tcp %d - %s\n", label, t, det);

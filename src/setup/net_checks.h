@@ -22,8 +22,13 @@ int tn_check_address(char *detail, size_t n);
  * before it reaches a command line. */
 int tn_check_ping(const char *host, char *detail, size_t n);
 
-/* C:nslookup <name>; ok only on return code 0 AND a printed IPv4. */
-int tn_check_dns(const char *name, char *detail, size_t n);
+/* C:nslookup <name> SERVER <server> [PORT <port>]; ok only on rc 0
+ * AND a printed IPv4. The resolved IPv4 text is returned via ip_out
+ * (for the TCP check). The configured server is queried directly:
+ * lwIP's resolver resolves on UDP port 53 only, so on a bench whose
+ * DNS lives elsewhere only this path works. */
+int tn_check_dns(const char *name, const char *server, unsigned port,
+                 char *detail, size_t n, char *ip_out, size_t ipn);
 
 /* C:nc <host> <port> TIMEOUT=5; ok only if the connection opens. */
 int tn_check_tcp(const char *host, unsigned port, char *detail, size_t n);

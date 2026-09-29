@@ -1,15 +1,25 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
- * tolunnet — Real Test-page checks (z.ai step 11m item 1)
+ * tolunnet — Real Test-page checks (z.ai step 11m item 1, DNS fixed
+ * in 11o item 1)
  *
  * Each check runs an existing C: command and judges its result:
  *   - address: C:GetNetStatus ADDRESS (prints the daemon's IPv4)
- *   - ping:    C:TolunnetPing <host> COUNT=1 TIMEOUT=5, rc 0 only
- *   - dns:     C:nslookup <name>, rc 0 and a printed IPv4 only
+ *   - ping:    C:ping <host> COUNT=1 TIMEOUT=5, rc 0 only
+ *   - dns:     C:nslookup <name> SERVER <server> [PORT <port>],
+ *              rc 0 and a printed IPv4 only
  *   - tcp:     C:nc <host> <port> TIMEOUT=5, rc 0 only
  * Command output is captured through T:tn-check.out; commands with
- * their own timeout option are bounded by it (ping TIMEOUT, nc
- * TIMEOUT, nslookup's built-in 3 s x 2 tries).
+ * their own timeout option are bounded by it (ping/nc TIMEOUT).
+ *
+ * History notes: the 11m bench failures (164439/170403) were a DEAD
+ * STACK - the rows ran after tc_cmd_stop_start - not System() or
+ * ReadArgs; both spawn mechanisms returned the same rc=20/10/10/10
+ * signature for that reason, so the checks run with LoadSeg +
+ * RunCommand like the suite's own run_cmd. And lwIP resolves
+ * (dns_gethostbyname) on UDP port 53 only, so gethostbyname-based
+ * lookups can never reach a bench DNS on another port - the DNS
+ * check queries the configured server directly.
  */
 
 #include "net_checks.h"
@@ -196,25 +206,35 @@ int tn_check_ping(const char *host, char *detail, size_t n)
     return 0;
 }
 
-int tn_check_dns(const char *name, char *detail, size_t n)
+int tn_check_dns(const char *name, const char *server, unsigned port,
+                 char *detail, size_t n, char *ip_out, size_t ipn)
 {
-    char args[120];
+    char args[200];
     char out[512];
     unsigned a, b, c, d;
     LONG rc;
 
-    if (!tn_host_ok(name)) {
-        snprintf(detail, n, "invalid name string");
+    if (ip_out != NULL && ipn > 0) ip_out[0] = '\0';
+    if (!tn_host_ok(name) || !tn_host_ok(server)) {
+        snprintf(detail, n, "invalid DNS name or server");
         return 0;
     }
-    snprintf(args, sizeof(args), "%s", name);
+    if (port != 0) {
+        snprintf(args, sizeof(args), "%s SERVER %s PORT %u", name, server, port);
+    } else {
+        snprintf(args, sizeof(args), "%s SERVER %s", name, server);
+    }
     rc = run_cmd_capture("C:nslookup", args, out, sizeof(out));
     if (rc == 0 && scan_ipv4(out, &a, &b, &c, &d)) {
-        snprintf(detail, n, "resolved %s to %u.%u.%u.%u",
-                 name, a, b, c, d);
+        snprintf(detail, n, "resolved %s to %u.%u.%u.%u via %s",
+                 name, a, b, c, d, server);
+        if (ip_out != NULL && ipn > 0) {
+            snprintf(ip_out, ipn, "%u.%u.%u.%u", a, b, c, d);
+        }
         return 1;
     }
-    snprintf(detail, n, "cannot resolve %s (rc=%ld)", name, (long)rc);
+    snprintf(detail, n, "cannot resolve %s via %s (rc=%ld)",
+             name, server, (long)rc);
     return 0;
 }
 
