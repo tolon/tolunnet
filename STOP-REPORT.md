@@ -1,79 +1,76 @@
-# STOP-REPORT — z.ai step 11e, item 3 (layout from font metrics), 2026-09-28
+# STOP-REPORT — z.ai step 11i, item 1 (button row leftover), 2026-09-29
 
-State: HEAD `7b40347`. Items 1 and 2 are done and verified. Item 3's
-rework is in (`66a14bd` + `94743dd` + `7b40347`) and fixed the ordered
-faults (a)/(b)/(c) — the Device/Unit/MTU/cycle rows now have metric
-widths and sit below BorderTop — but tc_prefs_layout is still not ok:
-the only remaining violations are the WINDOW'S OWN TITLE-BAR CHROME
-gadgets (two window border gadgets with TopEdge 0, anchored to the
-right edge with negative coordinates), which the row counts as
-overlays. Two consecutive red benches on this item (221403, 223053)
-→ per the order's rule I stop with no third run.
+State: HEAD `5aa4267`. Item 1 is red twice in a row (benches `024216`,
+`030421`) — per the order's rule I stop, with no third run. Item 2 not
+started.
 
 ## Item status
 
-1. `test: tc_prefs_layout never closes async handles` — DONE:
-   `e7c5756`. Bench `20260928-213554-v1.2.0-rc4-301-g5562aa8`:
-   `conformance.log: core: 102 ok / 1 not ok; external: 1 skipped (skip=2 todo=0)`
-   `conformance2.log: core: 102 ok / 1 not ok; external: 1 skipped (skip=2 todo=0)`
-   (68000 legs identical.) 1..104 in all four logs; the one not-ok is
-   the expected tc_prefs_layout red. Logs commit `23d924d`.
+1. `fix(prefs): spread the button row leftover over all buttons` —
+   code in (`93fed5f` + follow-up `5aa4267`), assertion (f) added.
+   RED ×2, signatures below. NOT DONE as a verified item.
+2. `fix(prefs): config overwrite keeps the old file until the new one
+   is in place` — NOT STARTED (no third run allowed).
 
-2. `test: tc_prefs_layout reads gadgets correctly` — DONE:
-   `7889bb6`. Bench `20260928-215535-v1.2.0-rc4-303-g7889bb6`:
-   `conformance.log: core: 102 ok / 1 not ok; external: 1 skipped (skip=2 todo=0)`
-   `conformance2.log: core: 102 ok / 1 not ok; external: 1 skipped (skip=2 todo=0)`
-   (68000 legs identical.) Real evidence captured: `TopEdge 9 <
-   BorderTop 11`, `Device gadget width 56 < 128`, `MTU:0`. Labels
-   come back empty — GadTools stores GadgetText as IntuiText whose
-   IText is rendered but the row's dump shows the label buffer empty;
-   the item-3 layout rework makes the label contents moot. Logs
-   commit `2579a4b`.
+Bench budget: 2 of 3 runs used. A red is not expected in this step;
+both reds are honestly reported.
 
-3. `fix(prefs): layout from font metrics` — code in, bench RED ×2:
-   NOT DONE as a verified item.
-   - `66a14bd`: rows start at the BorderTop estimate (scr->WBorTop +
-     fh + 1 + 4); value column = max(TextLength("255.255.255.255"),
-     "DHCP (Automatic)", "Static IP (Manual)", "ethernet.device") + 8;
-     win_w clamped to the screen; MTU shows 1500 when the config has
-     none.
-   - Bench `20260928-221403-v1.2.0-rc4-305-g66a14bd`: ordered faults
-     (a)/(b) gone, MTU shows 1500 — remaining: Unit gadget 12 px <
-     16, MTU gadget 36 px < 40.
-   - `94743dd`: Unit sized from "000"+16, MTU from "65535"+24.
-   - Bench `20260928-223053-v1.2.0-rc4-306-g94743dd`: Unit/MTU fixed —
-     remaining: only gadgets 0/1, TopEdge 0, the window's own
-     title-bar border gadgets (negative right-anchored coordinates).
-   - `7b40347`: skip negative-coordinate (sign-bit) gadgets in the
-     copy loop. NOT benched (no third run allowed).
+## Attempt 1 (`93fed5f`, bench `20260929-024216-v1.2.0-rc4-325-g93fed5f`)
 
-## Last lines of a1200/conformance.log (verbatim, bench 223053)
+Two violations on all four legs (`102 ok / 1 not ok`):
 
 ```
-# tc_prefs_layout: gadget 0 ((none)) TopEdge 0 < BorderTop 11
-# tc_prefs_layout: gadget 1 ((none)) TopEdge 0 < BorderTop 11
-not ok 101 - tc_prefs_layout # layout violations found (see # lines above)
-# enter tc_daemon_noconfig_start
-ok 103 - tc_daemon_noconfig_start
-# enter tc_undo_sandbox
-ok 104 - tc_undo_sandbox
-1..104
-# bench: asking daemon to stop (restart-cycle proof)
+# tc_prefs_layout: (f) uneven button extras: gadget 12 () +33 vs gadget 15 () +72
+# tc_prefs_layout: (d) last button right 548 + 8 vs inner right 552: off 4 > 2
 ```
-(All four logs reach 1..104; the suite no longer hangs. The only not
-ok is tc_prefs_layout on the two chrome gadgets.)
 
-## The one remaining violation, precisely
+Root causes found and fixed in `5aa4267`:
 
-The window's own chrome: OpenWindow installs two border gadgets
-(drag/depth bar pieces) with TopEdge 0 and huge/negative left edges
-anchored to the right edge. They are Intuition chrome, not prefs
-layout. `7b40347` skips negative-coordinate gadgets in the copy loop
-(sign-bit test) and has NOT been benched. If the next step prefers a
-positive identification: skip gadgets with
-`gd->GadgetType & GTYP_SYSGADGET` or those whose IText is NULL AND
-whose rect intersects the window's border strips
-(y < BorderTop or x >= Width - BorderRight).
+- The row target used `win_w - 2*TN_BORDER_PAD` while the real window
+  borders are narrower than the pad (WBorLeft/Right 4, pad 8).
+- Assertion (f) computed the natural width from the gadget label, but
+  GadTools BUTTON_KIND labels are NOT exposed via `GadgetText` (the
+  `lab` field has been empty in every dump since step 11f — the 11f
+  button-width check silently skipped for the same reason). With an
+  empty label the natural width degenerated to 16 px and the extras
+  compared raw widths. (f) now falls back to the known button names
+  (Save/Use/Start/Stop/Setup.../Undo/Ping/Cancel), and the app and
+  the test measure with the same `&scr->RastPort`, so the TextLength
+  values agree.
 
-No further benches were run for item 3 after the second consecutive
-red, per the order's rule.
+## Attempt 2 (`5aa4267`, bench `20260929-030421-v1.2.0-rc4-326-g5aa4267`)
+
+`(f)` is now GREEN (no diagnostic printed; extras are uniform 7/8 px
+across the eight buttons). `(c)` and `(e)` stay green. One violation
+remains on all four legs:
+
+```
+# tc_prefs_layout: (d) last button right 540 + 8 vs inner right 552: off 4 > 2
+```
+
+Evidence that the WINDOW is right and the ASSERTION formula is wrong:
+
+- Dump: gadget 18 rect `(469,138,71)` → the button row ends at inner
+  x = 540. The window inner width is `Width - BorderLeft - BorderRight`
+  = 556 - 4 - 4 = 548, so the right margin inside the window is
+  548 - 540 = 8 px — exactly TN_BORDER_PAD, symmetric with the 8 px
+  left margin. The row spans the real interior minus one pad per side.
+- The assertion computes `inner right = pwin->Width - pwin->BorderLeft`
+  = 552 — it forgets `BorderRight` (4), so it expects the row to end
+  at 552 - 8 = 544.
+- Step 11h item 2 did not catch this because the then-buggy spread
+  (the Save button swallowing the leftover: `110/40/...` widths in the
+  `021208` dump) put the row at 544 by accident. Fixing the spread
+  exposed the assertion's own off-by-BorderRight.
+
+Suggested one-line fix (NOT applied — no third run): in
+`tc_prefs_layout`, compute the inner right edge as
+`pwin->Width - pwin->BorderLeft - pwin->BorderRight`. With the current
+window that makes (d) `540 + 8 == 548`, off 0, green on the existing
+layout without touching TolunnetPrefs.c.
+
+## What I did not do
+
+- No third bench run (rule).
+- Item 2 (`src/common/prefs.c` rewrite + `tc_prefs_save_keeps_old`) —
+  not started; the working tree is clean at `5aa4267`.
