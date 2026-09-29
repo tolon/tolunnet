@@ -7,6 +7,7 @@
  */
 
 #include "prefs.h"
+#include "safe_replace.h"
 #include <string.h>
 #include "config_text.h"
 #include <stddef.h>
@@ -147,7 +148,6 @@ static BOOL tn_prefs_write_one(const char *path, const char *text)
     char bak[260];
     LONG plen = 0, wlen, r;
     BPTR fh;
-    BOOL had_prev;
 
     prev[0] = 0;
     fh = Open((CONST_STRPTR)path, MODE_OLDFILE);
@@ -182,21 +182,14 @@ static BOOL tn_prefs_write_one(const char *path, const char *text)
         tn_prefs_last_stage = 61;
         return FALSE;
     }
-    tn_prefs_last_stage = 70;
-    /* 11j item 2: never DeleteFile(path). Move the current file
-     * aside to <path>.bak first (an older .bak is deleted before
-     * that), so Rename(tmp, path) targets a free name even when
-     * the old file carries a delete-protection bit. If the swap
-     * fails, put the old file back and fail. After a successful
-     * save the .bak keeps one generation of the old content. */
     for (r = 0; path[r] != 0 && r + 5 < (LONG)sizeof(bak); r++) bak[r] = path[r];
     bak[r] = 0;
     strcat(bak, ".bak");
-    DeleteFile((CONST_STRPTR)bak);
-    had_prev = (BOOL)(Rename((CONST_STRPTR)path, (CONST_STRPTR)bak) != FALSE);
-    if (Rename((CONST_STRPTR)tmp, (CONST_STRPTR)path) == FALSE) {
-        if (had_prev) Rename((CONST_STRPTR)bak, (CONST_STRPTR)path);
-        DeleteFile((CONST_STRPTR)tmp);
+
+    tn_prefs_last_stage = 70;
+    /* 11k item 1: the shared safe replace keeps the old file in
+     * <path>.bak (one generation) and never deletes the config. */
+    if (!tn_safe_replace(tmp, path, bak)) {
         tn_prefs_last_stage = 71;
         return FALSE;
     }

@@ -38,6 +38,7 @@
 #include "../../src/common/tn_arp.h"
 #include "../../src/task/route.h"
 #include "../../src/common/prefs.h"
+#include "../../src/common/safe_replace.h"
 #include "../../src/setup/wifi_mgr.h"
 #include "../../src/setup/stack_detect.h"
 #include <net/if_arp.h>
@@ -5759,6 +5760,61 @@ static void tc_prefs_save_keeps_old(void)
     }
 }
 
+/* z.ai step 11k item 1: the shared safe-replace helper, proven on
+ * RAM: sandbox names. (a) normal replace keeps the old content in
+ * bak; (b) a FIBF_DELETE-protected target still replaces (the old
+ * file is renamed aside, never deleted); (c) a missing tmp fails
+ * the call and leaves the old file in place. */
+static void tc_safe_replace(void)
+{
+    const char *label = "tc_safe_replace";
+    const char *path = "RAM:tnsr-path";
+    const char *bak = "RAM:tnsr-bak";
+    const char *tmp = "RAM:tnsr-tmp";
+    BPTR lk;
+    int ok_a, ok_b, ok_c, no_tmp = 1;
+
+    DeleteFile((CONST_STRPTR)path);
+    DeleteFile((CONST_STRPTR)bak);
+    DeleteFile((CONST_STRPTR)tmp);
+
+    /* (a) normal replace */
+    ok_a = tn_write_file(path, "OLDTEXT") &&
+           tn_write_file(tmp, "NEWTEXT") &&
+           tn_safe_replace(tmp, path, bak) &&
+           tn_file_contains(path, "NEWTEXT") &&
+           tn_file_contains(bak, "OLDTEXT");
+    lk = Lock((CONST_STRPTR)tmp, ACCESS_READ);
+    if (lk != (BPTR)0) { UnLock(lk); ok_a = 0; }
+
+    /* (b) protected target still replaces */
+    ok_b = tn_write_file(tmp, "THIRDTEXT") != 0;
+    SetProtection((CONST_STRPTR)path, FIBF_DELETE);
+    ok_b = ok_b && tn_safe_replace(tmp, path, bak) &&
+           tn_file_contains(path, "THIRDTEXT") &&
+           tn_file_contains(bak, "NEWTEXT");
+    lk = Lock((CONST_STRPTR)tmp, ACCESS_READ);
+    if (lk != (BPTR)0) { UnLock(lk); ok_b = 0; }
+
+    /* (c) missing tmp: FALSE, path keeps the old text */
+    ok_c = !tn_safe_replace("RAM:tnsr-missing", path, bak) &&
+           tn_file_contains(path, "THIRDTEXT");
+
+    /* leave the environment clean */
+    SetProtection((CONST_STRPTR)path, 0);
+    SetProtection((CONST_STRPTR)bak, 0);
+    DeleteFile((CONST_STRPTR)path);
+    DeleteFile((CONST_STRPTR)bak);
+    DeleteFile((CONST_STRPTR)tmp);
+
+    tapf("# %s: (a)=%d (b)=%d (c)=%d\n", label, ok_a, ok_b, ok_c);
+    if (ok_a && ok_b && ok_c) {
+        TAP_OK(label);
+    } else {
+        TAP_NOTOK(label, "safe replace lost the old or the new file");
+    }
+}
+
 static void tc_cmd_stop_start(void)
 {
     BPTR seg;
@@ -8554,6 +8610,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_daemon_noconfig_start); /* 10b item 2: bare boot, no config (daemon already stopped) */
     TN_RUN(tc_undo_sandbox); /* 10c item 2: undo proven in a T: sandbox */
     TN_RUN(tc_prefs_save_keeps_old); /* 11j item 2: overwrite keeps the old file in .bak */
+    TN_RUN(tc_safe_replace); /* 11k item 1: one safe-replace helper (RAM: sandbox) */
 
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
