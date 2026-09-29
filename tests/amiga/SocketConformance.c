@@ -3789,12 +3789,30 @@ static void tc_wizard_ntsc(void)
             }
             if (fail) break;
 
+            if (i == 4 && mode == 0) {
+                /* 11q item 2: run the checks BEFORE the Test-page
+                 * screenshot so the list shows the real results.
+                 * The checks can block ~10 s - wait longer than the
+                 * generic 5 s reply window. */
+                struct Message tmsg;
+                int t;
+                memset(&tmsg, 0, sizeof(tmsg));
+                tmsg.mn_ReplyPort = reply_port;
+                tmsg.mn_Node.ln_Name = (char *)"TEST";
+                PutMsg(wizard_port, &tmsg);
+                for (t = 0; t < 900; t++) {
+                    if (GetMsg(reply_port) != NULL) break;
+                    Delay(2);
+                }
+                Delay(15);          /* let the checklist redraw */
+            }
+
             if (mode == 0) {
                 snprintf(shot, sizeof(shot), "WORK:wizard-%d-%s.iff",
-                         i, (scrh == 200) ? "ntsc" : "pal");
+                         (i == 4) ? 5 : i, (scrh == 200) ? "ntsc" : "pal");
             } else {
                 snprintf(shot, sizeof(shot), "WORK:wizard-%d-%s-static.iff",
-                         i, (scrh == 200) ? "ntsc" : "pal");
+                         (i == 4) ? 5 : i, (scrh == 200) ? "ntsc" : "pal");
             }
             write_iff_screen(shot);
         }
@@ -3826,6 +3844,216 @@ static void tc_wizard_ntsc(void)
         return;
     }
     TAP_OK("tc_wizard_ntsc");
+}
+
+/* 11q item 2: a real per-page layout check for the wizard.
+ * (a) every gadget box stays inside the window's inner area;
+ * (b) every checkbox/string/cycle label ends at or before the
+ *     panel's inner right edge and starts at or after its left
+ *     edge - labels are computed with TextLength, and GadTools
+ *     checkbox labels are NOT in GadgetText, so their texts come
+ *     from the GID table below;
+ * (c) no two gadgets on a page overlap.
+ * Walks pages 0..4 through the ARexx port on the live screen, so
+ * the PAL and NTSC legs each verify their own size. CANCELs at the
+ * end - no config is written. */
+static void tc_wizard_layout(void)
+{
+    const char *label = "tc_wizard_layout";
+    static const struct { UWORD gid; const char *text; } chk_labels[3] = {
+        { 147, "Also write Roadshow NetInterfaces (backup kept)" },
+        { 151, "Start at boot" },
+        { 154, "Open Prefs after finish" },
+    };
+    enum { TN_WL_MAX = 32 };
+    static struct {
+        WORD x, y, w, h;
+        ULONG flags;
+        UWORD gid;
+        char lab[48];
+    } g[TN_WL_MAX];
+    struct MsgPort *reply_port = CreateMsgPort();
+    struct MsgPort *wizard_port = NULL;
+    struct Screen *scr;
+    struct Window *win;
+    int violations = 0;
+    int pg, i, j, ng = 0;
+    LONG bl, br, bt, bb, winw, winh;
+    int bl_ = 0, br_ = 0, bt_ = 0, bb_ = 0;
+
+    if (!reply_port) {
+        TAP_NOTOK(label, "CreateMsgPort failed");
+        return;
+    }
+
+    {
+        LONG rc = SystemTags((CONST_STRPTR)"C:TolunnetSetup",
+                             SYS_Asynch, TRUE,
+                             SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE),
+                             SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
+                             NP_StackSize, 32768,
+                             TAG_END);
+        if (rc != 0 && rc != -1) {
+            DeleteMsgPort(reply_port);
+            TAP_NOTOK(label, "wizard did not launch");
+            return;
+        }
+    }
+    for (i = 0; i < 100; i++) {
+        Delay(5);
+        Forbid();
+        wizard_port = FindPort((CONST_STRPTR)"TOLUNNETSETUP");
+        Permit();
+        if (wizard_port) break;
+    }
+    if (!wizard_port) {
+        DeleteMsgPort(reply_port);
+        TAP_NOTOK(label, "TOLUNNETSETUP port not found");
+        return;
+    }
+
+    for (pg = 0; pg < 5; pg++) {
+        char cmd[16];
+
+        snprintf(cmd, sizeof(cmd), "PAGE %d", pg);
+        if (!wizard_msg(wizard_port, reply_port, cmd)) {
+            violations++;
+            tapf("# %s: page %d: no reply to PAGE\n", label, pg);
+            break;
+        }
+        Delay(8);                     /* rebuild + geom write + repaint */
+
+        ng = 0; winw = winh = 0; bl = br = bt = bb = 0;
+        {
+            ULONG key = LockIBase(0);
+            for (scr = IntuitionBase->FirstScreen; scr; scr = scr->NextScreen) {
+                for (win = scr->FirstWindow; win; win = win->NextWindow) {
+                    if (win->Title != NULL &&
+                        strstr((const char *)win->Title, "tolunnet Network Setup") != NULL) {
+                        break;
+                    }
+                }
+                if (win) break;
+            }
+            if (win) {
+                struct Gadget *gd;
+                winw = win->Width; winh = win->Height;
+                bl = win->BorderLeft; br = win->BorderRight;
+                bt = win->BorderTop; bb = win->BorderBottom;
+                bl_ = (int)bl; br_ = (int)br; bt_ = (int)bt; bb_ = (int)bb;
+                for (gd = win->FirstGadget; gd && ng < TN_WL_MAX; gd = gd->NextGadget) {
+                    if (gd->Width == 0 || gd->Height == 0) continue;
+                    if (gd->GadgetType & GTYP_SYSGADGET) continue;
+                    g[ng].x = gd->LeftEdge;
+                    g[ng].y = gd->TopEdge;
+                    g[ng].w = gd->Width;
+                    g[ng].h = gd->Height;
+                    g[ng].flags = gd->Flags;
+                    g[ng].gid = gd->GadgetID;
+                    g[ng].lab[0] = '\0';
+                    if (gd->GadgetText && gd->GadgetText->IText) {
+                        strncpy(g[ng].lab, (const char *)gd->GadgetText->IText,
+                                sizeof(g[ng].lab) - 1);
+                    }
+                    ng++;
+                }
+            }
+            UnlockIBase(key);
+        }
+        if (winw == 0) {
+            violations++;
+            tapf("# %s: page %d: wizard window not found\n", label, pg);
+            continue;
+        }
+
+        /* (a) every gadget box inside the window's inner area */
+        for (i = 0; i < ng; i++) {
+            if (g[i].x < bl || g[i].y < bt ||
+                g[i].x + g[i].w > winw - br || g[i].y + g[i].h > winh - bb) {
+                tapf("# %s: (a) page %d gadget %d (gid %u) box (%d,%d,%d,%d) outside inner (%ld,%ld)-(%ld,%ld)\n",
+                     label, pg, i, g[i].gid, (int)g[i].x, (int)g[i].y,
+                     (int)g[i].w, (int)g[i].h,
+                     bl, bt, winw - br, winh - bb);
+                violations++;
+            }
+        }
+
+        /* (b) labels: TextLength against the panel's inner edges */
+        for (i = 0; i < ng; i++) {
+            const char *text = NULL;
+            LONG tl = 0;
+            ULONG placetext = g[i].flags & (PLACETEXT_LEFT | PLACETEXT_RIGHT |
+                                            PLACETEXT_ABOVE | PLACETEXT_IN);
+
+            if (g[i].lab[0]) {
+                text = g[i].lab;
+            } else {
+                int k;
+                for (k = 0; k < 3; k++) {
+                    if (chk_labels[k].gid == g[i].gid) {
+                        text = chk_labels[k].text;
+                        break;
+                    }
+                }
+            }
+            if (text == NULL) continue;
+            tl = TextLength(&scr->RastPort, (STRPTR)text, (LONG)strlen(text));
+
+            if (placetext == PLACETEXT_RIGHT &&
+                g[i].x + g[i].w + tl > winw - br) {
+                tapf("# %s: (b) page %d gadget %d (gid %u) right label ends at %ld > inner right %ld (\"%s\")\n",
+                     label, pg, i, g[i].gid,
+                     (long)(g[i].x + g[i].w + tl), winw - br, text);
+                violations++;
+            }
+            if (placetext == PLACETEXT_LEFT &&
+                g[i].x - tl < bl) {
+                tapf("# %s: (b) page %d gadget %d (gid %u) left label starts at %ld < inner left %ld (\"%s\")\n",
+                     label, pg, i, g[i].gid,
+                     (long)(g[i].x - tl), bl, text);
+                violations++;
+            }
+            if (placetext == PLACETEXT_ABOVE &&
+                g[i].x + tl > winw - br) {
+                tapf("# %s: (b) page %d gadget %d (gid %u) above label ends at %ld > inner right %ld (\"%s\")\n",
+                     label, pg, i, g[i].gid,
+                     (long)(g[i].x + tl), winw - br, text);
+                violations++;
+            }
+        }
+
+        /* (c) no two gadgets on a page overlap */
+        for (i = 0; i < ng; i++) {
+            for (j = i + 1; j < ng; j++) {
+                if (g[i].x < g[j].x + g[j].w && g[j].x < g[i].x + g[i].w &&
+                    g[i].y < g[j].y + g[j].h && g[j].y < g[i].y + g[i].h) {
+                    tapf("# %s: (c) page %d gadgets %d and %d (gid %u/%u) overlap\n",
+                         label, pg, i, j, g[i].gid, g[j].gid);
+                    violations++;
+                }
+            }
+        }
+    }
+
+    wizard_msg(wizard_port, reply_port, "CANCEL");
+    for (i = 0; i < 30; i++) {
+        Delay(5);
+        Forbid();
+        if (FindPort((CONST_STRPTR)"TOLUNNETSETUP") == NULL) {
+            Permit();
+            break;
+        }
+        Permit();
+    }
+    DeleteMsgPort(reply_port);
+
+    tapf("# %s: violations=%d (borders %d/%d/%d/%d)\n",
+         label, violations, bl_, br_, bt_, bb_);
+    if (violations == 0) {
+        TAP_OK(label);
+    } else {
+        TAP_NOTOK(label, "wizard layout violates the panel");
+    }
 }
 
 static void tc_wifi_scan_parse(void)
@@ -8783,6 +9011,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_release_obtain);
     TN_RUN(tc_every_vector_callable);
     TN_RUN(tc_stats_counters);
+    TN_RUN(tc_wizard_layout); /* 11q item 2: per-page layout check (CANCELs, writes no config) */
     TN_RUN(tc_wizard_wired);
     TN_RUN(tc_wizard_ntsc);
     TN_RUN(tc_wifi_scan_parse);

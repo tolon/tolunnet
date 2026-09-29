@@ -2032,7 +2032,7 @@ int main(int argc, char **argv)
             }
 
             if (rexx_port && (sigs & rexx_sig)) {
-                tn_setup_rexx_process(rexx_port, &g_ws, NULL);
+                tn_setup_rexx_process(rexx_port, &g_ws, NULL, NULL);
                 if (g_ws.rexx_done) {
                     apply_wizard_finish();
                     if (g_ws.rexx_finish_msg) {
@@ -2066,7 +2066,7 @@ int main(int argc, char **argv)
         }
 
         if (rexx_port && (sigs & rexx_sig)) {
-            tn_setup_rexx_process(rexx_port, &g_ws, rebuild_page_gadgets);
+            tn_setup_rexx_process(rexx_port, &g_ws, rebuild_page_gadgets, run_page_tests);
             if (g_ws.rexx_done) {
                 apply_wizard_finish();
                 if (g_ws.rexx_finish_msg) {

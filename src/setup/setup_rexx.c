@@ -53,7 +53,8 @@ void tn_setup_rexx_cleanup(struct MsgPort *port)
     DeleteMsgPort(port);
 }
 
-void tn_setup_rexx_process(struct MsgPort *port, WizardState *ws, void (*on_refresh)(void))
+void tn_setup_rexx_process(struct MsgPort *port, WizardState *ws, void (*on_refresh)(void),
+                           void (*on_test)(void))
 {
     if (!port || !ws) return;
 
@@ -131,6 +132,10 @@ void tn_setup_rexx_process(struct MsgPort *port, WizardState *ws, void (*on_refr
                     continue; /* ReplyMsg will be sent after apply_wizard_finish() completes */
                 } else if (strcasecmp(verb, "CANCEL") == 0 || strcasecmp(verb, "QUIT") == 0) {
                     ws->rexx_cancel = TRUE;
+                } else if (strcasecmp(verb, "TEST") == 0) {
+                    /* 11q item 2: run the Test-page checks on demand -
+                     * blocks until they finish, then the reply goes out. */
+                    if (on_test) on_test();
                 } else if (strcasecmp(verb, "STATUS") == 0) {
                     /* Handled */
                 }
