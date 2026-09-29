@@ -7,6 +7,7 @@
  */
 
 #include "stack_detect.h"
+#include "../common/safe_replace.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -386,7 +387,9 @@ static BOOL rewrite_file_with_parser(const char *filepath, int (*parser)(const c
 
     if (count > 0 && out_len > 0) {
         char temp_path[256];
+        char prev_path[256];
         snprintf(temp_path, sizeof(temp_path), "%s.tolunnet-new", filepath);
+        snprintf(prev_path, sizeof(prev_path), "%s.tolunnet-prev", filepath);
 
         BPTR out_fh = Open((CONST_STRPTR)temp_path, MODE_NEWFILE);
         if (!out_fh) {
@@ -398,8 +401,13 @@ static BOOL rewrite_file_with_parser(const char *filepath, int (*parser)(const c
         Close(out_fh);
 
         if (written == out_len) {
-            DeleteFile((CONST_STRPTR)filepath);
-            Rename((CONST_STRPTR)temp_path, (CONST_STRPTR)filepath);
+            /* 11k item 2: the shared safe replace keeps the original
+             * in <file>.tolunnet-prev (one generation) and never
+             * deletes the live file. */
+            if (!tn_safe_replace(temp_path, filepath, prev_path)) {
+                FreeVec(out_buf);
+                return FALSE;
+            }
         } else {
             DeleteFile((CONST_STRPTR)temp_path);
             FreeVec(out_buf);
@@ -428,12 +436,21 @@ BOOL tn_stack_apply_replacement(WizardState *ws)
         }
         if (in_fh) Close(in_fh);
         if (out_fh) Close(out_fh);
+    } else if (file_exists("S:User-Startup.tolunnet-bak")) {
+        /* 11k item 2: an older backup wins - say so in the log */
+        Printf((CONST_STRPTR)"tolunnet: keeping existing S:User-Startup.tolunnet-bak\n");
     }
 
-    /* 2. Comment out stack lines in S:User-Startup and S:Network-Startup */
-    rewrite_file_with_parser("S:User-Startup", tn_parse_startup_script);
+    /* 2. Comment out stack lines in S:User-Startup and S:Network-Startup.
+     * 11k item 2: a failed rewrite must not report success - the
+     * original file is still in place when tn_safe_replace bailed. */
+    if (!rewrite_file_with_parser("S:User-Startup", tn_parse_startup_script)) {
+        return FALSE;
+    }
     if (file_exists("S:Network-Startup")) {
-        rewrite_file_with_parser("S:Network-Startup", tn_parse_startup_script);
+        if (!rewrite_file_with_parser("S:Network-Startup", tn_parse_startup_script)) {
+            return FALSE;
+        }
     }
 
     /* 3. Rename LIBS:bsdsocket.library -> LIBS:bsdsocket.library.<stack> */
@@ -465,9 +482,20 @@ BOOL tn_stack_apply_replacement(WizardState *ws)
 
     if (file_exists("LIBS:bsdsocket.library")) {
         char backup_path[64];
+        char park_path[80];
         snprintf(backup_path, sizeof(backup_path), "LIBS:bsdsocket.library.%s", stack_suffix);
-        DeleteFile((CONST_STRPTR)backup_path);
-        Rename((CONST_STRPTR)"LIBS:bsdsocket.library", (CONST_STRPTR)backup_path);
+        snprintf(park_path, sizeof(park_path), "LIBS:bsdsocket.library.tolunnet-prev");
+        DeleteFile((CONST_STRPTR)park_path);
+        /* 11k item 2: park the live library first; only after the
+         * parked copy sits under the backup name is the swap done.
+         * If that rename fails, the park goes straight back - the
+         * library itself is never Deleted, and a stale backup from
+         * an earlier run is kept, not overwritten. */
+        if (Rename((CONST_STRPTR)"LIBS:bsdsocket.library", (CONST_STRPTR)park_path)) {
+            if (Rename((CONST_STRPTR)park_path, (CONST_STRPTR)backup_path) == FALSE) {
+                Rename((CONST_STRPTR)park_path, (CONST_STRPTR)"LIBS:bsdsocket.library");
+            }
+        }
     }
 
     /* 4. Disable WBStartup icons */
@@ -511,22 +539,37 @@ BOOL tn_stack_apply_replacement(WizardState *ws)
 
 BOOL tn_stack_undo_replacement(void)
 {
-    /* 1. Restore commented lines in S:User-Startup */
+    /* 1. Restore commented lines in S:User-Startup.
+     * 11k item 2: do not report success when a rewrite failed. */
     if (file_exists("S:User-Startup")) {
-        rewrite_file_with_parser("S:User-Startup", tn_uncomment_startup_script);
+        if (!rewrite_file_with_parser("S:User-Startup", tn_uncomment_startup_script)) {
+            return FALSE;
+        }
     }
     if (file_exists("S:Network-Startup")) {
-        rewrite_file_with_parser("S:Network-Startup", tn_uncomment_startup_script);
+        if (!rewrite_file_with_parser("S:Network-Startup", tn_uncomment_startup_script)) {
+            return FALSE;
+        }
     }
 
-    /* 2. Restore LIBS:bsdsocket.library.<stack> */
+    /* 2. Restore LIBS:bsdsocket.library.<stack>.
+     * 11k item 2: park the replacement first, put the original back,
+     * and delete the park only after the original is in place. */
     const char *suffixes[] = { "roadshow", "miami", "amitcp", "genesis", "pre-tolunnet", NULL };
     for (int i = 0; suffixes[i] != NULL; i++) {
         char path[64];
+        char park_path[80];
         snprintf(path, sizeof(path), "LIBS:bsdsocket.library.%s", suffixes[i]);
         if (file_exists(path)) {
-            DeleteFile((CONST_STRPTR)"LIBS:bsdsocket.library");
-            Rename((CONST_STRPTR)path, (CONST_STRPTR)"LIBS:bsdsocket.library");
+            snprintf(park_path, sizeof(park_path), "LIBS:bsdsocket.library.tolunnet-prev");
+            DeleteFile((CONST_STRPTR)park_path);
+            if (Rename((CONST_STRPTR)"LIBS:bsdsocket.library", (CONST_STRPTR)park_path)) {
+                if (Rename((CONST_STRPTR)path, (CONST_STRPTR)"LIBS:bsdsocket.library")) {
+                    DeleteFile((CONST_STRPTR)park_path);
+                } else {
+                    Rename((CONST_STRPTR)park_path, (CONST_STRPTR)"LIBS:bsdsocket.library");
+                }
+            }
             break;
         }
     }
