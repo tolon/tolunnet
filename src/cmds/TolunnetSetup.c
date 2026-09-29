@@ -1573,7 +1573,7 @@ static void rebuild_page_gadgets(void)
         ng.ng_TopEdge    = ct + 5 * g_m.pitch + g_m.pitch / 2;
         ng.ng_Width      = 26;
         ng.ng_Height     = g_m.fy + 6;
-        ng.ng_GadgetText = (STRPTR)"Also write _Roadshow NetInterfaces (backup kept)";
+        ng.ng_GadgetText = (STRPTR)"Also write _Roadshow NetInterfaces file (backed up first)";
         ng.ng_GadgetID   = GID_P4_ROADSHOW_CHK;
         ng.ng_Flags      = PLACETEXT_RIGHT;
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
