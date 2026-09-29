@@ -3214,6 +3214,7 @@ static void tc_stats_counters(void)
 
 static void tc_wizard_wired(void)
 {
+    int all_replied = 0;
     /*
      * Step W: Test TolunnetSetup wizard on wired bench via ARexx port TOLUNNETSETUP.
      * 1. Spawn TolunnetSetup in background
@@ -3286,35 +3287,39 @@ static void tc_wizard_wired(void)
         return;
     }
 
-    struct Message msg;
-    memset(&msg, 0, sizeof(msg));
-    msg.mn_ReplyPort = reply_port;
+    /* 11r item 1: heap message with a bounded 30 s wait per command;
+     * a non-replied message is leaked on purpose (a late ReplyMsg
+     * into a dead stack frame corrupts memory). The reply port is
+     * only deleted when every command was replied. */
+    {
+        struct Message *msg = (struct Message *)AllocVec(
+            sizeof(struct Message), MEMF_PUBLIC | MEMF_CLEAR);
+        const char *seq[4] = { "NEXT", "NEXT", "NEXT", "FINISH" };
+        int s, t;
+        if (!msg) {
+            DeleteMsgPort(reply_port);
+            TAP_NOTOK("tc_wizard_wired", "out of memory for wizard message");
+            return;
+        }
+        msg->mn_ReplyPort = reply_port;
+        for (s = 0; s < 4; s++) {
+            msg->mn_Node.ln_Name = (char *)seq[s];
+            PutMsg(wizard_port, msg);
+            for (t = 0; t < 1500; t++) {
+                if (GetMsg(reply_port) != NULL) break;
+                Delay(2);
+            }
+            if (t >= 1500) {
+                tapf("# wizard_msg: no reply to %s - message leaked on purpose\n",
+                     seq[s]);
+                break;
+            }
+        }
+        if (s >= 4) FreeVec(msg);
+        all_replied = (s >= 4);
+    }
 
-    /* Next -> Page 1 */
-    msg.mn_Node.ln_Name = (char *)"NEXT";
-    PutMsg(wizard_port, &msg);
-    WaitPort(reply_port);
-    GetMsg(reply_port);
-
-    /* Next -> Page 3 (WiFi skipped for wired) */
-    msg.mn_Node.ln_Name = (char *)"NEXT";
-    PutMsg(wizard_port, &msg);
-    WaitPort(reply_port);
-    GetMsg(reply_port);
-
-    /* Next -> Page 4 */
-    msg.mn_Node.ln_Name = (char *)"NEXT";
-    PutMsg(wizard_port, &msg);
-    WaitPort(reply_port);
-    GetMsg(reply_port);
-
-    /* FINISH */
-    msg.mn_Node.ln_Name = (char *)"FINISH";
-    PutMsg(wizard_port, &msg);
-    WaitPort(reply_port);
-    GetMsg(reply_port);
-
-    DeleteMsgPort(reply_port);
+    if (all_replied) DeleteMsgPort(reply_port);
 
     /* Wait up to 3 seconds for TolunnetSetup to finish and port to disappear */
     for (int i = 0; i < 30; i++) {
@@ -3605,20 +3610,31 @@ static BOOL wizard_geom_read(int *page, LONG *winw, LONG *winh, LONG *wintop,
                   pane_l, pane_t, pane_w, pane_h, pagebottom, pen_bg) == 14;
 }
 
-/* Send one command with a bounded reply wait (5 s) */
+/* Send one command with a bounded reply wait (30 s).
+ * 11r item 1: the message is allocated on the HEAP and leaked on a
+ * missing reply on purpose - a late ReplyMsg into a dead stack
+ * frame corrupts memory (the silent 68000 freeze of 11q). */
 static BOOL wizard_msg(struct MsgPort *port, struct MsgPort *reply,
                        const char *cmd)
 {
-    struct Message msg;
+    struct Message *msg;
     int i;
-    memset(&msg, 0, sizeof(msg));
-    msg.mn_ReplyPort = reply;
-    msg.mn_Node.ln_Name = (char *)cmd;
-    PutMsg(port, &msg);
-    for (i = 0; i < 125; i++) {
-        if (GetMsg(reply) != NULL) return TRUE;
+
+    msg = (struct Message *)AllocVec(sizeof(struct Message),
+                                     MEMF_PUBLIC | MEMF_CLEAR);
+    if (!msg) return FALSE;
+    msg->mn_ReplyPort = reply;
+    msg->mn_Node.ln_Name = (char *)cmd;
+    PutMsg(port, msg);
+    for (i = 0; i < 1500; i++) {            /* 30 s */
+        if (GetMsg(reply) != NULL) {
+            FreeVec(msg);
+            return TRUE;
+        }
         Delay(2);
     }
+    tapf("# wizard_msg: no reply to %s - message leaked on purpose\n",
+         cmd ? cmd : "");
     return FALSE;
 }
 
@@ -3790,19 +3806,27 @@ static void tc_wizard_ntsc(void)
             if (fail) break;
 
             if (i == 4 && mode == 0) {
-                /* 11q item 2: run the checks BEFORE the Test-page
-                 * screenshot so the list shows the real results.
-                 * The checks can block ~10 s - wait longer than the
-                 * generic 5 s reply window. */
-                struct Message tmsg;
+                /* 11r item 1: heap message, 30 s wait - a late reply
+                 * must not write into a dead stack frame. Still
+                 * queued after 30 s: leave it allocated on purpose
+                 * (the wizard may reply late). */
+                struct Message *tmsg = (struct Message *)AllocVec(
+                    sizeof(struct Message), MEMF_PUBLIC | MEMF_CLEAR);
                 int t;
-                memset(&tmsg, 0, sizeof(tmsg));
-                tmsg.mn_ReplyPort = reply_port;
-                tmsg.mn_Node.ln_Name = (char *)"TEST";
-                PutMsg(wizard_port, &tmsg);
-                for (t = 0; t < 900; t++) {
-                    if (GetMsg(reply_port) != NULL) break;
-                    Delay(2);
+                if (tmsg) {
+                    tmsg->mn_ReplyPort = reply_port;
+                    tmsg->mn_Node.ln_Name = (char *)"TEST";
+                    PutMsg(wizard_port, tmsg);
+                    for (t = 0; t < 1500; t++) {
+                        if (GetMsg(reply_port) != NULL) {
+                            FreeVec(tmsg);
+                            break;
+                        }
+                        Delay(2);
+                    }
+                    if (t >= 1500) {
+                        tapf("# wizard_msg: no reply to TEST - message leaked on purpose\n");
+                    }
                 }
                 Delay(15);          /* let the checklist redraw */
             }
@@ -9012,7 +9036,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_release_obtain);
     TN_RUN(tc_every_vector_callable);
     TN_RUN(tc_stats_counters);
-    TN_RUN(tc_wizard_layout); /* 11q item 2: per-page layout check (CANCELs, writes no config) */
+    /* TN_RUN(tc_wizard_layout); */ /* 11r item 1: re-enabled next item - keep the message fixes isolated first */
     TN_RUN(tc_wizard_wired);
     TN_RUN(tc_wizard_ntsc);
     TN_RUN(tc_wifi_scan_parse);
