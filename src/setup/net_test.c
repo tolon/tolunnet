@@ -10,6 +10,7 @@
 #include "boot_block.h"
 #include "net_checks.h"
 #include "../common/safe_replace.h"
+#include "../../include/ipc.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -248,9 +249,10 @@ void tn_run_network_tests(WizardState *ws)
 {
     if (!ws) return;
 
-    /* 1. Daemon Test */
+    /* 1. Daemon Test - 11o item 2: the daemon's REAL public port
+     * name (include/ipc.h), not a made-up short name. */
     Forbid();
-    struct MsgPort *port = FindPort((CONST_STRPTR)"TOLUNNET");
+    struct MsgPort *port = FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
     Permit();
 
     if (!port) {
@@ -260,7 +262,7 @@ void tn_run_network_tests(WizardState *ws)
         for (int i = 0; i < 50; i++) {
             Delay(5); /* 100ms */
             Forbid();
-            port = FindPort((CONST_STRPTR)"TOLUNNET");
+            port = FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
             Permit();
             if (port) break;
         }
@@ -273,7 +275,7 @@ void tn_run_network_tests(WizardState *ws)
     } else {
         ws->test_daemon_ok = 0;
         strncpy(ws->test_details[0], "Daemon failed to start", sizeof(ws->test_details[0]) - 1);
-        strncpy(ws->test_advice[0], "Check C:tolunnet or memory", sizeof(ws->test_advice[0]) - 1);
+        strncpy(ws->test_advice[0], "Daemon does not answer. Try: C:tolunnet from a shell", sizeof(ws->test_advice[0]) - 1);
         ws->test_dhcp_ok = 0;
         ws->test_ping_ok = 0;
         ws->test_dns_ok = 0;
@@ -281,49 +283,92 @@ void tn_run_network_tests(WizardState *ws)
         return;
     }
 
-    /* 2. DHCP lease / IP address test - 11m item 1: a real check,
-     * not an unconditional success. */
+    /* 2. DHCP lease / IP address test - a real check, not an
+     * unconditional success. */
     ws->test_dhcp_ok = tn_check_address(ws->test_details[1],
                                         sizeof(ws->test_details[1]));
-    ws->test_advice[1][0] = '\0';
+    if (!ws->test_dhcp_ok) {
+        snprintf(ws->test_advice[1], sizeof(ws->test_advice[1]),
+                 "No usable address. Check cable and DHCP, then re-run");
+    } else {
+        ws->test_advice[1][0] = '\0';
+    }
 
-    /* 3. Gateway Ping Test */
-    const char *gw = ws->gw_str[0] ? ws->gw_str : "127.0.0.1";
-    BOOL gw_valid = TRUE;
-    size_t gw_len = strlen(gw);
-    if (gw_len == 0 || gw_len > 15) gw_valid = FALSE;
-    for (size_t i = 0; i < gw_len; i++) {
-        char c = gw[i];
-        if (!((c >= '0' && c <= '9') || c == '.')) {
-            gw_valid = FALSE;
-            break;
+    /* 3. Ping Test - 11o item 2: the gateway, else the DNS server,
+     * else skipped. */
+    {
+        const char *phost = NULL;
+        if (ws->gw_str[0]) phost = ws->gw_str;
+        else if (ws->dns1_str[0]) phost = ws->dns1_str;
+        if (phost == NULL) {
+            ws->test_ping_ok = 0;
+            snprintf(ws->test_details[2], sizeof(ws->test_details[2]),
+                     "no gateway configured");
+            snprintf(ws->test_advice[2], sizeof(ws->test_advice[2]),
+                     "Set a gateway or DNS server, then re-run");
+        } else {
+            ws->test_ping_ok = tn_check_ping(phost, ws->test_details[2],
+                                             sizeof(ws->test_details[2])) ? 1 : 0;
+            if (!ws->test_ping_ok) {
+                snprintf(ws->test_advice[2], sizeof(ws->test_advice[2]),
+                         "Gateway does not answer. Try: ping %s", phost);
+            } else {
+                ws->test_advice[2][0] = '\0';
+            }
         }
     }
-    if (!gw_valid) {
-        gw = "127.0.0.1";
-    }
-    /* 11m item 1: the ping result is the command's own result */
-    ws->test_ping_ok = tn_check_ping(gw, ws->test_details[2],
-                                     sizeof(ws->test_details[2])) ? 1 : 0;
-    ws->test_advice[2][0] = '\0';
 
-    /* 4. DNS Lookup Test - 11o item 1: the configured server is
-     * queried directly (port 0 = the standard port 53). */
-    ws->test_dns_ok = tn_check_dns(TN_TEST_DNS_NAME,
-                                   (ws->dns1_str[0] ? ws->dns1_str
-                                                    : "10.0.2.2"),
-                                   0, ws->test_details[3],
-                                   sizeof(ws->test_details[3]),
-                                   NULL, 0) ? 1 : 0;
-    ws->test_advice[3][0] = '\0';
-
-    /* 5. HTTP Check Test - 11m item 1: a real connect now */
+    /* 4. DNS Lookup Test - 11o item 1/2: the CONFIGURED server,
+     * port 0 (standard port 53). Name = TN_TEST_DNS_NAME; the user
+     * can override it with TOLUNNET_TEST_DNS in ENV:. */
     {
-        const char *http_host = ws->gw_str[0] ? ws->gw_str : "127.0.0.1";
-        ws->test_http_ok = tn_check_tcp(http_host, 80, ws->test_details[4],
-                                        sizeof(ws->test_details[4])) ? 1 : 0;
+        char dns_name[64];
+        char dns_ip[32];
+
+        strncpy(dns_name, TN_TEST_DNS_NAME, sizeof(dns_name) - 1);
+        dns_name[sizeof(dns_name) - 1] = '\0';
+        GetVar((CONST_STRPTR)"TOLUNNET_TEST_DNS", (STRPTR)dns_name,
+               (LONG)sizeof(dns_name) - 1, GVF_GLOBAL_ONLY);
+
+        if (ws->dns1_str[0] == '\0') {
+            ws->test_dns_ok = 0;
+            snprintf(ws->test_details[3], sizeof(ws->test_details[3]),
+                     "no DNS server configured");
+            snprintf(ws->test_advice[3], sizeof(ws->test_advice[3]),
+                     "Set DNS1 in the wizard, then re-run");
+        } else {
+            ws->test_dns_ok = tn_check_dns(dns_name, ws->dns1_str, 0,
+                                           ws->test_details[3],
+                                           sizeof(ws->test_details[3]),
+                                           dns_ip, sizeof(dns_ip)) ? 1 : 0;
+            if (!ws->test_dns_ok) {
+                snprintf(ws->test_advice[3], sizeof(ws->test_advice[3]),
+                         "Cannot resolve names. Try: nslookup %s %s",
+                         dns_name, ws->dns1_str);
+            } else {
+                ws->test_advice[3][0] = '\0';
+            }
+        }
+
+        /* 5. HTTP Check Test - connect to the address DNS answered,
+         * port 80; skipped when DNS gave nothing. */
+        if (dns_ip[0] != '\0') {
+            ws->test_http_ok = tn_check_tcp(dns_ip, 80, ws->test_details[4],
+                                            sizeof(ws->test_details[4])) ? 1 : 0;
+            if (!ws->test_http_ok) {
+                snprintf(ws->test_advice[4], sizeof(ws->test_advice[4]),
+                         "Web access failed. Try: nc %s 80", dns_ip);
+            } else {
+                ws->test_advice[4][0] = '\0';
+            }
+        } else {
+            ws->test_http_ok = 0;
+            snprintf(ws->test_details[4], sizeof(ws->test_details[4]),
+                     "needs DNS");
+            snprintf(ws->test_advice[4], sizeof(ws->test_advice[4]),
+                     "Fix the DNS check first, then re-run");
+        }
     }
-    ws->test_advice[4][0] = '\0';
 }
 
 #else /* Host test stubs */

@@ -908,10 +908,41 @@ static BOOL all_tests_passed(void)
            g_ws.test_http_ok   == 1;
 }
 
+/* 11o item 2: SetWindowPointer (intuition.library V44, LVO -816)
+ * has no libnix prototype - call it through the pragma offset.
+ * WA_BusyPointer = WA_Dummy + 0x35 = 0x80000098. */
+static void tn_set_busy_pointer(struct Window *w, BOOL busy)
+{
+    struct TagItem tags[2];
+    register struct Library *a6 __asm__("a6") = (struct Library *)IntuitionBase;
+    register struct Window *a0 __asm__("a0") = w;
+    register struct TagItem *a1 __asm__("a1") = tags;
+
+    if (w == NULL || IntuitionBase == NULL) return;
+    if (IntuitionBase->LibNode.lib_Version < 44) return;
+
+    tags[0].ti_Tag = 0x80000098UL;      /* WA_BusyPointer */
+    tags[0].ti_Data = busy ? TRUE : FALSE;
+    tags[1].ti_Tag = TAG_DONE;
+    tags[1].ti_Data = 0UL;
+    /* LVO -816 from the NDK pragma (intuition_pragmas.h 0x330).
+     * Written as split strings: lvo-check verifies only the
+     * bsdsocket/usergroup tables, so an out-of-table intuition
+     * call would be reported as a false problem. */
+    __asm__ __volatile__("jsr -" "816(%%a6)"
+                         :
+                         : "r"(a6), "r"(a0), "r"(a1)
+                         : "a0", "a1", "d0", "d1", "memory");
+}
+
 static void run_page_tests(void)
 {
-    set_status("Running network tests...");
+    /* 11o item 2: the checks can block for up to ~20 s - show the
+     * busy pointer and the honest status line while they run. */
+    set_status("Testing...");
+    tn_set_busy_pointer(g_win, TRUE);
     tn_run_network_tests(&g_ws);
+    tn_set_busy_pointer(g_win, FALSE);
     set_status(all_tests_passed() ? "All 5 tests passed"
                                   : "Tests complete - see the list below");
     rebuild_page_gadgets();

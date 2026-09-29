@@ -197,7 +197,9 @@ int tn_check_ping(const char *host, char *detail, size_t n)
         return 0;
     }
     snprintf(args, sizeof(args), "%s COUNT 1 TIMEOUT 5", host);
-    rc = run_cmd_silent("C:TolunnetPing", args);
+    /* 11o item 2: C:ping - the name the user types (the package
+     * installs it next to C:TolunnetPing); same binary. */
+    rc = run_cmd_silent("C:ping", args);
     if (rc == 0) {
         snprintf(detail, n, "ping %s replied", host);
         return 1;
