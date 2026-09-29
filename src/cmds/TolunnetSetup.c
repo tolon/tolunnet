@@ -1573,7 +1573,7 @@ static void rebuild_page_gadgets(void)
         ng.ng_TopEdge    = ct + 5 * g_m.pitch + g_m.pitch / 2;
         ng.ng_Width      = 26;
         ng.ng_Height     = g_m.fy + 6;
-        ng.ng_GadgetText = (STRPTR)"Also write _Roadshow NetInterfaces file (backed up first)";
+        ng.ng_GadgetText = (STRPTR)"Also write _Roadshow NetInterfaces (backup kept)";
         ng.ng_GadgetID   = GID_P4_ROADSHOW_CHK;
         ng.ng_Flags      = PLACETEXT_RIGHT;
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
@@ -1608,8 +1608,11 @@ static void rebuild_page_gadgets(void)
         /* checklist leaves room for the two right-side buttons */
         LONG btn_w   = g_m.pane_w * 28 / 100;
         LONG cw_list = cw - btn_w - g_m.fx;
+        /* 11q item 1: drop one row so the PLACETEXT_ABOVE label sits
+         * clear of the page title line - at ct it clipped the first
+         * letter of "Checks:" into the title rule. */
         ng.ng_LeftEdge   = cl;
-        ng.ng_TopEdge    = ct;
+        ng.ng_TopEdge    = ct + g_m.pitch;
         ng.ng_Width      = cw_list;
         ng.ng_Height     = g_m.pitch * 5 + 6;
         ng.ng_GadgetText = (STRPTR)"Checks:";
@@ -1639,8 +1642,12 @@ static void rebuild_page_gadgets(void)
                             GT_Underscore, '_',
                             TAG_END);
 
+        /* 11q item 1: the checkbox row moves below the listview's
+         * bottom scroll arrows - it used to start inside the last
+         * 6 px of the listview, leaving the lower arrow glyph
+         * stranded at the right of the row. */
         ng.ng_LeftEdge   = cl;
-        ng.ng_TopEdge    = ct + g_m.pitch * 5 + g_m.pitch / 2;
+        ng.ng_TopEdge    = ct + g_m.pitch + g_m.pitch * 5 + 6 + 4;
         ng.ng_Width      = 26;
         ng.ng_Height     = g_m.fy + 6;
         ng.ng_GadgetText = (STRPTR)"Start at _boot";
