@@ -343,7 +343,7 @@ $(SETUP_BIN): $(SETUP_OBJS)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: SocketConformance Amiga-side TAP binary (Round 3 §B.2)
-$(CONF_BIN): $(BUILD)/tests/amiga/SocketConformance.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/setup/wifi_mgr.o $(BUILD)/src/setup/stack_detect.o
+$(CONF_BIN): $(BUILD)/tests/amiga/SocketConformance.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/setup/wifi_mgr.o $(BUILD)/src/setup/stack_detect.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/config_text.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: FreezeWatch TNET-115 capture helper (bench diagnostic only,

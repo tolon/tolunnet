@@ -37,6 +37,7 @@
 #include "../../src/common/ipc_client.h"
 #include "../../src/common/tn_arp.h"
 #include "../../src/task/route.h"
+#include "../../src/common/prefs.h"
 #include "../../src/setup/wifi_mgr.h"
 #include "../../src/setup/stack_detect.h"
 #include <net/if_arp.h>
@@ -5095,6 +5096,20 @@ static int tn_file_head_is(const char *path, const char *expect)
     return strncmp(buf, expect, (size_t)len) == 0;
 }
 
+static int tn_file_contains(const char *path, const char *needle)
+{
+    BPTR fh = Open((CONST_STRPTR)path, MODE_OLDFILE);
+    char buf[2048];
+    LONG n;
+
+    if (fh == 0) return 0;
+    n = Read(fh, buf, sizeof(buf) - 1);
+    Close(fh);
+    if (n < 0) n = 0;
+    buf[n] = '\0';
+    return strstr(buf, needle) != NULL;
+}
+
 /* z.ai step 10c item 2: prove the undo script end-to-end. T:tnsbx/
  * mirrors the real layout; S:tolunnet-undo-sandbox is the generated
  * undo with every SYS:/S:/LIBS:/DEVS: path rewritten under T:tnsbx/
@@ -5695,6 +5710,52 @@ static void tc_prefs_layout(void)
         TAP_NOTOK(label, "layout violations found (see # lines above)");
     } else {
         TAP_OK(label);
+    }
+}
+
+/* z.ai step 11j item 2: an overwrite must never DeleteFile(path).
+ * With FIBF_DELETE set on the old file, only the .bak swap lets the
+ * save still succeed: a DeleteFile on a protected file fails, and
+ * without the swap Rename(tmp, path) onto the protected target
+ * fails too. The old content must end up in <path>.bak, no _tmp
+ * file may remain. Sandbox: TN_PREFS_USE writes ENV: only - the
+ * real DEVS: config is never touched. */
+static void tc_prefs_save_keeps_old(void)
+{
+    const char *label = "tc_prefs_save_keeps_old";
+    const char *path = TN_PREFS_FILE_ENV;
+    const char *bakp = TN_PREFS_FILE_ENV ".bak";
+    const char *tmpp = TN_PREFS_FILE_ENV "_tmp";
+    TnPrefs p;
+    BPTR lk;
+    int rc1, rc2, ok_new, ok_bak, no_tmp = 1;
+
+    tn_prefs_default(&p);
+    strcpy(p.hostname, "bencholdhost");
+    rc1 = tn_prefs_save(&p, TN_PREFS_USE);
+
+    SetProtection((CONST_STRPTR)path, FIBF_DELETE);
+    tn_prefs_default(&p);
+    strcpy(p.hostname, "benchnewhost");
+    rc2 = tn_prefs_save(&p, TN_PREFS_USE);
+
+    ok_new = tn_file_contains(path, "benchnewhost");
+    ok_bak = tn_file_contains(bakp, "bencholdhost");
+    lk = Lock((CONST_STRPTR)tmpp, ACCESS_READ);
+    if (lk != (BPTR)0) { UnLock(lk); no_tmp = 0; }
+
+    /* leave the environment clean */
+    SetProtection((CONST_STRPTR)path, 0);
+    SetProtection((CONST_STRPTR)bakp, 0);
+    DeleteFile((CONST_STRPTR)path);
+    DeleteFile((CONST_STRPTR)bakp);
+
+    tapf("# %s: rc1=%d rc2=%d stage=%d new=%d bak=%d tmp_absent=%d\n",
+         label, rc1, rc2, tn_prefs_last_stage, ok_new, ok_bak, no_tmp);
+    if (ok_new && ok_bak && no_tmp) {
+        TAP_OK(label);
+    } else {
+        TAP_NOTOK(label, "overwrite lost or misplaced the old config");
     }
 }
 
@@ -8492,6 +8553,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_cmd_stop_start); /* LAST-but-one: stops the daemon */
     TN_RUN(tc_daemon_noconfig_start); /* 10b item 2: bare boot, no config (daemon already stopped) */
     TN_RUN(tc_undo_sandbox); /* 10c item 2: undo proven in a T: sandbox */
+    TN_RUN(tc_prefs_save_keeps_old); /* 11j item 2: overwrite keeps the old file in .bak */
 
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");
