@@ -129,7 +129,7 @@ typedef struct WizardState {
  * the tc_wizard_layout row so the test can never go stale against a
  * label change. The mnemonic underscores are printed literally on
  * these checkboxes (no GT_Underscore tag), so TextLength sees them. */
-#define TN_CHK_ROADSHOW "Also write _Roadshow NetInterfaces (backup kept)"
+#define TN_CHK_ROADSHOW "Also write _Roadshow NetInterfaces (backup kept) and also this label is deliberately stretched far beyond the panel for the fail-proof run 1234567890"
 #define TN_CHK_BOOT     "Start at _boot"
 #define TN_CHK_PREFS    "Open _Prefs after finish"
 
