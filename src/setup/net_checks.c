@@ -196,7 +196,7 @@ int tn_check_ping(const char *host, char *detail, size_t n)
         snprintf(detail, n, "invalid host string");
         return 0;
     }
-    snprintf(args, sizeof(args), "%s COUNT 1 TIMEOUT 5", host);
+    snprintf(args, sizeof(args), "%s COUNT 1 TIMEOUT 10", host);
     /* 11o item 2: C:ping - the name the user types (the package
      * installs it next to C:TolunnetPing); same binary. */
     rc = run_cmd_silent("C:ping", args);
