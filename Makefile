@@ -333,7 +333,7 @@ $(PREFS_BIN): $(BUILD)/src/cmds/TolunnetPrefs.o $(BUILD)/src/common/prefs.o $(BU
 # Target: TolunnetSetup First-Run Network Wizard
 SETUP_OBJS = $(BUILD)/src/cmds/TolunnetSetup.o \
              $(BUILD)/src/setup/stack_detect.o $(BUILD)/src/common/safe_replace.o \
-             $(BUILD)/src/setup/boot_block.o \
+             $(BUILD)/src/setup/boot_block.o $(BUILD)/src/setup/net_checks.o \
              $(BUILD)/src/setup/hw_detect.o \
              $(BUILD)/src/setup/wifi_mgr.o \
              $(BUILD)/src/setup/net_test.o \
@@ -344,7 +344,7 @@ $(SETUP_BIN): $(SETUP_OBJS)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: SocketConformance Amiga-side TAP binary (Round 3 §B.2)
-$(CONF_BIN): $(BUILD)/tests/amiga/SocketConformance.o $(BUILD)/src/setup/boot_block.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/setup/wifi_mgr.o $(BUILD)/src/setup/stack_detect.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/safe_replace.o $(BUILD)/src/common/config_text.o
+$(CONF_BIN): $(BUILD)/tests/amiga/SocketConformance.o $(BUILD)/src/setup/boot_block.o $(BUILD)/src/setup/net_checks.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/setup/wifi_mgr.o $(BUILD)/src/setup/stack_detect.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/safe_replace.o $(BUILD)/src/common/config_text.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: FreezeWatch TNET-115 capture helper (bench diagnostic only,

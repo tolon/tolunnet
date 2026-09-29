@@ -1,0 +1,31 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/*
+ * tolunnet — Real Test-page checks (z.ai step 11m item 1)
+ *
+ * Four self-contained checks the wizard Test page runs instead of
+ * reporting fake success. Each returns 1 ok / 0 failed and writes a
+ * short one-line detail (what was tested, what came back). No
+ * wizard/GUI includes - only dos.library and the C: commands.
+ */
+
+#ifndef TOLUNNET_NET_CHECKS_H
+#define TOLUNNET_NET_CHECKS_H
+
+#include <stddef.h>
+
+/* Non-zero IPv4 that is not 0.0.0.0 and not 169.254.x.x, reported
+ * by C:GetNetStatus ADDRESS (IPC snapshot from the running daemon). */
+int tn_check_address(char *detail, size_t n);
+
+/* C:TolunnetPing <host> COUNT=1 TIMEOUT=5; ok only on return code 0.
+ * The host is validated (digits and dots, or a plain host name)
+ * before it reaches a command line. */
+int tn_check_ping(const char *host, char *detail, size_t n);
+
+/* C:nslookup <name>; ok only on return code 0 AND a printed IPv4. */
+int tn_check_dns(const char *name, char *detail, size_t n);
+
+/* C:nc <host> <port> TIMEOUT=5; ok only if the connection opens. */
+int tn_check_tcp(const char *host, unsigned port, char *detail, size_t n);
+
+#endif /* TOLUNNET_NET_CHECKS_H */

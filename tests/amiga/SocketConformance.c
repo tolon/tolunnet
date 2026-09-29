@@ -40,6 +40,7 @@
 #include "../../src/common/prefs.h"
 #include "../../src/common/safe_replace.h"
 #include "../../src/setup/boot_block.h"
+#include "../../src/setup/net_checks.h"
 #include "../../src/setup/wifi_mgr.h"
 #include "../../src/setup/stack_detect.h"
 #include <net/if_arp.h>
@@ -5989,6 +5990,54 @@ static void tc_boot_block(void)
     DeleteFile((CONST_STRPTR)"RAM:tnbb-startup.tolunnet-bak");
 }
 
+/* z.ai step 11m item 1: the Test-page checks must tell the truth.
+ * ok: every check the hermetic bench can satisfy - the daemon's
+ * reported address, a loopback ICMP echo (slirp does not answer
+ * ICMP, so the gateway is not pingable), the netsvc DNS name and
+ * the netsvc HTTP port. fail: an unreachable gateway, a name that
+ * cannot exist and a closed port must all report failure. */
+static void tc_net_checks_ok(void)
+{
+    const char *label = "tc_net_checks_ok";
+    char det[160];
+    int a, p, d, t;
+
+    a = tn_check_address(det, sizeof(det));
+    tapf("# %s: address %d - %s\n", label, a, det);
+    p = tn_check_ping("127.0.0.1", det, sizeof(det));
+    tapf("# %s: ping %d - %s\n", label, p, det);
+    d = tn_check_dns("test.tolunnet.lan", det, sizeof(det));
+    tapf("# %s: dns %d - %s\n", label, d, det);
+    t = tn_check_tcp("10.0.2.2", NETSVC_HTTP_PORT, det, sizeof(det));
+    tapf("# %s: tcp %d - %s\n", label, t, det);
+
+    if (a && p && d && t) {
+        TAP_OK(label);
+    } else {
+        TAP_NOTOK(label, "a hermetic check unexpectedly failed");
+    }
+}
+
+static void tc_net_checks_fail(void)
+{
+    const char *label = "tc_net_checks_fail";
+    char det[160];
+    int p, d, t;
+
+    p = tn_check_ping("10.255.255.1", det, sizeof(det));
+    tapf("# %s: ping %d - %s\n", label, p, det);
+    d = tn_check_dns("nx.invalid", det, sizeof(det));
+    tapf("# %s: dns %d - %s\n", label, d, det);
+    t = tn_check_tcp("127.0.0.1", 1, det, sizeof(det));
+    tapf("# %s: tcp %d - %s\n", label, t, det);
+
+    if (!p && !d && !t) {
+        TAP_OK(label);
+    } else {
+        TAP_NOTOK(label, "an unreachable target was reported as ok");
+    }
+}
+
 static void tc_cmd_stop_start(void)
 {
     BPTR seg;
@@ -8786,6 +8835,8 @@ int main(int argc, char *argv[])
     TN_RUN(tc_prefs_save_keeps_old); /* 11j item 2: overwrite keeps the old file in .bak */
     TN_RUN(tc_safe_replace); /* 11k item 1: one safe-replace helper (RAM: sandbox) */
     TN_RUN(tc_boot_block); /* 11l item 2: byte-exact boot block editor (RAM: sandbox) */
+    TN_RUN(tc_net_checks_ok); /* 11m item 1: real checks pass on hermetic targets */
+    TN_RUN(tc_net_checks_fail); /* 11m item 1: real checks fail on unreachable targets */
 
     tapf("1..%d\n", g_count);
     tapf("# bench: asking daemon to stop (restart-cycle proof)\n");

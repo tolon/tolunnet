@@ -8,6 +8,7 @@
 
 #include "net_test.h"
 #include "boot_block.h"
+#include "net_checks.h"
 #include "../common/safe_replace.h"
 
 #include <stdio.h>
@@ -50,6 +51,11 @@ int tn_format_roadshow_interface(const char *dev, ULONG unit, BOOL is_dhcp,
 #include <exec/types.h>
 #include <dos/dos.h>
 #include <dos/dostags.h>
+
+/* 11m item 1: the name the DNS test resolves. The hermetic bench's
+ * netsvc resolver answers it (A -> 10.0.2.2), and on a real install
+ * any resolvable name proves the resolver path works. */
+#define TN_TEST_DNS_NAME "test.tolunnet.lan"
 
 static BOOL write_text(const char *path, const char *text)
 {
@@ -275,16 +281,11 @@ void tn_run_network_tests(WizardState *ws)
         return;
     }
 
-    /* 2. DHCP lease / IP address test */
-    if (ws->ip_mode == 0) {
-        ws->test_dhcp_ok = 1;
-        strncpy(ws->test_details[1], "DHCP lease acquired", sizeof(ws->test_details[1]) - 1);
-        ws->test_advice[1][0] = '\0';
-    } else {
-        ws->test_dhcp_ok = 1;
-        snprintf(ws->test_details[1], sizeof(ws->test_details[1]), "Static IP %s", ws->ip_str);
-        ws->test_advice[1][0] = '\0';
-    }
+    /* 2. DHCP lease / IP address test - 11m item 1: a real check,
+     * not an unconditional success. */
+    ws->test_dhcp_ok = tn_check_address(ws->test_details[1],
+                                        sizeof(ws->test_details[1]));
+    ws->test_advice[1][0] = '\0';
 
     /* 3. Gateway Ping Test */
     const char *gw = ws->gw_str[0] ? ws->gw_str : "127.0.0.1";
@@ -301,30 +302,22 @@ void tn_run_network_tests(WizardState *ws)
     if (!gw_valid) {
         gw = "127.0.0.1";
     }
+    /* 11m item 1: the ping result is the command's own result */
+    ws->test_ping_ok = tn_check_ping(gw, ws->test_details[2],
+                                     sizeof(ws->test_details[2])) ? 1 : 0;
+    ws->test_advice[2][0] = '\0';
 
-    char cmd[256];
-    int ret = snprintf(cmd, sizeof(cmd), "C:TolunnetPing %s COUNT=1 >NIL: <NIL:", gw);
-    if (ret > 0 && (size_t)ret < sizeof(cmd)) {
-        LONG rc = SystemTags((CONST_STRPTR)cmd, TAG_END);
-        if (rc == 0) {
-            ws->test_ping_ok = 1;
-            snprintf(ws->test_details[2], sizeof(ws->test_details[2]), "Ping %s OK", gw);
-            ws->test_advice[2][0] = '\0';
-        } else {
-            ws->test_ping_ok = 1; /* Non-fatal in isolated test environments */
-            snprintf(ws->test_details[2], sizeof(ws->test_details[2]), "Ping %s dispatched", gw);
-            ws->test_advice[2][0] = '\0';
-        }
-    }
-
-    /* 4. DNS Lookup Test */
-    ws->test_dns_ok = 1;
-    strncpy(ws->test_details[3], "DNS resolver active", sizeof(ws->test_details[3]) - 1);
+    /* 4. DNS Lookup Test - 11m item 1: a real lookup now */
+    ws->test_dns_ok = tn_check_dns(TN_TEST_DNS_NAME, ws->test_details[3],
+                                   sizeof(ws->test_details[3])) ? 1 : 0;
     ws->test_advice[3][0] = '\0';
 
-    /* 5. HTTP Check Test */
-    ws->test_http_ok = 1;
-    strncpy(ws->test_details[4], "HTTP stack operational", sizeof(ws->test_details[4]) - 1);
+    /* 5. HTTP Check Test - 11m item 1: a real connect now */
+    {
+        const char *http_host = ws->gw_str[0] ? ws->gw_str : "127.0.0.1";
+        ws->test_http_ok = tn_check_tcp(http_host, 80, ws->test_details[4],
+                                        sizeof(ws->test_details[4])) ? 1 : 0;
+    }
     ws->test_advice[4][0] = '\0';
 }
 
