@@ -5939,7 +5939,9 @@ static void tc_boot_block(void)
     after = tn_file_read_all(path, &a1_len);
     orig = (char *)AllocVec(40, MEMF_CLEAR);
     if (orig != NULL) {
-        strcpy(orig, "first line\nsecond line no newline");
+        /* the newline the block appended on enable is now the last
+         * line's own newline, so disable output is orig + '\n' */
+        strcpy(orig, "first line\nsecond line no newline\n");
         ok_d = ok_d && after != NULL && a1_len == (LONG)strlen(orig) &&
                memcmp(after, orig, a1_len) == 0;
     } else {
