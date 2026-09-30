@@ -157,7 +157,7 @@ HOST_UNITS   = src/common/inet_parse.c src/common/config_text.c \
                src/common/ipc_client.c src/common/http_url.c \
                src/common/errstr.c src/common/sockaddr_util.c \
                src/setup/stack_detect.c src/setup/wifi_mgr.c \
-               src/setup/net_test.c src/setup/hw_detect.c \
+               src/setup/net_test.c src/setup/wrap.c src/setup/hw_detect.c \
                tests/host/mock_lwip.c src/task/slot_table.c \
                src/task/route.c src/common/ifreader.c \
                src/common/log_format.c src/task/timers.c
@@ -333,7 +333,7 @@ $(PREFS_BIN): $(BUILD)/src/cmds/TolunnetPrefs.o $(BUILD)/src/common/prefs.o $(BU
 # Target: TolunnetSetup First-Run Network Wizard
 SETUP_OBJS = $(BUILD)/src/cmds/TolunnetSetup.o \
              $(BUILD)/src/setup/stack_detect.o $(BUILD)/src/common/safe_replace.o \
-             $(BUILD)/src/setup/boot_block.o $(BUILD)/src/setup/net_checks.o \
+             $(BUILD)/src/setup/boot_block.o $(BUILD)/src/setup/net_checks.o $(BUILD)/src/setup/wrap.o \
              $(BUILD)/src/setup/hw_detect.o \
              $(BUILD)/src/setup/wifi_mgr.o \
              $(BUILD)/src/setup/net_test.o \

@@ -208,7 +208,7 @@ int tn_check_ping(const char *host, char *detail, size_t n)
         snprintf(detail, n, "ping %s replied", host);
         return 1;
     }
-    snprintf(detail, n, "ping %s got no reply (rc=%ld)", host, (long)rc);
+    snprintf(detail, n, "ping %s got no reply", host);
     return 0;
 }
 
@@ -239,8 +239,7 @@ int tn_check_dns(const char *name, const char *server, unsigned port,
         }
         return 1;
     }
-    snprintf(detail, n, "cannot resolve %s via %s (rc=%ld)",
-             name, server, (long)rc);
+    snprintf(detail, n, "cannot resolve %s via %s", name, server);
     return 0;
 }
 
@@ -263,7 +262,6 @@ int tn_check_tcp(const char *host, unsigned port, char *detail, size_t n)
         snprintf(detail, n, "tcp %s:%u connected", host, port);
         return 1;
     }
-    snprintf(detail, n, "tcp %s:%u refused or failed (rc=%ld)",
-             host, port, (long)rc);
+    snprintf(detail, n, "tcp %s:%u refused or failed", host, port);
     return 0;
 }
