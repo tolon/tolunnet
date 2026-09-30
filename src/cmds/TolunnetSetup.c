@@ -1285,7 +1285,7 @@ static void rebuild_page_gadgets(void)
         ng.ng_LeftEdge   = cl;
         ng.ng_TopEdge    = ct + g_m.pitch;
         ng.ng_Width      = cw;
-        ng.ng_Height     = g_m.pitch * rows + 6;
+        ng.ng_Height     = g_m.pitch * (rows - 1) + 6;
         ng.ng_GadgetText = (STRPTR)"Found on this system:";
         ng.ng_GadgetID   = GID_P2_LIST + 100; /* display-only list */
         ng.ng_Flags      = PLACETEXT_ABOVE;
@@ -1338,7 +1338,7 @@ static void rebuild_page_gadgets(void)
         ng.ng_LeftEdge   = cl;
         ng.ng_TopEdge    = ct + g_m.pitch;
         ng.ng_Width      = cw;
-        ng.ng_Height     = g_m.pitch * rows + 6;
+        ng.ng_Height     = g_m.pitch * (rows - 1) + 6;
         ng.ng_GadgetText = (STRPTR)"Adapter:";
         ng.ng_GadgetID   = GID_P2_LIST;
         ng.ng_Flags      = PLACETEXT_ABOVE;
@@ -1409,7 +1409,7 @@ static void rebuild_page_gadgets(void)
         ng.ng_LeftEdge   = cl;
         ng.ng_TopEdge    = ct + g_m.pitch;
         ng.ng_Width      = cw - btn_scan_w - g_m.fx;
-        ng.ng_Height     = g_m.pitch * rows + 6;
+        ng.ng_Height     = g_m.pitch * (rows - 1) + 6;
         ng.ng_GadgetText = (STRPTR)"Networks:";
         ng.ng_GadgetID   = GID_P3_NETLIST;
         ng.ng_Flags      = PLACETEXT_ABOVE;
