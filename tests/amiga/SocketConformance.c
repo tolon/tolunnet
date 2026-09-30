@@ -9139,7 +9139,6 @@ int main(int argc, char *argv[])
     TN_RUN(tc_stats_counters);
     TN_RUN(tc_wizard_layout); /* 11r item 2: per-page layout check (CANCELs, writes no config) */
     TN_RUN(tc_wizard_wired);
-    TN_RUN(tc_wizard_wired);
     TN_RUN(tc_wizard_ntsc);
     TN_RUN(tc_wifi_scan_parse);
     TN_RUN(tc_reconfig_rc);
