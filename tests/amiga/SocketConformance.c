@@ -4182,6 +4182,166 @@ static void tc_wizard_layout(void)
     }
 }
 
+/* 11t: the Test-page checklist must be VISIBLE after the checks ran.
+ * Sends TEST, then counts non-background pixels inside the
+ * GID_P5_CHECKLIST listview interior (scroller strip skipped) on the
+ * window's own RastPort, and cross-checks the wizard's own report of
+ * how many checklist nodes it built (checknodes= line in
+ * ENV:TolunnetSetup.geom) against 5. */
+static void tc_wizard_checklist(void)
+{
+    const char *label = "tc_wizard_checklist";
+    struct MsgPort *reply_port = CreateMsgPort();
+    struct MsgPort *wizard_port = NULL;
+    struct Screen *scr;
+    struct Window *win;
+    struct Gadget *lv = NULL;
+    LONG winw = 0, winh = 0, bl, br, bt, bb, pen_bg = 0;
+    int pg = -1, nodes = -1, npx = 0;
+    int i, x, y, threshold = 200;
+
+    if (!reply_port) {
+        TAP_NOTOK(label, "CreateMsgPort failed");
+        return;
+    }
+    {
+        LONG rc = SystemTags((CONST_STRPTR)"C:TolunnetSetup",
+                             SYS_Asynch, TRUE,
+                             SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE),
+                             SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
+                             NP_StackSize, 32768,
+                             TAG_END);
+        if (rc != 0 && rc != -1) {
+            DeleteMsgPort(reply_port);
+            TAP_NOTOK(label, "wizard did not launch");
+            return;
+        }
+    }
+    for (i = 0; i < 100; i++) {
+        Delay(5);
+        Forbid();
+        wizard_port = FindPort((CONST_STRPTR)"TOLUNNETSETUP");
+        Permit();
+        if (wizard_port) break;
+    }
+    if (!wizard_port) {
+        DeleteMsgPort(reply_port);
+        TAP_NOTOK(label, "TOLUNNETSETUP port not found");
+        return;
+    }
+
+    /* land on the Test page, then run the checks */
+    if (!wizard_msg(wizard_port, reply_port, "PAGE 4")) {
+        tapf("# %s: no reply to PAGE 4\n", label);
+    }
+    Delay(8);
+    {
+        struct Message *tmsg = (struct Message *)AllocVec(
+            sizeof(struct Message), MEMF_PUBLIC | MEMF_CLEAR);
+        int t;
+        if (tmsg) {
+            tmsg->mn_ReplyPort = reply_port;
+            tmsg->mn_Node.ln_Name = (char *)"TEST";
+            PutMsg(wizard_port, tmsg);
+            for (t = 0; t < 1500; t++) {
+                if (GetMsg(reply_port) != NULL) {
+                    FreeVec(tmsg);
+                    break;
+                }
+                Delay(2);
+            }
+            if (t >= 1500) {
+                tapf("# wizard_msg: no reply to TEST - message leaked on purpose\n");
+            }
+        }
+        Delay(20);
+    }
+
+    {
+        char buf[320];
+        BPTR fh = Open((CONST_STRPTR)"ENV:TolunnetSetup.geom", MODE_OLDFILE);
+        LONG n;
+        if (fh) {
+            n = Read(fh, buf, sizeof(buf) - 1);
+            Close(fh);
+            if (n > 0) {
+                char *p;
+                buf[n > 0 ? n : 0] = ' ';
+                p = strstr(buf, "checknodes=");
+                if (p) nodes = atoi(p + 11);
+            }
+        }
+        tapf("# %s: geom checknodes=%d\n", label, nodes);
+    }
+
+    {
+        ULONG key = LockIBase(0);
+        for (scr = IntuitionBase->FirstScreen; scr; scr = scr->NextScreen) {
+            for (win = scr->FirstWindow; win; win = win->NextWindow) {
+                if (win->Title != NULL &&
+                    strstr((const char *)win->Title, "Network Setup") != NULL &&
+                    strstr((const char *)win->Title, "Advanced") == NULL) {
+                    break;
+                }
+            }
+            if (win) break;
+        }
+        if (win) {
+            struct Gadget *gd;
+            winw = win->Width; winh = win->Height;
+            bl = win->BorderLeft; br = win->BorderRight;
+            bt = win->BorderTop; bb = win->BorderBottom;
+            for (gd = win->FirstGadget; gd; gd = gd->NextGadget) {
+                if (gd->GadgetID == 152 && gd->Width > 0) { lv = gd; break; }
+            }
+        }
+        UnlockIBase(key);
+    }
+
+    if (win && lv && scr) {
+        struct RastPort *rp = win->RPort;
+        LONG x0, y0, x1, y1, hits = 0, total = 0;
+        x0 = lv->LeftEdge + 2;
+        y0 = lv->TopEdge + 2;
+        x1 = lv->LeftEdge + lv->Width - 16;   /* skip the scroller strip */
+        y1 = lv->TopEdge + lv->Height - 2;
+        for (y = y0; y <= y1; y++) {
+            for (x = x0; x <= x1; x++) {
+                ULONG p = ReadPixel(rp, (LONG)x, (LONG)y);
+                total++;
+                if (p != (ULONG)pen_bg) hits++;
+            }
+        }
+        npx = (int)hits;
+        tapf("# %s: listview interior %ldx%ld at (%ld,%ld): %d of %ld pixels non-background\n",
+             label, (long)(x1 - x0 + 1), (long)(y1 - y0 + 1),
+             (long)x0, (long)y0, npx, (long)total);
+    } else {
+        tapf("# %s: listview gadget not found (win=%ld lv=%ld)\n",
+             label, (long)winw, (long)(lv != NULL));
+    }
+
+    wizard_msg(wizard_port, reply_port, "CANCEL");
+    for (i = 0; i < 30; i++) {
+        Delay(5);
+        Forbid();
+        if (FindPort((CONST_STRPTR)"TOLUNNETSETUP") == NULL) {
+            Permit();
+            break;
+        }
+        Permit();
+    }
+    DeleteMsgPort(reply_port);
+
+    tapf("# %s: result: nodes=%d nonbg=%d threshold=%d\n",
+         label, nodes, npx, threshold);
+    if (nodes == 5 && npx >= threshold) {
+        TAP_OK(label);
+    } else {
+        TAP_NOTOK(label, "check list shows no results on screen");
+    }
+}
+
 static void tc_wifi_scan_parse(void)
 {
     const char *fake_ssid = "TolunAmigaNet";
@@ -9138,6 +9298,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_every_vector_callable);
     TN_RUN(tc_stats_counters);
     TN_RUN(tc_wizard_layout); /* 11r item 2: per-page layout check (CANCELs, writes no config) */
+    TN_RUN(tc_wizard_checklist); /* 11t: the check list must be visible after TEST */
     TN_RUN(tc_wizard_wired);
     TN_RUN(tc_wizard_ntsc);
     TN_RUN(tc_wifi_scan_parse);

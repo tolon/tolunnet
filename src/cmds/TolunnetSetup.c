@@ -1060,7 +1060,7 @@ static void write_layout_geom(void)
         if (g->TopEdge + g->Height > page_bottom) page_bottom = g->TopEdge + g->Height;
     }
 
-    char line[160];
+    char line[320];
     snprintf(line, sizeof(line),
              "page=%d winw=%ld winh=%ld wintop=%ld scrw=%ld scrh=%ld maxbottom=%ld compact=%d pane_l=%ld pane_t=%ld pane_w=%ld pane_h=%ld pagebottom=%ld pen_bg=%ld\n",
              g_ws.current_page,
@@ -1069,6 +1069,22 @@ static void write_layout_geom(void)
              (long)max_bottom, g_m.compact ? 1 : 0,
              (long)g_m.pane_l, (long)g_m.pane_t, (long)g_m.pane_w, (long)g_m.pane_h,
              (long)page_bottom, (long)g_m.pen_bg);
+    /* 11t: the check list was reported empty on screen - publish its
+     * state next to the geometry so the bench row can show whether
+     * the nodes exist at draw time. */
+    {
+        const struct Node *n;
+        int nnodes = 0;
+        const char *first = "(none)";
+        for (n = (const struct Node *)g_check_list.lh_Head;
+             n->ln_Succ; n = (const struct Node *)n->ln_Succ) {
+            if (nnodes == 0 && n->ln_Name) first = (const char *)n->ln_Name;
+            nnodes++;
+        }
+        snprintf(line + strlen(line), sizeof(line) - strlen(line),
+                 "checknodes=%d listview=%d first=\"%.34s\"\n",
+                 nnodes, (g_gad_listview != NULL) ? 1 : 0, first);
+    }
     BPTR fh = Open((CONST_STRPTR)"ENV:TolunnetSetup.geom", MODE_NEWFILE);
     if (fh) {
         Write(fh, (CONST_APTR)line, strlen(line));
