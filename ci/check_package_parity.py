@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""check_package_parity.py — the archive must equal the release tree
+(z.ai step 11y item 3).
+
+scripts/create_lha.py writes Level-0 LhA with the -lh0- (stored)
+method only, so a minimal reader is enough: walk the member headers,
+read each member's bytes, and require md5 parity with
+build/release/tolunnet/. Also asserts:
+  - the archive member `tolunnet/Install_Tolunnet` is byte-identical
+    to the repo's `Install_Tolunnet.script` (the file the bench stages
+    and installer_lint lints), and
+  - the member list is exactly the expected package list.
+
+Usage:
+  check_package_parity.py <archive.lha> <release_dir>
+Prints one `name md5 OK/DIFF` line per member. Exit 0 only when every
+check passes.
+"""
+
+import hashlib
+import os
+import struct
+import sys
+
+# The shipped C/ contents (36 names, incl. the Commodore Installer and
+# the ifconfig/netstat/wget/curl/ping name copies and C/tolunnet.info).
+EXPECTED_C = [
+    "AddNetInterface", "AddNetRoute", "CheckNetConfig",
+    "ConfigureNetInterface", "DeleteNetRoute", "GetNetStatus",
+    "Installer", "NetShutdown", "Offline", "Online", "ShowNetStatus",
+    "TestSocket", "TolunnetControl", "TolunnetGet", "TolunnetPing",
+    "TolunnetSetup", "TolunnetStatus", "arp", "curl", "ftp", "hostname",
+    "ifconfig", "iperf", "nc", "netstat", "nslookup", "ping", "route",
+    "sntp", "telnet", "tftp", "tolunnet", "tolunnet.info", "traceroute",
+    "wget", "whois",
+]
+
+EXPECTED_ROOT = [
+    "Install_Tolunnet", "Install_Tolunnet.info", "Installer",
+    "Libs/usergroup.library", "LICENSE", "README.guide",
+    "README.guide.info", "THIRD_PARTY_LICENSES.md", "TolunnetPrefs",
+    "TolunnetPrefs.info", "TolunnetSetup", "TolunnetSetup.info",
+    "tolunnet.readme",
+]
+
+
+def read_lha_members(data):
+    """Yield (name, bytes) for every -lh0- member; refuse anything the
+    minimal reader cannot handle honestly."""
+    pos = 0
+    members = []
+    while pos < len(data):
+        if data[pos] == 0:
+            break  # end of archive
+        hdr_size = data[pos]
+        hdr = data[pos + 2:pos + 2 + hdr_size]
+        if len(hdr) < 22:
+            raise SystemExit("FAIL: truncated LHA header at offset %d" % pos)
+        method = hdr[0:5]
+        if method != b"-lh0-":
+            raise SystemExit(
+                "FAIL: member method %r is not -lh0-; the minimal reader "
+                "only handles stored members (create_lha.py writes -lh0-)"
+                % method)
+        comp_size, orig_size = struct.unpack_from("<II", hdr, 5)
+        # hdr layout: method(5) comp(4) orig(4) time(4) attr(1) level(1)
+        # fn_len(1) filename crc(2)  ->  fn_len at 19, name at 20
+        fn_len = hdr[19]
+        name = hdr[20:20 + fn_len].decode("latin1")
+        if comp_size != orig_size:
+            raise SystemExit("FAIL: member %s claims compression" % name)
+        start = pos + 2 + hdr_size
+        members.append((name, data[start:start + comp_size]))
+        pos = start + comp_size
+    return members
+
+
+def md5(b):
+    return hashlib.md5(b).hexdigest()
+
+
+def main(argv):
+    if len(argv) != 3:
+        print(__doc__)
+        return 2
+    archive, release_dir = argv[1], argv[2]
+    data = open(archive, "rb").read()
+    members = read_lha_members(data)
+
+    print("[check_package_parity] archive: %s (%d bytes, %d members)"
+          % (archive, len(data), len(members)))
+
+    bad = 0
+    seen = []
+    print("[check_package_parity] %-42s %-32s %s" % ("member", "md5", "parity"))
+    for name, blob in members:
+        rel = name
+        for prefix in ("tolunnet/",):
+            if rel.startswith(prefix):
+                rel = rel[len(prefix):]
+        seen.append(rel)
+        disk_path = os.path.join(release_dir, *rel.split("/"))
+        if not os.path.isfile(disk_path):
+            print("[check_package_parity] %-42s %-32s %s"
+                  % (rel, md5(blob), "DIFF (missing on disk)"))
+            bad += 1
+            continue
+        disk_md5 = md5(open(disk_path, "rb").read())
+        ok = disk_md5 == md5(blob)
+        print("[check_package_parity] %-42s %-32s %s"
+              % (rel, disk_md5, "OK" if ok else "DIFF"))
+        if not ok:
+            bad += 1
+
+    # installer parity: the archived installer IS the linted script
+    script_path = os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "Install_Tolunnet.script")
+    script_md5 = md5(open(script_path, "rb").read())
+    inst = dict((n, b) for n, b in members).get("tolunnet/Install_Tolunnet")
+    if inst is None:
+        print("[check_package_parity] FAIL: no tolunnet/Install_Tolunnet member")
+        bad += 1
+    elif md5(inst) != script_md5:
+        print("[check_package_parity] FAIL: archived Install_Tolunnet md5 %s "
+              "!= Install_Tolunnet.script md5 %s" % (md5(inst), script_md5))
+        bad += 1
+    else:
+        print("[check_package_parity] Install_Tolunnet == Install_Tolunnet.script "
+              "(md5 %s) OK" % script_md5)
+
+    expected = sorted(["C/" + n for n in EXPECTED_C] + EXPECTED_ROOT)
+    if sorted(seen) != expected:
+        missing = sorted(set(expected) - set(seen))
+        extra = sorted(set(seen) - set(expected))
+        print("[check_package_parity] FAIL: member list mismatch; "
+              "missing=%s extra=%s" % (missing, extra))
+        bad += 1
+    else:
+        print("[check_package_parity] member list == expected (%d members) OK"
+              % len(expected))
+
+    if bad:
+        print("[check_package_parity] FAIL: %d problem(s)" % bad)
+        return 1
+    print("[check_package_parity] OK: archive parity verified")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

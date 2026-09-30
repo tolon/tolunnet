@@ -198,6 +198,14 @@ python-checks:
 	python3 scripts/gen_pkg_docs.py
 	python3 scripts/verify_icons.py
 	python3 scripts/check_md_links.py
+	python3 scripts/check_no_nul.py
+	@if ls build/tolunnet-*.lha >/dev/null 2>&1; then \
+	  newest=$$(ls -t build/tolunnet-*.lha | head -1); \
+	  python3 ci/check_package_parity.py $$newest $(PACKAGE_DIR) || \
+	    (echo "FAIL: newest .lha does not match build/release/tolunnet"; exit 1); \
+	else \
+	  echo "[check_package_parity] no build/tolunnet-*.lha - skipped"; \
+	fi
 	sh scripts/check-forbid.sh
 	@git --no-pager diff --exit-code -- src/lib/lib_table.gen.c src/lib/lib_stubs.gen.s \
 		src/lib/lib_unimpl.c src/lib/lib_compat_table.gen.md \
@@ -479,6 +487,9 @@ release-stage: all
 package: release-stage
 	@echo "--- Building LhA Archive ---"
 	python3 scripts/create_lha.py $(PACKAGE_DIR) $(LHA_ARCHIVE)
+	# 11y item 3: read the archive back and require byte parity with
+	# the release tree before calling the package done.
+	python3 ci/check_package_parity.py $(LHA_ARCHIVE) $(PACKAGE_DIR)
 	@echo "Package successfully created: $(LHA_ARCHIVE)"
 	@$(MAKE) adf
 
