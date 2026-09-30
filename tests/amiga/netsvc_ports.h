@@ -11,5 +11,6 @@
 #define NETSVC_TFTP_PORT       15069
 #define NETSVC_HTTP_PORT       15880
 #define NETSVC_SNTP_PORT       15123
+#define NETSVC_DNS_PORT        15353
 
 #endif /* NETSVC_PORTS_H */
