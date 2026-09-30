@@ -63,9 +63,9 @@ if [ "${1:-}" = "soak" ]; then
     mkdir -p "$SOAK_DIR"
 
     if [ "${SKIP_BUILD:-0}" != "1" ]; then
-        say "building (make all)"
-        wsl -d Ubuntu-24.04 -e bash -c "export PATH=/usr/bin:/bin:/usr/local/bin:/home/tolon/opt/m68k-amigaos/bin:\$PATH && cd /mnt/d/Projeler/tolunnet && make all CROSS=$CROSS" >/dev/null \
-            || die "make all failed"
+        say "building (make release-stage)"
+        wsl -d Ubuntu-24.04 -e bash -c "export PATH=/usr/bin:/bin:/usr/local/bin:/home/tolon/opt/m68k-amigaos/bin:\$PATH && cd /mnt/d/Projeler/tolunnet && make release-stage CROSS=$CROSS" >/dev/null \
+            || die "make release-stage failed"
     fi
 
     BENCH_CFG="ci/.soak-tolunnet.config"
@@ -114,11 +114,14 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
     xd delete S/Conformance-Script >/dev/null 2>&1
     xd delete S/Soak-Cycle      >/dev/null 2>&1
     xd delete Devs/tolunnet.config >/dev/null 2>&1
-    xd write build/tolunnet C/tolunnet          || die "soak staging: tolunnet"
-    xd write build/TolunnetPing C/TolunnetPing  || die "soak staging: TolunnetPing"
-    xd write build/TolunnetPing C/ping          || die "soak staging: ping"
-    xd write build/TolunnetGet C/TolunnetGet    || die "soak staging: TolunnetGet"
-    xd write build/TolunnetControl C/TolunnetControl || die "soak staging: TolunnetControl"
+    # 11y item 2: soak stages the shipped binaries from the release
+    # tree too (same rule as the conformance bench).
+    SREL=build/release/tolunnet
+    xd write "$SREL/C/tolunnet" C/tolunnet          || die "soak staging: tolunnet"
+    xd write "$SREL/C/TolunnetPing" C/TolunnetPing  || die "soak staging: TolunnetPing"
+    xd write "$SREL/C/ping" C/ping                  || die "soak staging: ping"
+    xd write "$SREL/C/TolunnetGet" C/TolunnetGet    || die "soak staging: TolunnetGet"
+    xd write "$SREL/C/TolunnetControl" C/TolunnetControl || die "soak staging: TolunnetControl"
     xd write ci/Soak-Cycle S/Soak-Cycle         || die "soak staging: cycle script"
     xd write ci/User-Startup-Soak S/Conformance-Script || die "soak staging: driver script"
     xd write ci/User-Startup-Boot S/User-Startup || die "soak staging: boot shim"
@@ -240,15 +243,21 @@ if tasklist //FI "IMAGENAME eq winuae64.exe" 2>/dev/null | grep -qi winuae64; th
 fi
 
 if [ "${SKIP_BUILD:-0}" != "1" ]; then
-    say "building (make all)"
-    wsl -d Ubuntu-24.04 -e bash -c "export PATH=/usr/bin:/bin:/usr/local/bin:/home/tolon/opt/m68k-amigaos/bin:\$PATH && cd /mnt/d/Projeler/tolunnet && make all CROSS=$CROSS" >/dev/null \
-        || die "make all failed"
+    say "building (make release-stage)"
+    wsl -d Ubuntu-24.04 -e bash -c "export PATH=/usr/bin:/bin:/usr/local/bin:/home/tolon/opt/m68k-amigaos/bin:\$PATH && cd /mnt/d/Projeler/tolunnet && make release-stage CROSS=$CROSS" >/dev/null \
+        || die "make release-stage failed"
 fi
 [ -f build/tolunnet ] || die "build/tolunnet missing (run without SKIP_BUILD)"
 [ -f build/SocketConformance ] || die "build/SocketConformance missing"
 [ -f build/bsdsocktest ] || die "build/bsdsocktest missing (vendor/bsdsocktest)"
 [ -f build/usergroup.library ] || die "build/usergroup.library missing"
 [ -f build/nc ] || die "build/nc missing"
+# 11y item 2: the shipped files must exist - the bench stages them
+# from the release tree so it tests exactly what the archive ships.
+[ -f build/release/tolunnet/C/tolunnet ] || die "release tree missing (make release-stage)"
+[ -f build/release/tolunnet/C/nc ] || die "release C/nc missing"
+[ -f build/release/tolunnet/Libs/usergroup.library ] || die "release Libs/usergroup.library missing"
+[ -f build/release/tolunnet/Install_Tolunnet ] || die "release Install_Tolunnet missing"
 [ -f build/whois ] || die "build/whois missing"
 [ -f build/TolunnetGet ] || die "build/TolunnetGet missing"
 [ -f build/ftp ] || die "build/ftp missing"
@@ -399,35 +408,40 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
     xd delete S/Conformance-Script >/dev/null 2>&1
     xd delete S/Install_Tolunnet.script >/dev/null 2>&1
     xd delete Devs/tolunnet.config >/dev/null 2>&1
-    xd write build/tolunnet C/tolunnet          || die "xdftool write tolunnet failed"
-    xd write build/TolunnetControl C/TolunnetControl || die "xdftool write TolunnetControl failed"
+    # 11y item 2: SHIPPED files are staged from build/release/tolunnet
+    # (stripped release tree, exactly what the .lha carries); test-only
+    # tools (SocketConformance, S2Toggle, bsdsocktest) still come from
+    # build/. REL= prefix for the release tree.
+    REL=build/release/tolunnet
+    xd write "$REL/C/tolunnet" C/tolunnet          || die "xdftool write tolunnet failed"
+    xd write "$REL/C/TolunnetControl" C/TolunnetControl || die "xdftool write TolunnetControl failed"
     xd write build/SocketConformance C/SocketConformance || die "xdftool write conformance failed"
-    xd write build/TolunnetSetup C/TolunnetSetup || die "xdftool write TolunnetSetup failed"
-    xd write build/TolunnetPrefs C/TolunnetPrefs || die "xdftool write TolunnetPrefs failed"
+    xd write "$REL/C/TolunnetSetup" C/TolunnetSetup || die "xdftool write TolunnetSetup failed"
+    xd write "$REL/C/TolunnetPrefs" C/TolunnetPrefs || die "xdftool write TolunnetPrefs failed"
     xd write build/S2Toggle C/S2Toggle || die "xdftool write S2Toggle failed"
     xd write build/bsdsocktest C/bsdsocktest || die "xdftool write bsdsocktest failed"
-    xd write build/nc C/nc                     || die "xdftool write nc failed"
-    xd write build/telnet C/telnet             || die "xdftool write telnet failed"
-    xd write build/nslookup C/nslookup         || die "xdftool write nslookup failed"
-    xd write build/hostname C/hostname         || die "xdftool write hostname failed"
-    xd write build/TolunnetPing C/TolunnetPing || die "xdftool write TolunnetPing failed"
-    xd write build/TolunnetPing C/ping         || die "xdftool write ping failed"
-    xd write build/GetNetStatus C/GetNetStatus || die "xdftool write GetNetStatus failed"
-    xd write build/ShowNetStatus C/ShowNetStatus || die "xdftool write ShowNetStatus failed"
-    xd write build/route C/route               || die "xdftool write route failed"
-    xd write build/Online C/Online             || die "xdftool write Online failed"
-    xd write build/Offline C/Offline           || die "xdftool write Offline failed"
-    xd write build/NetShutdown C/NetShutdown   || die "xdftool write NetShutdown failed"
-    xd write build/whois C/whois               || die "xdftool write whois failed"
-    xd write build/TolunnetGet C/TolunnetGet   || die "xdftool write TolunnetGet failed"
-    xd write build/ftp C/ftp                   || die "xdftool write ftp failed"
-    xd write build/sntp C/sntp                 || die "xdftool write sntp failed"
-    xd write build/traceroute C/traceroute     || die "xdftool write traceroute failed"
-    xd write build/tftp C/tftp                 || die "xdftool write tftp failed"
-    xd write build/usergroup.library Libs/usergroup.library || die "xdftool write usergroup.library failed"
+    xd write "$REL/C/nc" C/nc                     || die "xdftool write nc failed"
+    xd write "$REL/C/telnet" C/telnet             || die "xdftool write telnet failed"
+    xd write "$REL/C/nslookup" C/nslookup         || die "xdftool write nslookup failed"
+    xd write "$REL/C/hostname" C/hostname         || die "xdftool write hostname failed"
+    xd write "$REL/C/TolunnetPing" C/TolunnetPing || die "xdftool write TolunnetPing failed"
+    xd write "$REL/C/ping" C/ping                 || die "xdftool write ping failed"
+    xd write "$REL/C/GetNetStatus" C/GetNetStatus || die "xdftool write GetNetStatus failed"
+    xd write "$REL/C/ShowNetStatus" C/ShowNetStatus || die "xdftool write ShowNetStatus failed"
+    xd write "$REL/C/route" C/route               || die "xdftool write route failed"
+    xd write "$REL/C/Online" C/Online             || die "xdftool write Online failed"
+    xd write "$REL/C/Offline" C/Offline           || die "xdftool write Offline failed"
+    xd write "$REL/C/NetShutdown" C/NetShutdown   || die "xdftool write NetShutdown failed"
+    xd write "$REL/C/whois" C/whois               || die "xdftool write whois failed"
+    xd write "$REL/C/TolunnetGet" C/TolunnetGet   || die "xdftool write TolunnetGet failed"
+    xd write "$REL/C/ftp" C/ftp                   || die "xdftool write ftp failed"
+    xd write "$REL/C/sntp" C/sntp                 || die "xdftool write sntp failed"
+    xd write "$REL/C/traceroute" C/traceroute     || die "xdftool write traceroute failed"
+    xd write "$REL/C/tftp" C/tftp                 || die "xdftool write tftp failed"
+    xd write "$REL/Libs/usergroup.library" Libs/usergroup.library || die "xdftool write usergroup.library failed"
     xd write ci/User-Startup-Conformance S/Conformance-Script || die "xdftool write Conformance-Script failed"
     xd write ci/User-Startup-Boot S/User-Startup || die "xdftool write User-Startup failed"
-    xd write Install_Tolunnet.script S/Install_Tolunnet.script || die "xdftool write Install_Tolunnet.script failed"
+    xd write "$REL/Install_Tolunnet" S/Install_Tolunnet.script || die "xdftool write Install_Tolunnet.script failed"
     # 10c item 2: the undo, proven in a T: sandbox by tc_undo_sandbox -
     # same script with every SYS:/S:/LIBS:/DEVS: path rewritten under T:tnsbx/
     python3 scripts/gen_installer.py --undo-root="T:tnsbx/" --undo-out="build/tolunnet-undo-sandbox" || die "undo sandbox generation failed"

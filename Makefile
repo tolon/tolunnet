@@ -408,7 +408,11 @@ LHA_ARCHIVE = $(BUILD)/tolunnet-$(VERSION).lha
 ADF_IMAGE = $(BUILD)/tolunnet.adf
 XDFTOOL ?= $(shell PATH="$$PATH:$$HOME/.local/bin" which xdftool 2>/dev/null || echo $$HOME/.local/bin/xdftool)
 
-package: all
+# 11y item 2: release-stage produces EXACTLY the shipped tree
+# (copies + strip). ci/bench.sh stages the shipped files from here,
+# so the bench tests the same binaries the archive carries.
+.PHONY: release-stage
+release-stage: all
 	@echo "--- Creating Release Directory ---"
 	python3 scripts/gen_pkg_docs.py
 	rm -rf $(BUILD)/release
@@ -471,6 +475,8 @@ package: all
 	cp LICENSE $(PACKAGE_DIR)/
 	cp THIRD_PARTY_LICENSES.md $(PACKAGE_DIR)/
 	cp assets/tolunnet_drawer.info $(BUILD)/release/tolunnet.info || true
+
+package: release-stage
 	@echo "--- Building LhA Archive ---"
 	python3 scripts/create_lha.py $(PACKAGE_DIR) $(LHA_ARCHIVE)
 	@echo "Package successfully created: $(LHA_ARCHIVE)"
