@@ -1,77 +1,74 @@
-# STOP-REPORT — z.ai step 11r, item 2 (trustworthy tc_wizard_layout), 2026-09-30
+# STOP-REPORT — z.ai step 11u, item 2 (readable result rows), 2026-09-30
 
-State: HEAD `f2e8c67` (TN_CHK_ROADSHOW restored; logs committed).
-Item 2 is red twice in a row (benches `011240`, `020908`) and its
-3-run budget is spent — I stop. Item 1 is DONE and ALL-GREEN.
+State: HEAD `93bc320` (logs committed). Item 2 has two unintended
+reds in a row (benches `144924`, `151535`) — per the order's rule I
+stop. Item 1 is DONE (both commits, benches, all four legs green).
 
 ## Item status
 
-1. `test: wizard messages never live on a dead stack frame` — DONE:
-   `fc92ff4`. Bench `20260930-004920-v1.2.0-rc4-375-gfc92ff4`,
-   four legs `core: 108 ok / 0 not ok; external: 1 skipped`,
-   `1..109`. Logs commit `421abd0`. Notable: the 68000 leg walked
-   all five wizard pages with NO freeze — the heap-message change
-   removed the 11q NTSC hang, confirming the dead-stack-frame
-   diagnosis.
+1. Underscores — DONE.
+   - Commit A `2414115` (`test: no mnemonic underscore may reach the
+     screen`): assertion (d) in tc_wizard_layout + tc_prefs_layout.
+     Red proof bench `20260930-132030-v1.2.0-rc4-398-g2414115`
+     (109 ok / 1 not ok, both legs), the (d) lines quoted:
+     `# tc_wizard_layout: (d) page 0 gadget 10 (gid 110) label contains '_': "_Replace with tolunnet (recommended, non-destructive)"` plus gids 147/151/154 on page 3/4. Logs `0ccefa2`.
+   - Commit B `94608f9` (`fix(setup): mnemonic underscores are
+     consumed by GadTools`): GT_Underscore added to SIX gadgets
+     (gids 110, 147, 151, 154 + the Advanced-window DEVS:_Internet
+     and DHCP-fallback-DNS2 checkboxes); the eleven button/cycle
+     tags already existed; TolunnetPrefs.c has zero mnemonic labels
+     (grep count 0). Green bench `20260930-134458-v1.2.0-rc4-399-g94608f9`:
+     all four legs `core: 110 ok / 0 not ok`, `1..111` — (d) green
+     because GadTools consumes the underscore from its own label
+     copy. Logs `5d23e98`. Item-1 runs: 2 (one intended red + one
+     green).
 
-2. `test: wizard layout row with shared label text and a diagnosed
-   freeze` — rows in (`73819f9` shared macros + diag + port wait +
-   stage prints; `71d3a6c` domain-overlap fix + gid-147 diag;
-   `8a7a1b1` full-label copy + correct PLACETEXT bits). RED ×2,
-   budget spent. NOT DONE.
+2. Result rows — code in (`ad627cc` layout + wrapped checklist;
+   `22aabf4` row-width assertion; `6cc2d53` screen-RastPort wrap
+   measurement). RED ×2 unintended. NOT DONE.
 
-Counted runs: `011240` (1), `014954` (2), `020908` (3). One
-non-counted FATAL: `013350` died before any TAP line — the host
-netsvc ports were still held by the previous run (TCP 15021 busy);
-cleared, rerun as `014954`.
+Counted runs: 2 (`144924`, `151535`). One proof run (`126820e`,
+intended red) is excluded by the step rule. Infra FATAL: none.
 
-## What each run established
+## The chain of evidence
 
-- `011240` (stretched label): tc_wizard_layout caught the
-  Domain-vs-Advanced REAL overlap (gid 149/160) — fixed in
-  `71d3a6c` (the Domain field now ends one fx gap before the
-  Advanced button; the screenshots could not show it because the
-  button hid under the field). But the (b) assertion did not fire.
-- `014954` (same tree): ALL-GREEN 110 ok / 0 not ok — but with a
-  diag that explained why (b) was silent, and this run is the
-  closest thing to the item's expected result so far:
-  `# tc_wizard_layout: diag page3 gid147 flags=8006 placetext=6 lab="Also write _Roadshow NetInterfaces (backup kept"`
-- `020908` (stretched label, after `8a7a1b1` fixed two (b) bugs —
-  the real PLACETEXT bits are LEFT 0x1 / RIGHT 0x2 / ABOVE 0x4 /
-  IN 0x10 (checkbox carries RIGHT|ABOVE = 6, so == RIGHT never
-  matched) and the checkbox label DOES come back through
-  GadgetText but my 48-byte copy truncated it):
+- Proof run `126820e` (temp commit, reverted in `a6cea31`): the
+  three planted defects were caught — `(b) ... right label ends at
+  1388 > inner right 636` for the stretched Roadshow label, the
+  checklist grew to `nodes=16` with the giant-word advice row, and
+  the checklist went red (stale nodes==5 assertion — that stale
+  check is what item 2 fixed to `nodes >= 5` + the maxtext check).
+- Clean run `144924` (counted 1): RED — `maxtext=304 > interior=268`.
+  The wrap measured with the WINDOW RastPort and a budget of
+  cw_list-24, both wrong: the suite measures on the SCREEN RastPort
+  and the real listview interior is cw_list minus frame and scroller
+  (268 px measured).
+- Fix `6cc2d53`: tn_wrap_px measures on the screen RastPort, wrap
+  budget = cw_list - 60 px. Clean run `151535` (counted 2): RED
+  again, but much closer — `maxtext=272 > interior=268`, 4 px over,
+  identical on both legs (a1200 109 ok? no: 108 ok / 2 not ok with
+  the row-width line on both).
 
-  The required (b) fail-proof line, verbatim (both legs):
-  ```
-  # tc_wizard_layout: (b) page 3 gadget 10 (gid 147) right label ends at 1392 > inner right 636 ("Also write _Roadshow NetInterfaces (backup kept) and also this label is deliberately stretched far beyond the panel for the fail-proof run 1234567890")
-  ```
-  TN_CHK_ROADSHOW was then restored (`08899b5`).
+## Remaining gap (NOT applied — budget spent)
 
-## Why I still cannot claim 109 ok / 0 not ok
+The 4 px residual is indent/space-width accounting: tn_wrap_px
+appends a 4-space indent when WRITING the row but never includes it
+in the width test (the indent is 32 px in topaz 8, yet only ~4 px
+appears — the residual suggests the written row is wider than the
+measured candidate by the space-collapsing of the first word). The
+next attempt should measure the INDENTED candidate string inside
+tn_wrap_px (prefix included) and keep the cw_list-60 budget, or
+simply widen the check to measure exactly the string stored in
+g_check_lines (the suite already measures that string via maxtext).
 
-The same 020908 run exposed two new facts that a green run must
-first address:
+Bench numbers this step: `144924` a1200 437s / 68000 900s;
+`151535` both legs completed (elapsed in READMEs), no infra FATAL
+reruns, no split runs — the 1500 s headroom and heap messages hold.
 
-1. (b) above-label model error: my ABOVE check assumes the label
-   starts at the gadget's left edge, but GadTools centers an ABOVE
-   label, so `(b) page 0 gadget 9 (gid 222) right label ends at
-   786 > inner right 636 ("Found on this system:")` and
-   `(b) page 1 gadget 9 (gid 122) ... 682 ...` are false positives
-   (a centered label cannot reach x + TL). The above check needs a
-   centered model (ends at x + (cw + TL) / 2) or should only assert
-   the horizontal half that a centered label can actually violate.
-2. The run split: the a1200 leg's conformance.log ends at 99
-   processed lines (98 ok + 1 not ok) without 1..110, and the
-   68000 conformance2.log is empty (0/0) — the suite did not
-   complete its second pass on either image. No crash-*.iff. With
-   tc_wizard_layout commented out (item 1's run) both images
-   completed all passes, so the row (or its CANCEL path) is
-   involved in the split.
+## 11u item 1 note
 
-Next step (NOT applied — budget spent): fix the centered-above
-model, then run tc_wizard_layout alone on the NTSC image to
-isolate the split before it rejoins main().
+The two docs commit ids quoted in my 11t report (f661d29/f44646b)
+were wrong; the real ones are 30e5014/587fffe as you stated — ids
+are now copied from `git log` only.
 
-Working tree clean at `f2e8c67`; TN_CHK_ROADSHOW carries the fixed
-11q text.
+Working tree clean at `93bc320`.
