@@ -3897,7 +3897,7 @@ static LONG tn_label_len(struct RastPort *rp, const char *s)
     for (i = 0; s[i] && j < (int)sizeof(clean) - 1; i++) {
         if (s[i] != '_') clean[j++] = s[i];
     }
-    clean[j] = ' ';
+    clean[j] = '\0';
     return TextLength(rp, (STRPTR)clean, (LONG)j);
 }
 
@@ -4162,7 +4162,7 @@ static void tc_wizard_layout(void)
                 Close(gh);
                 if (n2 > 0) {
                     char *p2;
-                    gbuf[n2 > 0 ? n2 : 0] = ' ';
+                    gbuf[n2 > 0 ? n2 : 0] = '\0';
                     p2 = strstr(gbuf, "pane_t=");
                     if (p2) pane_t2 = (LONG)atoi(p2 + 7);
                     p2 = strstr(gbuf, "fy=");
@@ -4314,7 +4314,7 @@ static void tc_wizard_checklist(void)
             Close(fh);
             if (n > 0) {
                 char *p;
-                buf[n > 0 ? n : 0] = ' ';
+                buf[n > 0 ? n : 0] = '\0';
                 p = strstr(buf, "checknodes=");
                 if (p) nodes = atoi(p + 11);
                 p = strstr(buf, "maxtext=");
