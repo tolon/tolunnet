@@ -460,7 +460,10 @@ package: all
 	cp TolunnetPrefs.info $(PACKAGE_DIR)/TolunnetPrefs.info
 	cp TolunnetSetup.info $(PACKAGE_DIR)/TolunnetSetup.info
 	cp ci/tolunnet.info $(PACKAGE_DIR)/C/tolunnet.info || true
-	cp Install_Tolunnet $(PACKAGE_DIR)/Install_Tolunnet
+	# 11y item 1: ship the installer the bench stages and lints
+	# (Install_Tolunnet.script) - the old root Install_Tolunnet was
+	# a stale 213-line fork of it.
+	cp Install_Tolunnet.script $(PACKAGE_DIR)/Install_Tolunnet
 	cp Install_Tolunnet.info $(PACKAGE_DIR)/Install_Tolunnet.info
 	cp README.guide $(PACKAGE_DIR)/
 	cp README.guide.info $(PACKAGE_DIR)/
