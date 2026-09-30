@@ -4244,6 +4244,7 @@ static void tc_wizard_checklist(void)
     struct Gadget *lv = NULL;
     LONG winw = 0, winh = 0, bl, br, bt, bb, pen_bg = 0;
     int pg = -1, nodes = -1, npx = 0;
+    LONG maxtext = -1, maxw = 0;
     int i, x, y, threshold = 200;
 
     if (!reply_port) {
@@ -4315,6 +4316,8 @@ static void tc_wizard_checklist(void)
                 buf[n > 0 ? n : 0] = ' ';
                 p = strstr(buf, "checknodes=");
                 if (p) nodes = atoi(p + 11);
+                p = strstr(buf, "maxtext=");
+                if (p) maxtext = (LONG)atoi(p + 8);
             }
         }
         tapf("# %s: geom checknodes=%d\n", label, nodes);
@@ -4347,6 +4350,7 @@ static void tc_wizard_checklist(void)
     if (win && lv && scr) {
         struct RastPort *rp = win->RPort;
         LONG x0, y0, x1, y1, hits = 0, total = 0;
+        maxw = lv->Width - 16;
         x0 = lv->LeftEdge + 2;
         y0 = lv->TopEdge + 2;
         x1 = lv->LeftEdge + lv->Width - 16;   /* skip the scroller strip */
@@ -4379,9 +4383,9 @@ static void tc_wizard_checklist(void)
     }
     DeleteMsgPort(reply_port);
 
-    tapf("# %s: result: nodes=%d nonbg=%d threshold=%d\n",
-         label, nodes, npx, threshold);
-    if (nodes == 5 && npx >= threshold) {
+    tapf("# %s: result: nodes=%d nonbg=%d threshold=%d maxtext=%ld interior=%ld\n",
+         label, nodes, npx, threshold, (long)maxtext, (long)maxw);
+    if (nodes >= 5 && npx >= threshold && maxtext <= maxw) {
         TAP_OK(label);
     } else {
         TAP_NOTOK(label, "check list shows no results on screen");
