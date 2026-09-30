@@ -1436,7 +1436,7 @@ static void rebuild_page_gadgets(void)
 
         LONG btn_scan_w = g_m.pane_w * 22 / 100;
         ng.ng_LeftEdge   = cl;
-        ng.ng_TopEdge    = ct;
+        ng.ng_TopEdge    = ct + g_m.pitch;
         ng.ng_Width      = cw - btn_scan_w - g_m.fx;
         ng.ng_Height     = g_m.pitch * rows + 6;
         ng.ng_GadgetText = (STRPTR)"Networks:";
