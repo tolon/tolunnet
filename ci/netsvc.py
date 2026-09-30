@@ -774,6 +774,12 @@ def main():
         os.makedirs(os.path.dirname(os.path.abspath(args.log)), exist_ok=True)
         g_log_file = open(args.log, "a", encoding="utf-8")
 
+    # 11w item 0: publish the Windows PID so ci/bench.sh can stop
+    # exactly this process (never by image name) on any exit path.
+    os.makedirs("build", exist_ok=True)
+    with open(os.path.join("build", "netsvc.pid"), "w") as pf:
+        pf.write(str(os.getpid()))
+
     def handle_sig(sig, frame):
         global g_running
         log("main", f"signal {sig} received, stopping all services")
