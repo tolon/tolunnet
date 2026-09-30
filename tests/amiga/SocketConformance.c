@@ -3903,7 +3903,7 @@ static void tc_wizard_layout(void)
      * L = PLACETEXT_LEFT (string/cycle rows), A = PLACETEXT_ABOVE
      * (listviews), I = PLACETEXT_IN (buttons/strings with the
      * text inside). */
-    static const struct { UWORD gid; char plac; } placement[32] = {
+    static const struct { UWORD gid; char plac; } placement[33] = {
         { 101, 'I' }, { 102, 'I' }, { 103, 'I' }, { 104, 'I' },
         { 110, 'R' },
         { 121, 'I' }, { 122, 'A' }, { 123, 'I' },
