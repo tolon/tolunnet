@@ -53,11 +53,6 @@ int tn_format_roadshow_interface(const char *dev, ULONG unit, BOOL is_dhcp,
 #include <dos/dos.h>
 #include <dos/dostags.h>
 
-/* 11m item 1: the name the DNS test resolves. The hermetic bench's
- * netsvc resolver answers it (A -> 10.0.2.2), and on a real install
- * any resolvable name proves the resolver path works. */
-#define TN_TEST_DNS_NAME "test.tolunnet.lan"
-
 static BOOL write_text(const char *path, const char *text)
 {
     /* 11l item 3: never overwrite in place - the text goes to
@@ -283,8 +278,9 @@ void tn_run_network_tests(WizardState *ws)
         return;
     }
 
-    /* 2. DHCP lease / IP address test - a real check, not an
-     * unconditional success. */
+    /* 2. IP address test - a real check, not an unconditional
+     * success. (11x item 3 T3: titled "IP address" - it runs in
+     * Manual mode too, where nothing was DHCP-leased.) */
     ws->test_dhcp_ok = tn_check_address(ws->test_details[1],
                                         sizeof(ws->test_details[1]));
     if (!ws->test_dhcp_ok) {
@@ -294,79 +290,116 @@ void tn_run_network_tests(WizardState *ws)
         ws->test_advice[1][0] = '\0';
     }
 
-    /* 3. Ping Test - 11o item 2: the gateway, else the DNS server,
-     * else skipped. */
+    /* 11x item 3 T2: in DHCP mode the wizard's gateway/DNS fields
+     * hold the invented Manual-mode defaults (192.168.1.1/1.1.1.1),
+     * not what this network actually handed out - ask the stack.
+     * Manual mode keeps the user's own fields. Empty -> the skip
+     * texts below. */
     {
-        const char *phost = NULL;
-        if (ws->gw_str[0]) phost = ws->gw_str;
-        else if (ws->dns1_str[0]) phost = ws->dns1_str;
-        if (phost == NULL) {
-            ws->test_ping_ok = 0;
+        char ping_host[40];
+        char dns_server[40];
+
+        if (ws->ip_mode == 0) {
+            tn_stack_value("GATEWAY", ping_host, sizeof(ping_host));
+            tn_stack_value("DNS", dns_server, sizeof(dns_server));
+        } else {
+            strncpy(ping_host, ws->gw_str, sizeof(ping_host) - 1);
+            ping_host[sizeof(ping_host) - 1] = '\0';
+            strncpy(dns_server, ws->dns1_str, sizeof(dns_server) - 1);
+            dns_server[sizeof(dns_server) - 1] = '\0';
+        }
+
+        /* 3. Ping Test - the REAL gateway in DHCP mode. */
+        if (ping_host[0] == '\0') {
+            /* 11x item 3 T4: nothing to test is a skip, not a fail */
+            ws->test_ping_ok = 2;
             snprintf(ws->test_details[2], sizeof(ws->test_details[2]),
                      "no gateway configured");
             snprintf(ws->test_advice[2], sizeof(ws->test_advice[2]),
                      "Set a gateway or DNS server, then re-run");
         } else {
-            ws->test_ping_ok = tn_check_ping(phost, ws->test_details[2],
+            ws->test_ping_ok = tn_check_ping(ping_host, ws->test_details[2],
                                              sizeof(ws->test_details[2])) ? 1 : 0;
             if (!ws->test_ping_ok) {
                 snprintf(ws->test_advice[2], sizeof(ws->test_advice[2]),
-                         "Gateway does not answer. Try: ping %s", phost);
+                         "Gateway does not answer. Try: ping %s", ping_host);
             } else {
                 ws->test_advice[2][0] = '\0';
             }
         }
-    }
 
-    /* 4. DNS Lookup Test - 11o item 1/2: the CONFIGURED server,
-     * port 0 (standard port 53). Name = TN_TEST_DNS_NAME; the user
-     * can override it with TOLUNNET_TEST_DNS in ENV:. */
-    {
-        char dns_name[64];
-        char dns_ip[32];
+        /* 4. DNS Lookup Test - 11x item 3 T5: google.com first, then
+         * cloudflare.com before FAILED - a resolver that answers one
+         * of the two biggest names on the internet proves the path
+         * works; "test.tolunnet.lan" only ever existed here. The
+         * detail line names the name that actually answered.
+         * TOLUNNET_TEST_DNS (single name) overrides both, for a
+         * closed network that can reach neither. No outside traffic
+         * is REQUIRED: on a closed resolver both names simply fail
+         * and the row says so. */
+        {
+            char dns_name[64] = "";  /* GetVar does not clear: init FIRST */
+            char dns_ip[32] = "";    /* T1: was uninitialised on the skip path */
+            const char *cand[2];
 
-        strncpy(dns_name, TN_TEST_DNS_NAME, sizeof(dns_name) - 1);
-        dns_name[sizeof(dns_name) - 1] = '\0';
-        GetVar((CONST_STRPTR)"TOLUNNET_TEST_DNS", (STRPTR)dns_name,
-               (LONG)sizeof(dns_name) - 1, GVF_GLOBAL_ONLY);
+            GetVar((CONST_STRPTR)"TOLUNNET_TEST_DNS", (STRPTR)dns_name,
+                   (LONG)sizeof(dns_name) - 1, GVF_GLOBAL_ONLY);
+            dns_name[sizeof(dns_name) - 1] = '\0';
+            if (dns_name[0] != '\0') {
+                cand[0] = dns_name;          /* override: that name only */
+                cand[1] = NULL;
+            } else {
+                cand[0] = "google.com";
+                cand[1] = "cloudflare.com";
+            }
 
-        if (ws->dns1_str[0] == '\0') {
-            ws->test_dns_ok = 0;
-            snprintf(ws->test_details[3], sizeof(ws->test_details[3]),
-                     "no DNS server configured");
-            snprintf(ws->test_advice[3], sizeof(ws->test_advice[3]),
-                     "Set DNS1 in the wizard, then re-run");
-        } else {
-            ws->test_dns_ok = tn_check_dns(dns_name, ws->dns1_str, 0,
-                                           ws->test_details[3],
-                                           sizeof(ws->test_details[3]),
-                                           dns_ip, sizeof(dns_ip)) ? 1 : 0;
-            if (!ws->test_dns_ok) {
+            if (dns_server[0] == '\0') {
+                ws->test_dns_ok = 2;         /* SKIPPED */
+                snprintf(ws->test_details[3], sizeof(ws->test_details[3]),
+                         "no DNS server configured");
                 snprintf(ws->test_advice[3], sizeof(ws->test_advice[3]),
-                         "Cannot resolve names. Try: nslookup %s %s",
-                         dns_name, ws->dns1_str);
+                         "Set DNS1 in the wizard, then re-run");
             } else {
-                ws->test_advice[3][0] = '\0';
-            }
-        }
+                int c;
 
-        /* 5. HTTP Check Test - connect to the address DNS answered,
-         * port 80; skipped when DNS gave nothing. */
-        if (dns_ip[0] != '\0') {
-            ws->test_http_ok = tn_check_tcp(dns_ip, 80, ws->test_details[4],
-                                            sizeof(ws->test_details[4])) ? 1 : 0;
-            if (!ws->test_http_ok) {
-                snprintf(ws->test_advice[4], sizeof(ws->test_advice[4]),
-                         "Web access failed. Try: nc %s 80", dns_ip);
-            } else {
-                ws->test_advice[4][0] = '\0';
+                ws->test_dns_ok = 0;
+                for (c = 0; c < 2 && cand[c] != NULL; c++) {
+                    if (tn_check_dns(cand[c], dns_server, 0,
+                                     ws->test_details[3],
+                                     sizeof(ws->test_details[3]),
+                                     dns_ip, sizeof(dns_ip))) {
+                        ws->test_dns_ok = 1;
+                        break;
+                    }
+                }
+                if (!ws->test_dns_ok) {
+                    snprintf(ws->test_advice[3], sizeof(ws->test_advice[3]),
+                             "Cannot resolve names. Try: nslookup google.com %s",
+                             dns_server);
+                } else {
+                    ws->test_advice[3][0] = '\0';
+                }
             }
-        } else {
-            ws->test_http_ok = 0;
-            snprintf(ws->test_details[4], sizeof(ws->test_details[4]),
-                     "needs DNS");
-            snprintf(ws->test_advice[4], sizeof(ws->test_advice[4]),
-                     "Fix the DNS check first, then re-run");
+
+            /* 5. HTTP Check Test - connect to the ANSWER address the
+             * parser returned (11x item 2), port 80; skipped when
+             * DNS gave nothing. */
+            if (dns_ip[0] != '\0') {
+                ws->test_http_ok = tn_check_tcp(dns_ip, 80, ws->test_details[4],
+                                                sizeof(ws->test_details[4])) ? 1 : 0;
+                if (!ws->test_http_ok) {
+                    snprintf(ws->test_advice[4], sizeof(ws->test_advice[4]),
+                             "Web access failed. Try: nc %s 80", dns_ip);
+                } else {
+                    ws->test_advice[4][0] = '\0';
+                }
+            } else {
+                ws->test_http_ok = 2;        /* SKIPPED, not FAILED */
+                snprintf(ws->test_details[4], sizeof(ws->test_details[4]),
+                         "needs DNS");
+                snprintf(ws->test_advice[4], sizeof(ws->test_advice[4]),
+                         "Fix the DNS check first, then re-run");
+            }
         }
     }
 }
@@ -382,7 +415,7 @@ void tn_run_network_tests(WizardState *ws)
     ws->test_dns_ok = 1;
     ws->test_http_ok = 1;
     strncpy(ws->test_details[0], "tolunnet 1.2 active", sizeof(ws->test_details[0]) - 1);
-    strncpy(ws->test_details[1], "DHCP lease OK", sizeof(ws->test_details[1]) - 1);
+    strncpy(ws->test_details[1], "IP address OK", sizeof(ws->test_details[1]) - 1);
     strncpy(ws->test_details[2], "Ping verified", sizeof(ws->test_details[2]) - 1);
     strncpy(ws->test_details[3], "DNS active", sizeof(ws->test_details[3]) - 1);
     strncpy(ws->test_details[4], "HTTP operational", sizeof(ws->test_details[4]) - 1);

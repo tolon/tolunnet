@@ -912,6 +912,31 @@ static BOOL all_tests_passed(void)
            g_ws.test_http_ok   == 1;
 }
 
+/* 11x item 3 T4: an honest summary — a skip is neither a pass nor a
+ * failure, and the line says how many of each. Skips (status 2)
+ * still keep all_tests_passed() false. */
+static void set_test_summary_status(void)
+{
+    const int st[5] = { g_ws.test_daemon_ok, g_ws.test_dhcp_ok, g_ws.test_ping_ok,
+                        g_ws.test_dns_ok, g_ws.test_http_ok };
+    int i, np = 0, nf = 0, ns = 0;
+    char buf[80];
+
+    for (i = 0; i < 5; i++) {
+        if (st[i] == 1) np++;
+        else if (st[i] == 0) nf++;
+        else ns++;
+    }
+    if (nf == 0 && ns == 0) {
+        set_status("All 5 tests passed");
+    } else {
+        snprintf(buf, sizeof(buf),
+                 "Tests complete - %d passed, %d failed, %d skipped",
+                 np, nf, ns);
+        set_status(buf);
+    }
+}
+
 /* 11o item 2: SetWindowPointer (intuition.library V44, LVO -816)
  * has no libnix prototype - call it through the pragma offset.
  * WA_BusyPointer = WA_Dummy + 0x35 = 0x80000098. */
@@ -960,8 +985,7 @@ static void run_page_tests(void)
                           GTLV_Labels, (ULONG)&g_check_list, TAG_DONE);
         GT_RefreshWindow(g_win, NULL);
     }
-    set_status(all_tests_passed() ? "All 5 tests passed"
-                                  : "Tests complete - see the list above");
+    set_test_summary_status();
 }
 
 /* "Save log…" — ASL save requester; without asl.library (or after Cancel)
@@ -978,7 +1002,7 @@ static void save_test_log(void)
         sizeof(struct EasyStruct), 0,
         (STRPTR)"Network Setup", (STRPTR)"", (STRPTR)"OK" };
 
-    static const char *names[5] = { "Start stack", "DHCP lease", "Ping gateway",
+    static const char *names[5] = { "Start stack", "IP address", "Ping gateway",
                                     "DNS lookup", "HTTP HEAD" };
     const int st[5] = { g_ws.test_daemon_ok, g_ws.test_dhcp_ok, g_ws.test_ping_ok,
                         g_ws.test_dns_ok, g_ws.test_http_ok };
@@ -1021,9 +1045,9 @@ static void save_test_log(void)
                     "----------------------------------\r\n");
     for (i = 0; i < 5; i++) {
         off += snprintf(report + off, sizeof(report) - off,
-                        "%-14s %-6s %s%s%s\r\n",
+                        "%-14s %-7s %s%s%s\r\n",
                         names[i],
-                        (st[i] == 1) ? "OK" : (st[i] == 0) ? "FAILED" : "..",
+                        (st[i] == 1) ? "OK" : (st[i] == 0) ? "FAILED" : "SKIPPED",
                         g_ws.test_details[i],
                         (st[i] != 1 && g_ws.test_advice[i][0]) ? " -> " : "",
                         (st[i] != 1 && g_ws.test_advice[i][0]) ? g_ws.test_advice[i] : "");
@@ -1641,7 +1665,7 @@ static void rebuild_page_gadgets(void)
         int i;
         int row = 0;
         int st[5];
-        static const char *names[5] = { "Start stack", "DHCP lease",
+        static const char *names[5] = { "Start stack", "IP address",
                                         "Ping gateway", "DNS lookup",
                                         "HTTP HEAD" };
         char d[160];

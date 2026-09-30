@@ -82,6 +82,49 @@ TN_TEST(canonical_between_addresses)
     TN_ASSERT_STREQ(ip, "203.0.113.7");
 }
 
+/* --- 11x item 3 T2: tn_parse_first_ipv4 (GetNetStatus output) --- */
+
+TN_TEST(first_ipv4_single_quad)
+{
+    char ip[32];
+    TN_ASSERT_EQ(tn_parse_first_ipv4("10.0.2.2\n", ip, sizeof(ip)), 1);
+    TN_ASSERT_STREQ(ip, "10.0.2.2");
+}
+
+TN_TEST(first_ipv4_zero_quad_is_returned_as_is)
+{
+    /* 0.0.0.0 parses; the caller decides it is not usable */
+    char ip[32];
+    TN_ASSERT_EQ(tn_parse_first_ipv4("0.0.0.0\n", ip, sizeof(ip)), 1);
+    TN_ASSERT_STREQ(ip, "0.0.0.0");
+}
+
+TN_TEST(first_ipv4_none_and_garbage)
+{
+    char ip[32];
+    TN_ASSERT_EQ(tn_parse_first_ipv4("none\n", ip, sizeof(ip)), 0);
+    TN_ASSERT_STREQ(ip, "");
+    TN_ASSERT_EQ(tn_parse_first_ipv4("", ip, sizeof(ip)), 0);
+    TN_ASSERT_EQ(tn_parse_first_ipv4("offline\n", ip, sizeof(ip)), 0);
+}
+
+TN_TEST(first_ipv4_two_quads_first_wins)
+{
+    char ip[32];
+    TN_ASSERT_EQ(tn_parse_first_ipv4("10.0.2.2\n10.0.2.3\n", ip, sizeof(ip)), 1);
+    TN_ASSERT_STREQ(ip, "10.0.2.2");
+}
+
+TN_TEST(first_ipv4_null_and_tiny_buffer)
+{
+    char ip[32];
+    char tiny[3];
+    TN_ASSERT_EQ(tn_parse_first_ipv4(NULL, ip, sizeof(ip)), 0);
+    TN_ASSERT_EQ(tn_parse_first_ipv4("1.2.3.4", ip, 0), 0);
+    TN_ASSERT_EQ(tn_parse_first_ipv4("1.2.3.4", tiny, sizeof(tiny)), 1);
+    TN_ASSERT_STREQ(tiny, "1.");
+}
+
 int main(void)
 {
     TN_TEST_RUN(normal_a_answer);
@@ -91,6 +134,11 @@ int main(void)
     TN_TEST_RUN(garbage_no_quad);
     TN_TEST_RUN(server_ip_is_not_the_answer);
     TN_TEST_RUN(canonical_between_addresses);
+    TN_TEST_RUN(first_ipv4_single_quad);
+    TN_TEST_RUN(first_ipv4_zero_quad_is_returned_as_is);
+    TN_TEST_RUN(first_ipv4_none_and_garbage);
+    TN_TEST_RUN(first_ipv4_two_quads_first_wins);
+    TN_TEST_RUN(first_ipv4_null_and_tiny_buffer);
     TN_TEST_PLAN();
     return tn_test_failures();
 }

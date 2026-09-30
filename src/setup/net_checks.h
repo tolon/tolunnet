@@ -33,4 +33,10 @@ int tn_check_dns(const char *name, const char *server, unsigned port,
 /* C:nc <host> <port> TIMEOUT=5; ok only if the connection opens. */
 int tn_check_tcp(const char *host, unsigned port, char *detail, size_t n);
 
+/* 11x item 3 T2: what the stack itself reports for GATEWAY / DNS
+ * (C:GetNetStatus <keyword>) — not the wizard's text fields. "none"
+ * and 0.0.0.0 count as "not set". Returns 1 with out filled, 0 with
+ * out set to "" (also when the daemon is down). */
+int tn_stack_value(const char *keyword, char *out, size_t n);
+
 #endif /* TOLUNNET_NET_CHECKS_H */

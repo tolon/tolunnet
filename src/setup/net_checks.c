@@ -268,3 +268,23 @@ int tn_check_tcp(const char *host, unsigned port, char *detail, size_t n)
     snprintf(detail, n, "tcp %s:%u refused or failed", host, port);
     return 0;
 }
+
+/* 11x item 3 T2: the stack's own view (DHCP-learned gateway/DNS),
+ * not the wizard's fields. C:GetNetStatus GATEWAY|DNS prints the
+ * IPv4(s) or "none"; the daemon being down prints "offline" with
+ * rc != 0. All of those end as out = "" / return 0. */
+int tn_stack_value(const char *keyword, char *out, size_t n)
+{
+    char raw[128];
+    char ip[32];
+    LONG rc;
+
+    if (out == NULL || n == 0) return 0;
+    out[0] = '\0';
+    rc = run_cmd_capture("C:GetNetStatus", keyword, raw, sizeof(raw));
+    if (rc != 0) return 0;
+    if (tn_parse_first_ipv4(raw, ip, sizeof(ip)) != 1) return 0;
+    if (strcmp(ip, "0.0.0.0") == 0) return 0;
+    snprintf(out, n, "%s", ip);
+    return 1;
+}

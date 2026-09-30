@@ -19,4 +19,10 @@
  * returns 0 otherwise. */
 int tn_parse_nslookup_answer(const char *text, char *ip, size_t n);
 
+/* 11x item 3: first dotted quad anywhere in simple command output
+ * (C:GetNetStatus GATEWAY / DNS print one or two quads, or
+ * "none"). Returns 1 and copies it (NUL-terminated, bounded);
+ * returns 0 when there is none. */
+int tn_parse_first_ipv4(const char *text, char *ip, size_t n);
+
 #endif /* TOLUNNET_NSLOOKUP_PARSE_H */

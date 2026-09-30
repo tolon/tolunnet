@@ -110,8 +110,11 @@ typedef struct WizardState {
     /* Page 5: Test & Finish */
     BOOL start_at_boot;           /* Checkbox: Start at boot (default TRUE) */
     BOOL open_prefs_after_finish; /* Checkbox: Open Prefs after finish */
-    int  test_daemon_ok;          /* -1 = not run, 0 = failed, 1 = OK */
-    int  test_dhcp_ok;
+    int  test_daemon_ok;          /* -1 = not run, 0 = failed, 1 = OK, 2 = SKIPPED */
+    int  test_dhcp_ok;            /* (11x item 3 T4: the renderer prints
+                                    SKIPPED for any value that is not
+                                    -1/0/1; a skip never counts as a
+                                    pass in all_tests_passed()) */
     int  test_ping_ok;
     int  test_dns_ok;
     int  test_http_ok;
