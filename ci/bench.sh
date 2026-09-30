@@ -32,7 +32,7 @@ WORK_DIR="/e/amiga/Amigatolon/work"
 PRISTINE_HDF="/e/amiga/Amigatolon/hdf/Workbench v3.0 (1992)(Commodore).hdf"
 STAGE_DIR="/e/amiga/Amigatolon/bench/tolunnet"
 XDF="wsl -e bash -c '\$HOME/.local/bin/xdftool'"
-TIMEOUT_SECS="${TIMEOUT_SECS:-600}"
+TIMEOUT_SECS="${TIMEOUT_SECS:-1500}"
 GRACE_SECS="${GRACE_SECS:-8}"
 CONFIGS="${CONFIGS:-a1200 68000}"
 
@@ -278,6 +278,9 @@ else
 fi
 LOG_ROOT="docs/bench-logs/$STAMP"
 mkdir -p "$LOG_ROOT"
+# 11s item 1: the bench's own stdout lands in the log directory too -
+# a timeout or a port failure must never be silent again.
+exec > >(tee "$LOG_ROOT/bench-stdout.txt") 2>&1
 
 MUFORCE_NOTE="done"
 if [ -z "${MUFORCE_ADF:-}" ]; then
@@ -445,6 +448,7 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
     "$WINUAE" -f "$CFG_WIN" >/dev/null 2>&1 &
 
     waited=0
+    leg_t0=$(date +%s)
     while [ ! -f "$WORK_DIR/bench-done" ]; do
         sleep 2
         waited=$((waited + 2))
@@ -453,6 +457,7 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
             break
         fi
     done
+    leg_elapsed=$(( $(date +%s) - leg_t0 ))
 
     if [ -f "$WORK_DIR/bench-done" ]; then
         say "bench-done marker seen after ${waited}s; grace ${GRACE_SECS}s then quit"
@@ -516,6 +521,10 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
         echo "bench services: hermetic slirp host services (ci/netsvc.py); DNS_PORT=$BENCH_DNS_PORT"
     } > "$OUT/README.txt"
     {
+        echo "elapsed: ${leg_elapsed}s"
+        if [ ! -f "$WORK_DIR/bench-done" ]; then
+            echo "TIMEOUT: leg killed after ${leg_elapsed}s"
+        fi
         echo "config: ci/tolunnet-$cfg.uae (HDF copy staged from the pristine WB3.0 image)"
         echo "hdf free: ${HDF_FREE_KB} KB"
         echo "commit: $(git rev-parse HEAD 2>/dev/null)"
