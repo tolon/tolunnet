@@ -77,12 +77,42 @@ def pack_directory_to_lha(root_dir: str, lha_output_path: str):
 
 def main():
     if len(sys.argv) < 3:
-        print("Usage: create_lha.py <source_dir> <output_archive.lha>")
+        print("Usage: create_lha.py <source_dir> <output_archive.lha> "
+              "[--extra archive_name=source_path ...]")
         sys.exit(1)
-    
+
     src_dir = sys.argv[1]
     out_archive = sys.argv[2]
     pack_directory_to_lha(src_dir, out_archive)
+
+    # 11z item 1: optional extra members stored at the archive TOP
+    # level (outside the tolunnet/ prefix), e.g. the drawer icon
+    # tolunnet.info that lives outside $(PACKAGE_DIR). Accepts
+    # `--extra name=path` as two tokens (shell-joined recipes) or one.
+    args = sys.argv[3:]
+    i = 0
+    while i < len(args):
+        spec = args[i]
+        if spec == "--extra":
+            i += 1
+            if i >= len(args):
+                print("--extra needs name=path")
+                sys.exit(1)
+            spec = "--extra " + args[i]
+        if not spec.startswith("--extra ") or "=" not in spec:
+            print("bad --extra spec: %r" % spec)
+            sys.exit(1)
+        pair = spec[len("--extra "):]
+        name, path = pair.split("=", 1)
+        with open(path, "rb") as in_f:
+            file_data = in_f.read()
+        with open(out_archive, "r+b") as out_f:
+            out_f.seek(-1, 2)         # overwrite the 0x00 end marker
+            out_f.write(build_lha_header_level0(name, file_data))
+            out_f.write(file_data)
+            out_f.write(b"\x00")
+        print("extra member: %s (%d bytes)" % (name, len(file_data)))
+        i += 1
 
 if __name__ == "__main__":
     main()

@@ -41,6 +41,7 @@ EXPECTED_ROOT = [
     "Libs/usergroup.library", "LICENSE", "README.guide",
     "README.guide.info", "THIRD_PARTY_LICENSES.md", "TolunnetPrefs",
     "TolunnetPrefs.info", "TolunnetSetup", "TolunnetSetup.info",
+    "tolunnet.info",  # drawer icon, archive top level (11z item 1)
     "tolunnet.readme",
 ]
 
@@ -80,6 +81,10 @@ def md5(b):
     return hashlib.md5(b).hexdigest()
 
 
+def script_dir():
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 def main(argv):
     if len(argv) != 3:
         print(__doc__)
@@ -100,6 +105,18 @@ def main(argv):
             if rel.startswith(prefix):
                 rel = rel[len(prefix):]
         seen.append(rel)
+        # 11z item 1: the drawer icon is stored at the archive top
+        # level from assets/, not from the release tree.
+        if rel == "tolunnet.info":
+            icon_md5 = md5(open(os.path.join(script_dir(),
+                                             "assets", "tolunnet_drawer.info"),
+                                 "rb").read())
+            ok = icon_md5 == md5(blob)
+            print("[check_package_parity] %-42s %-32s %s"
+                  % (rel, icon_md5, "OK" if ok else "DIFF"))
+            if not ok:
+                bad += 1
+            continue
         disk_path = os.path.join(release_dir, *rel.split("/"))
         if not os.path.isfile(disk_path):
             print("[check_package_parity] %-42s %-32s %s"
@@ -114,8 +131,7 @@ def main(argv):
             bad += 1
 
     # installer parity: the archived installer IS the linted script
-    script_path = os.path.join(os.path.dirname(os.path.dirname(
-        os.path.abspath(__file__))), "Install_Tolunnet.script")
+    script_path = os.path.join(script_dir(), "Install_Tolunnet.script")
     script_md5 = md5(open(script_path, "rb").read())
     inst = dict((n, b) for n, b in members).get("tolunnet/Install_Tolunnet")
     if inst is None:

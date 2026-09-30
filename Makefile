@@ -482,11 +482,13 @@ release-stage: all
 	cp tolunnet.readme $(PACKAGE_DIR)/
 	cp LICENSE $(PACKAGE_DIR)/
 	cp THIRD_PARTY_LICENSES.md $(PACKAGE_DIR)/
-	cp assets/tolunnet_drawer.info $(BUILD)/release/tolunnet.info || true
 
 package: release-stage
 	@echo "--- Building LhA Archive ---"
-	python3 scripts/create_lha.py $(PACKAGE_DIR) $(LHA_ARCHIVE)
+	# 11z item 1: the drawer icon travels at the archive top level
+	# (outside the tolunnet/ prefix) as member tolunnet.info.
+	python3 scripts/create_lha.py $(PACKAGE_DIR) $(LHA_ARCHIVE) \
+		--extra tolunnet.info=assets/tolunnet_drawer.info
 	# 11y item 3: read the archive back and require byte parity with
 	# the release tree before calling the package done.
 	python3 ci/check_package_parity.py $(LHA_ARCHIVE) $(PACKAGE_DIR)
