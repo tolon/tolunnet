@@ -69,7 +69,7 @@ COMMON_OBJS = $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD
               $(BUILD)/src/common/sbtc_dispatch.o $(BUILD)/src/common/fdset_util.o \
               $(BUILD)/src/common/ipc_client.o $(BUILD)/src/common/http_url.o \
               $(BUILD)/src/common/errstr.o $(BUILD)/src/common/sockaddr_util.o \
-              $(BUILD)/src/common/rawfmt.o \
+              $(BUILD)/src/common/rawfmt.o $(BUILD)/src/common/nslookup_parse.o \
               $(BUILD)/src/task/timers.o
 SANA2_OBJS  = $(BUILD)/src/sana2/sana2_netif.o $(BUILD)/src/sana2/sana2_stubs.o $(BUILD)/src/sana2/buffers.o
 LIB_OBJS    = $(BUILD)/src/lib/lib_init.o $(BUILD)/src/lib/lib_vectors.o \
@@ -158,6 +158,7 @@ HOST_UNITS   = src/common/inet_parse.c src/common/config_text.c \
                src/common/errstr.c src/common/sockaddr_util.c \
                src/setup/stack_detect.c src/setup/wifi_mgr.c \
                src/setup/net_test.c src/setup/wrap.c src/setup/hw_detect.c \
+               src/common/nslookup_parse.c \
                tests/host/mock_lwip.c src/task/slot_table.c \
                src/task/route.c src/common/ifreader.c \
                src/common/log_format.c src/task/timers.c
@@ -338,6 +339,7 @@ $(PREFS_BIN): $(BUILD)/src/cmds/TolunnetPrefs.o $(BUILD)/src/common/prefs.o $(BU
 SETUP_OBJS = $(BUILD)/src/cmds/TolunnetSetup.o \
              $(BUILD)/src/setup/stack_detect.o $(BUILD)/src/common/safe_replace.o \
              $(BUILD)/src/setup/boot_block.o $(BUILD)/src/setup/net_checks.o $(BUILD)/src/setup/wrap.o \
+             $(BUILD)/src/common/nslookup_parse.o \
              $(BUILD)/src/setup/hw_detect.o \
              $(BUILD)/src/setup/wifi_mgr.o \
              $(BUILD)/src/setup/net_test.o \
@@ -348,7 +350,7 @@ $(SETUP_BIN): $(SETUP_OBJS)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: SocketConformance Amiga-side TAP binary (Round 3 §B.2)
-$(CONF_BIN): $(BUILD)/tests/amiga/SocketConformance.o $(BUILD)/src/setup/boot_block.o $(BUILD)/src/setup/net_checks.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/setup/wifi_mgr.o $(BUILD)/src/setup/stack_detect.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/safe_replace.o $(BUILD)/src/common/config_text.o
+$(CONF_BIN): $(BUILD)/tests/amiga/SocketConformance.o $(BUILD)/src/setup/boot_block.o $(BUILD)/src/setup/net_checks.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/setup/wifi_mgr.o $(BUILD)/src/setup/stack_detect.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/safe_replace.o $(BUILD)/src/common/config_text.o $(BUILD)/src/common/nslookup_parse.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Target: FreezeWatch TNET-115 capture helper (bench diagnostic only,

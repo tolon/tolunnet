@@ -41,6 +41,7 @@
 #include "../../src/common/safe_replace.h"
 #include "../../src/setup/boot_block.h"
 #include "../../src/setup/net_checks.h"
+#include "../../src/common/nslookup_parse.h"
 #include "../../src/setup/setup_types.h"
 #include "../../src/setup/wifi_mgr.h"
 #include "../../src/setup/stack_detect.h"
@@ -6592,7 +6593,15 @@ static void tc_net_checks_ok(void)
     d = tn_check_dns("tolunbench.test", "10.0.2.2", dns_port,
                      det, sizeof(det), ip, sizeof(ip));
     tapf("# %s: dns %d - %s\n", label, d, det);
-    t = tn_check_tcp(ip[0] ? ip : "10.0.2.2", NETSVC_HTTP_PORT, det, sizeof(det));
+    /* 11x item 2: the parser skips the Server: line, so ip must
+     * be the ANSWER address from the netsvc zone, never 10.0.2.2 */
+    if (d && strcmp(ip, "10.0.2.55") != 0) {
+        TAP_NOTOK(label, "dns returned the server address, not the answer");
+        return;
+    }
+    /* 11x item 2: the TCP sub-check target is explicit - never
+     * chained off the DNS answer */
+    t = tn_check_tcp("10.0.2.2", NETSVC_HTTP_PORT, det, sizeof(det));
     tapf("# %s: tcp %d - %s\n", label, t, det);
 
     if (a && p && d && t) {

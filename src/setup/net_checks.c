@@ -24,6 +24,8 @@
 
 #include "net_checks.h"
 
+#include "../../src/common/nslookup_parse.h"
+
 #include <proto/exec.h>
 #include <proto/dos.h>
 #include <exec/types.h>
@@ -217,7 +219,7 @@ int tn_check_dns(const char *name, const char *server, unsigned port,
 {
     char args[200];
     char out[512];
-    unsigned a, b, c, d;
+    char ip[32];
     LONG rc;
 
     if (ip_out != NULL && ipn > 0) ip_out[0] = '\0';
@@ -231,11 +233,12 @@ int tn_check_dns(const char *name, const char *server, unsigned port,
         snprintf(args, sizeof(args), "%s SERVER %s", name, server);
     }
     rc = run_cmd_capture("C:nslookup", args, out, sizeof(out));
-    if (rc == 0 && scan_ipv4(out, &a, &b, &c, &d)) {
-        snprintf(detail, n, "resolved %s to %u.%u.%u.%u via %s",
-                 name, a, b, c, d, server);
+    /* the parser skips the "Server: <ip>" line, so a success here
+     * means the ANSWER address was found — not the server's own */
+    if (rc == 0 && tn_parse_nslookup_answer(out, ip, sizeof(ip)) == 1) {
+        snprintf(detail, n, "resolved %s to %s via %s", name, ip, server);
         if (ip_out != NULL && ipn > 0) {
-            snprintf(ip_out, ipn, "%u.%u.%u.%u", a, b, c, d);
+            snprintf(ip_out, ipn, "%s", ip);
         }
         return 1;
     }
