@@ -21,6 +21,7 @@ import select
 import struct
 import threading
 import argparse
+import subprocess
 import signal
 
 DEFAULT_PORTS_FILE = os.path.join(os.path.dirname(__file__), "netsvc.ports")
@@ -34,7 +35,7 @@ def load_ports(path=DEFAULT_PORTS_FILE):
         "FTP_PASV_PORT": 15020,
         "WHOIS_PORT": 15043,
         "TFTP_PORT": 15069,
-        "HTTP_PORT": 15080,
+        "HTTP_PORT": 15880,
         "SNTP_PORT": 15123,
         "DNS_PORT": 15353,
     }
@@ -75,8 +76,7 @@ def log(tag, msg):
 # ---------------------------------------------------------------------------
 def run_tcp_delay(port):
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    srv.bind(("0.0.0.0", port))
+    bind_exclusive(srv, port)
     srv.listen(5)
     srv.settimeout(1.0)
     log("tcp_delay", f"listening on TCP {port}")
@@ -114,8 +114,7 @@ def run_tcp_delay(port):
 # ---------------------------------------------------------------------------
 def run_udp_echo(port):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("0.0.0.0", port))
+    bind_exclusive(sock, port)
     sock.settimeout(1.0)
     log("udp_echo", f"listening on UDP {port}")
 
@@ -140,8 +139,7 @@ def run_udp_echo(port):
 # ---------------------------------------------------------------------------
 def run_tcp_echo(port):
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    srv.bind(("0.0.0.0", port))
+    bind_exclusive(srv, port)
     srv.listen(8)
     srv.settimeout(1.0)
     log("tcp_echo", f"listening on TCP {port}")
@@ -181,8 +179,7 @@ def run_tcp_echo(port):
 # ---------------------------------------------------------------------------
 def run_tcp_silent(port):
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    srv.bind(("0.0.0.0", port))
+    bind_exclusive(srv, port)
     srv.listen(8)
     srv.settimeout(1.0)
     log("tcp_silent", f"listening on TCP {port}")
@@ -203,8 +200,7 @@ def run_tcp_silent(port):
 # ---------------------------------------------------------------------------
 def run_sntp(port):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("0.0.0.0", port))
+    bind_exclusive(sock, port)
     sock.settimeout(1.0)
     log("sntp", f"listening on UDP {port}")
 
@@ -257,8 +253,7 @@ def run_sntp(port):
 # ---------------------------------------------------------------------------
 def run_tftp(port):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("0.0.0.0", port))
+    bind_exclusive(sock, port)
     sock.settimeout(1.0)
     log("tftp", f"listening on UDP {port}")
 
@@ -343,8 +338,7 @@ def run_tftp(port):
 # ---------------------------------------------------------------------------
 def run_ftp(ctrl_port, pasv_port):
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    srv.bind(("0.0.0.0", ctrl_port))
+    bind_exclusive(srv, ctrl_port)
     srv.listen(5)
     srv.settimeout(1.0)
     log("ftp", f"listening on TCP {ctrl_port} (PASV port: {pasv_port})")
@@ -396,8 +390,7 @@ def run_ftp(ctrl_port, pasv_port):
                             if pasv_srv:
                                 pasv_srv.close()
                             pasv_srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                            pasv_srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                            pasv_srv.bind(("0.0.0.0", pasv_port))
+                            bind_exclusive(pasv_srv, pasv_port)
                             pasv_srv.listen(1)
                             pasv_srv.settimeout(5.0)
                             p1 = pasv_port // 256
@@ -477,8 +470,7 @@ def run_ftp(ctrl_port, pasv_port):
 # ---------------------------------------------------------------------------
 def run_whois(port):
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    srv.bind(("0.0.0.0", port))
+    bind_exclusive(srv, port)
     srv.listen(5)
     srv.settimeout(1.0)
     log("whois", f"listening on TCP {port}")
@@ -524,8 +516,7 @@ def run_whois(port):
 def run_dns(port):
     import struct as _struct
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("0.0.0.0", port))
+    bind_exclusive(sock, port)
     sock.settimeout(1.0)
     log("dns", f"listening on UDP {port}")
 
@@ -621,8 +612,7 @@ def run_dns(port):
 # ---------------------------------------------------------------------------
 def run_http(port):
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    srv.bind(("0.0.0.0", port))
+    bind_exclusive(srv, port)
     srv.listen(5)
     srv.settimeout(1.0)
     log("http", f"listening on TCP {port}")
@@ -690,36 +680,6 @@ def run_http(port):
 # ---------------------------------------------------------------------------
 # Port Free & Readiness Checks
 # ---------------------------------------------------------------------------
-def check_ports_free(ports):
-    busy = []
-    # Check TCP
-    for name in ("TCP_DELAY_PORT", "FTP_PORT", "FTP_PASV_PORT", "WHOIS_PORT", "HTTP_PORT", "ECHO_PORT", "SILENT_PORT"):
-        p = ports[name]
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind(("0.0.0.0", p))
-        except Exception:
-            busy.append(f"TCP {p} ({name})")
-        finally:
-            s.close()
-    # Check UDP
-    for name in ("ECHO_PORT", "TFTP_PORT", "SNTP_PORT", "DNS_PORT"):
-        p = ports[name]
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind(("0.0.0.0", p))
-        except Exception:
-            busy.append(f"UDP {p} ({name})")
-        finally:
-            s.close()
-
-    if busy:
-        sys.stderr.write(f"ERROR: port(s) busy: {', '.join(busy)}\n")
-        return False
-    return True
-
 def probe_readiness(ports, timeout=5.0):
     start = time.time()
     tcp_ports = [ports["TCP_DELAY_PORT"], ports["FTP_PORT"], ports["WHOIS_PORT"], ports["HTTP_PORT"], ports["ECHO_PORT"], ports["SILENT_PORT"]]
@@ -743,6 +703,108 @@ def probe_readiness(ports, timeout=5.0):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+def bind_exclusive(sock, port):
+    """Bind (host, port). On Windows use SO_EXCLUSIVEADDRUSE instead of
+    SO_REUSEADDR: REUSEADDR lets a second process silently share the
+    port (an antivirus service held 15080 for hours and the bench
+    connections went to it). Keeps SO_REUSEADDR on other platforms."""
+    if sys.platform == "win32":
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+    else:
+        bind_exclusive(sock, port)
+
+
+def port_holders(ports):
+    """Yield (port, pid) for every netsvc port held by some process,
+    found by parsing 'netstat -ano' output (list-argv subprocess only)."""
+    wanted = {int(p) for p in ports.values()}
+    out = subprocess.run(["netstat", "-ano"], capture_output=True, text=True)
+    for line in (out.stdout or "").splitlines():
+        parts = line.split()
+        if len(parts) >= 5 or (len(parts) == 4 and parts[0].startswith("TCP")):
+            pass
+        f = line.split()
+        if len(f) < 4:
+            continue
+        local = f[1] if f[0].upper().startswith("TCP") or f[0].upper().startswith("UDP") else f[0]
+        state = f[3] if f[0].upper().startswith("TCP") else ""
+        pid = f[-1]
+        if ":" not in local:
+            continue
+        try:
+            lport = int(local.rsplit(":", 1)[1])
+            lpid = int(pid)
+        except ValueError:
+            continue
+        if lport in wanted and (f[0].upper().startswith("UDP") or state in ("Bound", "Listen", "Listening")):
+            yield lport, lpid
+
+
+def holder_cmdline(pid):
+    """Command line of a Windows PID via PowerShell, list-argv form."""
+    filt = f"ProcessId = {pid}"
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "(Get-CimInstance Win32_Process -Filter '" + filt + "').CommandLine"],
+            capture_output=True, text=True)
+    except Exception as e:
+        return f"<powershell failed: {e}>"
+    return (out.stdout or "").strip() or "<command line not accessible>"
+
+
+def check_free(ports, holders=False):
+    busy = []
+    for name in ("TCP_DELAY_PORT", "FTP_PORT", "FTP_PASV_PORT", "WHOIS_PORT", "HTTP_PORT", "ECHO_PORT", "SILENT_PORT"):
+        p = ports[name]
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            bind_exclusive(s, p)
+        except Exception:
+            busy.append(name)
+            if holders:
+                for lport, lpid in port_holders(ports):
+                    if lport == p:
+                        print(f"HOLDER port={p} pid={lpid} cmd={holder_cmdline(lpid)}")
+        finally:
+            s.close()
+    for name in ("ECHO_PORT", "TFTP_PORT", "SNTP_PORT", "DNS_PORT"):
+        p = ports[name]
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            bind_exclusive(s, p)
+        except Exception:
+            busy.append(name)
+        finally:
+            s.close()
+    return busy
+
+
+def kill_stale(ports):
+    """Kill a port holder ONLY when its command line contains netsvc.py
+    (our own stale service from a killed bench). Returns True when the
+    ports are free afterwards."""
+    for name in ("TCP_DELAY_PORT", "FTP_PORT", "FTP_PASV_PORT", "WHOIS_PORT", "HTTP_PORT", "ECHO_PORT", "SILENT_PORT"):
+        p = ports[name]
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            bind_exclusive(s, p)
+        except Exception:
+            for lport, lpid in port_holders(ports):
+                if lport != p:
+                    continue
+                cmd = holder_cmdline(lpid)
+                if "netsvc.py" in cmd:
+                    print(f"kill-stale: killing our netsvc pid={lpid}")
+                    subprocess.run(["taskkill", "/F", "/PID", str(lpid)],
+                                   capture_output=True)
+            # UDP/TCP recheck below
+        finally:
+            s.close()
+    busy = check_free(ports)
+    return not busy
+
+
 def main():
     global g_running, g_log_file
 
@@ -750,17 +812,21 @@ def main():
     parser.add_argument("--ports", default=DEFAULT_PORTS_FILE, help="Path to ports file")
     parser.add_argument("--log", default=None, help="Path to log file")
     parser.add_argument("--check-free", action="store_true", help="Check that all ports are currently free")
+    parser.add_argument("--kill-stale", action="store_true", help="Kill a busy-port holder ONLY if it is our own netsvc.py")
     parser.add_argument("--probe", action="store_true", help="Probe running services for readiness")
     args = parser.parse_args()
 
     ports = load_ports(args.ports)
 
     if args.check_free:
-        if check_ports_free(ports):
+        busy = check_free(ports, holders=True)
+        if not busy:
             print("OK: all netsvc ports are free.")
             return 0
-        else:
-            return 1
+        return 1
+
+    if args.kill_stale:
+        return 0 if kill_stale(ports) else 1
 
     if args.probe:
         if probe_readiness(ports, timeout=5.0):

@@ -9,7 +9,7 @@
 #define NETSVC_FTP_PASV_PORT   15020
 #define NETSVC_WHOIS_PORT      15043
 #define NETSVC_TFTP_PORT       15069
-#define NETSVC_HTTP_PORT       15080
+#define NETSVC_HTTP_PORT       15880
 #define NETSVC_SNTP_PORT       15123
 
 #endif /* NETSVC_PORTS_H */

@@ -165,6 +165,9 @@ HOST_TESTS   = $(wildcard tests/host/test_*.c)
 HOST_BINS    = $(patsubst tests/host/%.c,$(BUILD)/host/%,$(HOST_TESTS))
 
 test-host: $(HOST_BINS) python-checks
+	@python3 ci/check_ports.py
+	@bash -n ci/bench.sh
+	@python3 -m py_compile ci/netsvc.py ci/check_ports.py
 	@python3 scripts/lvo_check_selftest.py
 	@set -e; fails=0; total=0; \
 	for t in $(HOST_BINS); do \

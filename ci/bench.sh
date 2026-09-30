@@ -308,16 +308,6 @@ say "bench config: resolver 127.0.0.1:$BENCH_DNS_PORT (loopback), external=${BEN
 SUCCESS=0
 cleanup() {
     rm -f "${BENCH_CFG:-ci/.bench-tolunnet.config}" 2>/dev/null || true
-    # 11w item 0: stop the service by its published Windows PID as well -
-    # $NETSVC_PID can be the bash job pid, not the python.exe one.
-    if [ -f build/netsvc.pid ]; then
-        npid=$(cat build/netsvc.pid 2>/dev/null)
-        if [ -n "$npid" ] && tasklist //FI "PID eq $npid" 2>/dev/null | grep -q python; then
-            say "stopping netsvc by pid file (Windows PID $npid)"
-            taskkill //F //PID "$npid" >/dev/null 2>&1
-        fi
-        rm -f build/netsvc.pid
-    fi
     if [ -n "${NETSVC_PID:-}" ]; then
         say "stopping hermetic slirp host services (PID $NETSVC_PID)"
         kill -9 "$NETSVC_PID" 2>/dev/null || true
@@ -333,53 +323,8 @@ trap cleanup EXIT INT TERM
 
 # ---- start hermetic slirp host mock services (ci/netsvc.py) -----------------
 say "verifying netsvc ports are free"
-if ! python.exe ci/netsvc.py --check-free > /tmp/netsvc-busy.txt 2>&1; then
-    # 11w item 0: name the holder, kill only our own stale netsvc.
-    busy_ports=$(/usr/bin/grep -aoE 'busy: (TCP|UDP) [0-9]+' /tmp/netsvc-busy.txt | /usr/bin/grep -oE '[0-9]+' | sort -u | tr '
-' ' ')
-' ' ')
-    echo "netsvc ports busy: $busy_ports"
-    for p in $busy_ports; do
-        powershell -NoProfile -Command "
-          Get-NetTCPConnection -LocalPort $p -ErrorAction SilentlyContinue |
-          ForEach-Object {
-            \$c = Get-CimInstance Win32_Process -Filter (\"ProcessId = \" + \$_.OwningProcess) -ErrorAction SilentlyContinue;
-            if (\$c) { Write-Output ('HOLDER port=$p pid=' + \$_.OwningProcess + ' cmd=' + \$c.CommandLine) }
-          }" 2>/dev/null
-    done
-    killed_ours=0
-    for p in $busy_ports; do
-        opid=$(powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort $p -ErrorAction SilentlyContinue).OwningProcess" 2>/dev/null | tr -d '' | head -1)
-        [ -z "$opid" ] && continue
-        cmdline=$(powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter ('ProcessId = ' + $opid) -ErrorAction SilentlyContinue).CommandLine" 2>/dev/null | tr -d '')
-        case "$cmdline" in
-            *netsvc.py*)
-                echo "killing our stale netsvc (PID $opid)"
-                taskkill //F //PID "$opid" >/dev/null 2>&1
-                killed_ours=1
-                ;;
-        esac
-    done
-    if [ "$killed_ours" = "1" ]; then
-        sleep 2
-        if python.exe ci/netsvc.py --check-free >/dev/null 2>&1; then
-            say "netsvc ports free after clearing our stale netsvc"
-        fi
-    fi
-    python.exe ci/netsvc.py --check-free > /tmp/netsvc-busy.txt 2>&1 || {
-        echo "FATAL: netsvc ports still busy, holder(s):"
-        cat /tmp/netsvc-busy.txt
-        for p in $busy_ports; do
-            powershell -NoProfile -Command "
-              Get-NetTCPConnection -LocalPort $p -ErrorAction SilentlyContinue |
-              ForEach-Object {
-                \$c = Get-CimInstance Win32_Process -Filter (\"ProcessId = \" + \$_.OwningProcess) -ErrorAction SilentlyContinue;
-                if (\$c) { Write-Output ('FATAL holder port=$p pid=' + \$_.OwningProcess + ' cmd=' + \$c.CommandLine) }
-              }" 2>/dev/null
-        done
-        die "port busy: netsvc ports not free before bench run (holder printed above)"
-    }
-fi
+python.exe ci/netsvc.py --check-free || python.exe ci/netsvc.py --kill-stale
+python.exe ci/netsvc.py --check-free || die "netsvc ports not free before bench run (see HOLDER lines above)"
 say "starting hermetic slirp host services (ci/netsvc.py)"
 python.exe ci/netsvc.py --log "$LOG_ROOT/netsvc.log" &
 NETSVC_PID=$!
