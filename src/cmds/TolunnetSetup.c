@@ -801,6 +801,7 @@ static void open_advanced_window(void)
     ng.ng_GadgetID   = GID_ADV_ROADSHOW_CHK;
     prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
                         GTCB_Checked, g_adv_write_roadshow,
+                        GT_Underscore, '_',
                         TAG_END);
     y += g_m.pitch;
 
@@ -809,6 +810,7 @@ static void open_advanced_window(void)
     ng.ng_GadgetID   = GID_ADV_DNS2FALLBACK_CHK;
     prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
                         GTCB_Checked, g_adv_dhcp_fallback,
+                        GT_Underscore, '_',
                         TAG_END);
     y += g_m.pitch + 4;
 
@@ -1288,6 +1290,7 @@ static void rebuild_page_gadgets(void)
         ng.ng_Flags      = PLACETEXT_RIGHT;
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
                             GTCB_Checked, g_ws.replace_stacks,
+                            GT_Underscore, '_',
                             TAG_END);
         break;
     }
@@ -1615,6 +1618,7 @@ static void rebuild_page_gadgets(void)
         ng.ng_Flags      = PLACETEXT_RIGHT;
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
                             GTCB_Checked, g_ws.write_roadshow,
+                            GT_Underscore, '_',
                             TAG_END);
         break;
     }
@@ -1692,6 +1696,7 @@ static void rebuild_page_gadgets(void)
         ng.ng_Flags      = PLACETEXT_RIGHT;
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
                             GTCB_Checked, g_ws.start_at_boot,
+                            GT_Underscore, '_',
                             TAG_END);
 
         ng.ng_LeftEdge   = cl + g_m.pane_w * 35 / 100;
@@ -1702,6 +1707,7 @@ static void rebuild_page_gadgets(void)
         ng.ng_Flags      = PLACETEXT_RIGHT;
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
                             GTCB_Checked, g_ws.open_prefs_after_finish,
+                            GT_Underscore, '_',
                             TAG_END);
         break;
     }
