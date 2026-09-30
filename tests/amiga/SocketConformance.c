@@ -4158,6 +4158,16 @@ static void tc_wizard_layout(void)
                 }
             }
         }
+        /* (d) 11u item 1: no mnemonic underscore may reach the screen.
+         * A '_' inside GadgetText->IText is printed literally unless
+         * the gadget was created with GT_Underscore. */
+        for (i = 0; i < ng; i++) {
+            if (g[i].lab[0] && strchr(g[i].lab, '_')) {
+                tapf("# %s: (d) page %d gadget %d (gid %u) label contains '_': \"%s\"\n",
+                     label, pg, i, g[i].gid, g[i].lab);
+                violations++;
+            }
+        }
     }
 
     tapf("# %s: stage: cancelling wizard\n", label);
@@ -6032,6 +6042,15 @@ static void tc_prefs_layout(void)
             tapf("# %s: gadget %d (%s) bottom %d > %d\n", label, i,
                  g[i].lab[0] ? g[i].lab : "(none)",
                  (int)(g[i].y + g[i].h), (int)(pwin->Height - pwin->BorderBottom));
+            violations++;
+        }
+    }
+
+    /* (d) 11u item 1: no mnemonic underscore in any label text */
+    for (i = 0; i < ng; i++) {
+        if (g[i].lab[0] && strchr(g[i].lab, '_')) {
+            tapf("# %s: (d) gadget %d label contains '_': \"%s\"\n",
+                 label, i, g[i].lab);
             violations++;
         }
     }
