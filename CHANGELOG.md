@@ -1,5 +1,77 @@
 # Changelog
 
+## 1.2.0-rc5 (2026-09-30)
+
+### Fixed
+
+- **Ctrl-C interrupts blocking calls**: the CANCEL path in the library
+  preserves the break signal after an aborted blocking call, wakes the
+  IPC watchdog wait, drains both replies before returning, and the
+  daemon never replies a dead or late client twice.
+- **WaitSelect per 4.4BSD**: descriptors 0-63 handled with dual-word
+  sets, `nfds==0` blocks, retries re-arm the break mask, and the tick
+  budget saturates instead of wrapping.
+- **Blocking recv and errno truth**: `recv` parks until data or timeout;
+  `recv` on an unconnected TCP socket returns ENOTCONN instead of
+  parking forever; unconnected UDP/RAW `send` reports EDESTADDRREQ (was
+  ENOTCONN); connected RAW `sendto` to a new address reports EISCONN;
+  oversize datagrams report EMSGSIZE.
+- **68000 freeze class closed**: `shutdown(SHUT_RDWR)` detaches the
+  socket before `tcp_close` so a freed pcb is never touched; slot reuse
+  resets the shutdown flags and sending in CLOSE_WAIT works
+  (bsdsocktest row 36 green on both profiles).
+- **Daemon robustness**: early-RX rejections leave the pbuf untouched,
+  queued receive bytes are capped by the rcvbuf setting, the UDP PCB
+  pool is 48, command-line arguments are copied before FreeArgs, parked
+  accept/connect requests are reaped silently on client death, a second
+  parked STOP answers EALREADY, and the shutdown timer re-arms after a
+  refused shutdown.
+- **Command output numbers**: RawDoFmt `%d/%u/%x` read only 16 bits of
+  LONG arguments — every command output path uses `%ld` now; `/N`
+  arguments are LONG pointers; Inet_NtoA takes its address in D0;
+  htons replaces the byte-swapping hs() helper.
+- **`ftp`**: RFC 959 reply handling, one PASV per transfer, ls/get/put
+  work, and the command returns a real exit code.
+- **`nc`**: stdin can come from files, EOF half-closes the send side,
+  LISTEN is a real listener, and UDP connect works.
+- **`TolunnetGet`** (wget/curl): resumes only with CONTINUE, reads the
+  directory entry via AllocDosObject, and stops counting at body bytes.
+- **`whois`/`sntp`**: PORT option for non-standard servers.
+- **`nslookup`**: the DNS check returns the ANSWER address, not the
+  address on the `Server:` line; PTR without SERVER asks the daemon's
+  configured DNS server and says `no DNS server configured - use
+  SERVER <ip>` when none is set.
+- **Status tools read live daemon state**: `GetNetStatus`,
+  `ShowNetStatus` and `TolunnetStatus` report the daemon's real
+  address/gateway/DNS over IPC instead of guesses.
+- **`usergroup.library` loads**: the RomTag/AUTOINIT stub uses exec's
+  register ABI (D0=segList, A0=libBase) and the init routine is
+  init-table entry 4 — the library loads and reloads cleanly.
+- **Installer**: valid Installer 43 script; replaced C: files are
+  backed up and the undo script restores them and never deletes a
+  restored tool; undo survives missing files; novice mode runs without
+  GUI; the first-run wizard configures the network at the end.
+- **TolunnetPrefs**: layout comes from font metrics, buttons and labels
+  clear their text and stay inside the window interior, config writes
+  keep the old file until the new one is fully in place
+  (tn_safe_replace), and DOSBase comes from libnix.
+- **Setup wizard Test page tells the truth**: in DHCP mode the gateway
+  and DNS checks use what the daemon actually reports (no invented
+  192.168.1.1 on foreign routers); skipped checks are shown SKIPPED
+  with an honest "n passed, m failed, k skipped" summary; the IP row is
+  titled "IP address"; DNS tries google.com, then cloudflare.com.
+- **Setup wizard rendering**: the checklist wraps text pixel-measured
+  without overflow (long words are hard-split, no inserted spaces) and
+  measures on the screen RastPort; labels stay inside panels; mnemonic
+  underscores are consumed by GadTools and never reach the screen;
+  shrunken listviews keep their original bottoms.
+
+### Added
+
+- `PORT/K/N` option for `whois` and `sntp`; real LISTEN mode for `nc`.
+- Build-time `lvo-check` verifies the bsdsocket name→offset table
+  against the sfd source.
+
 ## 1.2.0-rc4 (2026-09-23)
 
 ### Fixed
