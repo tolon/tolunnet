@@ -711,7 +711,8 @@ def bind_exclusive(sock, port):
     if sys.platform == "win32":
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
     else:
-        bind_exclusive(sock, port)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(("0.0.0.0", port))
 
 
 def port_holders(ports):
@@ -754,12 +755,23 @@ def holder_cmdline(pid):
 
 
 def check_free(ports, holders=False):
+    """Probe the netsvc ports with PLAIN bind (SO_REUSEADDR): the
+    probe sockets close immediately and must NOT leave an
+    SO_EXCLUSIVEADDRUSE hold on the port - the server starts right
+    after us, and an exclusive hold makes its listen() fail with
+    WSAEINVAL. A foreign holder still makes the REUSEADDR bind fail
+    (that is the conflict this check looks for)."""
     busy = []
     for name in ("TCP_DELAY_PORT", "FTP_PORT", "FTP_PASV_PORT", "WHOIS_PORT", "HTTP_PORT", "ECHO_PORT", "SILENT_PORT"):
         p = ports[name]
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            bind_exclusive(s, p)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(("0.0.0.0", p))
+            if holders:
+                for lport, lpid in port_holders(ports):
+                    if lport == p:
+                        print(f"HOLDER port={p} pid={lpid} cmd={holder_cmdline(lpid)}")
         except Exception:
             busy.append(name)
             if holders:
