@@ -4107,8 +4107,7 @@ static void tc_wizard_layout(void)
 
             if (text == NULL) continue;   /* unlabelled: nothing to measure */
             if (!plac) {
-                tapf("# %s: unclassified label gid %u (\"%s\")
-",
+                tapf("# %s: unclassified label gid %u (\"%s\")\n",
                      label, g[i].gid, text);
                 violations++;
                 continue;
@@ -4117,30 +4116,26 @@ static void tc_wizard_layout(void)
             cx = (LONG)g[i].x + g[i].w / 2;
 
             if (plac == 'R' && (LONG)g[i].x + g[i].w + 4 + tl > winw - br) {
-                tapf("# %s: (b) page %d gadget %d (gid %u) right label ends at %ld > inner right %ld (\"%s\")
-",
+                tapf("# %s: (b) page %d gadget %d (gid %u) right label ends at %ld > inner right %ld (\"%s\")\n",
                      label, pg, i, g[i].gid,
                      (long)(g[i].x + g[i].w + 4 + tl), winw - br, text);
                 violations++;
             }
             if (plac == 'L' && (LONG)g[i].x - 4 - tl < bl) {
-                tapf("# %s: (b) page %d gadget %d (gid %u) left label starts at %ld < inner left %ld (\"%s\")
-",
+                tapf("# %s: (b) page %d gadget %d (gid %u) left label starts at %ld < inner left %ld (\"%s\")\n",
                      label, pg, i, g[i].gid,
                      (long)(g[i].x - 4 - tl), bl, text);
                 violations++;
             }
             if (plac == 'A' &&
                 (cx - tl / 2 < bl || cx + tl / 2 > winw - br)) {
-                tapf("# %s: (b) page %d gadget %d (gid %u) centred label spans %ld..%ld vs inner %ld..%ld (\"%s\")
-",
+                tapf("# %s: (b) page %d gadget %d (gid %u) centred label spans %ld..%ld vs inner %ld..%ld (\"%s\")\n",
                      label, pg, i, g[i].gid,
                      cx - tl / 2, cx + tl / 2, bl, winw - br, text);
                 violations++;
             }
             if (plac == 'I' && tl > g[i].w) {
-                tapf("# %s: (b) page %d gadget %d (gid %u) text %ld > width %d (\"%s\")
-",
+                tapf("# %s: (b) page %d gadget %d (gid %u) text %ld > width %d (\"%s\")\n",
                      label, pg, i, g[i].gid, tl, (int)g[i].w, text);
                 violations++;
             }
