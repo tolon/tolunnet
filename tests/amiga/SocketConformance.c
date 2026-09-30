@@ -3882,9 +3882,40 @@ static void tc_wizard_ntsc(void)
  * Walks pages 0..4 through the ARexx port on the live screen, so
  * the PAL and NTSC legs each verify their own size. CANCELs at the
  * end - no config is written. */
+/* TextLength that ignores mnemonic underscores (GadTools draws
+ * them as an underline on the next character, not as a glyph). */
+static LONG tn_label_len(struct RastPort *rp, const char *s)
+{
+    char clean[256];
+    int i, j = 0;
+    for (i = 0; s[i] && j < (int)sizeof(clean) - 1; i++) {
+        if (s[i] != '_') clean[j++] = s[i];
+    }
+    clean[j] = ' ';
+    return TextLength(rp, (STRPTR)clean, (LONG)j);
+}
+
 static void tc_wizard_layout(void)
 {
     const char *label = "tc_wizard_layout";
+    /* 11s item 2: placement per GadgetID, from the ng_Flags lines
+     * in TolunnetSetup.c: R = PLACETEXT_RIGHT (checkboxes),
+     * L = PLACETEXT_LEFT (string/cycle rows), A = PLACETEXT_ABOVE
+     * (listviews), I = PLACETEXT_IN (buttons/strings with the
+     * text inside). */
+    static const struct { UWORD gid; char plac; } placement[32] = {
+        { 101, 'I' }, { 102, 'I' }, { 103, 'I' }, { 104, 'I' },
+        { 110, 'R' },
+        { 121, 'I' }, { 122, 'A' }, { 123, 'I' },
+        { 130, 'A' }, { 131, 'I' }, { 132, 'L' }, { 133, 'R' },
+        { 134, 'A' }, { 135, 'L' }, { 136, 'I' }, { 137, 'I' },
+        { 140, 'L' }, { 141, 'L' }, { 142, 'L' }, { 143, 'L' },
+        { 144, 'L' }, { 145, 'L' }, { 146, 'L' }, { 147, 'R' },
+        { 148, 'L' }, { 149, 'L' }, { 160, 'I' },
+        { 150, 'I' }, { 152, 'A' }, { 153, 'I' },
+        { 151, 'R' }, { 154, 'R' },
+        { 222, 'A' },          /* display-only listview (GID_P2_LIST+100) */
+    };
     static const struct { UWORD gid; const char *text; } chk_labels[3] = {
         { 147, TN_CHK_ROADSHOW },
         { 151, TN_CHK_BOOT },
@@ -4045,21 +4076,19 @@ static void tc_wizard_layout(void)
             }
         }
 
-        /* (b) labels: TextLength against the panel's inner edges */
+        /* (b) labels: TextLength against the panel's inner edges,
+         * placement per GadgetID from the ng_Flags lines in
+         * TolunnetSetup.c (11s item 2). Checkbox texts come from
+         * the shared TN_CHK_* macros; GadTools CENTERS an ABOVE
+         * label over the gadget, so its edges are cx - TL/2 ..
+         * cx + TL/2. A labelled gadget missing from the table is
+         * a violation - new gadgets cannot be silently skipped. */
         for (i = 0; i < ng; i++) {
+            char plac = 0;
             const char *text = NULL;
-            LONG tl = 0;
-            ULONG placetext = g[i].flags & (PLACETEXT_LEFT | PLACETEXT_RIGHT |
-                                            PLACETEXT_ABOVE | PLACETEXT_IN);
+            LONG tl = 0, cx;
 
-            if (pg == 3 && g[i].gid == 147) {
-                tapf("# %s: diag page3 gid147 flags=%lx placetext=%lx lab=\"%s\"\n",
-                     label, (long)g[i].flags, (long)placetext, g[i].lab);
-            }
-
-            if (g[i].lab[0]) {
-                text = g[i].lab;
-            } else {
+            {
                 int k;
                 for (k = 0; k < 3; k++) {
                     if (chk_labels[k].gid == g[i].gid) {
@@ -4067,29 +4096,52 @@ static void tc_wizard_layout(void)
                         break;
                     }
                 }
+                if (text == NULL && g[i].lab[0]) text = g[i].lab;
+                for (k = 0; k < (int)(sizeof(placement) / sizeof(placement[0])); k++) {
+                    if (placement[k].gid == g[i].gid) {
+                        plac = placement[k].plac;
+                        break;
+                    }
+                }
             }
-            if (text == NULL) continue;
-            tl = TextLength(&scr->RastPort, (STRPTR)text, (LONG)strlen(text));
 
-            if ((placetext & PLACETEXT_RIGHT) &&
-                g[i].x + g[i].w + tl > winw - br) {
-                tapf("# %s: (b) page %d gadget %d (gid %u) right label ends at %ld > inner right %ld (\"%s\")\n",
+            if (text == NULL) continue;   /* unlabelled: nothing to measure */
+            if (!plac) {
+                tapf("# %s: unclassified label gid %u (\"%s\")
+",
+                     label, g[i].gid, text);
+                violations++;
+                continue;
+            }
+            tl = tn_label_len(&scr->RastPort, text);
+            cx = (LONG)g[i].x + g[i].w / 2;
+
+            if (plac == 'R' && (LONG)g[i].x + g[i].w + 4 + tl > winw - br) {
+                tapf("# %s: (b) page %d gadget %d (gid %u) right label ends at %ld > inner right %ld (\"%s\")
+",
                      label, pg, i, g[i].gid,
-                     (long)(g[i].x + g[i].w + tl), winw - br, text);
+                     (long)(g[i].x + g[i].w + 4 + tl), winw - br, text);
                 violations++;
             }
-            if ((placetext & PLACETEXT_LEFT) &&
-                g[i].x - tl < bl) {
-                tapf("# %s: (b) page %d gadget %d (gid %u) left label starts at %ld < inner left %ld (\"%s\")\n",
+            if (plac == 'L' && (LONG)g[i].x - 4 - tl < bl) {
+                tapf("# %s: (b) page %d gadget %d (gid %u) left label starts at %ld < inner left %ld (\"%s\")
+",
                      label, pg, i, g[i].gid,
-                     (long)(g[i].x - tl), bl, text);
+                     (long)(g[i].x - 4 - tl), bl, text);
                 violations++;
             }
-            if ((placetext & PLACETEXT_ABOVE) &&
-                g[i].x + tl > winw - br) {
-                tapf("# %s: (b) page %d gadget %d (gid %u) above label ends at %ld > inner right %ld (\"%s\")\n",
+            if (plac == 'A' &&
+                (cx - tl / 2 < bl || cx + tl / 2 > winw - br)) {
+                tapf("# %s: (b) page %d gadget %d (gid %u) centred label spans %ld..%ld vs inner %ld..%ld (\"%s\")
+",
                      label, pg, i, g[i].gid,
-                     (long)(g[i].x + tl), winw - br, text);
+                     cx - tl / 2, cx + tl / 2, bl, winw - br, text);
+                violations++;
+            }
+            if (plac == 'I' && tl > g[i].w) {
+                tapf("# %s: (b) page %d gadget %d (gid %u) text %ld > width %d (\"%s\")
+",
+                     label, pg, i, g[i].gid, tl, (int)g[i].w, text);
                 violations++;
             }
         }
