@@ -3595,9 +3595,10 @@ static BOOL write_iff_screen(const char *path)
 static BOOL wizard_geom_read(int *page, LONG *winw, LONG *winh, LONG *wintop,
                              LONG *scrw, LONG *scrh, LONG *maxbottom, int *compact,
                              LONG *pane_l, LONG *pane_t, LONG *pane_w, LONG *pane_h,
-                             LONG *pagebottom, LONG *pen_bg)
+                             LONG *pagebottom, LONG *pen_bg,
+                             LONG *fy, LONG *maxtext)
 {
-    char buf[160];
+    char buf[320];
     LONG n;
     BPTR fh = Open((CONST_STRPTR)"ENV:TolunnetSetup.geom", MODE_OLDFILE);
     if (!fh) return FALSE;
@@ -3605,10 +3606,13 @@ static BOOL wizard_geom_read(int *page, LONG *winw, LONG *winh, LONG *wintop,
     Close(fh);
     if (n <= 0) return FALSE;
     buf[n] = '\0';
+    *fy = 0;
+    *maxtext = 0;
     return sscanf(buf,
-                  "page=%d winw=%d winh=%d wintop=%d scrw=%d scrh=%d maxbottom=%d compact=%d pane_l=%d pane_t=%d pane_w=%d pane_h=%d pagebottom=%d pen_bg=%d",
+                  "page=%d winw=%d winh=%d wintop=%d scrw=%d scrh=%d maxbottom=%d compact=%d pane_l=%d pane_t=%d pane_w=%d pane_h=%d pagebottom=%d pen_bg=%d fy=%d maxtext=%d",
                   page, winw, winh, wintop, scrw, scrh, maxbottom, compact,
-                  pane_l, pane_t, pane_w, pane_h, pagebottom, pen_bg) == 14;
+                  pane_l, pane_t, pane_w, pane_h, pagebottom, pen_bg,
+                  fy, maxtext) == 16;
 }
 
 /* Send one command with a bounded reply wait (30 s).
@@ -3708,10 +3712,11 @@ static void tc_wizard_ntsc(void)
                 break;
             }
             LONG pane_l = 0, pane_t = 0, pane_w = 0, pane_h = 0, pagebottom = 0, pen_bg = 0;
+            LONG fy = 0, maxtext = 0;
             if (!wizard_geom_read(&page, &winw, &winh, &wintop,
                                   &scrw, &scrh, &maxbottom, &compact,
                                   &pane_l, &pane_t, &pane_w, &pane_h,
-                                  &pagebottom, &pen_bg)) {
+                                  &pagebottom, &pen_bg, &fy, &maxtext)) {
                 fail = "geometry report missing";
                 break;
             }
@@ -4115,7 +4120,7 @@ static void tc_wizard_layout(void)
             tl = tn_label_len(&scr->RastPort, text);
             cx = (LONG)g[i].x + g[i].w / 2;
 
-            if (plac == 'R' && (LONG)g[i].x + g[i].w + 4 + tl > winw - br) {
+            if (plac == 'R' && (LONG)g[i].x + g[i].w + 4 + tl > winw - br - 6) {
                 tapf("# %s: (b) page %d gadget %d (gid %u) right label ends at %ld > inner right %ld (\"%s\")\n",
                      label, pg, i, g[i].gid,
                      (long)(g[i].x + g[i].w + 4 + tl), winw - br, text);
@@ -4128,7 +4133,7 @@ static void tc_wizard_layout(void)
                 violations++;
             }
             if (plac == 'A' &&
-                (cx - tl / 2 < bl || cx + tl / 2 > winw - br)) {
+                (cx - tl / 2 < bl || cx + tl / 2 > winw - br - 6)) {
                 tapf("# %s: (b) page %d gadget %d (gid %u) centred label spans %ld..%ld vs inner %ld..%ld (\"%s\")\n",
                      label, pg, i, g[i].gid,
                      cx - tl / 2, cx + tl / 2, bl, winw - br, text);
@@ -4138,6 +4143,37 @@ static void tc_wizard_layout(void)
                 tapf("# %s: (b) page %d gadget %d (gid %u) text %ld > width %d (\"%s\")\n",
                      label, pg, i, g[i].gid, tl, (int)g[i].w, text);
                 violations++;
+            }
+        }
+
+        /* (e) 11u item 2: every ABOVE-labelled gadget must start
+         * below the title rule. The rule's bottom is the pane top
+         * (pane_t from the wizard's geometry report); the label top
+         * is gadget TopEdge minus the wizard font height (fy from
+         * the same report). */
+        {
+            LONG pane_t2 = 0, fy2 = 0;
+            char gbuf[320];
+            BPTR gh = Open((CONST_STRPTR)"ENV:TolunnetSetup.geom", MODE_OLDFILE);
+            LONG n2;
+            if (gh) {
+                n2 = Read(gh, gbuf, sizeof(gbuf) - 1);
+                Close(gh);
+                if (n2 > 0) {
+                    char *p2;
+                    gbuf[n2 > 0 ? n2 : 0] = ' ';
+                    p2 = strstr(gbuf, "pane_t=");
+                    if (p2) pane_t2 = (LONG)atoi(p2 + 7);
+                    p2 = strstr(gbuf, "fy=");
+                    if (p2) fy2 = (LONG)atoi(p2 + 3);
+                }
+            }
+            for (i = 0; i < ng; i++) {
+                if ((g[i].flags & PLACETEXT_ABOVE) && g[i].y - fy2 < pane_t2) {
+                    tapf("# %s: (e) page %d gadget %d (gid %u) ABOVE label top %ld < title-rule bottom %ld\n",
+                         label, pg, i, g[i].gid, (long)(g[i].y - fy2), pane_t2);
+                    violations++;
+                }
             }
         }
 

@@ -199,8 +199,9 @@ static struct Node g_wifi_nodes[MAX_WIFI_NETWORKS + 1];
 static char        g_wifi_lines[MAX_WIFI_NETWORKS + 1][96];
 
 static struct List g_check_list;
-static struct Node g_check_nodes[6];
-static char        g_check_lines[6][128];
+static struct Node g_check_nodes[24];
+static char        g_check_lines[24][96];
+static LONG        g_max_check_text;
 
 static char g_status_text[96] = "Ready.";
 static char g_scr_title[64];
@@ -1083,6 +1084,9 @@ static void write_layout_geom(void)
              (long)max_bottom, g_m.compact ? 1 : 0,
              (long)g_m.pane_l, (long)g_m.pane_t, (long)g_m.pane_w, (long)g_m.pane_h,
              (long)page_bottom, (long)g_m.pen_bg);
+    snprintf(line + strlen(line), sizeof(line) - strlen(line),
+             "fy=%d maxtext=%ld\n",
+             g_m.fy, g_max_check_text);
     /* 11t: the check list was reported empty on screen - publish its
      * state next to the geometry so the bench row can show whether
      * the nodes exist at draw time. */
@@ -1209,6 +1213,45 @@ static void draw_page_content(void)
     }
 }
 
+/* 11u item 2: wrap detail/advice text into rows of at most maxw
+ * pixels (TextLength), indenting continuations. Returns rows
+ * written; the caller appends each as a checklist node. */
+static int tn_wrap_px(struct RastPort *rp, const char *text, LONG maxw,
+                      char rows[][96], int row_max, const char *indent)
+{
+    char cur[192];
+    char word[96];
+    const char *p = text;
+    int nr = 0, wlen;
+    cur[0] = ' ';
+    while (*p && nr < row_max) {
+        while (*p == ' ' || *p == '	') p++;
+        if (!*p) break;
+        wlen = 0;
+        while (p[wlen] && p[wlen] != ' ' && p[wlen] != '	' && wlen < 95) wlen++;
+        memcpy(word, p, wlen);
+        word[wlen] = ' ';
+        p += wlen;
+        {
+            char cand[192];
+            int add = (cur[0] != ' ');
+            snprintf(cand, sizeof(cand), "%s%s%s", cur, add ? " " : "", word);
+            if (TextLength(rp, (STRPTR)cand, (LONG)strlen(cand)) > maxw && add) {
+                snprintf(rows[nr], 96, "%s%s", indent, cur);
+                nr++;
+                snprintf(cur, sizeof(cur), "%s", word);
+            } else {
+                snprintf(cur, sizeof(cur), "%s", cand);
+            }
+        }
+    }
+    if (cur[0] && nr < row_max) {
+        snprintf(rows[nr], 96, "%s%s", indent, cur);
+        nr++;
+    }
+    return nr;
+}
+
 static void rebuild_page_gadgets(void)
 {
     if (!g_win) return;
@@ -1269,7 +1312,7 @@ static void rebuild_page_gadgets(void)
         }
 
         ng.ng_LeftEdge   = cl;
-        ng.ng_TopEdge    = ct;
+        ng.ng_TopEdge    = ct + g_m.pitch;
         ng.ng_Width      = cw;
         ng.ng_Height     = g_m.pitch * rows + 6;
         ng.ng_GadgetText = (STRPTR)"Found on this system:";
@@ -1285,7 +1328,7 @@ static void rebuild_page_gadgets(void)
         ng.ng_TopEdge    = ct + g_m.pitch * rows + g_m.pitch / 2;
         ng.ng_Width      = 26;
         ng.ng_Height     = g_m.fy + 6;
-        ng.ng_GadgetText = (STRPTR)"_Replace with tolunnet (recommended, non-destructive)";
+        ng.ng_GadgetText = (STRPTR)"_Replace with tolunnet (recommended)";
         ng.ng_GadgetID   = GID_P1_REPLACE_CHK;
         ng.ng_Flags      = PLACETEXT_RIGHT;
         prev = CreateGadget(CHECKBOX_KIND, prev, &ng,
@@ -1322,7 +1365,7 @@ static void rebuild_page_gadgets(void)
         }
 
         ng.ng_LeftEdge   = cl;
-        ng.ng_TopEdge    = ct;
+        ng.ng_TopEdge    = ct + g_m.pitch;
         ng.ng_Width      = cw;
         ng.ng_Height     = g_m.pitch * rows + 6;
         ng.ng_GadgetText = (STRPTR)"Adapter:";
@@ -1393,7 +1436,7 @@ static void rebuild_page_gadgets(void)
 
         LONG btn_scan_w = g_m.pane_w * 22 / 100;
         ng.ng_LeftEdge   = cl;
-        ng.ng_TopEdge    = ct;
+        ng.ng_TopEdge    = ct + g_m.pitch;
         ng.ng_Width      = cw - btn_scan_w - g_m.fx;
         ng.ng_Height     = g_m.pitch * rows + 6;
         ng.ng_GadgetText = (STRPTR)"Networks:";
@@ -1625,37 +1668,68 @@ static void rebuild_page_gadgets(void)
 
     case WIZARD_PAGE_TEST: {
         int i;
+        int row = 0;
+        int st[5];
         static const char *names[5] = { "Start stack", "DHCP lease",
                                         "Ping gateway", "DNS lookup",
                                         "HTTP HEAD" };
-        NewList(&g_check_list);
-        for (i = 0; i < 5; i++) {
-            int st = (i == 0) ? g_ws.test_daemon_ok
-                    : (i == 1) ? g_ws.test_dhcp_ok
-                    : (i == 2) ? g_ws.test_ping_ok
-                    : (i == 3) ? g_ws.test_dns_ok : g_ws.test_http_ok;
-            snprintf(g_check_lines[i], sizeof(g_check_lines[i]),
-                     "%-13s %-6s %s%s%s",
-                     names[i],
-                     (st == 1) ? "OK" : (st == 0) ? "FAILED" : "..",
-                     g_ws.test_details[i],
-                     (st != 1 && g_ws.test_advice[i][0]) ? " -> " : "",
-                     (st != 1 && g_ws.test_advice[i][0]) ? g_ws.test_advice[i] : "");
-            memset(&g_check_nodes[i], 0, sizeof(struct Node));
-            g_check_nodes[i].ln_Name = g_check_lines[i];
-            AddTail(&g_check_list, &g_check_nodes[i]);
-        }
-
+        char d[160];
         /* checklist leaves room for the two right-side buttons */
         LONG btn_w   = g_m.pane_w * 28 / 100;
         LONG cw_list = cw - btn_w - g_m.fx;
+        LONG lv_h    = (g_m.status_t - 6) - (ct + g_m.pitch)
+                       - (g_m.fy + 6) - 12;
+        LONG maxw    = cw_list - 24;      /* scroller + indent room */
+        NewList(&g_check_list);
+        st[0] = g_ws.test_daemon_ok;
+        st[1] = g_ws.test_dhcp_ok;
+        st[2] = g_ws.test_ping_ok;
+        st[3] = g_ws.test_dns_ok;
+        st[4] = g_ws.test_http_ok;
+        for (i = 0; i < 5 && row < 24; i++) {
+            /* 11u item 2: row 1 is the verdict, then the detail and
+             * the advice as wrapped continuation rows - nothing cut. */
+            snprintf(g_check_lines[row], sizeof(g_check_lines[0]),
+                     "%-13s %s",
+                     names[i],
+                     (st[i] == 1) ? "OK" : (st[i] == 0) ? "FAILED" : "SKIPPED");
+            memset(&g_check_nodes[row], 0, sizeof(struct Node));
+            g_check_nodes[row].ln_Name = g_check_lines[row];
+            AddTail(&g_check_list, &g_check_nodes[row]);
+            row++;
+            snprintf(d, sizeof(d), "%s%s%s",
+                     g_ws.test_details[i],
+                     (st[i] != 1 && g_ws.test_advice[i][0]) ? " -> " : "",
+                     (st[i] != 1 && g_ws.test_advice[i][0]) ? g_ws.test_advice[i] : "");
+            if (d[0] && row < 24) {
+                int k, nw = 0;
+                char *rows_p[16];
+                LONG tl;
+                nw = tn_wrap_px(g_win->RPort, d, maxw,
+                                &g_check_lines[row], 24 - row, "    ");
+                for (k = 0; k < nw; k++) {
+                    memset(&g_check_nodes[row], 0, sizeof(struct Node));
+                    g_check_nodes[row].ln_Name = g_check_lines[row];
+                    AddTail(&g_check_list, &g_check_nodes[row]);
+                    row++;
+                }
+            }
+        }
+        g_max_check_text = 0;
+        for (i = 0; i < row; i++) {
+            LONG tl = TextLength(g_win->RPort, (STRPTR)g_check_lines[i],
+                                 (LONG)strlen(g_check_lines[i]));
+            if (tl > g_max_check_text) g_max_check_text = tl;
+        }
+
         /* 11q item 1: drop one row so the PLACETEXT_ABOVE label sits
          * clear of the page title line - at ct it clipped the first
          * letter of "Checks:" into the title rule. */
         ng.ng_LeftEdge   = cl;
         ng.ng_TopEdge    = ct + g_m.pitch;
         ng.ng_Width      = cw_list;
-        ng.ng_Height     = g_m.pitch * 5 + 6;
+        ng.ng_Height     = (g_m.status_t - 6) - (ct + g_m.pitch)
+                           - (g_m.fy + 6) - 12;
         ng.ng_GadgetText = (STRPTR)"Checks:";
         ng.ng_GadgetID   = GID_P5_CHECKLIST;
         ng.ng_Flags      = PLACETEXT_ABOVE;
@@ -1688,7 +1762,8 @@ static void rebuild_page_gadgets(void)
          * 6 px of the listview, leaving the lower arrow glyph
          * stranded at the right of the row. */
         ng.ng_LeftEdge   = cl;
-        ng.ng_TopEdge    = ct + g_m.pitch + g_m.pitch * 5 + 6 + 4;
+        ng.ng_TopEdge    = ct + g_m.pitch + (g_m.status_t - 6)
+                           - (ct + g_m.pitch) - (g_m.fy + 6) - 12 + 4;
         ng.ng_Width      = 26;
         ng.ng_Height     = g_m.fy + 6;
         ng.ng_GadgetText = (STRPTR)TN_CHK_BOOT;
