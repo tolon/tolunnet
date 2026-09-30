@@ -943,9 +943,21 @@ static void run_page_tests(void)
     tn_set_busy_pointer(g_win, TRUE);
     tn_run_network_tests(&g_ws);
     tn_set_busy_pointer(g_win, FALSE);
-    set_status(all_tests_passed() ? "All 5 tests passed"
-                                  : "Tests complete - see the list below");
     rebuild_page_gadgets();
+    /* 11t: after the rebuild the checklist had 5 nodes (the wizard's
+     * own geom report says checknodes=5) but nothing was painted -
+     * tc_wizard_checklist measured 0 of 18423 interior pixels.
+     * Detach and re-attach the label list and refresh the window so
+     * GadTools actually draws the rows. */
+    if (g_gad_listview && g_win) {
+        GT_SetGadgetAttrs(g_gad_listview, g_win, NULL,
+                          GTLV_Labels, ~0, TAG_DONE);
+        GT_SetGadgetAttrs(g_gad_listview, g_win, NULL,
+                          GTLV_Labels, (ULONG)&g_check_list, TAG_DONE);
+        GT_RefreshWindow(g_win, NULL);
+    }
+    set_status(all_tests_passed() ? "All 5 tests passed"
+                                  : "Tests complete - see the list above");
 }
 
 /* "Save log…" — ASL save requester; without asl.library (or after Cancel)
