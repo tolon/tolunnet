@@ -1,15 +1,15 @@
 # tolunnet — Status
 
-_Last updated: 2026-09-23 · version string `1.2.0-rc4` (`include/version.h`)_
+_Last updated: 2026-10-01 · version string `1.2.0-rc5` (`include/version.h`)_
 
 ## Release state
 
 | Item | State |
 |---|---|
-| Latest release candidate | **1.2.0-rc4** |
-| Changes in rc4 | All 12 items from Phase 1 (full 33-command set, installer backup/undo, wizard layout overhaul, usergroup.library v4.1, AutoIP/mDNS optional, verbatim GPL-3 licence) |
-| Package LHA | `build/tolunnet-1.2.0-rc4.lha` (`da6fb0a47eda9eca4b5407d95ae84c17bc7bdbbdd50f5145b8895c8c8c3cb72f`) |
-| Package ADF | `build/tolunnet.adf` (`55d7ebc3b0b5e914cfc458abfdfa92e9dad03918df0c67fe47ec56e52846d8b3`) |
+| Latest release candidate | **1.2.0-rc5** |
+| Changes in rc5 | CANCEL/break-signal correctness, WaitSelect per 4.4BSD, errno truth (EDESTADDRREQ family), the 68000 shutdown/freeze class closed, command output number fixes, ftp/nc/TolunnetGet rework, nslookup answer-vs-server + PTR default, honest wizard Test page (stack-reported values, SKIPPED states), installer parity between bench and archive (see CHANGELOG) |
+| Package LHA | `build/tolunnet-1.2.0-rc5.lha` (`248c903196e18079bec52d2453ffcb2faa5ec5bd1fc6f1199241e5f6c75e7482`) |
+| Package ADF | `build/tolunnet.adf` (`41a1cecf2ab79573f4ea5f75dc119b33427208d894548335d9efdd7e683e6afa`) |
 | TX pipelining | `TX_QUEUE=0` (synchronous `DoIO`) is the release default. The TX pool is proven in the bench with `TX_QUEUE=4`; the real-hardware default is still to be decided. |
 
 ## Library coverage
@@ -26,6 +26,7 @@ _Last updated: 2026-09-23 · version string `1.2.0-rc4` (`include/version.h`)_
 | Host unit tests (`make test-host`) | 20 programs, ASan/UBSan | run locally before every commit |
 | Emulated conformance bench, rc3 tree | **ALL-GREEN**: 58/58 in both cycles on both profiles (a1200 + 68000); bsdsocktest **126/142** | bench `20260921-135938-51196ec` (in git history up to `7f87caf`) |
 | Emulated conformance bench, post-rc3 work | **ALL-GREEN**: 60/60 in both cycles on both profiles (a1200 + 68000); bsdsocktest **126/142** | bench `20260923-082158-v1.2.0-rc3-25-gdb29de8` |
+| Emulated conformance bench, rc5 tree | **ALL-GREEN**: `110 ok / 0 not ok`, plan `1..111`, four legs (a1200 + 68000, two cycles); bsdsocktest **126/142** | bench `20261001-011416-v1.2.0-rc4-440-gf7c4284` |
 | Phase 1b Red Baseline (`c598d6d`) | **ALL-GREEN (7 TODO)**: 60/60 + 9 net tests (7 TODO); bsdsocktest **126/142** | bench `20260923-125745-v1.2.0-rc4-1-gc598d6d-netbaseline` |
 | Phase 1b Item 2 | `net_tcp_blocking_recv` active; blocking recv parking + `SO_RCVTIMEO` | host test `test_slot_table` ok 10 |
 | Session-profile soak | **PASS**: 12 cycles (3 h 20 m, a1200, `TX_QUEUE=4`), 0 Gurus, 0 `not ok`, Chip RAM drift 0 B, Fast RAM −1200 B (cycle 1 → 11) | bench `20260922-144257-soak-842cc1f` (in git history up to `7f87caf`) |

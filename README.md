@@ -55,10 +55,10 @@ The first-run wizard (`TolunnetSetup`) guides network configuration with automat
   ![Page 3: Wireless Setup](docs/screenshots/wizard-2-pal.png)
 - **Address mode (DHCP):** automated dynamic host configuration and hostname assignment.
   ![Page 4: Address (DHCP)](docs/screenshots/wizard-3-pal.png)
-- **Address mode (Static):** manual configuration of static IP address, subnet mask, gateway, and DNS servers.
-  ![Page 4: Address (Static)](docs/screenshots/wizard-3-pal-static.png)
 - **Connection test & finish:** verifies network operations and saves configuration with User-Startup integration.
-  ![Page 5: Test & Finish](docs/screenshots/wizard-4-pal.png)
+  ![Page 5: Test & Finish](docs/screenshots/wizard-5-pal.png)
+- **Preferences:** `TolunnetPrefs` edits the same configuration outside the wizard.
+  ![Preferences](docs/screenshots/prefs-opens-pal.png)
 
 ---
 

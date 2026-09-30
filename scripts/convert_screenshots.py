@@ -70,14 +70,17 @@ def main():
     print(f"Source bench: {os.path.basename(bench_dir)}")
     print(f"Target directory: {out_dir}")
 
+    # 11y item 5: the bench emits wizard-5 (Test & finish) and
+    # prefs-opens (no wizard-4 / prefs-pal any more). The static-address
+    # shot is dropped from the README set: it shows the invented Manual
+    # defaults (192.168.1.1), which the release must not display.
     files = [
         ("wizard-0-pal.iff", "wizard-0-pal.png"),
         ("wizard-1-pal.iff", "wizard-1-pal.png"),
         ("wizard-2-pal.iff", "wizard-2-pal.png"),
         ("wizard-3-pal.iff", "wizard-3-pal.png"),
-        ("wizard-3-pal-static.iff", "wizard-3-pal-static.png"),
-        ("wizard-4-pal.iff", "wizard-4-pal.png"),
-        ("prefs-pal.iff", "prefs-pal.png"),
+        ("wizard-5-pal.iff", "wizard-5-pal.png"),
+        ("prefs-opens-pal.iff", "prefs-opens-pal.png"),
     ]
 
     converted = 0

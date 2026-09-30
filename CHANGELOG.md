@@ -37,10 +37,9 @@
 - **`TolunnetGet`** (wget/curl): resumes only with CONTINUE, reads the
   directory entry via AllocDosObject, and stops counting at body bytes.
 - **`whois`/`sntp`**: PORT option for non-standard servers.
-- **`nslookup`**: the DNS check returns the ANSWER address, not the
-  address on the `Server:` line; PTR without SERVER asks the daemon's
-  configured DNS server and says `no DNS server configured - use
-  SERVER <ip>` when none is set.
+- **`nslookup`**: PTR without SERVER asks the daemon's configured DNS
+  server and says `no DNS server configured - use SERVER <ip>` when
+  none is set.
 - **Status tools read live daemon state**: `GetNetStatus`,
   `ShowNetStatus` and `TolunnetStatus` report the daemon's real
   address/gateway/DNS over IPC instead of guesses.
@@ -57,8 +56,10 @@
   (tn_safe_replace), and DOSBase comes from libnix.
 - **Setup wizard Test page tells the truth**: in DHCP mode the gateway
   and DNS checks use what the daemon actually reports (no invented
-  192.168.1.1 on foreign routers); skipped checks are shown SKIPPED
-  with an honest "n passed, m failed, k skipped" summary; the IP row is
+  192.168.1.1 on foreign routers); the DNS check reports the resolved
+  ANSWER address, not the address on nslookup's `Server:` line;
+  skipped checks are shown SKIPPED with an honest
+  "n passed, m failed, k skipped" summary; the IP row is
   titled "IP address"; DNS tries google.com, then cloudflare.com.
 - **Setup wizard rendering**: the checklist wraps text pixel-measured
   without overflow (long words are hard-split, no inserted spaces) and
