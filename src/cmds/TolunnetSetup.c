@@ -1216,7 +1216,7 @@ static void draw_page_content(void)
 /* 11u item 2: wrap detail/advice text into rows of at most maxw
  * pixels (TextLength), indenting continuations. Returns rows
  * written; the caller appends each as a checklist node. */
-static int tn_wrap_px(struct RastPort *rp, const char *text, LONG maxw,
+static int tn_wrap_px(struct Screen *scr, const char *text, LONG maxw,
                       char rows[][96], int row_max, const char *indent)
 {
     char cur[192];
@@ -1236,7 +1236,7 @@ static int tn_wrap_px(struct RastPort *rp, const char *text, LONG maxw,
             char cand[192];
             int add = (cur[0] != ' ');
             snprintf(cand, sizeof(cand), "%s%s%s", cur, add ? " " : "", word);
-            if (TextLength(rp, (STRPTR)cand, (LONG)strlen(cand)) > maxw && add) {
+            if (TextLength(&scr->RastPort, (STRPTR)cand, (LONG)strlen(cand)) > maxw && add) {
                 snprintf(rows[nr], 96, "%s%s", indent, cur);
                 nr++;
                 snprintf(cur, sizeof(cur), "%s", word);
@@ -1703,9 +1703,8 @@ static void rebuild_page_gadgets(void)
                      (st[i] != 1 && g_ws.test_advice[i][0]) ? g_ws.test_advice[i] : "");
             if (d[0] && row < 24) {
                 int k, nw = 0;
-                char *rows_p[16];
                 LONG tl;
-                nw = tn_wrap_px(g_win->RPort, d, maxw,
+                nw = tn_wrap_px(g_win->WScreen, d, cw_list - 60,
                                 &g_check_lines[row], 24 - row, "    ");
                 for (k = 0; k < nw; k++) {
                     memset(&g_check_nodes[row], 0, sizeof(struct Node));
