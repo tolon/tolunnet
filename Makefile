@@ -499,20 +499,9 @@ package: release-stage
 installer:
 	python3 scripts/gen_installer.py
 
-adf:
-	@echo "--- Building ADF Floppy Image (stripped binaries) ---"
-	@rm -rf $(BUILD)/adf-pkg
-	@mkdir -p $(BUILD)/adf-pkg/tolunnet/C
-	@for f in $(PACKAGE_DIR)/C/*; do \
-		$(STRIP) -o $(BUILD)/adf-pkg/tolunnet/C/$$(basename $$f) $$f 2>/dev/null \
-		|| cp $$f $(BUILD)/adf-pkg/tolunnet/C/; \
-	done
-	@mkdir -p $(BUILD)/adf-pkg/tolunnet/Libs
-	@$(STRIP) -o $(BUILD)/adf-pkg/tolunnet/Libs/usergroup.library $(USERGROUP_LIB) 2>/dev/null \
-		|| cp $(USERGROUP_LIB) $(BUILD)/adf-pkg/tolunnet/Libs/
-	@cp LICENSE $(BUILD)/adf-pkg/tolunnet/
-	$(XDFTOOL) -f $(ADF_IMAGE) pack $(BUILD)/adf-pkg/tolunnet tolunnet
-	@echo "ADF successfully created: $(ADF_IMAGE)"
+adf: release-stage
+	@echo "--- Building ADF Floppy Image (priority-packed from the stripped release tree, 11z item 2) ---"
+	python3 scripts/build_adf.py
 
 clean:
 	rm -rf $(BUILD)

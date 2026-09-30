@@ -185,7 +185,7 @@ make align-check
 
 Outputs in `build/`:
 - `build/tolunnet-<version>.lha`: the full release, with binaries, icons, installer, `README.guide` and licences.
-- `build/tolunnet.adf`: an 880 KB floppy image with only the stripped `C/` binaries and `usergroup.library`. It has no installer and no GUI icons.
+- `build/tolunnet.adf`: an 880 KB FFS floppy with the stripped `C/` binaries, `usergroup.library`, `TolunnetSetup`, `LICENSE`, the `Disk.info` volume icon, `README.guide` and `tolunnet.readme` — whatever fits, filled by priority; anything that does not fit is skipped and reported at build time (currently the `Install_Tolunnet` script, `TolunnetPrefs` and `THIRD_PARTY_LICENSES.md` do not fit).
 
 ---
 
