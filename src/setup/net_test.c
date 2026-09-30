@@ -343,7 +343,7 @@ void tn_run_network_tests(WizardState *ws)
                                            dns_ip, sizeof(dns_ip)) ? 1 : 0;
             if (!ws->test_dns_ok) {
                 snprintf(ws->test_advice[3], sizeof(ws->test_advice[3]),
-                         "Cannot resolve names. Try: nslookup %s %s",
+                         "Cannot resolve names. Try: nslookup %s %s XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
                          dns_name, ws->dns1_str);
             } else {
                 ws->test_advice[3][0] = '\0';
