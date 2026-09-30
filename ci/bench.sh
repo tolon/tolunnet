@@ -417,7 +417,7 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
     xd write "$REL/C/TolunnetControl" C/TolunnetControl || die "xdftool write TolunnetControl failed"
     xd write build/SocketConformance C/SocketConformance || die "xdftool write conformance failed"
     xd write "$REL/C/TolunnetSetup" C/TolunnetSetup || die "xdftool write TolunnetSetup failed"
-    xd write "$REL/C/TolunnetPrefs" C/TolunnetPrefs || die "xdftool write TolunnetPrefs failed"
+    xd write "$REL/TolunnetPrefs" C/TolunnetPrefs || die "xdftool write TolunnetPrefs failed"
     xd write build/S2Toggle C/S2Toggle || die "xdftool write S2Toggle failed"
     xd write build/bsdsocktest C/bsdsocktest || die "xdftool write bsdsocktest failed"
     xd write "$REL/C/nc" C/nc                     || die "xdftool write nc failed"
