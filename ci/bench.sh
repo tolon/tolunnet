@@ -335,7 +335,8 @@ trap cleanup EXIT INT TERM
 say "verifying netsvc ports are free"
 if ! python.exe ci/netsvc.py --check-free > /tmp/netsvc-busy.txt 2>&1; then
     # 11w item 0: name the holder, kill only our own stale netsvc.
-    busy_ports=$(sed -n 's/.*busy: TCP \([0-9]*\).*//p; s/.*busy: UDP \([0-9]*\).*//p' /tmp/netsvc-busy.txt | tr '
+    busy_ports=$(/usr/bin/grep -aoE 'busy: (TCP|UDP) [0-9]+' /tmp/netsvc-busy.txt | /usr/bin/grep -oE '[0-9]+' | sort -u | tr '
+' ' ')
 ' ' ')
     echo "netsvc ports busy: $busy_ports"
     for p in $busy_ports; do
