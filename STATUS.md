@@ -8,8 +8,8 @@ _Last updated: 2026-10-01 · version string `1.2.0-rc5` (`include/version.h`)_
 |---|---|
 | Latest release candidate | **1.2.0-rc5** |
 | Changes in rc5 | CANCEL/break-signal correctness, WaitSelect per 4.4BSD, errno truth (EDESTADDRREQ family), the 68000 shutdown/freeze class closed, command output number fixes, ftp/nc/TolunnetGet rework, nslookup answer-vs-server + PTR default, honest wizard Test page (stack-reported values, SKIPPED states), installer parity between bench and archive (see CHANGELOG) |
-| Package LHA | `build/tolunnet-1.2.0-rc5.lha` (`248c903196e18079bec52d2453ffcb2faa5ec5bd1fc6f1199241e5f6c75e7482`) |
-| Package ADF | `build/tolunnet.adf` (`41a1cecf2ab79573f4ea5f75dc119b33427208d894548335d9efdd7e683e6afa`) |
+| Package LHA | `build/tolunnet-1.2.0-rc5.lha` (`d6515ca539bd3e0de9574b02960ed1fa002fd5dc5cb98ff0fcc428eb8d49d9f3`) |
+| Package ADF | `build/tolunnet.adf` (`529e6c217cd6b44afd37ac46433fbd418568d62d51deba204414cea3f936335b`) |
 | TX pipelining | `TX_QUEUE=0` (synchronous `DoIO`) is the release default. The TX pool is proven in the bench with `TX_QUEUE=4`; the real-hardware default is still to be decided. |
 
 ## Library coverage
