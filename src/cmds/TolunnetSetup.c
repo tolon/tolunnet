@@ -17,6 +17,7 @@
 #include "../setup/hw_detect.h"
 #include "../setup/wifi_mgr.h"
 #include "../setup/net_test.h"
+#include "../setup/wrap.h"
 #include "../setup/setup_rexx.h"
 #include "../common/inet_parse.h"
 
@@ -1213,43 +1214,13 @@ static void draw_page_content(void)
     }
 }
 
-/* 11u item 2: wrap detail/advice text into rows of at most maxw
- * pixels (TextLength), indenting continuations. Returns rows
- * written; the caller appends each as a checklist node. */
-static int tn_wrap_px(struct Screen *scr, const char *text, LONG maxw,
-                      char rows[][96], int row_max, const char *indent)
+/* 11v item 1: measure callback for tn_wrap_rows - the wizard
+ * renders with its own screen's font, so TextLength on the screen
+ * RastPort is the metric the on-screen checklist uses. */
+static long tn_measure_screen(const char *s, int len, void *ud)
 {
-    char cur[192];
-    char word[96];
-    const char *p = text;
-    int nr = 0, wlen;
-    cur[0] = ' ';
-    while (*p && nr < row_max) {
-        while (*p == ' ' || *p == '	') p++;
-        if (!*p) break;
-        wlen = 0;
-        while (p[wlen] && p[wlen] != ' ' && p[wlen] != '	' && wlen < 95) wlen++;
-        memcpy(word, p, wlen);
-        word[wlen] = ' ';
-        p += wlen;
-        {
-            char cand[192];
-            int add = (cur[0] != ' ');
-            snprintf(cand, sizeof(cand), "%s%s%s", cur, add ? " " : "", word);
-            if (TextLength(&scr->RastPort, (STRPTR)cand, (LONG)strlen(cand)) > maxw && add) {
-                snprintf(rows[nr], 96, "%s%s", indent, cur);
-                nr++;
-                snprintf(cur, sizeof(cur), "%s", word);
-            } else {
-                snprintf(cur, sizeof(cur), "%s", cand);
-            }
-        }
-    }
-    if (cur[0] && nr < row_max) {
-        snprintf(rows[nr], 96, "%s%s", indent, cur);
-        nr++;
-    }
-    return nr;
+    struct Screen *scr = (struct Screen *)ud;
+    return (long)TextLength(&scr->RastPort, (STRPTR)s, (LONG)len);
 }
 
 static void rebuild_page_gadgets(void)
@@ -1704,8 +1675,9 @@ static void rebuild_page_gadgets(void)
             if (d[0] && row < 24) {
                 int k, nw = 0;
                 LONG tl;
-                nw = tn_wrap_px(g_win->WScreen, d, cw_list - 60,
-                                &g_check_lines[row], 24 - row, "    ");
+                nw = tn_wrap_rows(d, tn_measure_screen, g_win->WScreen,
+                                  cw_list - 60, &g_check_lines[row],
+                                  24 - row, "    ");
                 for (k = 0; k < nw; k++) {
                     memset(&g_check_nodes[row], 0, sizeof(struct Node));
                     g_check_nodes[row].ln_Name = g_check_lines[row];
@@ -1716,7 +1688,10 @@ static void rebuild_page_gadgets(void)
         }
         g_max_check_text = 0;
         for (i = 0; i < row; i++) {
-            LONG tl = TextLength(g_win->RPort, (STRPTR)g_check_lines[i],
+            /* 11u: measure on the SCREEN RastPort - the bench row
+             * measures with the screen font, not the window font. */
+            LONG tl = TextLength(&g_win->WScreen->RastPort,
+                                 (STRPTR)g_check_lines[i],
                                  (LONG)strlen(g_check_lines[i]));
             if (tl > g_max_check_text) g_max_check_text = tl;
         }
