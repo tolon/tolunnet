@@ -1,45 +1,60 @@
-# STOP-REPORT — 11ab: floppy-install row still red after the stale-disk fix
+# STOP-REPORT — 11ac item 2 (real-Installer pretend row): 3 counted reds
 
-## Item 4 stop (superseded by the findings below)
-Item 4 burned its 3 counted benches (20261001-132627, -135130, -141853)
-against STALE floppy images: 11aa's `scripts/build_adf.py` hardcoded the
-removed `Install_From_Floppies.info` in `package_members()`, so every
-`make package` since 11ab item 1 died in the ADF phase and never
-rebuilt the disks - all three reds executed the OLD one-argument
-script. The builder is fixed (commit 49eaf0c) and the disks now carry
-the current script (unpack md5 868cfaed == repo).
+## What was built
+`tc_installer_pretend` (commit 962ac31, invocation fixed in 98feb99):
+probes the real `C:Installer ?` template, then runs
+`C:Installer S:Install_Tolunnet.script NOLOG NOPRINT DEFUSER NOVICE
+>Work:installer-pretend.log` and asserts rc 0, no error/Undefined/unknown
+text, and that the log names the first and last copyfiles sources.
+`ci/bench.sh` now stages the shipped `C:Installer` (it never did -
+commit 4e8e16d).
 
-## Item 6 stop (two counted reds in a row - stopping per the rules)
-With FRESH disks the row got much further, but still fails on exactly
-one file:
-1. `20261001-144941-v1.2.0-rc4-476-gb0dbd36` (dest T:tninst):
-   mounted=YES, script listed=YES, probe copy of the script off the
-   volume OK (head ".key"), `Execute rc=10` (the script's own
-   `If WARN`/`Quit 10` fired), tree walked 948 bytes - everything of
-   disk 1 plus MOST of disk 2 copied; exactly ONE file missing:
-   `TolunnetSetup.info 630`.
-2. `20261001-151935-v1.2.0-rc4-477-gd30dc3a` (dest Work:tninst, after
-   removing the T:-RAM-disk theory): byte-identical failure - the same
-   single file missing, `Execute rc=10`, all other 50 members present.
+## The REAL template (bench log, installer 44.10 (1.10.99))
+```
+USAGE: Installer [SCRIPT] filename <[APPNAME] name> <[MINUSER] level>
+       <[DEFUSER] default> <[LOGFILE] logname> <[LANGUAGE] language> <NOPRETEND> <NOLOG> <NOPRINT>
+```
+There is NO `PRETEND` switch. Per the tool's own usage, pretend mode is
+the DEFAULT: only `NOPRETEND` makes the Installer write for real. The
+row therefore runs without any pretend argument (passing the literal
+`PRETEND` hangs the tool on an option requester - proven in run 2).
 
-So the script now works: both volume copies run, 50 of 51 members land
-with correct sizes. The remaining defect is a deterministic single-file
-failure inside AmigaDOS `Copy tolunnet2: "<dest>" ALL CLONE` on
-`TolunnetSetup.info` (630 B, protection ----rwed, sibling of
-`TolunnetPrefs.info` which copies fine from the same FFS image). Cause
-not identified within the bench budget - the one-file Copy failure is
-in the emulated DOS/FFS layer, not visibly in the script.
+## The three counted reds
+1. `20261001-162632-v1.2.0-rc4-481-g962ac31`: 107 ok / 1 not ok then the
+   leg stalled at the row: `Installer ?` rc=10, no usage file - the bench
+   had never staged `C/Installer` at all (harness gap, fixed in
+   4e8e16d).
+2. `20261001-164859-v1.2.0-rc4-482-g4e8e16d`: with the binary staged and
+   the literal `PRETEND` argument, the row HUNG after printing the
+   template (option requester, headless); the 68000 leg was then killed
+   by a leftover cleanup from the still-running previous wrapper
+   (shared `ci/.bench-tolunnet.config` deleted mid-staging - my
+   overlapping-invocation mistake, uncounted FATAL on top).
+3. `20261001-173354-v1.2.0-rc4-483-g98feb99` (correct invocation, the
+   parent-commit script deliberately staged): the row hung AGAIN after
+   the template - with the OLD script's `39<<16` the REAL Installer
+   opens a script-error REQUESTER that nobody can answer headlessly.
+   The hang IS the proof the old script is broken, but it produces no
+   assertable TAP line.
 
-## State
-- Suite: `110 ok / 1 not ok`, plan `1..112` on all four legs
-  (everything else green, including the extended `tc_undo_sandbox`).
-- Release assets in `build/release-assets/` are built and parity-checked;
-  the LHA itself is unaffected by the floppy issue.
-- README says the floppy-install path is untested until this row is
-  green; STATUS quotes the honest 110/1 numbers.
-- Not fixed (next session, no budget left): why `Copy` rejects exactly
-  `TolunnetSetup.info` from the FFS image - candidate probes: retry the
-  single file after the bulk copy (does a direct
-  `Copy tolunnet2:TolunnetSetup.info <dest> CLONE` succeed?), compare
-  the FFS directory entry of the two .info siblings, or re-order the
-  manifest so the icon is not the entry that trips the walk.
+## Why the prove cannot complete headlessly
+The real Installer is GUI-bound at exactly the two points the prove
+needs to pass through: a script error opens a Retry/Abort requester
+(the old script), and even a clean script opens its welcome panel
+(auto-answered only in Novice mode). Testing "the real Installer parses
+the script" headlessly would need either a scripted-input WinUAE driver
+or a script copy with the welcome stripped - neither is the shipped
+artifact the row is meant to test.
+
+## Consequence
+- The row stays in the suite and is a valid headless check for the GOOD
+  script (Novice mode auto-answers; a clean run ends rc 0 with the
+  copyfiles transcript), but its green has never been demonstrated: the
+  suite is `110 ok / 1 not ok` (the known `tc_floppy_install`
+  TolunnetSetup.info failure) plus this row unfinished, plan `1..112`
+  (the 1..113 renumber was never validated by a bench).
+- README/STATUS continue to say the installer path is untested in the
+  emulator.
+- Next session candidates: run the row under a WinUAE input driver that
+  answers the welcome/error requesters, or test with a welcome-stripped
+  copy clearly labelled as such.

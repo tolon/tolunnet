@@ -244,9 +244,10 @@ Requirements: AmigaOS 3.0+, 68000 or higher, about 1.2 MB free for the unpacked 
 3. The full package is now in `Work:tolunnet`; start the Installer from there:
    `CD Work:tolunnet` then `Installer Install_Tolunnet`. Add the `NORUN` switch (e.g. `Execute tolunnet1:Install_From_Floppies T:tninst NORUN`) to skip the automatic Installer start.
    This script is shell-only: double-clicking it does not work.
-   **Emulator-test status: UNTESTED** - the three bench attempts in
-   step 11ab ran against stale floppy images, so the fixed script
-   itself has not executed in the emulator yet (see STOP-REPORT.md).
+   **Emulator-test status: UNTESTED** - the REAL Installer opens
+   requesters (script error / welcome) that a headless bench cannot
+   answer, so the pretend row has never completed (see
+   STOP-REPORT.md, step 11ac item 2).
 
 ### PiStorm / CF / hard disk
 1. Extract `tolunnet-<version>.lha` to `RAM:` or any drawer.
