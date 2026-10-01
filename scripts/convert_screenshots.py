@@ -31,8 +31,18 @@ def find_newest_clean_bench(repo_root):
         if "-dirty" in entry or "-soakquick-" in entry:
             continue
         a1200_dir = os.path.join(full, "a1200")
-        if os.path.isfile(os.path.join(a1200_dir, "wizard-0-pal.iff")):
-            dirs.append(entry)
+        if not os.path.isfile(os.path.join(a1200_dir, "wizard-0-pal.iff")):
+            continue
+        # green benches only (11aa item 4): skip any log whose
+        # conformance run reports a failure
+        clog = os.path.join(a1200_dir, "conformance.log")
+        try:
+            with open(clog, "r", errors="ignore") as fh:
+                if any(ln.startswith("not ok") for ln in fh):
+                    continue
+        except OSError:
+            pass
+        dirs.append(entry)
 
     if not dirs:
         raise RuntimeError("No clean bench directory with a1200 IFF screenshots found.")
@@ -70,10 +80,9 @@ def main():
     print(f"Source bench: {os.path.basename(bench_dir)}")
     print(f"Target directory: {out_dir}")
 
-    # 11y item 5: the bench emits wizard-5 (Test & finish) and
-    # prefs-opens (no wizard-4 / prefs-pal any more). The static-address
-    # shot is dropped from the README set: it shows the invented Manual
-    # defaults (192.168.1.1), which the release must not display.
+    # 11aa item 4: the README carries the 6 PAL shots AND the 6 NTSC
+    # shots (68000 leg) in a <details> block. -static shots stay
+    # excluded: they show the invented Manual defaults.
     files = [
         ("wizard-0-pal.iff", "wizard-0-pal.png"),
         ("wizard-1-pal.iff", "wizard-1-pal.png"),
@@ -81,6 +90,12 @@ def main():
         ("wizard-3-pal.iff", "wizard-3-pal.png"),
         ("wizard-5-pal.iff", "wizard-5-pal.png"),
         ("prefs-opens-pal.iff", "prefs-opens-pal.png"),
+        ("wizard-0-ntsc.iff", "wizard-0-ntsc.png"),
+        ("wizard-1-ntsc.iff", "wizard-1-ntsc.png"),
+        ("wizard-2-ntsc.iff", "wizard-2-ntsc.png"),
+        ("wizard-3-ntsc.iff", "wizard-3-ntsc.png"),
+        ("wizard-5-ntsc.iff", "wizard-5-ntsc.png"),
+        ("prefs-opens-ntsc.iff", "prefs-opens-ntsc.png"),
     ]
 
     converted = 0

@@ -69,6 +69,19 @@
 
 ### Added
 
+- **Gotek two-disk ADF set**: `tolunnet-<version>-disk1.adf` and
+  `-disk2.adf` (FFS DD, explicit manifest) whose union reproduces the
+  package tree byte for byte, plus `build/release-assets/` bundling the
+  LHA, both disks and `SHA256SUMS.txt`.
+- **`Install_From_Floppies`**: plain-AmigaDOS bootstrap that copies
+  disk 1 and disk 2 into one drawer and hands over to the tested
+  `Install_Tolunnet` (unattended `DEST` + `NORUN` form included).
+- **`$VER:` tags**: every shipped binary (daemon, all C/ commands,
+  TolunnetSetup, TolunnetPrefs, usergroup.library idstring,
+  bsdsocket.library idstring) now answers `Version` and Workbench
+  Information with `1.2.0-rc5`.
+- **Drawer icon**: the archive carries `tolunnet.info` at its top
+  level, so the extracted drawer shows the tolunnet icon.
 - `PORT/K/N` option for `whois` and `sntp`; real LISTEN mode for `nc`.
 - Build-time `lvo-check` verifies the bsdsocket name→offset table
   against the sfd source.

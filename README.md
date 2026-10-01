@@ -60,6 +60,49 @@ The first-run wizard (`TolunnetSetup`) guides network configuration with automat
 - **Preferences:** `TolunnetPrefs` edits the same configuration outside the wizard.
   ![Preferences](docs/screenshots/prefs-opens-pal.png)
 
+<details>
+<summary><strong>NTSC (640×200) screenshots</strong> — same pages on the 68000 bench leg</summary>
+
+  ![Page 1: Welcome & Stack Replacement (NTSC)](docs/screenshots/wizard-0-ntsc.png)
+  Page 1 "Replace legacy stacks": empty legacy-stack list, the "Replace with tolunnet (recommended)" checkbox, status "Ready."
+  ![Page 2: Hardware (NTSC)](docs/screenshots/wizard-1-ntsc.png)
+  Page 2 "Network hardware": empty "Adapter:" list with Rescan and Test adapter buttons, status "Ready."
+  ![Page 3: Wireless Setup (NTSC)](docs/screenshots/wizard-2-ntsc.png)
+  Page 3 "Wireless network": empty "Networks:" list, Scan APs button, SSID/Passphrase fields with a Show checkbox, status "Ready."
+  ![Page 4: Address (DHCP, NTSC)](docs/screenshots/wizard-3-ntsc.png)
+  Page 4 "IP address": Mode "Automatic (DHCP)", empty DNS 2/MTU fields, host "amiga", status "Ready." — no invented gateway on screen.
+  ![Page 5: Test & Finish (NTSC)](docs/screenshots/wizard-5-ntsc.png)
+  Page 5 "Test & finish": the check rows (Start stack OK, IP address OK 10.0.2.15, Ping gateway OK 10.0.2.2, DNS lookup SKIPPED, HTTP HEAD SKIPPED) and the honest status line "Tests complete - 3 passed, 0 failed, 2 skipped".
+  ![Preferences (NTSC)](docs/screenshots/prefs-opens-ntsc.png)
+  `TolunnetPrefs` over the Workbench: ethernet.device unit 0, DHCP mode, MTU 1500, DNS 1 127.0.0.1 (the bench's resolver), Save/Use/Stop/Setup/Undo/Ping/Cancel buttons.
+</details>
+
+All 12 screenshots are PAL/NTSC captures from the newest green bench; the
+`-static` variants are excluded on purpose: they show the known invented
+Manual-mode defaults (see Known limitations in STATUS.md). Total size of
+`docs/screenshots/`: about 39 KB.
+
+---
+
+## Sample session
+
+Real outputs, copied VERBATIM from the newest green bench log
+(`docs/bench-logs/20261001-035223-v1.2.0-rc4-453-ga5045cb/a1200/conformance.log`)
+(emulated A1200, WinUAE slirp network; addresses are the bench's):
+
+```text
+# tc_net_checks_ok: address 1 - address 10.0.2.15
+# tc_net_checks_ok: ping 1 - ping 127.0.0.1 replied
+# tc_net_checks_ok: dns 1 - resolved tolunbench.test to 10.0.2.55 via 10.0.2.2
+# tc_net_checks_ok: tcp 1 - tcp 10.0.2.2:15880 connected
+# tc_cmd_arp: gateway ARP resolves here: yes
+```
+
+The conformance log records the checks as one-line results; it carries no
+raw `ifconfig` transcript. The `GetNetStatus` line is the first row above
+(`address 10.0.2.15`); the wizard Test page (screenshot above) shows the
+same values on screen.
+
 ---
 
 ## Commands
@@ -191,7 +234,17 @@ Outputs in `build/`:
 
 ## Installation
 
-### Installer (recommended)
+Requirements: AmigaOS 3.0+, 68000 or higher, about 1.2 MB free for the unpacked tree.
+
+### Gotek / FlashFloppy / HxC (two floppies)
+1. Copy `tolunnet-<version>-disk1.adf` and `tolunnet-<version>-disk2.adf` from `build/release-assets/` to the USB stick.
+2. Boot the Amiga, open a shell, put disk 1 in DF0 and run:
+   `Execute tolunnet1:Install_From_Floppies Work:tolunnet`
+3. When the script says so, select disk 2 on the Gotek (DOS asks for the `tolunnet2` volume itself).
+4. The script leaves the full package in `Work:tolunnet`; start the Installer from there:
+   `CD Work:tolunnet` then `Installer Install_Tolunnet` (or run step 2 with `NORUN` omitted and let the script start it).
+
+### PiStorm / CF / hard disk
 1. Extract `tolunnet-<version>.lha` to `RAM:` or any drawer.
 2. Double-click **`Install_Tolunnet`**:
    - It asks for the SANA-II device name and unit, and for DHCP or static addressing.

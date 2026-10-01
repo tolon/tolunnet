@@ -174,3 +174,29 @@ Sonuçları (adım adım geçti/kaldı + `List SYS:Storage/tolunnet-backup/C`
 çıktısı) sürüm notlarına ekle.
 
 
+## Gotek / FlashFloppy kurulum denemesi (11aa item 4)
+
+Amaç: iki disklik ADF setinin gerçek Gotek/FlashFloppy'de çalıştığını
+görmek. Hazırlık: `build/release-assets/` içinden
+`tolunnet-<sürüm>-disk1.adf` ve `-disk2.adf` USB belleğe atılmış; Amiga
+(68000+, OS 3.0+) açık, bir shell penceresi hazır.
+
+Adımlar:
+
+1. Disk 1'i DF0'a tak (Gotek'te disk 1'i seç). Shell'de:
+   `Execute tolunnet1:Install_From_Floppies Work:tolunnet`
+2. Script "Disk 1 copied" deyince Gotek'te disk 2'ye geç. DOS `tolunnet2`
+   volume'unu sorarsa disk 2 seçili olsun.
+3. "Both disks copied" bitince script `CD Work:tolunnet` yapıp
+   Installer'ı başlatır (NORUN verdiysen başlatmaz, ekranda ne
+   çalıştırılacağı yazar).
+4. Installer GUI'sinde sonuna kadar devam et; kurulum bitince
+   `SYS:Prefs/TolunnetSetup` açılıyor olmalı.
+
+Bana bildirilecekler:
+
+- Her iki disk geçişinde istem/davranış doğru mu (disk 2 istendi mi)?
+- `Work:tolunnet` içeriği tam mı (`List Work:tolunnet` çıktısı)?
+- Installer çalıştı mı, hangi ekranda durdu, varsa hata metni ne?
+- Disk 2'den gelen `TolunnetPrefs` ve `TolunnetSetup` açılıyor mu?
+
