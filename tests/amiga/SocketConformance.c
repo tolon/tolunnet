@@ -6849,7 +6849,7 @@ static void tc_floppy_install(void)
     }
     fh = Open((STRPTR)"Work:tninst.out", MODE_OLDFILE);
     if (fh != (BPTR)0) {
-        char so[640];
+        static char so[4096];
         n = Read(fh, so, (LONG)sizeof(so) - 1);
         Close(fh);
         if (n < 0) n = 0;
@@ -6970,6 +6970,16 @@ static void tc_floppy_install(void)
             mirrored == expn) {
             TAP_OK(label);
         } else {
+            /* 11ad: dump BOTH ground truths when they disagree */
+            tapf("# %s: walked listing:\n%s\n", label, got);
+            {
+                static char ll[2048];
+                LONG lr = tn_run_cap("List Work:tninst",
+                                     "Work:tnl.out", ll,
+                                     (int)sizeof(ll));
+                tapf("# %s: List Work:tninst rc=%ld:\n%s\n",
+                     label, (long)lr, ll);
+            }
             TAP_NOTOK(label, "copied tree != manifest");
         }
     }
