@@ -24,7 +24,6 @@ ALLOW = {
     "Install_Tolunnet",                  # Installer-43 script (text, not
                                          #   a binary - no $VER carrier)
     "Install_From_Floppies",             # AmigaDOS script (same reason)
-    "Install_From_Floppies.info",        # tool icon (copy, 11aa item 2)
     "C/tolunnet.info", "tolunnet.info",  # Amiga icons (binary by design)
     "Install_Tolunnet.info", "TolunnetPrefs.info", "TolunnetSetup.info",
     "README.guide.info", "Disk.info",

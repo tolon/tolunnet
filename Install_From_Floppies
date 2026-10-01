@@ -1,31 +1,36 @@
-; tolunnet - install from two Gotek/FlashFloppy/floppy disks
-; (11aa item 2). Plain AmigaDOS only: no ARexx, no external tools.
-; Works headless and unattended - give DEST on the command line and
-; add NORUN to skip launching the Installer GUI:
-;   Execute tolunnet1:Install_From_Floppies T:tninst NORUN
-;
-; Interactive use (double-click on disk 1 runs it without arguments
-; only via a shell - double-click asks nothing, so run it from a
-; shell):  Execute Install_From_Floppies Work:tolunnet
-;
-; DOS itself asks for tolunnet2 when the volume is missing; the Echo
-; lines below tell a Gotek user to select disk 2 before that.
-
 .key DEST/A,NORUN/S
 .bra {
 .ket }
+; tolunnet - install from two Gotek/FlashFloppy/floppy disks
+; (11ab item 1). Plain AmigaDOS only: no ARexx, no external tools.
+; Run from a shell (double-click is not supported for this script):
+;   Execute tolunnet1:Install_From_Floppies Work:tolunnet
+; Unattended test form (skips the Installer GUI):
+;   Execute tolunnet1:Install_From_Floppies T:tninst NORUN
+; DOS itself asks for tolunnet2 when the volume is missing; the Echo
+; lines tell a Gotek user to select disk 2 before that.
 
-If EXISTS {DEST}
-Else
+If NOT EXISTS {DEST}
     makedir {DEST}
 EndIf
+
 Echo "tolunnet two-disk install: copying disk 1 to {DEST} ..."
-Copy tolunnet1:{DEST} ALL CLONE
+Copy tolunnet1: "{DEST}" ALL CLONE
+If WARN
+    Echo "Copy of disk 1 failed"
+    Quit 10
+EndIf
+
 Echo "Disk 1 copied. Insert disk 2 (tolunnet2) now -"
 Echo "if it is not mounted, DOS will ask for the volume."
-Copy tolunnet2:{DEST} ALL CLONE
+Copy tolunnet2: "{DEST}" ALL CLONE
+If WARN
+    Echo "Copy of disk 2 failed"
+    Quit 10
+EndIf
+
 Echo "Both disks copied into {DEST}."
-CD {DEST}
+CD "{DEST}"
 If "{NORUN}" STREQ "NORUN"
     Echo "NORUN: files are in place. To install, run:"
     Echo "  Installer Install_Tolunnet"

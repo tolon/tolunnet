@@ -199,6 +199,7 @@ python-checks:
 	python3 scripts/verify_icons.py
 	python3 scripts/check_md_links.py
 	python3 scripts/check_no_nul.py
+	python3 ci/lint_amigados_script.py Install_From_Floppies
 	python3 ci/check_version_tags.py
 	python3 ci/check_release_consistency.py
 	@if ls build/tolunnet-*.lha >/dev/null 2>&1; then \
@@ -482,7 +483,6 @@ release-stage: all
 	cp Install_Tolunnet.script $(PACKAGE_DIR)/Install_Tolunnet
 	cp Install_Tolunnet.info $(PACKAGE_DIR)/Install_Tolunnet.info
 	cp Install_From_Floppies $(PACKAGE_DIR)/Install_From_Floppies
-	cp Install_From_Floppies.info $(PACKAGE_DIR)/Install_From_Floppies.info
 	cp README.guide $(PACKAGE_DIR)/
 	cp README.guide.info $(PACKAGE_DIR)/
 	cp tolunnet.readme $(PACKAGE_DIR)/

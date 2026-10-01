@@ -37,7 +37,7 @@ EXPECTED_C = [
 ]
 
 EXPECTED_ROOT = [
-    "Install_From_Floppies", "Install_From_Floppies.info",
+    "Install_From_Floppies",
     "Install_Tolunnet", "Install_Tolunnet.info", "Installer",
     "Libs/usergroup.library", "LICENSE", "README.guide",
     "README.guide.info", "THIRD_PARTY_LICENSES.md", "TolunnetPrefs",

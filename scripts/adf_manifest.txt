@@ -12,7 +12,6 @@
 
 # --- disk 1: install bootstrap, installer, docs, daemon ---
 Install_From_Floppies           1
-Install_From_Floppies.info      1
 Install_Tolunnet                1
 Install_Tolunnet.info           1
 Installer                       1
