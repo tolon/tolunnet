@@ -56,6 +56,7 @@ ALLOWED = {
     "tackon", "path", "fileonly", "pathonly", "version", "onerror",
     "pset", "mydir-list", "getassign", "getversion",
     "resident",  # 11ab item 2b: (getversion "exec.library" (resident))
+    "shiftleft",  # 11ac item 1: (shiftleft 39 16), NOT 39<<16
 }
 
 
@@ -384,6 +385,44 @@ def backup_undo_coverage(top, names):
     return findings
 
 
+def lint_atoms(top, findings):
+    """11ac item 1: every bare atom must be a number, an @variable,
+    a #variable that a (set ...) assigned earlier in the file, or a
+    known function name. `39<<16` was one such unknown atom and the
+    REAL Installer aborts on it."""
+    import re
+    num = re.compile(r"^-?\d+$")
+    seen_sets = set()
+
+    def walk(node):
+        if not (isinstance(node, list) and node):
+            return
+        head = node[0]
+        if isinstance(head, str) and not isinstance(head, Str):
+            if head == "set":
+                for kid in node[1:]:
+                    if (not isinstance(kid, list)
+                            and not isinstance(kid, Str)
+                            and str(kid).startswith("#")):
+                        seen_sets.add(str(kid))
+        for kid in node[1:]:
+            if isinstance(kid, list):
+                walk(kid)
+            elif isinstance(kid, Str):
+                continue
+            else:
+                a = str(kid)
+                if num.match(a) or a.startswith("@"):
+                    continue
+                if a.startswith("#") and a in seen_sets:
+                    continue
+                if a in ALLOWED:
+                    continue
+                findings.append("bare atom %r: not a number, @variable, known function, or #variable set earlier" % a)
+
+    walk(top)
+
+
 def lint_text(script_text, doc_text):
     findings = []
     try:
@@ -391,6 +430,7 @@ def lint_text(script_text, doc_text):
     except LintError as exc:
         return [str(exc)]
     lint_top(top, findings)
+    lint_atoms(top, findings)
     copied = copied_sources(top)
     c_names = [c[2:] for c in sorted(copied) if c.startswith("C/")]
     for name in doc_c_commands(doc_text):
@@ -418,6 +458,31 @@ def git_show(rev, path):
         raise LintError("git show %s:%s failed: %s" %
                         (rev, path, out.stderr.strip()))
     return out.stdout
+
+
+def atom_selftest():
+    """11ac item 1: the two shapes that fooled the old lint must
+    FAIL the atom check."""
+    bad_shift = lint_text(
+        '(welcome "x")\n'
+        '(if (< (getversion "exec.library" (resident)) 39<<16)\n'
+        '  (abort "old"))\n', "")
+    bad_var = lint_text(
+        '(welcome "x")\n'
+        '(if (> @user-level 0) (message #undefined-var))\n', "")
+    ok = True
+    if not any("39<<16" in f or "bare atom" in f for f in bad_shift):
+        print("installer_lint atom selftest: FAIL - 39<<16 passed")
+        ok = False
+    if not any("#undefined-var" in f or "undefined" in f.lower()
+               for f in bad_var):
+        print("installer_lint atom selftest: FAIL - undefined #variable "
+              "passed")
+        ok = False
+    if ok:
+        print("installer_lint atom selftest: OK (39<<16 and undefined "
+              "#variable both fail)")
+    return ok
 
 
 def selftest(script_path, doc_path):
@@ -450,7 +515,9 @@ def main(argv):
     doc = "docs/commands.md"
     try:
         if "--selftest" in flags:
-            return 0 if selftest(script, doc) else 1
+            r1 = selftest(script, doc)
+            r2 = atom_selftest()
+            return 0 if (r1 == 0 and r2 == 0) else 1
         findings = lint_files(script, doc)
     except (LintError, OSError) as exc:
         print("installer_lint: ERROR: %s" % exc)

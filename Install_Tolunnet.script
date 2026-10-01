@@ -13,12 +13,12 @@
 (welcome
   "Welcome to the tolunnet 1.2.0-rc5 Installation.\n\nThe tolunnet package installs a TCP/IP stack and bsdsocket.library v4.1 runtime for AmigaOS 3.0 or newer on 68000-class Amigas.\n\nAuthor: Ismail Ozturk (tolon)\n"
 )
-;END GENERATED-WELCOME
-
 ; 11ab item 2b: refuse to run on anything older than OS 3.0.
-(if (< (getversion "exec.library" (resident)) 39<<16)
+; 11ac item 1: Installer has no infix operators - shiftleft, not <<.
+(if (< (getversion "exec.library" (resident)) (shiftleft 39 16))
   (abort "tolunnet needs AmigaOS 3.0 (exec.library V39) or newer. Installation aborted.")
 )
+;END GENERATED-WELCOME
 
 (if (> @user-level 0)
   (message "Installing tolunnet binaries to SYS:C/ ...")

@@ -54,6 +54,17 @@ def welcome_section(version):
                '%s%sAuthor: Ismail Ozturk (tolon)%s"'
                % (version, BSN, BSN, BSN, BSN, BSN))
     out.append(')')
+    # 11ab item 2b / 11ac item 1: the OS gate is generated too -
+    # and uses (shiftleft 39 16): the Installer has no infix ops.
+    out.append('; 11ab item 2b: refuse to run on anything older '
+               'than OS 3.0.')
+    out.append('; 11ac item 1: Installer has no infix operators - '
+               'shiftleft, not <<.')
+    out.append('(if (< (getversion "exec.library" (resident)) '
+               '(shiftleft 39 16))')
+    out.append('  (abort "tolunnet needs AmigaOS 3.0 (exec.library '
+               'V39) or newer. Installation aborted.")')
+    out.append(')')
     out.append(W_END)
     return NL.join(out)
 
