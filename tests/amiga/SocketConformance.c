@@ -6854,7 +6854,15 @@ static void tc_floppy_install(void)
         Close(fh);
         if (n < 0) n = 0;
         so[n] = '\0';
-        tapf("# %s: script output (%ld bytes):\n%s\n", label, (long)n, so);
+        /* tapf truncates long lines - print head and TAIL (the
+         * tail carries the failure text) */
+        tapf("# %s: script output head: %.200s\n", label, so);
+        if (n > 400) {
+            tapf("# %s: script output tail: %s\n", label,
+                 so + n - 400);
+        } else {
+            tapf("# %s: script output tail: %s\n", label, so);
+        }
     } else {
         tapf("# %s: script output file missing\n", label);
     }
@@ -6931,6 +6939,20 @@ static void tc_floppy_install(void)
         return;
     }
     tapf("# %s: walked %d bytes of listing\n", label, used);
+
+    /* 11ad: the walked listing's FIRST line has no leading newline,
+     * and the "\n<line>\n" probes below require one - prefix a
+     * newline to both buffers (TolunnetSetup.info sits first in the
+     * FFS hash order and was reported missing for this reason). */
+    {
+        static char exp2[8200], got2[8200];
+        snprintf(exp2, sizeof(exp2), "\n%s", exp);
+        snprintf(got2, sizeof(got2), "\n%s", got);
+        memcpy(exp, exp2, sizeof(exp) - 1);
+        exp[sizeof(exp) - 1] = '\0';
+        memcpy(got, got2, sizeof(got) - 1);
+        got[sizeof(got) - 1] = '\0';
+    }
 
     p = exp;
     while (p && *p) {
