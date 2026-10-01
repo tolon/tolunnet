@@ -458,7 +458,34 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
 
     # ---- run headless ---------------------------------------------------
     rm -f "$WORK_DIR/conformance.log" "$WORK_DIR/conformance2.log" "$WORK_DIR/bench-done" "$WORK_DIR/tolunnet-task.log" "$WORK_DIR/bsdsocktest.log" "$WORK_DIR"/wizard-*.iff "$WORK_DIR"/prefs-*.iff "$WORK_DIR"/crash-*.iff "$WORK_DIR"/prefs-crash.log "$WORK_DIR"/TolunnetPrefs.map
-    CFG_WIN=$(cygpath -w "$REPO_ROOT/ci/tolunnet-$cfg.uae")
+    # 11aa item 3: attach the Gotek disk set as DF0/DF1 when it is
+    # built, and stage the expected list for tc_floppy_install.
+    DISK1=$(ls "$REPO_ROOT"/build/tolunnet-*-disk1.adf 2>/dev/null | head -1)
+    if [ -n "$DISK1" ] && [ -f "$DISK1" ]; then
+        DISK2=$(ls "$REPO_ROOT"/build/tolunnet-*-disk2.adf 2>/dev/null | head -1)
+        RUN_CFG="$REPO_ROOT/ci/.bench-floppy.uae"
+        cp "$REPO_ROOT/ci/tolunnet-$cfg.uae" "$RUN_CFG"
+        # the base configs disable the drives (floppy0type=-1);
+        # re-enable DD drives and insert the images
+        echo "floppy0type=0" >> "$RUN_CFG"
+        echo "floppy1type=0" >> "$RUN_CFG"
+        echo "floppy0=$(cygpath -w "$DISK1")" >> "$RUN_CFG"
+        echo "floppy1=$(cygpath -w "$DISK2")" >> "$RUN_CFG"
+        CFG_WIN=$(cygpath -w "$RUN_CFG")
+        say "floppies attached: $(basename "$DISK1") DF0, $(basename "$DISK2") DF1"
+        EXP="ci/.adf-expected.txt"
+        : > "$EXP"
+        while read -r mpath mdisk; do
+            [ -z "$mpath" ] && continue
+            [ "$mpath" = "Disk.info" ] && continue
+            if [ -f "$REPO_ROOT/$mpath" ]; then mfile="$REPO_ROOT/$mpath"; else mfile="$REPO_ROOT/build/release/tolunnet/$mpath"; fi
+            [ -f "$mfile" ] || continue
+            echo "$mpath $(wc -c < "$mfile")" >> "$EXP"
+        done < <(awk 'NF==2 && ($2=="1" || $2=="2")' "$REPO_ROOT/scripts/adf_manifest.txt")
+        xd delete S/adf-expected.txt >/dev/null 2>&1
+        xd write "$EXP" S/adf-expected.txt || die "staging adf-expected failed"
+    fi
+    CFG_WIN=${CFG_WIN:-$(cygpath -w "$REPO_ROOT/ci/tolunnet-$cfg.uae")}
     say "launching WinUAE headless ($CFG_WIN), timeout ${TIMEOUT_SECS}s"
     "$WINUAE" -f "$CFG_WIN" >/dev/null 2>&1 &
 
