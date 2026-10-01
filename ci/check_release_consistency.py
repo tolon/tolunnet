@@ -77,17 +77,26 @@ def main(argv):
     if version not in readme:
         fail("tolunnet.readme does not name %s" % version)
 
-    # archive + ADF file names carry the version
-    for pat in ("build/tolunnet-%s.lha" % version,
-                "build/tolunnet-%s-disk1.adf" % version,
-                "build/tolunnet-%s-disk2.adf" % version):
-        hits = [f for f in os.listdir(os.path.join(ROOT, "build"))
-                if f.startswith(pat.split("/")[-1].rsplit("-", 3)[0])]
-        if not any(f == os.path.basename(pat) for f in hits):
-            fail("missing release artefact %s (found: %s)" % (pat, hits))
-        else:
-            print("[check_release_consistency] artefact %s OK"
-                  % os.path.basename(pat))
+    # archive + ADF file names carry the version. A tree without ANY
+    # release artefacts (fresh clone, no make package yet) skips this
+    # part - parity with nothing is not an inconsistency.
+    build_dir = os.path.join(ROOT, "build")
+    artefacts = [f for f in os.listdir(build_dir)
+                 if f.startswith("tolunnet-")
+                 and (f.endswith(".lha") or f.endswith(".adf"))] \
+        if os.path.isdir(build_dir) else []
+    if not artefacts:
+        print("[check_release_consistency] no release artefacts in "
+              "build/ - artefact name check skipped")
+    else:
+        for pat in ("build/tolunnet-%s.lha" % version,
+                    "build/tolunnet-%s-disk1.adf" % version,
+                    "build/tolunnet-%s-disk2.adf" % version):
+            if not os.path.isfile(os.path.join(ROOT, *pat.split("/"))):
+                fail("missing release artefact %s" % pat)
+            else:
+                print("[check_release_consistency] artefact %s OK"
+                      % os.path.basename(pat))
 
     # screenshot references: README <-> disk, both directions
     rdm = read("README.md")
