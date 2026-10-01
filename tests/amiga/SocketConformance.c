@@ -5704,6 +5704,112 @@ static int tn_file_contains(const char *path, const char *needle)
  * NetShutdown comes back from the backup, the new nc is deleted, the
  * pre-install User-Startup and bsdsocket.library return, and the
  * backup dir is removed. */
+/* 11ac item 2: the REAL C:Installer must parse and walk the whole
+ * script. The bench never ran the shipped Installer before - the lint
+ * and the strstr checks cannot catch a syntax error (item 1 proved
+ * it). PRETEND mode runs the script without writing anything and
+ * without starting the GUI wizard ((run ...) is skipped); NOVICE +
+ * DEFUSER keep it non-interactive. First probe prints the tool's REAL
+ * usage template so the invocation form is on record. */
+static void tc_installer_pretend(void)
+{
+    const char *label = "tc_installer_pretend";
+    char cmd[160];
+    BPTR fh;
+    LONG n, rc;
+
+    /* probe: the Installer's own usage text */
+    DeleteFile((STRPTR)"Work:installer-usage.txt");
+    rc = SystemTags("C:Installer ? >Work:installer-usage.txt",
+                    SYS_Asynch, FALSE,
+                    SYS_Input, Open((STRPTR)"NIL:", MODE_OLDFILE),
+                    SYS_Output, Open((STRPTR)"NIL:", MODE_NEWFILE),
+                    NP_StackSize, 32768, TAG_END);
+    fh = Open((STRPTR)"Work:installer-usage.txt", MODE_OLDFILE);
+    if (fh != (BPTR)0) {
+        char ub[513];
+        n = Read(fh, ub, 512);
+        Close(fh);
+        if (n < 0) n = 0;
+        ub[n] = '\0';
+        tapf("# %s: Installer ? rc=%ld template:\n%s\n", label,
+             (long)rc, ub);
+    } else {
+        tapf("# %s: Installer ? rc=%ld, no usage file\n", label,
+             (long)rc);
+    }
+
+    /* the pretend run over the staged script */
+    DeleteFile((STRPTR)"Work:installer-pretend.log");
+    snprintf(cmd, sizeof(cmd),
+             "C:Installer S:Install_Tolunnet.script PRETEND NOLOG "
+             "NOPRINT DEFUSER NOVICE >Work:installer-pretend.log");
+    rc = SystemTags(cmd, SYS_Asynch, FALSE,
+                    SYS_Input, Open((STRPTR)"NIL:", MODE_OLDFILE),
+                    SYS_Output, Open((STRPTR)"NIL:", MODE_NEWFILE),
+                    NP_StackSize, 32768, TAG_END);
+    tapf("# %s: Installer rc=%ld\n", label, (long)rc);
+
+    fh = Open((STRPTR)"Work:installer-pretend.log", MODE_OLDFILE);
+    if (fh == (BPTR)0) {
+        TAP_NOTOK(label, "no pretend log - Installer did not run");
+        return;
+    }
+    {
+        static char log[16384];
+        n = Read(fh, log, (LONG)sizeof(log) - 1);
+        Close(fh);
+        if (n < 0) n = 0;
+        log[n] = '\0';
+
+        if (rc != 0) {
+            int printed = 0;
+            char *p = log;
+            tapf("# %s: first log lines:\n", label);
+            while (p && *p && printed < 10) {
+                char *eol = strchr(p, '\n');
+                int len = eol ? (int)(eol - p) : (int)strlen(p);
+                tapf("#   %.*s\n", len, p);
+                printed++;
+                p = eol ? eol + 1 : NULL;
+            }
+            TAP_NOTOK(label, "Installer returned an error");
+            return;
+        }
+        {
+            static const char *needles[3] = { "error", "Undefined",
+                                              "unknown" };
+            int i;
+            for (i = 0; i < 3; i++) {
+                static char low[16384];
+                int k;
+                for (k = 0; log[k] && k < (int)sizeof(low) - 1; k++) {
+                    char c = log[k];
+                    low[k] = (c >= 'A' && c <= 'Z') ? c + 32 : c;
+                }
+                low[k] = '\0';
+                if (strstr(low, needles[i]) != NULL) {
+                    tapf("# %s: log contains %r\n", label, needles[i]);
+                    TAP_NOTOK(label, "pretend log reports an error");
+                    return;
+                }
+            }
+        }
+        if (strstr(log, "C/tolunnet") == NULL) {
+            TAP_NOTOK(label, "log never mentions the first copyfiles "
+                             "source (C/tolunnet)");
+            return;
+        }
+        if (strstr(log, "TolunnetSetup") == NULL) {
+            TAP_NOTOK(label, "log never mentions the last copyfiles "
+                             "source (TolunnetSetup)");
+            return;
+        }
+    }
+
+    TAP_OK(label);
+}
+
 static void tc_undo_sandbox(void)
 {
     const char *label = "tc_undo_sandbox";
@@ -9667,6 +9773,7 @@ int main(int argc, char *argv[])
     TN_RUN(tc_cmd_stop_start); /* LAST-but-one: stops the daemon */
     TN_RUN(tc_daemon_noconfig_start); /* 10b item 2: bare boot, no config (daemon already stopped) */
     TN_RUN(tc_undo_sandbox); /* 10c item 2: undo proven in a T: sandbox */
+    TN_RUN(tc_installer_pretend); /* 11ac item 2: real Installer */
     TN_RUN(tc_prefs_save_keeps_old); /* 11j item 2: overwrite keeps the old file in .bak */
     TN_RUN(tc_safe_replace); /* 11k item 1: one safe-replace helper (RAM: sandbox) */
     TN_RUN(tc_boot_block); /* 11l item 2: byte-exact boot block editor (RAM: sandbox) */
