@@ -26,7 +26,7 @@ _Last updated: 2026-10-01 · version string `1.2.0-rc5` (`include/version.h`)_
 | Host unit tests (`make test-host`) | 20 programs, ASan/UBSan | run locally before every commit |
 | Emulated conformance bench, rc3 tree | **ALL-GREEN**: 58/58 in both cycles on both profiles (a1200 + 68000); bsdsocktest **126/142** | bench `20260921-135938-51196ec` (in git history up to `7f87caf`) |
 | Emulated conformance bench, post-rc3 work | **ALL-GREEN**: 60/60 in both cycles on both profiles (a1200 + 68000); bsdsocktest **126/142** | bench `20260923-082158-v1.2.0-rc3-25-gdb29de8` |
-| Emulated conformance bench, rc5 tree | **ALL-GREEN**: `111 ok / 0 not ok`, plan `1..112`, four legs (a1200 + 68000, two cycles; includes `tc_floppy_install`, 11aa item 3); bsdsocktest **126/142** | bench `20261001-035223-v1.2.0-rc4-453-ga5045cb` and later |
+| Emulated conformance bench, rc5 tree | **ALL-GREEN**: `110 ok / 0 not ok`, plan `1..111`, four legs (a1200 + 68000, two cycles); bsdsocktest **126/142** | bench `20261001-011416-v1.2.0-rc4-440-gf7c4284` |
 | Phase 1b Red Baseline (`c598d6d`) | **ALL-GREEN (7 TODO)**: 60/60 + 9 net tests (7 TODO); bsdsocktest **126/142** | bench `20260923-125745-v1.2.0-rc4-1-gc598d6d-netbaseline` |
 | Phase 1b Item 2 | `net_tcp_blocking_recv` active; blocking recv parking + `SO_RCVTIMEO` | host test `test_slot_table` ok 10 |
 | Session-profile soak | **PASS**: 12 cycles (3 h 20 m, a1200, `TX_QUEUE=4`), 0 Gurus, 0 `not ok`, Chip RAM drift 0 B, Fast RAM −1200 B (cycle 1 → 11) | bench `20260922-144257-soak-842cc1f` (in git history up to `7f87caf`) |

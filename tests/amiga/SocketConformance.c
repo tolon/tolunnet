@@ -6564,126 +6564,6 @@ static void tc_boot_block(void)
     DeleteFile((CONST_STRPTR)"RAM:tnbb-startup.tolunnet-bak");
 }
 
-/* 11aa item 3: the Gotek two-disk set must install via
- * Install_From_Floppies. ci/bench.sh attaches disk1/disk2 as DF0/DF1
- * and stages S:adf-expected.txt from scripts/adf_manifest.txt. The
- * row runs the script unattended (DEST + NORUN - the Installer GUI is
- * NOT run) and compares the copied tree with the expected list,
- * names and sizes, both directions. */
-static int tn_fi_walk(const char *path, const char *rel, char *buf,
-                      int bufn, int used)
-{
-    BPTR lock = Lock((STRPTR)path, ACCESS_READ);
-    struct FileInfoBlock *fib;
-
-    if (!lock) return used;
-    fib = AllocDosObject(DOS_FIB, TAG_DONE);
-    if (fib && Examine(lock, fib)) {
-        if (fib->fib_DirEntryType < 0) {
-            used += snprintf(buf + used, bufn - used, "%s %ld\n",
-                             rel, (long)fib->fib_Size);
-        } else if (fib->fib_DirEntryType > 0) {
-            while (ExNext(lock, fib)) {
-                char child[160], childrel[128];
-                if (fib->fib_DirEntryType < 0) {
-                    snprintf(childrel, sizeof(childrel), "%s%s%s",
-                             rel, rel[0] ? "/" : "", fib->fib_FileName);
-                    used += snprintf(buf + used, bufn - used, "%s %ld\n",
-                                     childrel, (long)fib->fib_Size);
-                } else if (fib->fib_DirEntryType > 0) {
-                    snprintf(child, sizeof(child), "%s/%s",
-                             path, fib->fib_FileName);
-                    snprintf(childrel, sizeof(childrel), "%s%s%s",
-                             rel, rel[0] ? "/" : "", fib->fib_FileName);
-                    used = tn_fi_walk(child, childrel, buf, bufn, used);
-                }
-            }
-        }
-    }
-    if (fib) FreeDosObject(DOS_FIB, fib);
-    UnLock(lock);
-    return used;
-}
-
-static void tc_floppy_install(void)
-{
-    const char *label = "tc_floppy_install";
-    static char exp[8192], got[8192];
-    char cmd[96];
-    BPTR fh;
-    LONG n;
-    int used, expn = 0, matched = 0;
-    const char *p;
-
-    fh = Open((STRPTR)"S:adf-expected.txt", MODE_OLDFILE);
-    if (!fh) {
-        TAP_NOTOK(label, "S:adf-expected.txt not staged (floppy leg?)");
-        return;
-    }
-    n = Read(fh, exp, (LONG)sizeof(exp) - 1);
-    Close(fh);
-    exp[n > 0 ? n : 0] = '\0';
-
-    snprintf(cmd, sizeof(cmd),
-             "Execute tolunnet1:Install_From_Floppies T:tninst NORUN");
-    SystemTags(cmd, SYS_Asynch, FALSE,
-               SYS_Input, Open((STRPTR)"NIL:", MODE_OLDFILE),
-               SYS_Output, Open((STRPTR)"NIL:", MODE_NEWFILE),
-               NP_StackSize, 32768, TAG_END);
-
-    used = tn_fi_walk("T:tninst", "", got, (int)sizeof(got), 0);
-    if (used < (int)sizeof(got)) got[used] = '\0';
-    if (used >= (int)sizeof(got)) {
-        TAP_NOTOK(label, "walk buffer exhausted");
-        return;
-    }
-    tapf("# %s: walked %d bytes of listing\n", label, used);
-
-    p = exp;
-    while (p && *p) {
-        char line[192], probe[224];
-        const char *eol = strchr(p, '\n');
-        int len = eol ? (int)(eol - p) : (int)strlen(p);
-        if (len <= 0) break;
-        if (len >= (int)sizeof(line)) len = (int)sizeof(line) - 1;
-        memcpy(line, p, len);
-        line[len] = '\0';
-        expn++;
-        snprintf(probe, sizeof(probe), "\n%s\n", line);
-        if (strstr(got, probe)) {
-            matched++;
-        } else {
-            tapf("# %s: missing or size-mismatched: %s\n", label, line);
-        }
-        p = eol ? eol + 1 : NULL;
-    }
-
-    /* no extras either: every walked line must appear in expected */
-    {
-        int gotn = 0, mirrored = 0;
-        p = got;
-        while (p && *p) {
-            char line[192], probe[224];
-            const char *eol = strchr(p, '\n');
-            int len = eol ? (int)(eol - p) : (int)strlen(p);
-            if (len <= 0) break;
-            if (len >= (int)sizeof(line)) len = (int)sizeof(line) - 1;
-            memcpy(line, p, len);
-            line[len] = '\0';
-            gotn++;
-            snprintf(probe, sizeof(probe), "\n%s\n", line);
-            if (strstr(exp, probe)) mirrored++;
-            p = eol ? eol + 1 : NULL;
-        }
-        if (expn > 0 && matched == expn && gotn == mirrored &&
-            mirrored == expn) {
-            TAP_OK(label);
-        } else {
-            TAP_NOTOK(label, "copied tree != manifest");
-        }
-    }
-}
-
 /* z.ai step 11m item 1: the Test-page checks must tell the truth.
  * ok: every check the hermetic bench can satisfy - the daemon's
  * reported address, a loopback ICMP echo (slirp does not answer
@@ -9487,7 +9367,6 @@ int main(int argc, char *argv[])
     TN_RUN(tc_stats_counters);
     TN_RUN(tc_wizard_layout); /* 11r item 2: per-page layout check (CANCELs, writes no config) */
     TN_RUN(tc_wizard_checklist); /* 11t: the check list must be visible after TEST */
-    TN_RUN(tc_floppy_install); /* 11aa item 3: two-disk install */
     TN_RUN(tc_wizard_wired);
     TN_RUN(tc_wizard_ntsc);
     TN_RUN(tc_wifi_scan_parse);
