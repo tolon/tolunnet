@@ -185,7 +185,7 @@ make align-check
 
 Outputs in `build/`:
 - `build/tolunnet-<version>.lha`: the full release, with binaries, icons, installer, `README.guide` and licences.
-- `build/tolunnet.adf`: an 880 KB FFS floppy with the stripped `C/` binaries, `usergroup.library`, `TolunnetSetup`, `LICENSE`, the `Disk.info` volume icon, `README.guide` and `tolunnet.readme` — whatever fits, filled by priority; anything that does not fit is skipped and reported at build time (currently the `Install_Tolunnet` script, `TolunnetPrefs` and `THIRD_PARTY_LICENSES.md` do not fit).
+- `build/tolunnet-<version>-disk1.adf` / `-disk2.adf`: the Gotek/FlashFloppy two-disk set (FFS, 880 KB each), built from the stripped release tree with the explicit manifest in `scripts/adf_manifest.txt`. Merging both disks into one drawer reproduces the package tree byte for byte; disk 1 carries `Install_From_Floppies` to bootstrap the install. The `build/release-assets/` folder bundles the LHA, both ADFs and `SHA256SUMS.txt`.
 
 ---
 

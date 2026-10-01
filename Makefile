@@ -414,7 +414,9 @@ $(BSDTEST_BIN): $(BSDTEST_OBJS)
 VERSION := $(shell sed -n 's/^#define TOLUNNET_VERSION "\(.*\)"$$/\1/p' include/version.h)
 PACKAGE_DIR = $(BUILD)/release/tolunnet
 LHA_ARCHIVE = $(BUILD)/tolunnet-$(VERSION).lha
-ADF_IMAGE = $(BUILD)/tolunnet.adf
+# 11aa item 2: the Gotek set is TWO disks; the single tolunnet.adf is gone.
+ADF_DISK1 = $(BUILD)/tolunnet-$(VERSION)-disk1.adf
+ADF_DISK2 = $(BUILD)/tolunnet-$(VERSION)-disk2.adf
 XDFTOOL ?= $(shell PATH="$$PATH:$$HOME/.local/bin" which xdftool 2>/dev/null || echo $$HOME/.local/bin/xdftool)
 
 # 11y item 2: release-stage produces EXACTLY the shipped tree
@@ -478,6 +480,8 @@ release-stage: all
 	# a stale 213-line fork of it.
 	cp Install_Tolunnet.script $(PACKAGE_DIR)/Install_Tolunnet
 	cp Install_Tolunnet.info $(PACKAGE_DIR)/Install_Tolunnet.info
+	cp Install_From_Floppies $(PACKAGE_DIR)/Install_From_Floppies
+	cp Install_From_Floppies.info $(PACKAGE_DIR)/Install_From_Floppies.info
 	cp README.guide $(PACKAGE_DIR)/
 	cp README.guide.info $(PACKAGE_DIR)/
 	cp tolunnet.readme $(PACKAGE_DIR)/
@@ -495,16 +499,20 @@ package: release-stage
 	python3 ci/check_package_parity.py $(LHA_ARCHIVE) $(PACKAGE_DIR)
 	# 11aa item 1: every shipped binary carries its $VER tag.
 	python3 ci/check_version_tags.py $(PACKAGE_DIR)
-	@echo "Package successfully created: $(LHA_ARCHIVE)"
-	@$(MAKE) adf
+	# 11aa item 2: the two-disk Gotek set; build_adf.py also
+	# assembles build/release-assets/ (lha + disks + SHA256SUMS.txt).
+	@$(MAKE) adf LHA_DONE=$(LHA_ARCHIVE)
+	# read the archive AND both disks back before calling it done
+	python3 ci/check_package_parity.py $(LHA_ARCHIVE) $(PACKAGE_DIR) \
+		--adfs $(BUILD)/tolunnet-$(VERSION)-disk1.adf $(BUILD)/tolunnet-$(VERSION)-disk2.adf
+	@echo "Package successfully created: $(LHA_ARCHIVE) + disk1/disk2 ADFs"
 
 .PHONY: adf
 installer:
 	python3 scripts/gen_installer.py
 
 adf: release-stage
-	@echo "--- Building ADF Floppy Image (priority-packed from the stripped release tree, 11z item 2) ---"
-	python3 scripts/build_adf.py
+	python3 scripts/build_adf.py $(LHA_DONE)
 
 clean:
 	rm -rf $(BUILD)

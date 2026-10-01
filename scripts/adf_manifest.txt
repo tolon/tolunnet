@@ -1,0 +1,67 @@
+# adf_manifest.txt - explicit path -> disk assignment for the two-disk
+# Gotek release set (11aa item 2). No size heuristic: every member of
+# the package tree MUST appear exactly once with disk 1 or disk 2;
+# scripts/build_adf.py fails the build on unassigned paths, duplicate
+# assignments or a disk that does not fit. Paths are relative to the
+# package tree root (the drawer the LHA extracts).
+#
+# disk 1 carries the installer bootstrap, the tested installer script,
+# the Commodore Installer binary (both copies), the docs and C/tolunnet
+# plus the smallest C/ commands. disk 2 carries the rest, including
+# TolunnetSetup, TolunnetPrefs and Libs/usergroup.library.
+
+# --- disk 1: install bootstrap, installer, docs, daemon ---
+Install_From_Floppies           1
+Install_From_Floppies.info      1
+Install_Tolunnet                1
+Install_Tolunnet.info           1
+Installer                       1
+C/Installer                     1
+README.guide                    1
+README.guide.info               1
+tolunnet.readme                 1
+LICENSE                         1
+THIRD_PARTY_LICENSES.md         1
+Disk.info                       1
+C/tolunnet                      1
+C/AddNetInterface               1
+C/AddNetRoute                   1
+C/arp                           1
+C/CheckNetConfig                1
+C/ConfigureNetInterface         1
+C/DeleteNetRoute                1
+C/GetNetStatus                  1
+C/NetShutdown                   1
+C/Offline                       1
+C/Online                        1
+C/tolunnet.info                 1
+
+# --- disk 2: the rest, incl. Setup, Prefs, usergroup.library ---
+C/hostname                      2
+C/ftp                           2
+C/iperf                         2
+C/nc                            2
+C/nslookup                      2
+C/route                         2
+C/sntp                          2
+C/telnet                        2
+C/tftp                          2
+C/traceroute                    2
+C/TestSocket                    2
+C/ShowNetStatus                 2
+C/TolunnetControl               2
+C/TolunnetGet                   2
+C/TolunnetPing                  2
+C/ping                          2
+C/TolunnetStatus                2
+C/ifconfig                      2
+C/netstat                       2
+C/wget                          2
+C/curl                          2
+C/whois                         2
+C/TolunnetSetup                 2
+TolunnetSetup                   2
+TolunnetSetup.info              2
+TolunnetPrefs                   2
+TolunnetPrefs.info              2
+Libs/usergroup.library          2

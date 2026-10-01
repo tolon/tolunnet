@@ -9,7 +9,7 @@ _Last updated: 2026-10-01 · version string `1.2.0-rc5` (`include/version.h`)_
 | Latest release candidate | **1.2.0-rc5** |
 | Changes in rc5 | CANCEL/break-signal correctness, WaitSelect per 4.4BSD, errno truth (EDESTADDRREQ family), the 68000 shutdown/freeze class closed, command output number fixes, ftp/nc/TolunnetGet rework, nslookup answer-vs-server + PTR default, honest wizard Test page (stack-reported values, SKIPPED states), installer parity between bench and archive (see CHANGELOG) |
 | Package LHA | `build/tolunnet-1.2.0-rc5.lha` (`d6cd572af853f5d690b801661f76dbc1a37df9d54c5b26fd6dc4651f3c1e4308`) |
-| Package ADF | `build/tolunnet.adf` (`6419f2844c13fa3b9f47feaea8d5a39b6be6fc58ed8fcfb851c44ed8cb94bc47`) — 880 KB FFS, priority-packed from the stripped release tree (must-haves C/ + Libs + TolunnetSetup + LICENSE always; then Disk.info, installer pair, prefs pair, docs until full; skips are printed at build time) |
+| Package ADF | `build/tolunnet-1.2.0-rc5-disk1.adf` + `-disk2.adf` — the Gotek two-disk set (FFS DD 880 KB each, explicit manifest `scripts/adf_manifest.txt`); merging both disks into one drawer reproduces the package tree byte for byte; `Install_From_Floppies` on disk 1 bootstraps the install |
 | TX pipelining | `TX_QUEUE=0` (synchronous `DoIO`) is the release default. The TX pool is proven in the bench with `TX_QUEUE=4`; the real-hardware default is still to be decided. |
 
 ## Library coverage

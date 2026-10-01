@@ -37,6 +37,7 @@ EXPECTED_C = [
 ]
 
 EXPECTED_ROOT = [
+    "Install_From_Floppies", "Install_From_Floppies.info",
     "Install_Tolunnet", "Install_Tolunnet.info", "Installer",
     "Libs/usergroup.library", "LICENSE", "README.guide",
     "README.guide.info", "THIRD_PARTY_LICENSES.md", "TolunnetPrefs",
@@ -86,10 +87,21 @@ def script_dir():
 
 
 def main(argv):
-    if len(argv) != 3:
+    # usage: check_package_parity.py <archive.lha> <release_dir>
+    #        [--adfs <disk1.adf> <disk2.adf>]   (11aa item 2)
+    rest = argv[1:]
+    adfs = []
+    if "--adfs" in rest:
+        i = rest.index("--adfs")
+        adfs = rest[i + 1:i + 3]
+        if len(adfs) != 2:
+            print(__doc__)
+            return 2
+        rest = rest[:i] + rest[i + 3:]
+    if len(rest) != 2:
         print(__doc__)
         return 2
-    archive, release_dir = argv[1], argv[2]
+    archive, release_dir = rest[0], rest[1]
     data = open(archive, "rb").read()
     members = read_lha_members(data)
 
@@ -160,7 +172,112 @@ def main(argv):
         print("[check_package_parity] FAIL: %d problem(s)" % bad)
         return 1
     print("[check_package_parity] OK: archive parity verified")
+
+    if adfs:
+        adf_bad = check_adf_set(adfs, release_dir)
+        bad += adf_bad
+
+    if bad:
+        print("[check_package_parity] FAIL: %d problem(s) total" % bad)
+        return 1
     return 0
+
+
+def check_adf_set(adfs, release_dir):
+    """11aa item 2: unpack both Gotek disks and require that their
+    union reproduces the package tree byte for byte (same member
+    list, same md5, no path on both disks). Disk.info is the volume
+    icon of disk 1, compared against the repo root file."""
+    import shutil
+    import subprocess
+    import tempfile
+
+    xdf = os.environ.get(
+        "XDFTOOL", os.path.expanduser("~/.local/bin/xdftool"))
+    if not (os.access(xdf, os.X_OK) or shutil.which(xdf)
+            or shutil.which(os.path.basename(xdf))):
+        print("[check_package_parity] WARNING: xdftool not found - "
+              "ADF set parity skipped")
+        return 0
+
+    # the union must equal the 52 package members (+ Disk.info chrome)
+    want = {}
+    for dirpath, dirnames, filenames in os.walk(release_dir):
+        for fn in filenames:
+            full = os.path.join(dirpath, fn)
+            rel = os.path.relpath(full, release_dir).replace("\\", "/")
+            want[rel] = md5(open(full, "rb").read())
+    disk_info = os.path.join(script_dir(), "Disk.info")
+    disk_info_md5 = md5(open(disk_info, "rb").read())
+
+    union = {}
+    dup = []
+    bad = 0
+    for adf in adfs:
+        if not os.path.isfile(adf):
+            print("[check_package_parity] FAIL: ADF missing: %s" % adf)
+            return 1
+        tmp = tempfile.mkdtemp(prefix="adfcheck-")
+        res = subprocess.run([xdf, "-f", adf, "unpack", tmp],
+                             capture_output=True, text=True)
+        if res.returncode != 0:
+            print("[check_package_parity] FAIL: cannot unpack %s" % adf)
+            shutil.rmtree(tmp, ignore_errors=True)
+            return 1
+        # xdftool unpack nests everything under <image-basename>/
+        # and drops <image-basename>.xdfmeta/.blkdev sidecars - strip
+        # the sidecars, then descend into the single content dir
+        for entry in list(os.listdir(tmp)):
+            if entry.endswith(".xdfmeta") or entry.endswith(".blkdev"):
+                os.remove(os.path.join(tmp, entry))
+        entries = os.listdir(tmp)
+        if len(entries) == 1 and os.path.isdir(os.path.join(tmp,
+                                                            entries[0])):
+            tmp = os.path.join(tmp, entries[0])
+        for dirpath, dirnames, filenames in os.walk(tmp):
+            for fn in filenames:
+                full = os.path.join(dirpath, fn)
+                rel = os.path.relpath(full, tmp).replace("\\", "/")
+                digest = md5(open(full, "rb").read())
+                if rel in union:
+                    print("[check_package_parity] FAIL: %s is on BOTH "
+                          "disks" % rel)
+                    dup.append(rel)
+                union[rel] = digest
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    for rel in sorted(union):
+        if rel == "Disk.info":
+            ok = union[rel] == disk_info_md5
+            print("[check_package_parity] %-42s %-32s %s (volume icon)"
+                  % (rel, union[rel], "OK" if ok else "DIFF"))
+            if not ok:
+                bad += 1
+            continue
+        if rel not in want:
+            print("[check_package_parity] %-42s %-32s %s"
+                  % (rel, union[rel], "DIFF (not a package member)"))
+            bad += 1
+            continue
+        ok = union[rel] == want[rel]
+        print("[check_package_parity] %-42s %-32s %s (on disks)"
+              % (rel, union[rel], "OK" if ok else "DIFF"))
+        if not ok:
+            bad += 1
+    for rel in sorted(want):
+        if rel not in union:
+            print("[check_package_parity] %-42s %-32s %s"
+                  % (rel, want[rel], "DIFF (missing from the disk set)"))
+            bad += 1
+    if dup:
+        bad += len(dup)
+    if bad:
+        print("[check_package_parity] FAIL: ADF set parity: %d problem(s)"
+              % bad)
+    else:
+        print("[check_package_parity] OK: ADF set union == package tree "
+              "(%d members + Disk.info), no duplicates" % len(want))
+    return bad
 
 
 if __name__ == "__main__":
