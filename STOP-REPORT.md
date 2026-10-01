@@ -1,37 +1,45 @@
-# STOP-REPORT — 11ab item 4 (floppy install row): 3 counted reds
+# STOP-REPORT — 11ab: floppy-install row still red after the stale-disk fix
 
-## What was attempted
-`tc_floppy_install` (restored by reverting fb25192: commits cb920eb,
-26b750f, 40d60f4, 906500a) executes
-`tolunnet1:Install_From_Floppies T:tninst NORUN` on the bench legs with
-disk1/disk2 attached as DF0/DF1 and compares the copied tree with the
-manifest.
+## Item 4 stop (superseded by the findings below)
+Item 4 burned its 3 counted benches (20261001-132627, -135130, -141853)
+against STALE floppy images: 11aa's `scripts/build_adf.py` hardcoded the
+removed `Install_From_Floppies.info` in `package_members()`, so every
+`make package` since 11ab item 1 died in the ADF phase and never
+rebuilt the disks - all three reds executed the OLD one-argument
+script. The builder is fixed (commit 49eaf0c) and the disks now carry
+the current script (unpack md5 868cfaed == repo).
 
-## The three counted reds (all `not ok 40 - tc_floppy_install`)
-1. `20261001-132627-v1.2.0-rc4-471-g26b750f`: 110 ok / 1 not ok —
-   "walked 0 bytes".
-2. `20261001-135130-v1.2.0-rc4-472-g40d60f4`: 110 ok / 1 not ok —
-   diagnostics: `tolunnet1: mounted=YES`, `Execute rc=20`, script
-   output empty.
-3. `20261001-141853-v1.2.0-rc4-473-g906500a`: 110 ok / 1 not ok —
-   probes: script LISTED on the volume (YES), single-file Copy off the
-   volume rc=0 but the copied bytes were the OLD script, `Execute rc=20`.
+## Item 6 stop (two counted reds in a row - stopping per the rules)
+With FRESH disks the row got much further, but still fails on exactly
+one file:
+1. `20261001-144941-v1.2.0-rc4-476-gb0dbd36` (dest T:tninst):
+   mounted=YES, script listed=YES, probe copy of the script off the
+   volume OK (head ".key"), `Execute rc=10` (the script's own
+   `If WARN`/`Quit 10` fired), tree walked 948 bytes - everything of
+   disk 1 plus MOST of disk 2 copied; exactly ONE file missing:
+   `TolunnetSetup.info 630`.
+2. `20261001-151935-v1.2.0-rc4-477-gd30dc3a` (dest Work:tninst, after
+   removing the T:-RAM-disk theory): byte-identical failure - the same
+   single file missing, `Execute rc=10`, all other 50 members present.
 
-## Root cause (proven AFTER the stop, no further benches)
-The bench attaches `build/tolunnet-1.2.0-rc5-disk[12].adf` — and those
-images were STALE: 11aa's `scripts/build_adf.py` hardcoded
-`Install_From_Floppies.info` in `package_members()`, while 11ab item 1
-removed that file — so every `make package` since 11ab item 1 died in
-the ADF phase (`manifest misses members`) and never rebuilt the disks.
-All three reds therefore executed the OLD one-argument script shipped
-in 11aa, not the fixed script of 11ab item 1. Fix applied after the
-stop (commit "fix(package): the two-disk builder drops the removed
-icon"): the builder matches the manifest again; `make package` is green
-and the disk now carries the current script (md5 868cfaed verified by
-unpacking).
+So the script now works: both volume copies run, 50 of 51 members land
+with correct sizes. The remaining defect is a deterministic single-file
+failure inside AmigaDOS `Copy tolunnet2: "<dest>" ALL CLONE` on
+`TolunnetSetup.info` (630 B, protection ----rwed, sibling of
+`TolunnetPrefs.info` which copies fine from the same FFS image). Cause
+not identified within the bench budget - the one-file Copy failure is
+in the emulated DOS/FFS layer, not visibly in the script.
 
-## Consequence
-Per the work order the README says the floppy-install script is
-UNTESTED IN THE EMULATOR (as of this stop). The step-6 final bench runs
-on the freshly rebuilt disks; its result is reported in the step-6
-section and, if green, supersedes this note.
+## State
+- Suite: `110 ok / 1 not ok`, plan `1..112` on all four legs
+  (everything else green, including the extended `tc_undo_sandbox`).
+- Release assets in `build/release-assets/` are built and parity-checked;
+  the LHA itself is unaffected by the floppy issue.
+- README says the floppy-install path is untested until this row is
+  green; STATUS quotes the honest 110/1 numbers.
+- Not fixed (next session, no budget left): why `Copy` rejects exactly
+  `TolunnetSetup.info` from the FFS image - candidate probes: retry the
+  single file after the bulk copy (does a direct
+  `Copy tolunnet2:TolunnetSetup.info <dest> CLONE` succeed?), compare
+  the FFS directory entry of the two .info siblings, or re-order the
+  manifest so the icon is not the entry that trips the walk.
