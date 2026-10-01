@@ -8,8 +8,8 @@ _Last updated: 2026-10-01 · version string `1.2.0-rc5` (`include/version.h`)_
 |---|---|
 | Latest release candidate | **1.2.0-rc5** |
 | Changes in rc5 | CANCEL/break-signal correctness, WaitSelect per 4.4BSD, errno truth (EDESTADDRREQ family), the 68000 shutdown/freeze class closed, command output number fixes, ftp/nc/TolunnetGet rework, nslookup answer-vs-server + PTR default, honest wizard Test page (stack-reported values, SKIPPED states), installer parity between bench and archive (see CHANGELOG) |
-| Package LHA | `build/tolunnet-1.2.0-rc5.lha` (`d6515ca539bd3e0de9574b02960ed1fa002fd5dc5cb98ff0fcc428eb8d49d9f3`) |
-| Package ADF | `build/tolunnet.adf` (`529e6c217cd6b44afd37ac46433fbd418568d62d51deba204414cea3f936335b`) — 880 KB FFS, priority-packed from the stripped release tree (must-haves C/ + Libs + TolunnetSetup + LICENSE always; then Disk.info, installer pair, prefs pair, docs until full; skips are printed at build time) |
+| Package LHA | `build/tolunnet-1.2.0-rc5.lha` (`d6cd572af853f5d690b801661f76dbc1a37df9d54c5b26fd6dc4651f3c1e4308`) |
+| Package ADF | `build/tolunnet.adf` (`6419f2844c13fa3b9f47feaea8d5a39b6be6fc58ed8fcfb851c44ed8cb94bc47`) — 880 KB FFS, priority-packed from the stripped release tree (must-haves C/ + Libs + TolunnetSetup + LICENSE always; then Disk.info, installer pair, prefs pair, docs until full; skips are printed at build time) |
 | TX pipelining | `TX_QUEUE=0` (synchronous `DoIO`) is the release default. The TX pool is proven in the bench with `TX_QUEUE=4`; the real-hardware default is still to be decided. |
 
 ## Library coverage
