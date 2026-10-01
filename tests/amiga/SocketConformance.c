@@ -6696,10 +6696,10 @@ static void tc_floppy_install(void)
     tapf("# %s: probe Copy rc=%ld, head=%s\n", label, (long)rc,
          tn_file_head_is("T:tnprobe", ".key") ? ".key (ok)"
                                               : "BAD");
-    DeleteFile((STRPTR)"T:tninst.out");
+    DeleteFile((STRPTR)"Work:tninst.out");
     snprintf(cmd, sizeof(cmd),
-             "Execute tolunnet1:Install_From_Floppies T:tninst NORUN"
-             " >T:tninst.out");
+             "Execute tolunnet1:Install_From_Floppies Work:tninst NORUN"
+             " >Work:tninst.out");
     {
         LONG rc = SystemTags(cmd, SYS_Asynch, FALSE,
                              SYS_Input, Open((STRPTR)"NIL:",
@@ -6710,7 +6710,7 @@ static void tc_floppy_install(void)
         tapf("# %s: Execute rc=%ld\n", label, (long)rc);
     }
     {
-        BPTR of = Open((STRPTR)"T:tninst.out", MODE_OLDFILE);
+        BPTR of = Open((STRPTR)"Work:tninst.out", MODE_OLDFILE);
         char ob[401];
         LONG on = 0;
         if (of != (BPTR)0) {
@@ -6722,7 +6722,7 @@ static void tc_floppy_install(void)
         tapf("# %s: script output:\n%s\n", label, ob);
     }
 
-    used = tn_fi_walk("T:tninst", "", got, (int)sizeof(got), 0);
+    used = tn_fi_walk("Work:tninst", "", got, (int)sizeof(got), 0);
     if (used < (int)sizeof(got)) got[used] = '\0';
     if (used >= (int)sizeof(got)) {
         TAP_NOTOK(label, "walk buffer exhausted");
@@ -6754,9 +6754,9 @@ static void tc_floppy_install(void)
      * came across, and the tested installer script has the size of
      * the packaged one. */
     {
-        BPTR lk = Lock((CONST_STRPTR)"T:tninst/C/Installer", ACCESS_READ);
+        BPTR lk = Lock((CONST_STRPTR)"Work:tninst/C/Installer", ACCESS_READ);
         if (lk == (BPTR)0) {
-            tapf("# %s: T:tninst/C/Installer missing\n", label);
+            tapf("# %s: Work:tninst/C/Installer missing\n", label);
             TAP_NOTOK(label, "copied tree != manifest");
             return;
         }
