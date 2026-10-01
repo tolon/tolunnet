@@ -6747,17 +6747,72 @@ static int tn_fi_walk(const char *path, const char *rel, char *buf,
     return used;
 }
 
+/* 11ad item 1: diagnostics-first rewrite of the floppy row. The old
+ * shape ran the script with SYS_Output = NIL:, so its own
+ * `Echo "Copy of disk N failed"` never reached us and we could not tell
+ * WHICH Copy returned WARN. Now: the script's output goes into a real
+ * file and is printed; Work: free space is printed before/after
+ * (hypothesis A: Work: full); each volume copy runs SEPARATELY with its
+ * own rc and output; then targeted probes of the one missing file
+ * (hypotheses B/C). The final assertion is unchanged: the script's own
+ * Work:tninst tree must match the manifest. */
+static LONG tn_run_cap(const char *cmd, const char *outfile,
+                       char *buf, int bufn)
+{
+    BPTR fh;
+    LONG n = 0, rc;
+
+    DeleteFile((STRPTR)outfile);
+    rc = SystemTags(cmd, SYS_Asynch, FALSE,
+                    SYS_Input, Open((STRPTR)"NIL:", MODE_OLDFILE),
+                    SYS_Output, Open((STRPTR)outfile, MODE_NEWFILE),
+                    NP_StackSize, 32768, TAG_END);
+    if (buf != NULL) {
+        fh = Open((STRPTR)outfile, MODE_OLDFILE);
+        if (fh != (BPTR)0) {
+            n = Read(fh, buf, bufn - 1);
+            Close(fh);
+            if (n < 0) n = 0;
+        }
+        buf[n] = '\0';
+    }
+    return rc;
+}
+
+static void tn_print_free(const char *label, const char *vol)
+{
+    BPTR lk = Lock((STRPTR)vol, ACCESS_READ);
+    struct InfoData *id;
+
+    if (lk == (BPTR)0) {
+        tapf("# %s: %s not mounted\n", label, vol);
+        return;
+    }
+    id = AllocDosObject(DOS_INFODATA, TAG_DONE);
+    if (id != NULL && Info(lk, id)) {
+        tapf("# %s: %s blocks used=%ld total=%ld free~%ld KB\n",
+             label, vol, (long)id->id_NumBlocksUsed,
+             (long)id->id_NumBlocks,
+             (long)((id->id_NumBlocks - id->id_NumBlocksUsed) * 512 / 1024));
+    } else {
+        tapf("# %s: %s Info() failed\n", label, vol);
+    }
+    if (id != NULL) FreeDosObject(DOS_INFODATA, id);
+    UnLock(lk);
+}
+
 static void tc_floppy_install(void)
 {
     const char *label = "tc_floppy_install";
     static char exp[8192], got[8192];
-    char cmd[96];
-    LONG rc;
+    static char out[640], lst[2048];
+    char cmd[160];
     BPTR fh;
-    LONG n;
+    LONG n, rc1, rc2, rca, rcb, rcl;
     int used, expn = 0, matched = 0;
     const char *p;
 
+    /* the expected list staged by ci/bench.sh */
     fh = Open((STRPTR)"S:adf-expected.txt", MODE_OLDFILE);
     if (!fh) {
         TAP_NOTOK(label, "S:adf-expected.txt not staged (floppy leg?)");
@@ -6767,71 +6822,108 @@ static void tc_floppy_install(void)
     Close(fh);
     exp[n > 0 ? n : 0] = '\0';
 
-    /* 11ab item 4: is the volume even mounted? (red 1 = drives
-     * disabled -> requester hang; the mount state decides between
-     * "config wrong" and "script wrong") */
-    {
-        BPTR vlk = Lock((CONST_STRPTR)"tolunnet1:", ACCESS_READ);
-        tapf("# %s: tolunnet1: mounted=%s\n", label,
-             vlk != (BPTR)0 ? "YES" : "NO");
-        if (vlk != (BPTR)0) UnLock(vlk);
-    }
-    /* probe 1: is the script visible on the volume root? */
-    DeleteFile((STRPTR)"T:tol.lst");
-    rc = SystemTags("List tolunnet1: >T:tol.lst", SYS_Asynch, FALSE,
-                    SYS_Input, Open((STRPTR)"NIL:", MODE_OLDFILE),
-                    SYS_Output, Open((STRPTR)"NIL:", MODE_NEWFILE),
-                    NP_StackSize, 32768, TAG_END);
-    {
-        BPTR lf = Open((STRPTR)"T:tol.lst", MODE_OLDFILE);
-        char lb[513];
-        LONG ln = 0;
-        if (lf != (BPTR)0) {
-            ln = Read(lf, lb, 512);
-            Close(lf);
-        }
-        if (ln < 0) ln = 0;
-        lb[ln] = '\0';
-        tapf("# %s: List tolunnet1: rc=%ld, script listed=%s\n",
-             label, (long)rc,
-             strstr(lb, "Install_From_Floppies") ? "YES" : "NO");
-    }
-    /* probe 2: can a single file be copied off the volume? */
-    DeleteFile((STRPTR)"T:tnprobe");
-    rc = SystemTags("Copy tolunnet1:Install_From_Floppies T:tnprobe CLONE",
-                    SYS_Asynch, FALSE,
-                    SYS_Input, Open((STRPTR)"NIL:", MODE_OLDFILE),
-                    SYS_Output, Open((STRPTR)"NIL:", MODE_NEWFILE),
-                    NP_StackSize, 32768, TAG_END);
-    tapf("# %s: probe Copy rc=%ld, head=%s\n", label, (long)rc,
-         tn_file_head_is("T:tnprobe", ".key") ? ".key (ok)"
-                                              : "BAD");
+    /* hypothesis A: is Work: full before we even start? */
+    tn_print_free(label, "Work:");
+
+    /* 1. the script's own run, its output into a REAL file */
+    SystemTags("Delete Work:tninst ALL QUIET >NIL:",
+               SYS_Asynch, FALSE,
+               SYS_Input, Open((STRPTR)"NIL:", MODE_OLDFILE),
+               SYS_Output, Open((STRPTR)"NIL:", MODE_NEWFILE),
+               NP_StackSize, 32768, TAG_END);
     DeleteFile((STRPTR)"Work:tninst.out");
-    snprintf(cmd, sizeof(cmd),
-             "Execute tolunnet1:Install_From_Floppies Work:tninst NORUN"
-             " >Work:tninst.out");
     {
-        LONG rc = SystemTags(cmd, SYS_Asynch, FALSE,
-                             SYS_Input, Open((STRPTR)"NIL:",
-                                             MODE_OLDFILE),
-                             SYS_Output, Open((STRPTR)"NIL:",
-                                              MODE_NEWFILE),
-                             NP_StackSize, 32768, TAG_END);
-        tapf("# %s: Execute rc=%ld\n", label, (long)rc);
+        BPTR oh = Open((STRPTR)"Work:tninst.out", MODE_NEWFILE);
+        LONG r;
+        r = SystemTags("Execute tolunnet1:Install_From_Floppies "
+                       "Work:tninst NORUN",
+                       SYS_Asynch, FALSE,
+                       SYS_Input, Open((STRPTR)"NIL:", MODE_OLDFILE),
+                       SYS_Output,
+                       oh != (BPTR)0 ? (LONG)oh
+                                     : (LONG)Open((STRPTR)"NIL:",
+                                                  MODE_NEWFILE),
+                       NP_StackSize, 32768, TAG_END);
+        if (oh != (BPTR)0) Close(oh);
+        tapf("# %s: script Execute rc=%ld\n", label, (long)r);
     }
+    fh = Open((STRPTR)"Work:tninst.out", MODE_OLDFILE);
+    if (fh != (BPTR)0) {
+        char so[640];
+        n = Read(fh, so, (LONG)sizeof(so) - 1);
+        Close(fh);
+        if (n < 0) n = 0;
+        so[n] = '\0';
+        tapf("# %s: script output (%ld bytes):\n%s\n", label, (long)n, so);
+    } else {
+        tapf("# %s: script output file missing\n", label);
+    }
+    tn_print_free(label, "Work:");
+
+    /* 2. each volume copy SEPARATELY into a scratch drawer */
+    SystemTags("Delete Work:tninst2 ALL QUIET >NIL:",
+               SYS_Asynch, FALSE,
+               SYS_Input, Open((STRPTR)"NIL:", MODE_OLDFILE),
+               SYS_Output, Open((STRPTR)"NIL:", MODE_NEWFILE),
+               NP_StackSize, 32768, TAG_END);
+    SystemTags("makedir Work:tninst2",
+               SYS_Asynch, FALSE,
+               SYS_Input, Open((STRPTR)"NIL:", MODE_OLDFILE),
+               SYS_Output, Open((STRPTR)"NIL:", MODE_NEWFILE),
+               NP_StackSize, 32768, TAG_END);
+    rc1 = tn_run_cap("Copy tolunnet1: Work:tninst2 ALL CLONE",
+                     "Work:c1.out", out, (int)sizeof(out));
+    tapf("# %s: Copy disk1 rc=%ld out=%s\n", label, (long)rc1, out);
+    rc2 = tn_run_cap("Copy tolunnet2: Work:tninst2 ALL CLONE",
+                     "Work:c2.out", out, (int)sizeof(out));
+    tapf("# %s: Copy disk2 rc=%ld out=%s\n", label, (long)rc2, out);
+
+    /* 3. the direct probe of the one missing file, with and without
+     * CLONE, into a fresh drawer */
+    SystemTags("Delete Work:tnone ALL QUIET >NIL:",
+               SYS_Asynch, FALSE,
+               SYS_Input, Open((STRPTR)"NIL:", MODE_OLDFILE),
+               SYS_Output, Open((STRPTR)"NIL:", MODE_NEWFILE),
+               NP_StackSize, 32768, TAG_END);
+    SystemTags("makedir Work:tnone",
+               SYS_Asynch, FALSE,
+               SYS_Input, Open((STRPTR)"NIL:", MODE_OLDFILE),
+               SYS_Output, Open((STRPTR)"NIL:", MODE_NEWFILE),
+               NP_StackSize, 32768, TAG_END);
+    rca = tn_run_cap("Copy tolunnet2:TolunnetSetup.info "
+                     "Work:tnone/TolunnetSetup.info CLONE",
+                     "Work:p1.out", out, (int)sizeof(out));
+    tapf("# %s: probe CLONE rc=%ld out=%s destsize=%ld\n", label,
+         (long)rca, out, (long)tn_file_size_of(
+             "Work:tnone/TolunnetSetup.info"));
+    rcb = tn_run_cap("Copy tolunnet2:TolunnetSetup.info "
+                     "Work:tnone/Plain.info",
+                     "Work:p2.out", out, (int)sizeof(out));
+    tapf("# %s: probe plain rc=%ld out=%s destsize=%ld\n", label,
+         (long)rcb, out, (long)tn_file_size_of("Work:tnone/Plain.info"));
+
+    /* 4. what the volume itself says about the twins */
+    rcl = tn_run_cap("List tolunnet2: ALL", "Work:lst.out",
+                     lst, (int)sizeof(lst));
+    tapf("# %s: List tolunnet2: rc=%ld\n", label, (long)rcl);
     {
-        BPTR of = Open((STRPTR)"Work:tninst.out", MODE_OLDFILE);
-        char ob[401];
-        LONG on = 0;
-        if (of != (BPTR)0) {
-            on = Read(of, ob, 400);
-            Close(of);
+        int shown = 0;
+        p = lst;
+        while (p && *p && shown < 8) {
+            char *eol = strchr(p, '\n');
+            int len = eol ? (int)(eol - p) : (int)strlen(p);
+            if (len <= 0) break;
+            if (len < 200 && p[0] == 'T' &&
+                (strstr(p, "TolunnetSetup") != NULL ||
+                 strstr(p, "TolunnetPrefs") != NULL)) {
+                tapf("#   list: %.*s\n", len, p);
+                shown++;
+            }
+            p = eol ? eol + 1 : NULL;
         }
-        if (on < 0) on = 0;
-        ob[on] = '\0';
-        tapf("# %s: script output:\n%s\n", label, ob);
     }
 
+    /* the real verdict: the script's own Work:tninst vs the manifest */
     used = tn_fi_walk("Work:tninst", "", got, (int)sizeof(got), 0);
     if (used < (int)sizeof(got)) got[used] = '\0';
     if (used >= (int)sizeof(got)) {
@@ -6854,26 +6946,10 @@ static void tc_floppy_install(void)
         if (strstr(got, probe)) {
             matched++;
         } else if (expn - matched <= 5) {
-            /* 11ab item 4: report only the first 5 problems */
             tapf("# %s: missing or size-mismatched: %s\n", label, line);
         }
         p = eol ? eol + 1 : NULL;
     }
-
-    /* 11ab item 4: explicit pins - the Commodore Installer binary
-     * came across, and the tested installer script has the size of
-     * the packaged one. */
-    {
-        BPTR lk = Lock((CONST_STRPTR)"Work:tninst/C/Installer", ACCESS_READ);
-        if (lk == (BPTR)0) {
-            tapf("# %s: Work:tninst/C/Installer missing\n", label);
-            TAP_NOTOK(label, "copied tree != manifest");
-            return;
-        }
-        UnLock(lk);
-    }
-
-    /* no extras either: every walked line must appear in expected */
     {
         int gotn = 0, mirrored = 0;
         p = got;
@@ -6899,12 +6975,6 @@ static void tc_floppy_install(void)
     }
 }
 
-/* z.ai step 11m item 1: the Test-page checks must tell the truth.
- * ok: every check the hermetic bench can satisfy - the daemon's
- * reported address, a loopback ICMP echo (slirp does not answer
- * ICMP, so the gateway is not pingable), the netsvc DNS name and
- * the netsvc HTTP port. fail: an unreachable gateway, a name that
- * cannot exist and a closed port must all report failure. */
 static void tc_net_checks_ok(void)
 {
     const char *label = "tc_net_checks_ok";
