@@ -43,6 +43,7 @@
 #include "../../src/setup/boot_block.h"
 #include "../../src/setup/net_checks.h"
 #include "../../src/common/nslookup_parse.h"
+#include "tn_manifest_match.h"  /* 11af item 2 */
 #include "../../src/setup/setup_types.h"
 #include "../../src/setup/wifi_mgr.h"
 #include "../../src/setup/stack_detect.h"
@@ -6870,6 +6871,7 @@ static void tc_floppy_install(void)
     }
     tn_print_free(label, "Work:");
 
+#if TN_FLOPPY_DEBUG /* 11af item 2: diagnostics on demand */
     /* 2. each volume copy SEPARATELY into a scratch drawer */
     SystemTags("Delete Work:tninst2 ALL QUIET >NIL:",
                SYS_Asynch, FALSE,
@@ -6933,82 +6935,37 @@ static void tc_floppy_install(void)
         }
     }
 
-    /* the real verdict: the script's own Work:tninst vs the manifest */
+#endif /* TN_FLOPPY_DEBUG */
+
+    /* the real verdict: the script's own Work:tninst vs the manifest
+     * (11af item 2: the compare is the shared pure function, pinned by
+     * tests/host/test_manifest_match.c) */
     used = tn_fi_walk("Work:tninst", "", got, (int)sizeof(got), 0);
     if (used < (int)sizeof(got)) got[used] = '\0';
     if (used >= (int)sizeof(got)) {
         TAP_NOTOK(label, "walk buffer exhausted");
         return;
     }
-    tapf("# %s: walked %d bytes of listing\n", label, used);
-
-    /* 11ad: the walked listing's FIRST line has no leading newline,
-     * and the "\n<line>\n" probes below require one - prefix a
-     * newline to both buffers (TolunnetSetup.info sits first in the
-     * FFS hash order and was reported missing for this reason). */
     {
-        static char exp2[8200], got2[8200];
-        snprintf(exp2, sizeof(exp2), "\n%s", exp);
-        snprintf(got2, sizeof(got2), "\n%s", got);
-        memcpy(exp, exp2, sizeof(exp) - 1);
-        exp[sizeof(exp) - 1] = '\0';
-        memcpy(got, got2, sizeof(got) - 1);
-        got[sizeof(got) - 1] = '\0';
-    }
-
-    p = exp;
-    while (p && *p) {
-        char line[192], probe[224];
-        const char *eol = strchr(p, '\n');
-        int len = eol ? (int)(eol - p) : (int)strlen(p);
-        if (len <= 0) break;
-        if (len >= (int)sizeof(line)) len = (int)sizeof(line) - 1;
-        memcpy(line, p, len);
-        line[len] = '\0';
-        expn++;
-        snprintf(probe, sizeof(probe), "\n%s\n", line);
-        if (strstr(got, probe)) {
-            matched++;
-        } else if (expn - matched <= 5) {
-            tapf("# %s: missing or size-mismatched: %s\n", label, line);
+        int en, m, gn, mi;
+        int ok = tn_manifest_match(exp, got, &en, &m, &gn, &mi);
+        tapf("# %s: expn=%d matched=%d gotn=%d mirrored=%d\n",
+             label, en, m, gn, mi);
+#if TN_FLOPPY_DEBUG
+        tapf("# %s: expected:\n%s\n", label, exp);
+        tapf("# %s: walked listing:\n%s\n", label, got);
+        {
+            static char ll[2048];
+            LONG lr = tn_run_cap("List Work:tninst", "Work:tnl.out", ll,
+                                 (int)sizeof(ll));
+            tapf("# %s: List Work:tninst rc=%ld:\n%s\n", label,
+                 (long)lr, ll);
         }
-        p = eol ? eol + 1 : NULL;
-    }
-    {
-        int gotn = 0, mirrored = 0;
-        p = got;
-        while (p && *p) {
-            char line[192], probe[224];
-            const char *eol = strchr(p, '\n');
-            int len = eol ? (int)(eol - p) : (int)strlen(p);
-            if (len <= 0) break;
-            if (len >= (int)sizeof(line)) len = (int)sizeof(line) - 1;
-            memcpy(line, p, len);
-            line[len] = '\0';
-            gotn++;
-            snprintf(probe, sizeof(probe), "\n%s\n", line);
-            if (strstr(exp, probe)) mirrored++;
-            p = eol ? eol + 1 : NULL;
-        }
-        if (expn > 0 && matched == expn && gotn == mirrored &&
-            mirrored == expn) {
-            TAP_OK(label);
-        } else {
-            /* 11ad: dump BOTH ground truths when they disagree */
-            tapf("# %s: walked listing:\n%s\n", label, got);
-            {
-                static char ll[2048];
-                LONG lr = tn_run_cap("List Work:tninst",
-                                     "Work:tnl.out", ll,
-                                     (int)sizeof(ll));
-                tapf("# %s: List Work:tninst rc=%ld:\n%s\n",
-                     label, (long)lr, ll);
-            }
-            TAP_NOTOK(label, "copied tree != manifest");
-        }
+#endif
+        if (ok) TAP_OK(label);
+        else TAP_NOTOK(label, "copied tree != manifest");
     }
 }
-
 static void tc_net_checks_ok(void)
 {
     const char *label = "tc_net_checks_ok";
