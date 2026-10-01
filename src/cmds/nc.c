@@ -10,6 +10,7 @@
  */
 #include "cmdlib.h"
 #include <string.h>
+TN_VERSTAG_DEF("nc");
 
 #define TEMPLATE "HOST/A,PORT/N,UDP/S,LISTEN/S,TIMEOUT/N"
 #define BUF_SIZE 4096

@@ -19,6 +19,12 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include "../../include/ipc.h"
+#include "../../include/version.h"
+
+/* 11aa item 1: one line per command source - the binary's $VER tag
+ * (Version / Workbench Information read it). */
+#define TN_VERSTAG_DEF(name) \
+    static const char tn_verstag[] __attribute__((used)) = TN_VERSTAG(name)
 
 /* Return codes (AmigaDOS convention) */
 #define TN_CMD_OK    0

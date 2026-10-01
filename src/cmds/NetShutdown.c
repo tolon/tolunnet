@@ -17,6 +17,9 @@
 #include <errno.h>
 #include "../../include/ipc.h"
 #include "../common/ipc_client.h"
+#include "../../include/version.h"
+
+static const char tn_verstag[] __attribute__((used)) = TN_VERSTAG("NetShutdown");
 
 #define TEMPLATE "FORCE/S"
 

@@ -5,6 +5,9 @@
  */
 #include "ifctl_cmd.h"
 #include <string.h>
+#include "../../include/version.h"
+
+static const char tn_verstag[] __attribute__((used)) = TN_VERSTAG("Offline");
 
 #define TEMPLATE "NAME"
 

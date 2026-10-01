@@ -50,6 +50,9 @@
 #include <dos/dos.h>
 #include <dos/dostags.h>
 #include <exec/execbase.h>
+#include "../../include/version.h"
+
+static const char tn_verstag[] __attribute__((used)) = TN_VERSTAG("TolunnetSetup");
 
 extern struct ExecBase      *SysBase;
 extern struct DosLibrary    *DOSBase;

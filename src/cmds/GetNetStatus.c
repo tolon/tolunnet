@@ -6,6 +6,7 @@
  */
 #include "cmdlib.h"
 #include <string.h>
+TN_VERSTAG_DEF("GetNetStatus");
 
 #define TEMPLATE "ONLINE/S,ADDRESS/S,GATEWAY/S,DNS/S"
 

@@ -10,6 +10,7 @@
 
 #ifdef __AMIGA__
 #include <exec/types.h>
+#include "../../include/version.h"
 #include <exec/libraries.h>
 #include <exec/semaphores.h>
 #include <exec/lists.h>
@@ -143,7 +144,7 @@ struct lastlog {
 #define USERGROUP_VER_NUM  4
 #define USERGROUP_REV_NUM  1
 #define USERGROUP_LIB_NAME "usergroup.library"
-#define USERGROUP_ID_STR   "usergroup.library 4.1 (tolunnet)"
+#define USERGROUP_ID_STR   TN_VERSTAG("usergroup.library")
 
 /* Per-task context record */
 struct UgTaskContext {

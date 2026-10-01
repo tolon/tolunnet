@@ -10,6 +10,7 @@
  */
 #include "cmdlib.h"
 #include <string.h>
+TN_VERSTAG_DEF("ftp");
 
 #define TEMPLATE "HOST,PORT/N,USER,PASS,SCRIPT,QUIET/S,PASVANY/S"
 #define FTP_PORT 21

@@ -4,6 +4,7 @@
  */
 #include "cmdlib.h"
 #include <string.h>
+TN_VERSTAG_DEF("whois");
 
 #define TEMPLATE "QUERY/A,SERVER,PORT/K/N"
 #define WHOIS_PORT 43

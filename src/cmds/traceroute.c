@@ -4,6 +4,7 @@
  */
 #include "cmdlib.h"
 #include <string.h>
+TN_VERSTAG_DEF("traceroute");
 
 #define TEMPLATE "HOST/A,MAXHOPS/N,QUERIES/N,WAIT/N,NUMERIC/S"
 #define ICMP_ECHO_REQ 8

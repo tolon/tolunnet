@@ -10,6 +10,7 @@
  */
 #include "cmdlib.h"
 #include <string.h>
+TN_VERSTAG_DEF("nslookup");
 
 #define TEMPLATE "NAME/A,SERVER,PORT/K/N"
 

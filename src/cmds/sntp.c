@@ -5,6 +5,7 @@
  */
 #include "cmdlib.h"
 #include <string.h>
+TN_VERSTAG_DEF("sntp");
 
 #define TEMPLATE "HOST,PORT/K/N,SET/S,OFFSET/N"
 #define NTP_PORT 123

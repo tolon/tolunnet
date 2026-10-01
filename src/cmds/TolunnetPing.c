@@ -20,6 +20,7 @@
 #include "cmdlib.h"
 #include "../../include/ipc.h"
 #include <string.h>
+TN_VERSTAG_DEF("TolunnetPing");
 
 
 /* 68k LVO wrappers for bsdsocket.library */

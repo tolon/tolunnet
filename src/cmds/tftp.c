@@ -11,6 +11,7 @@
  */
 #include "cmdlib.h"
 #include <string.h>
+TN_VERSTAG_DEF("tftp");
 
 #define TEMPLATE "HOST/A,PORT/K/N,GET/S,PUT/S,FILE/A,LOCAL"
 #define TFTP_PORT 69

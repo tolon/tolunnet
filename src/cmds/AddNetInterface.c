@@ -11,6 +11,9 @@
 #include "../common/ifreader.h"
 #include <proto/dos.h>
 #include <string.h>
+#include "../../include/version.h"
+
+static const char tn_verstag[] __attribute__((used)) = TN_VERSTAG("AddNetInterface");
 
 #define TEMPLATE "FILE"
 

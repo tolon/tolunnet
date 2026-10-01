@@ -10,6 +10,7 @@
 #include <net/if_arp.h>
 #include <sys/sockio.h>
 #include <string.h>
+TN_VERSTAG_DEF("arp");
 
 #define TEMPLATE "SHOW/S"
 

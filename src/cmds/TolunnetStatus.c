@@ -19,6 +19,8 @@
 #include "../common/ipc_client.h"
 #include "../../include/ipc.h"
 #include "../common/rawfmt.h"
+#include "../../include/version.h"
+static const char tn_verstag[] __attribute__((used)) = TN_VERSTAG("TolunnetStatus");
 
 static int str_ends_with(const char *s, const char *suffix)
 {

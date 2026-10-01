@@ -10,6 +10,7 @@
 #include "cmdlib.h"
 #include "../common/config_text.h"
 #include <string.h>
+TN_VERSTAG_DEF("CheckNetConfig");
 
 #define TEMPLATE "FILE"
 

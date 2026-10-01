@@ -22,6 +22,7 @@
 #include "../common/http_url.h"
 #include "../common/rawfmt.h"
 #include <string.h>
+TN_VERSTAG_DEF("TolunnetGet");
 
 
 

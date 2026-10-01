@@ -42,6 +42,9 @@
 #include <devices/timer.h>
 #include <workbench/startup.h>
 #include <workbench/workbench.h>
+#include "../../include/version.h"
+
+static const char tn_verstag[] __attribute__((used)) = TN_VERSTAG("TolunnetPrefs");
 
 struct IntuitionBase *IntuitionBase = NULL;
 struct GfxBase       *GfxBase       = NULL;

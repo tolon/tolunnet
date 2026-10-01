@@ -27,6 +27,7 @@
 
 #include "../common/log.h"
 #include "cmdlib.h"
+TN_VERSTAG_DEF("TestSocket");
 
 
 

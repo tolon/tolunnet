@@ -5,6 +5,7 @@
 
 #include "lib_init.h"
 #include "../../include/ipc.h"
+#include "../../include/version.h"
 #include "../common/log.h"
 
 #include <stdint.h>
@@ -30,7 +31,7 @@ struct Library *tn_lib_create(void)
     lib->lib_Flags        = LIBF_SUMUSED | LIBF_CHANGED;
     lib->lib_Version      = BSDSOCKET_VER;
     lib->lib_Revision     = BSDSOCKET_REV;
-    lib->lib_IdString     = (STRPTR)"bsdsocket 4.1 (tolunnet)";
+    lib->lib_IdString     = (STRPTR)TN_VERSTAG("bsdsocket.library");
 
     Forbid();
     AddLibrary(lib);

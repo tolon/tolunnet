@@ -10,6 +10,7 @@
  */
 #include "cmdlib.h"
 #include <string.h>
+TN_VERSTAG_DEF("iperf");
 
 #define TEMPLATE "CLIENT/K,SERVER/S,PORT/N,SECONDS/N"
 #define IPERF_DEFAULT_PORT 5201

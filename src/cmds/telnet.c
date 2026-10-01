@@ -5,6 +5,7 @@
  */
 #include "cmdlib.h"
 #include <string.h>
+TN_VERSTAG_DEF("telnet");
 
 #define TEMPLATE "HOST/A,PORT/N"
 #define BUF_SIZE 2048

@@ -7,6 +7,7 @@
 #include "cmdlib.h"
 #include "../../include/version.h"
 #include <string.h>
+TN_VERSTAG_DEF("TolunnetControl");
 
 #define TEMPLATE "COMMAND/A"
 

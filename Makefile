@@ -199,6 +199,7 @@ python-checks:
 	python3 scripts/verify_icons.py
 	python3 scripts/check_md_links.py
 	python3 scripts/check_no_nul.py
+	python3 ci/check_version_tags.py
 	@if ls build/tolunnet-*.lha >/dev/null 2>&1; then \
 	  newest=$$(ls -t build/tolunnet-*.lha | head -1); \
 	  python3 ci/check_package_parity.py $$newest $(PACKAGE_DIR) || \
@@ -410,7 +411,7 @@ $(BSDTEST_BIN): $(BSDTEST_OBJS)
 
 # Release Packaging Target (M7)
 # single source: include/version.h (CLOSE S-D.14)
-VERSION := $(shell sed -n 's/.*TOLUNNET_VERSION "\(.*\)".*/\1/p' include/version.h)
+VERSION := $(shell sed -n 's/^#define TOLUNNET_VERSION "\(.*\)"$$/\1/p' include/version.h)
 PACKAGE_DIR = $(BUILD)/release/tolunnet
 LHA_ARCHIVE = $(BUILD)/tolunnet-$(VERSION).lha
 ADF_IMAGE = $(BUILD)/tolunnet.adf
@@ -492,6 +493,8 @@ package: release-stage
 	# 11y item 3: read the archive back and require byte parity with
 	# the release tree before calling the package done.
 	python3 ci/check_package_parity.py $(LHA_ARCHIVE) $(PACKAGE_DIR)
+	# 11aa item 1: every shipped binary carries its $VER tag.
+	python3 ci/check_version_tags.py $(PACKAGE_DIR)
 	@echo "Package successfully created: $(LHA_ARCHIVE)"
 	@$(MAKE) adf
 

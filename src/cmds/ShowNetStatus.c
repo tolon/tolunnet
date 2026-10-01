@@ -6,6 +6,7 @@
  */
 #include "cmdlib.h"
 #include <string.h>
+TN_VERSTAG_DEF("ShowNetStatus");
 
 #define TEMPLATE "INTERFACES/S,ROUTES/S,DNS/S,SOCKETS/S,FULL/S"
 

@@ -9,6 +9,7 @@
 #include "cmdlib.h"
 #include "../common/prefs.h"
 #include "../common/ipc_client.h"
+TN_VERSTAG_DEF("hostname");
 
 #define TEMPLATE "NAME"
 

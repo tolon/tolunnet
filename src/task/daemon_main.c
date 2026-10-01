@@ -27,6 +27,10 @@
 #include <lwip/apps/mdns.h>
 #include <lwip/apps/mdns_priv.h>
 #include "route.h"
+#include "../include/version.h"
+
+/* 11aa item 1: the daemon answers Version with its own $VER tag */
+static const char tn_verstag[] __attribute__((used)) = TN_VERSTAG("tolunnet");
 #include <netif/ethernet.h>
 
 #include "task_ctx.h"

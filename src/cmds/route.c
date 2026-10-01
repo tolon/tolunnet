@@ -15,6 +15,7 @@
 #include "../../include/ipc.h"
 #include "../task/route.h" /* TN_MAX_ROUTES */
 #include <string.h>
+TN_VERSTAG_DEF("route");
 
 #define TEMPLATE "SHOW/S,ADD/S,DEST/K,NETMASK/K,GATEWAY/K,DELETE/S,DEFAULT/S"
 

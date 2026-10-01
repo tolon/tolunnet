@@ -8,6 +8,7 @@
 #include "../common/ipc_client.h"
 #include "../../include/ipc.h"
 #include <string.h>
+TN_VERSTAG_DEF("DeleteNetRoute");
 
 #define TEMPLATE "DEST/A,MASK/K"
 
