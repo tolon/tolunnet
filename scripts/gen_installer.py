@@ -27,9 +27,35 @@ END_B = ";END GENERATED-BACKUP"
 U_INDENT = "          "
 U_BEGIN_INNER = ";BEGIN GENERATED-UNDO (scripts/gen_installer.py - do not edit)"
 U_END_INNER = ";END GENERATED-UNDO"
+# 11ab item 2c: the welcome block is generated too, so the version the
+# user sees comes from include/version.h - never a hand-edited number.
+W_BEGIN = ";BEGIN GENERATED-WELCOME (scripts/gen_installer.py - do not edit;"
+W_BEGIN2 = "; the version comes from include/version.h)"
+W_END = ";END GENERATED-WELCOME"
 BSN = chr(92) + "n"
 NL = chr(10)
 Q = chr(34)
+
+
+def version_from_header():
+    import re
+    vpath = os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "include", "version.h")
+    txt = open(vpath, encoding="utf-8").read()
+    return re.search(r'#define TOLUNNET_VERSION "(.*?)"', txt).group(1)
+
+
+def welcome_section(version):
+    out = [W_BEGIN, W_BEGIN2]
+    out.append('(welcome')
+    out.append('  "Welcome to the tolunnet %s Installation.%s%sThe tolunnet '
+               'package installs a TCP/IP stack and bsdsocket.library v4.1 '
+               'runtime for AmigaOS 3.0 or newer on 68000-class Amigas.'
+               '%s%sAuthor: Ismail Ozturk (tolon)%s"'
+               % (version, BSN, BSN, BSN, BSN, BSN))
+    out.append(')')
+    out.append(W_END)
+    return NL.join(out)
 
 
 class GenError(Exception):
@@ -74,6 +100,15 @@ def undo_tokens(names):
                      "  EndIf",
                      "EndIf"):
             out.append(U_INDENT + Q + line + BSN + Q)
+    # 11ab item 2d: the preference tools are installed fresh, so the
+    # undo removes them including their icons. usergroup.library is
+    # deliberately NOT deleted: other software may be using it.
+    for n in ("Prefs/TolunnetPrefs", "Prefs/TolunnetPrefs.info",
+              "Prefs/TolunnetSetup", "Prefs/TolunnetSetup.info"):
+        for line in ("If EXISTS SYS:" + n,
+                     "  Delete >NIL: SYS:" + n + " QUIET",
+                     "EndIf"):
+            out.append(U_INDENT + Q + line + BSN + Q)
     out.append(U_INDENT + Q + U_END_INNER + BSN + Q)
     return out
 
@@ -94,6 +129,9 @@ def generate(text, names):
     u_end = U_INDENT + Q + U_END_INNER + BSN + Q
     text = replace_between(text, u_begin, u_end,
                            NL.join(undo_tokens(names)))
+    # 11ab item 2c: the welcome carries the version from version.h
+    text = replace_between(text, W_BEGIN, W_END,
+                           welcome_section(version_from_header()))
     return text
 
 

@@ -76,6 +76,13 @@ def main(argv):
     readme = read("tolunnet.readme")
     if version not in readme:
         fail("tolunnet.readme does not name %s" % version)
+    # 11ab item 2c: the installer welcome names the same version
+    script = read("Install_Tolunnet.script")
+    if "Welcome to the tolunnet %s Installation" % version not in script:
+        fail("Install_Tolunnet.script welcome does not carry %s "
+             "(run 'make installer')" % version)
+    else:
+        print("[check_release_consistency] installer welcome OK")
 
     # archive + ADF file names carry the version. A tree without ANY
     # release artefacts (fresh clone, no make package yet) skips this

@@ -137,7 +137,7 @@ def get_undo_text(rev=None, root=ROOT):
 
 
 def seeded_fs():
-    return {
+    fs = {
         ROOT + "C/NetShutdown": "OUR-BIN",
         ROOT + "C/nc": "OUR-NC",
         ROOT + "C/telnet": "OUR-TELNET",
@@ -146,7 +146,15 @@ def seeded_fs():
         ROOT + "S/User-Startup": "boot shim\n",
         ROOT + "S/User-Startup.tolunnet-bak": "pre-install\n",
         ROOT + "LIBS/bsdsocket.library.pre-tolunnet": "rs",
+        # 11ab item 2: the four Prefs files the installer laid down,
+        # plus usergroup.library which the undo must NOT touch
+        ROOT + "Prefs/TolunnetPrefs": "OURS",
+        ROOT + "Prefs/TolunnetPrefs.info": "OURS",
+        ROOT + "Prefs/TolunnetSetup": "OURS",
+        ROOT + "Prefs/TolunnetSetup.info": "OURS",
+        ROOT + "LIBS/usergroup.library": "UGLIB",
     }
+    return fs
 
 
 def selftest():
@@ -175,6 +183,14 @@ def selftest():
     check("backup dir gone",
           not any(k.startswith(ROOT + "Storage/tolunnet-backup")
                   for k in fs2))
+
+    # 11ab item 2: the four Prefs files are gone, usergroup.library stays
+    prefs_gone = all(ROOT + "Prefs/" + n not in fs2 for n in
+                     ("TolunnetPrefs", "TolunnetPrefs.info",
+                      "TolunnetSetup", "TolunnetSetup.info"))
+    check("prefs files deleted", prefs_gone)
+    check("usergroup.library survives",
+          fs2.get(ROOT + "LIBS/usergroup.library") == "UGLIB")
 
     # case 4: no User-Startup backup - still completes
     fs3 = {k: v for k, v in seeded_fs().items()

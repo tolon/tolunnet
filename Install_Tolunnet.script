@@ -8,8 +8,16 @@
 ; never open a window, copyfiles destinations are directories, and a
 ; note is written for novice runs instead of asking.
 
+;BEGIN GENERATED-WELCOME (scripts/gen_installer.py - do not edit;
+; the version comes from include/version.h)
 (welcome
-  "Welcome to the tolunnet TCP/IP Stack Installation.\n\ntolunnet is a lightweight TCP/IP stack and bsdsocket.library v4.1 implementation for the Commodore Amiga.\n\nAuthor: Tolon\nRequirements: AmigaOS 3.0+, 68000 or higher CPU, SANA-II network driver.\n"
+  "Welcome to the tolunnet 1.2.0-rc5 Installation.\n\nThe tolunnet package installs a TCP/IP stack and bsdsocket.library v4.1 runtime for AmigaOS 3.0 or newer on 68000-class Amigas.\n\nAuthor: Ismail Ozturk (tolon)\n"
+)
+;END GENERATED-WELCOME
+
+; 11ab item 2b: refuse to run on anything older than OS 3.0.
+(if (< (getversion "exec.library" (resident)) 39<<16)
+  (abort "tolunnet needs AmigaOS 3.0 (exec.library V39) or newer. Installation aborted.")
 )
 
 (if (> @user-level 0)
@@ -242,8 +250,8 @@
 (if (> @user-level 0)
   (message "Installing preference tools to SYS:Prefs/ ...")
 )
-(copyfiles (source "TolunnetPrefs") (dest "SYS:Prefs"))
-(copyfiles (source "TolunnetSetup") (dest "SYS:Prefs"))
+(copyfiles (source "TolunnetPrefs") (dest "SYS:Prefs") (infos))
+(copyfiles (source "TolunnetSetup") (dest "SYS:Prefs") (infos))
 
 ; ---- replace an existing bsdsocket.library: back it up first, and
 ; ---- delete the original only once the backup exists ------------------
@@ -507,6 +515,18 @@
           "  If EXISTS SYS:C/TestSocket\n"
           "    Delete >NIL: SYS:C/TestSocket QUIET\n"
           "  EndIf\n"
+          "EndIf\n"
+          "If EXISTS SYS:Prefs/TolunnetPrefs\n"
+          "  Delete >NIL: SYS:Prefs/TolunnetPrefs QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Prefs/TolunnetPrefs.info\n"
+          "  Delete >NIL: SYS:Prefs/TolunnetPrefs.info QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Prefs/TolunnetSetup\n"
+          "  Delete >NIL: SYS:Prefs/TolunnetSetup QUIET\n"
+          "EndIf\n"
+          "If EXISTS SYS:Prefs/TolunnetSetup.info\n"
+          "  Delete >NIL: SYS:Prefs/TolunnetSetup.info QUIET\n"
           "EndIf\n"
           ";END GENERATED-UNDO\n"
           "If EXISTS S:User-Startup.tolunnet-bak\n"

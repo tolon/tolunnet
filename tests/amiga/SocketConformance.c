@@ -5771,6 +5771,38 @@ static void tc_undo_sandbox(void)
         return;
     }
 
+    /* 6. 11ab item 2: the seed marker proves the boot script laid
+     * down the four Prefs files "as installed"; the undo must have
+     * removed all four. */
+    if (!tn_file_head_is("T:tnsbx/undo-seed.ok", "seeded")) {
+        TAP_NOTOK(label, "Prefs seed marker missing (staging?)");
+        return;
+    }
+    {
+        static const char *prefs[4] = {
+            "T:tnsbx/Prefs/TolunnetPrefs",
+            "T:tnsbx/Prefs/TolunnetPrefs.info",
+            "T:tnsbx/Prefs/TolunnetSetup",
+            "T:tnsbx/Prefs/TolunnetSetup.info" };
+        int i;
+        for (i = 0; i < 4; i++) {
+            lk = Lock((CONST_STRPTR)prefs[i], ACCESS_READ);
+            if (lk != (BPTR)0) {
+                UnLock(lk);
+                TAP_NOTOK(label, "undo left the Prefs file behind");
+                return;
+            }
+        }
+    }
+    /* 7. usergroup.library is deliberately NOT undone (other
+     * software may be using it) - it must survive. */
+    lk = Lock((CONST_STRPTR)"T:tnsbx/LIBS/usergroup.library", ACCESS_READ);
+    if (lk == (BPTR)0) {
+        TAP_NOTOK(label, "undo deleted usergroup.library");
+        return;
+    }
+    UnLock(lk);
+
     TAP_OK(label);
 }
 

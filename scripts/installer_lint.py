@@ -55,6 +55,7 @@ ALLOWED = {
     "getsize", "getsum", "getdiskspace", "getdevice", "getenv",
     "tackon", "path", "fileonly", "pathonly", "version", "onerror",
     "pset", "mydir-list", "getassign", "getversion",
+    "resident",  # 11ab item 2b: (getversion "exec.library" (resident))
 }
 
 

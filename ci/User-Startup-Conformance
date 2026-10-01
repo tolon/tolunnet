@@ -14,6 +14,19 @@ Copy >NIL: SYS:C/nc T:tnsbx/C/nc CLONE
 Echo ROADSHW >T:tnsbx/Storage/tolunnet-backup/C/NetShutdown
 Echo orig >T:tnsbx/S/User-Startup.tolunnet-bak
 Echo rs >T:tnsbx/LIBS/bsdsocket.library.pre-tolunnet
+; ---- 11ab item 2: the undo must also remove the four Prefs files the
+; ---- installer laid down, and must NOT touch usergroup.library ------
+makedir T:tnsbx/Prefs
+Echo OURS >T:tnsbx/Prefs/TolunnetPrefs
+Echo OURS >T:tnsbx/Prefs/TolunnetPrefs.info
+Echo OURS >T:tnsbx/Prefs/TolunnetSetup
+Echo OURS >T:tnsbx/Prefs/TolunnetSetup.info
+Echo UGLIB >T:tnsbx/LIBS/usergroup.library
+If EXISTS T:tnsbx/Prefs/TolunnetPrefs.info
+  If EXISTS T:tnsbx/Prefs/TolunnetSetup.info
+    Echo seeded >T:tnsbx/undo-seed.ok
+  EndIf
+EndIf
 Execute >T:undo.out S:tolunnet-undo-sandbox
 FailAt 10
 ; Staged into the bench HDF by ci/bench.sh. Two full start/conformance/stop
