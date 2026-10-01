@@ -179,6 +179,12 @@ def write_notes(version):
         "Its redistribution terms are NOT yet verified — the owner has\n"
         "to confirm the licence before publishing this release.\n",
     ])
+    # 11af item 3: quote the release-asset checksums in the notes
+    sums = os.path.join(ROOT, "build", "release-assets",
+                        "SHA256SUMS.txt")
+    if os.path.isfile(sums):
+        notes += "\n## Release asset checksums\n```\n" + \
+            open(sums, encoding="utf-8").read() + "```\n"
     out = os.path.join(ROOT, "build", "RELEASE-NOTES-%s.md"
                        % version.split("-")[-1])
     open(out, "w", encoding="utf-8").write(notes + "\n")
