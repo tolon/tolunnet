@@ -517,7 +517,7 @@ def main(argv):
         if "--selftest" in flags:
             r1 = selftest(script, doc)
             r2 = atom_selftest()
-            return 0 if (r1 == 0 and r2 == 0) else 1
+            return 0 if (r1 and r2) else 1
         findings = lint_files(script, doc)
     except (LintError, OSError) as exc:
         print("installer_lint: ERROR: %s" % exc)
