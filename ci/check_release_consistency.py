@@ -76,6 +76,20 @@ def main(argv):
     readme = read("tolunnet.readme")
     if version not in readme:
         fail("tolunnet.readme does not name %s" % version)
+    # 11af item 1: the real-Installer row must stay skipped in the
+    # bench - the real Installer is GUI-bound headlessly and a run
+    # hangs the leg (STOP-REPORT 11ac).
+    suite = read("tests/amiga/SocketConformance.c")
+    guarded = "#if TN_REAL_INSTALLER" in suite
+    if "TN_RUN(tc_installer_pretend)" in suite and not guarded:
+        fail("tc_installer_pretend is run unguarded - the real "
+             "Installer hangs the headless bench")
+    if re.search(r"#\s*define\s+TN_REAL_INSTALLER\s+1", suite):
+        fail("TN_REAL_INSTALLER is defined to 1 - the GUI-bound "
+             "Installer row would run in the bench")
+    if not BAD:
+        print("[check_release_consistency] installer row skip guard OK")
+
     # 11ab item 2c: the installer welcome names the same version
     script = read("Install_Tolunnet.script")
     if "Welcome to the tolunnet %s Installation" % version not in script:

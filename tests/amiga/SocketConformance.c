@@ -5705,6 +5705,7 @@ static int tn_file_contains(const char *path, const char *needle)
  * NetShutdown comes back from the backup, the new nc is deleted, the
  * pre-install User-Startup and bsdsocket.library return, and the
  * backup dir is removed. */
+#if TN_REAL_INSTALLER
 /* 11ac item 2: the REAL C:Installer must parse and walk the whole
  * script. The bench never ran the shipped Installer before - the lint
  * and the strstr checks cannot catch a syntax error (item 1 proved
@@ -5815,6 +5816,7 @@ static void tc_installer_pretend(void)
     TAP_OK(label);
 }
 
+#endif /* TN_REAL_INSTALLER */
 static void tc_undo_sandbox(void)
 {
     const char *label = "tc_undo_sandbox";
@@ -9879,7 +9881,14 @@ int main(int argc, char *argv[])
     TN_RUN(tc_cmd_stop_start); /* LAST-but-one: stops the daemon */
     TN_RUN(tc_daemon_noconfig_start); /* 10b item 2: bare boot, no config (daemon already stopped) */
     TN_RUN(tc_undo_sandbox); /* 10c item 2: undo proven in a T: sandbox */
+#if TN_REAL_INSTALLER
     TN_RUN(tc_installer_pretend); /* 11ac item 2: real Installer */
+#else
+    /* 11af item 1: the real Installer is GUI-bound headlessly - a
+     * run hangs the leg on its welcome/error requesters. */
+    TAP_SKIP("tc_installer_pretend",
+             "real Installer is GUI-bound headlessly (STOP-REPORT 11ac)");
+#endif
     TN_RUN(tc_prefs_save_keeps_old); /* 11j item 2: overwrite keeps the old file in .bak */
     TN_RUN(tc_safe_replace); /* 11k item 1: one safe-replace helper (RAM: sandbox) */
     TN_RUN(tc_boot_block); /* 11l item 2: byte-exact boot block editor (RAM: sandbox) */
