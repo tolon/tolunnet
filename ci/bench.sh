@@ -465,6 +465,10 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
         DISK2=$(ls "$REPO_ROOT"/build/tolunnet-*-disk2.adf 2>/dev/null | head -1)
         RUN_CFG="$REPO_ROOT/ci/.bench-floppy.uae"
         cp "$REPO_ROOT/ci/tolunnet-$cfg.uae" "$RUN_CFG"
+        # the base configs disable the drives (floppy0type=-1);
+        # re-enable DD drives and insert the images
+        echo "floppy0type=0" >> "$RUN_CFG"
+        echo "floppy1type=0" >> "$RUN_CFG"
         echo "floppy0=$(cygpath -w "$DISK1")" >> "$RUN_CFG"
         echo "floppy1=$(cygpath -w "$DISK2")" >> "$RUN_CFG"
         CFG_WIN=$(cygpath -w "$RUN_CFG")
