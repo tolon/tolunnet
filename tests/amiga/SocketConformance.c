@@ -13,6 +13,7 @@
 
 #include <proto/exec.h>
 #include <proto/dos.h>
+#include <dos/dosextens.h>  /* 11ad item 1: DOS_INFODATA */
 #include <proto/graphics.h>
 #include <proto/intuition.h>
 #include <dos/dostags.h>
