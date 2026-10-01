@@ -185,7 +185,13 @@ Adımlar:
 
 1. Disk 1'i DF0'a tak (Gotek'te disk 1'i seç). Shell'de:
    `Execute tolunnet1:Install_From_Floppies Work:tolunnet`
-2. Script "Disk 1 copied" deyince Gotek'te disk 2'ye geç. DOS `tolunnet2`
+   Script sırayla şunları basar: "tolunnet two-disk install: copying
+   disk 1 ..." -> "Disk 1 copied. Insert disk 2 (tolunnet2) now" ->
+   disk 2 kopyalanınca "Both disks copied".
+   Not: script yalnız shell'den çalışır; çift tıklama desteklenmez.
+   Yalnız dosyaları kopyalamak istersen sonuna `NORUN` ekle
+   (Installer otomatik başlamaz).
+2. "Disk 1 copied" deyince Gotek'te disk 2'ye geç. DOS `tolunnet2`
    volume'unu sorarsa disk 2 seçili olsun.
 3. "Both disks copied" bitince script `CD Work:tolunnet` yapıp
    Installer'ı başlatır (NORUN verdiysen başlatmaz, ekranda ne

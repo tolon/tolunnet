@@ -237,21 +237,21 @@ Outputs in `build/`:
 Requirements: AmigaOS 3.0+, 68000 or higher, about 1.2 MB free for the unpacked tree.
 
 ### Gotek / FlashFloppy / HxC (two floppies)
-1. Copy `tolunnet-<version>-disk1.adf` and `tolunnet-<version>-disk2.adf` from `build/release-assets/` to the USB stick.
+1. Download `tolunnet-<version>-disk1.adf` and `tolunnet-<version>-disk2.adf` from the GitHub release page and put them on the USB stick.
 2. Boot the Amiga, open a shell, put disk 1 in DF0 and run:
    `Execute tolunnet1:Install_From_Floppies Work:tolunnet`
-3. When the script says so, select disk 2 on the Gotek (DOS asks for the `tolunnet2` volume itself).
-4. The script leaves the full package in `Work:tolunnet`; start the Installer from there:
-   `CD Work:tolunnet` then `Installer Install_Tolunnet` (or run step 2 with `NORUN` omitted and let the script start it).
+   The script prints `tolunnet two-disk install: copying disk 1 ...`, then `Disk 1 copied. Insert disk 2 (tolunnet2) now` - select disk 2 on the Gotek; DOS asks for the `tolunnet2` volume itself if it is not mounted. After disk 2 it prints `Both disks copied`.
+3. The full package is now in `Work:tolunnet`; start the Installer from there:
+   `CD Work:tolunnet` then `Installer Install_Tolunnet`. Add the `NORUN` switch (e.g. `Execute tolunnet1:Install_From_Floppies T:tninst NORUN`) to skip the automatic Installer start.
+   This script is shell-only: double-clicking it does not work.
 
 ### PiStorm / CF / hard disk
 1. Extract `tolunnet-<version>.lha` to `RAM:` or any drawer.
-2. Double-click **`Install_Tolunnet`**:
-   - It asks for the SANA-II device name and unit, and for DHCP or static addressing.
-   - It detects existing TCP/IP stacks (Roadshow, Miami, AmiTCP), backs up `LIBS:bsdsocket.library` and emits `S:tolunnet-undo`.
-   - It copies the complete command set to `SYS:C/`, `usergroup.library` to `SYS:Libs/`, and GUI tools to `SYS:Prefs/`.
+2. Double-click **`Install_Tolunnet`** (or run `Installer Install_Tolunnet` from a shell). The script asks nothing about hardware:
+   - It copies the complete command set to `SYS:C/`, `usergroup.library` to `SYS:Libs/`, and the two preference tools (with icons) to `SYS:Prefs/`.
+   - It detects existing TCP/IP stacks (Roadshow, Miami, AmiTCP), backs up what it replaces and emits `S:tolunnet-undo`.
    - It writes `DEVS:tolunnet.config` and adds the config-driven startup line to `S:User-Startup`.
-3. At the end it launches `SYS:Prefs/TolunnetSetup`, which validates the configuration and tests the connection.
+3. It then offers to start `SYS:Prefs/TolunnetSetup` - the wizard asks for the SANA-II device and unit and configures DHCP or a static address (you can refuse and run it later).
 
 ### Manual
 1. Copy files from the archive:
@@ -275,5 +275,5 @@ Release state, test results and known limitations are tracked in [STATUS.md](STA
 
 ## License & Third-Party Credits
 
-- **tolunnet** is Copyright (C) 2026 **İsmail Öztürk**, licensed under the **GNU General Public License v3.0 or later**. See [LICENSE](LICENSE).
+- **tolunnet** is Copyright (c) 2026 **Ismail Ozturk (tolon)**, licensed under the **GNU General Public License v3.0 or later**. See [LICENSE](LICENSE).
 - **lwIP** (BSD-3-Clause) and the other third-party material, including the Roadshow SDK headers and the BSD network headers, are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) with their notices.

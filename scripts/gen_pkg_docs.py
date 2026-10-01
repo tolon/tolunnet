@@ -65,7 +65,7 @@ def update_readme_guide(version, date_str):
             if not license_replaced:
                 license_block = (
                     "@{b}7. License & Credits@{ub}\n\n"
-                    "* @{b}tolunnet Core & Architecture:@{ub} Copyright (c) 2026 Tolon (Ismail Ozturk).\n"
+                    "* @{b}tolunnet Core & Architecture:@{ub} Copyright (c) 2026 Ismail Ozturk (tolon).\n"
                     "  Licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later).\n"
                     "  See the accompanying LICENSE file for the full license terms.\n\n"
                     "* @{b}lwIP TCP/IP Stack:@{ub} Copyright (c) 2001-2023 Swedish Institute of\n"

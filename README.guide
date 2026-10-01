@@ -1,13 +1,13 @@
 @database "tolunnet"
-@author "Tolon" "tolunnet TCP/IP Stack User Guide"
+@author "Ismail Ozturk (tolon)" "tolunnet TCP/IP Stack User Guide"
 @$VER: tolunnet.guide 1.2.0-rc5 (01.10.2026)
 
 @node Main "tolunnet TCP/IP Stack User Guide"
 @{b}tolunnet — Modern TCP/IP Stack for AmigaOS 3.0+@{ub}
-Copyright (c) 2026 Tolon. All rights reserved.
+Copyright (c) 2026 Ismail Ozturk (tolon). All rights reserved.
 
-Welcome to @{b}tolunnet@{ub}, an elite-tier, lightweight, high-performance SANA-II
-TCP/IP stack and bsdsocket.library v4.1 runtime for Commodore Amiga computers.
+Welcome to @{b}tolunnet@{ub}, a SANA-II TCP/IP stack and bsdsocket.library
+v4.1 runtime for AmigaOS 3.0+ computers with a 68000 or better CPU.
 
 @{b}Table of Contents:@{ub}
 
@@ -54,9 +54,19 @@ executing within its own Exec task without multithreading overhead or semaphore 
 @node Installation "Installation Guide"
 @{b}3. Installation Guide@{ub}
 
+@{b}Gotek / FlashFloppy Installation (two disks):@{ub}
+Copy tolunnet-<version>-disk1.adf and -disk2.adf to the USB stick.
+Insert disk 1 and run from a shell:
+  Execute tolunnet1:Install_From_Floppies Work:tolunnet
+Select disk 2 on the Gotek when DOS asks for the tolunnet2 volume;
+then install with Installer Install_Tolunnet from that drawer.
+
 @{b}Automatic Installation:@{ub}
-Double-click on the @{b}Install_Tolunnet@{ub} icon on Workbench. The Commodore
-Installer will guide you through choosing your network card and configuring DHCP.
+Run the Commodore Installer with the @{b}Install_Tolunnet@{ub} script
+(e.g. from a shell: Installer Install_Tolunnet). It copies the files,
+backs up what it replaces (S:tolunnet-undo restores it), updates the
+boot block and offers to start TolunnetSetup - the wizard that detects
+your network card and configures DHCP or a static address.
 
 @{b}Manual Installation:@{ub}
 1. Copy the binaries from the C/ directory to SYS:C/
@@ -309,7 +319,7 @@ YAM, SimpleMail, Wget, Lynx) work transparently using standard BSD socket calls:
 @node License "License & Credits"
 @{b}7. License & Credits@{ub}
 
-* @{b}tolunnet Core & Architecture:@{ub} Copyright (c) 2026 Tolon (Ismail Ozturk).
+* @{b}tolunnet Core & Architecture:@{ub} Copyright (c) 2026 Ismail Ozturk (tolon).
   Licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later).
   See the accompanying LICENSE file for the full license terms.
 

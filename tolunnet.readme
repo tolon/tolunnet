@@ -1,17 +1,17 @@
-Short:        Lightweight high-performance TCP/IP stack & bsdsocket.library
-Author:       İsmail Öztürk
+Short:        TCP/IP stack & bsdsocket.library v4.1 runtime, AmigaOS 3.0+
+Author:       Ismail Ozturk (tolon)
 Uploader:     tolon
 Type:         comm/tcp
 Version:      1.2.0-rc5
 Architecture: m68k-amigaos >= 3.0.0
 
 ==============================================================================
-tolunnet — Lightweight High-Performance TCP/IP Network Stack for AmigaOS
+tolunnet — TCP/IP Network Stack for AmigaOS
 ==============================================================================
 
-tolunnet is a modern, lightweight, high-performance TCP/IP network stack and
-bsdsocket.library v4.1 runtime designed for Commodore Amiga systems
-running AmigaOS 3.0 or later (68000, 68010, 68020, 68030, 68040, 68060).
+tolunnet is a SANA-II TCP/IP network stack and bsdsocket.library v4.1
+runtime for Commodore Amiga systems running AmigaOS 3.0 or later
+(68000, 68010, 68020, 68030, 68040, 68060).
 
 Features:
 - Single-task cooperative architecture (lwIP 2.2.0 NO_SYS=1)
