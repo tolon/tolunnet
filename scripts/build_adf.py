@@ -85,7 +85,6 @@ def package_members():
             full = os.path.join(dirpath, fn)
             members.add(os.path.relpath(full, RELEASE).replace("\\", "/"))
     members.add("Install_From_Floppies")
-    members.add("Install_From_Floppies.info")
     return members
 
 
