@@ -6656,12 +6656,40 @@ static void tc_floppy_install(void)
     Close(fh);
     exp[n > 0 ? n : 0] = '\0';
 
+    /* 11ab item 4: is the volume even mounted? (red 1 = drives
+     * disabled -> requester hang; the mount state decides between
+     * "config wrong" and "script wrong") */
+    {
+        BPTR vlk = Lock((CONST_STRPTR)"tolunnet1:", ACCESS_READ);
+        tapf("# %s: tolunnet1: mounted=%s\n", label,
+             vlk != (BPTR)0 ? "YES" : "NO");
+        if (vlk != (BPTR)0) UnLock(vlk);
+    }
+    DeleteFile((STRPTR)"T:tninst.out");
     snprintf(cmd, sizeof(cmd),
-             "Execute tolunnet1:Install_From_Floppies T:tninst NORUN");
-    SystemTags(cmd, SYS_Asynch, FALSE,
-               SYS_Input, Open((STRPTR)"NIL:", MODE_OLDFILE),
-               SYS_Output, Open((STRPTR)"NIL:", MODE_NEWFILE),
-               NP_StackSize, 32768, TAG_END);
+             "Execute tolunnet1:Install_From_Floppies T:tninst NORUN"
+             " >T:tninst.out");
+    {
+        LONG rc = SystemTags(cmd, SYS_Asynch, FALSE,
+                             SYS_Input, Open((STRPTR)"NIL:",
+                                             MODE_OLDFILE),
+                             SYS_Output, Open((STRPTR)"NIL:",
+                                              MODE_NEWFILE),
+                             NP_StackSize, 32768, TAG_END);
+        tapf("# %s: Execute rc=%ld\n", label, (long)rc);
+    }
+    {
+        BPTR of = Open((STRPTR)"T:tninst.out", MODE_OLDFILE);
+        char ob[401];
+        LONG on = 0;
+        if (of != (BPTR)0) {
+            on = Read(of, ob, 400);
+            Close(of);
+        }
+        if (on < 0) on = 0;
+        ob[on] = '\0';
+        tapf("# %s: script output:\n%s\n", label, ob);
+    }
 
     used = tn_fi_walk("T:tninst", "", got, (int)sizeof(got), 0);
     if (used < (int)sizeof(got)) got[used] = '\0';
