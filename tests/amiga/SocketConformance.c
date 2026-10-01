@@ -6783,22 +6783,21 @@ static LONG tn_run_cap(const char *cmd, const char *outfile,
 static void tn_print_free(const char *label, const char *vol)
 {
     BPTR lk = Lock((STRPTR)vol, ACCESS_READ);
-    struct InfoData *id;
+    struct InfoData id; /* this NDK has no DOS_INFODATA alloc type */
 
     if (lk == (BPTR)0) {
         tapf("# %s: %s not mounted\n", label, vol);
         return;
     }
-    id = AllocDosObject(DOS_INFODATA, TAG_DONE);
-    if (id != NULL && Info(lk, id)) {
+    memset(&id, 0, sizeof(id));
+    if (Info(lk, &id)) {
         tapf("# %s: %s blocks used=%ld total=%ld free~%ld KB\n",
-             label, vol, (long)id->id_NumBlocksUsed,
-             (long)id->id_NumBlocks,
-             (long)((id->id_NumBlocks - id->id_NumBlocksUsed) * 512 / 1024));
+             label, vol, (long)id.id_NumBlocksUsed,
+             (long)id.id_NumBlocks,
+             (long)((id.id_NumBlocks - id.id_NumBlocksUsed) * 512 / 1024));
     } else {
         tapf("# %s: %s Info() failed\n", label, vol);
     }
-    if (id != NULL) FreeDosObject(DOS_INFODATA, id);
     UnLock(lk);
 }
 
