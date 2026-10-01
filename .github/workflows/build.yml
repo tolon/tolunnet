@@ -37,6 +37,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 11ab item 5: make package calls several Python scripts; this
+      # container may ship without python3. Fail-visible either way.
+      - name: python3 guard (packaging scripts need it)
+        run: |
+          python3 --version || { apt-get update && apt-get install -y python3; }
+          python3 --version
+
       - name: Toolchain sanity check
         run: |
           which m68k-amigaos-gcc || { echo "m68k-amigaos-gcc not found in image"; exit 1; }
