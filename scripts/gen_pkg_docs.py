@@ -79,6 +79,18 @@ def update_readme_guide(version, date_str):
 
         out.append(line)
 
+    # 11af item 3: a date-only difference must not dirty the tree
+    # (the midnight trap): skip the write when normalizing the @$VER
+    # date makes the files identical.
+    import re as _re
+    norm = lambda t: _re.sub(
+        r"(@\$VER: tolunnet\.guide )\d\d\.\d\d\.\d{4}", r"\1 DATE", t)
+    new_text = "".join(out)
+    old_text = "".join(lines)
+    if norm(new_text) == norm(old_text):
+        print(f"[gen_pkg_docs] README.guide unchanged for {version} "
+              f"({date_str}; date-only difference skipped)")
+        return
     with open(guide_path, "w", encoding="latin1", newline="\n") as f:
         f.writelines(out)
     print(f"[gen_pkg_docs] README.guide updated for {version} ({date_str})")
