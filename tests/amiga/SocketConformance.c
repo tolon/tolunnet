@@ -6642,6 +6642,7 @@ static void tc_floppy_install(void)
     const char *label = "tc_floppy_install";
     static char exp[8192], got[8192];
     char cmd[96];
+    LONG rc;
     BPTR fh;
     LONG n;
     int used, expn = 0, matched = 0;
@@ -6665,6 +6666,36 @@ static void tc_floppy_install(void)
              vlk != (BPTR)0 ? "YES" : "NO");
         if (vlk != (BPTR)0) UnLock(vlk);
     }
+    /* probe 1: is the script visible on the volume root? */
+    DeleteFile((STRPTR)"T:tol.lst");
+    rc = SystemTags("List tolunnet1: >T:tol.lst", SYS_Asynch, FALSE,
+                    SYS_Input, Open((STRPTR)"NIL:", MODE_OLDFILE),
+                    SYS_Output, Open((STRPTR)"NIL:", MODE_NEWFILE),
+                    NP_StackSize, 32768, TAG_END);
+    {
+        BPTR lf = Open((STRPTR)"T:tol.lst", MODE_OLDFILE);
+        char lb[513];
+        LONG ln = 0;
+        if (lf != (BPTR)0) {
+            ln = Read(lf, lb, 512);
+            Close(lf);
+        }
+        if (ln < 0) ln = 0;
+        lb[ln] = '\0';
+        tapf("# %s: List tolunnet1: rc=%ld, script listed=%s\n",
+             label, (long)rc,
+             strstr(lb, "Install_From_Floppies") ? "YES" : "NO");
+    }
+    /* probe 2: can a single file be copied off the volume? */
+    DeleteFile((STRPTR)"T:tnprobe");
+    rc = SystemTags("Copy tolunnet1:Install_From_Floppies T:tnprobe CLONE",
+                    SYS_Asynch, FALSE,
+                    SYS_Input, Open((STRPTR)"NIL:", MODE_OLDFILE),
+                    SYS_Output, Open((STRPTR)"NIL:", MODE_NEWFILE),
+                    NP_StackSize, 32768, TAG_END);
+    tapf("# %s: probe Copy rc=%ld, head=%s\n", label, (long)rc,
+         tn_file_head_is("T:tnprobe", ".key") ? ".key (ok)"
+                                              : "BAD");
     DeleteFile((STRPTR)"T:tninst.out");
     snprintf(cmd, sizeof(cmd),
              "Execute tolunnet1:Install_From_Floppies T:tninst NORUN"
