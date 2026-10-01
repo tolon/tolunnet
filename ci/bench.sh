@@ -480,7 +480,8 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
         : > "$EXP"
         while read -r mpath mdisk; do
             [ -z "$mpath" ] && continue
-            [ "$mpath" = "Disk.info" ] && continue
+            # 11ad item 1: Disk.info IS copied (the script copies the
+            # whole volume) - it belongs in the expected list.
             if [ -f "$REPO_ROOT/$mpath" ]; then mfile="$REPO_ROOT/$mpath"; else mfile="$REPO_ROOT/build/release/tolunnet/$mpath"; fi
             [ -f "$mfile" ] || continue
             echo "$mpath $(wc -c < "$mfile")" >> "$EXP"
