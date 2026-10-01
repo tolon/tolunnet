@@ -100,10 +100,13 @@ def main():
 
     converted = 0
     for src_name, dst_name in files:
-        src_path = os.path.join(a1200_dir, src_name)
+        # NTSC shots are captured on the 68000 leg, PAL on a1200
+        leg_dir = os.path.join(bench_dir, "68000") \
+            if "-ntsc" in src_name else a1200_dir
+        src_path = os.path.join(leg_dir, src_name)
         dst_path = os.path.join(out_dir, dst_name)
         if not os.path.exists(src_path):
-            print(f"  [SKIP] {src_name} not found in {a1200_dir}")
+            print(f"  [SKIP] {src_name} not found in {leg_dir}")
             continue
         convert_iff_to_png(src_path, dst_path, repo_root)
         size = os.path.getsize(dst_path)

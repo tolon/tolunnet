@@ -80,7 +80,7 @@ The first-run wizard (`TolunnetSetup`) guides network configuration with automat
 All 12 screenshots are PAL/NTSC captures from the newest green bench; the
 `-static` variants are excluded on purpose: they show the known invented
 Manual-mode defaults (see Known limitations in STATUS.md). Total size of
-`docs/screenshots/`: about 39 KB.
+`docs/screenshots/`: about 44 KB.
 
 ---
 
