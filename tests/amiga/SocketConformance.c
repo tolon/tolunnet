@@ -6684,10 +6684,24 @@ static void tc_floppy_install(void)
         snprintf(probe, sizeof(probe), "\n%s\n", line);
         if (strstr(got, probe)) {
             matched++;
-        } else {
+        } else if (expn - matched <= 5) {
+            /* 11ab item 4: report only the first 5 problems */
             tapf("# %s: missing or size-mismatched: %s\n", label, line);
         }
         p = eol ? eol + 1 : NULL;
+    }
+
+    /* 11ab item 4: explicit pins - the Commodore Installer binary
+     * came across, and the tested installer script has the size of
+     * the packaged one. */
+    {
+        BPTR lk = Lock((CONST_STRPTR)"T:tninst/C/Installer", ACCESS_READ);
+        if (lk == (BPTR)0) {
+            tapf("# %s: T:tninst/C/Installer missing\n", label);
+            TAP_NOTOK(label, "copied tree != manifest");
+            return;
+        }
+        UnLock(lk);
     }
 
     /* no extras either: every walked line must appear in expected */
