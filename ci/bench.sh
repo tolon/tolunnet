@@ -420,6 +420,9 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
     xd write "$REL/TolunnetPrefs" C/TolunnetPrefs || die "xdftool write TolunnetPrefs failed"
     xd write build/S2Toggle C/S2Toggle || die "xdftool write S2Toggle failed"
     xd write build/bsdsocktest C/bsdsocktest || die "xdftool write bsdsocktest failed"
+    # 11ac item 2: the shipped Commodore Installer - tc_installer_pretend
+    # runs the REAL tool over the staged script.
+    xd write "$REL/C/Installer" C/Installer || die "xdftool write Installer failed"
     xd write "$REL/C/nc" C/nc                     || die "xdftool write nc failed"
     xd write "$REL/C/telnet" C/telnet             || die "xdftool write telnet failed"
     xd write "$REL/C/nslookup" C/nslookup         || die "xdftool write nslookup failed"
