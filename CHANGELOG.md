@@ -49,7 +49,12 @@
 - **Installer**: valid Installer 43 script; replaced C: files are
   backed up and the undo script restores them and never deletes a
   restored tool; undo survives missing files; novice mode runs without
-  GUI; the first-run wizard configures the network at the end.
+  GUI; the first-run wizard configures the network at the end. The
+  welcome names the exact release version (generated from
+  `include/version.h`); the script refuses to run on `exec.library`
+  older than V39; the Prefs tools install with their icons; the
+  generated undo also removes the two preference tools and their icons
+  (usergroup.library is deliberately kept - other software may use it).
 - **TolunnetPrefs**: layout comes from font metrics, buttons and labels
   clear their text and stay inside the window interior, config writes
   keep the old file until the new one is fully in place
@@ -74,7 +79,8 @@
   package tree byte for byte, plus `build/release-assets/` bundling the
   LHA, both disks and `SHA256SUMS.txt`.
 - **`Install_From_Floppies`**: plain-AmigaDOS bootstrap that copies
-  disk 1 and disk 2 into one drawer and hands over to the tested
+  disk 1 and disk 2 into one drawer (two-argument `Copy` with a
+  per-disk `If WARN`/`Quit` check) and hands over to the tested
   `Install_Tolunnet` (unattended `DEST` + `NORUN` form included).
 - **`$VER:` tags**: every shipped binary (daemon, all C/ commands,
   TolunnetSetup, TolunnetPrefs, usergroup.library idstring,
