@@ -469,7 +469,7 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
         echo "floppy1=$(cygpath -w "$DISK2")" >> "$RUN_CFG"
         CFG_WIN=$(cygpath -w "$RUN_CFG")
         say "floppies attached: $(basename "$DISK1") DF0, $(basename "$DISK2") DF1"
-        EXP="$REPO_ROOT/ci/.adf-expected.txt"
+        EXP="ci/.adf-expected.txt"
         : > "$EXP"
         while read -r mpath mdisk; do
             [ -z "$mpath" ] && continue
