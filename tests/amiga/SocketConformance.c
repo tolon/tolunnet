@@ -5707,10 +5707,14 @@ static int tn_file_contains(const char *path, const char *needle)
 /* 11ac item 2: the REAL C:Installer must parse and walk the whole
  * script. The bench never ran the shipped Installer before - the lint
  * and the strstr checks cannot catch a syntax error (item 1 proved
- * it). PRETEND mode runs the script without writing anything and
- * without starting the GUI wizard ((run ...) is skipped); NOVICE +
- * DEFUSER keep it non-interactive. First probe prints the tool's REAL
- * usage template so the invocation form is on record. */
+ * it). REAL TEMPLATE (bench log, Installer 44.10): "USAGE: Installer
+ * [SCRIPT] filename <[APPNAME] name> <[MINUSER] level> <[DEFUSER]
+ * default> <[LOGFILE] logname> <[LANGUAGE] language> <NOPRETEND>
+ * <NOLOG> <NOPRINT>" - there is NO PRETEND switch: WITHOUT NOPRETEND
+ * the Installer runs in its default pretend (dry-run) mode, i.e.
+ * nothing is written and (run ...) is skipped; NOVICE keeps it
+ * non-interactive. (Passing a literal PRETEND arg hangs the tool on
+ * an option-requester - proven in the 164859 run.) */
 static void tc_installer_pretend(void)
 {
     const char *label = "tc_installer_pretend";
@@ -5742,8 +5746,8 @@ static void tc_installer_pretend(void)
     /* the pretend run over the staged script */
     DeleteFile((STRPTR)"Work:installer-pretend.log");
     snprintf(cmd, sizeof(cmd),
-             "C:Installer S:Install_Tolunnet.script PRETEND NOLOG "
-             "NOPRINT DEFUSER NOVICE >Work:installer-pretend.log");
+             "C:Installer S:Install_Tolunnet.script NOLOG NOPRINT "
+             "DEFUSER NOVICE >Work:installer-pretend.log");
     rc = SystemTags(cmd, SYS_Asynch, FALSE,
                     SYS_Input, Open((STRPTR)"NIL:", MODE_OLDFILE),
                     SYS_Output, Open((STRPTR)"NIL:", MODE_NEWFILE),
