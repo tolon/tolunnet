@@ -75,15 +75,33 @@ static ULONG tn_ticks_now(void)
            (ULONG)ds.ds_Minute * 60UL * 50UL + (ULONG)ds.ds_Tick;
 }
 
-static void tn_ipc_cancel_inflight(TnSocketBase *base, TnIpcMsg *msg)
+static BOOL tn_ensure_timer(TnSocketBase *base);
+
+/* Returns 1 once 'msg' has been replied (its result is readable), 0 when
+ * it may still be daemon-owned. Only a heap request (may_abandon, watchdog
+ * mode) bounds the drain by ipc_timeout_ms (TN-bugtrack 2.8); the caller
+ * must then orphan it, never free it. z.ai step 5 item 1: the CANCEL
+ * message is heap-allocated per base — a stack one let the daemon's late
+ * ReplyMsg corrupt a dead frame (bench 20260924-145035). */
+static int tn_ipc_cancel_inflight(TnSocketBase *base, TnIpcMsg *msg, int may_abandon)
 {
     TnIpcMsg *cancel;
     int got_msg = 0, got_cancel = 0;
+    int bounded = (may_abandon && base->ipc_timeout_ms > 0 && tn_ensure_timer(base));
+    struct timerequest *tm = NULL;
+    ULONG tm_sig = 0, reply_sig = 0, t0 = 0;
 
-    /* z.ai step 7 item 1: allocated in tn_lib_open; a NULL here means
-     * open-time alloc failed and the base could not exist. */
+    /* z.ai step 7 item 1: allocated in tn_lib_open. NULL only after an
+     * earlier bounded drain abandoned it (still daemon-owned). */
     cancel = (TnIpcMsg *)base->ipc_cancel_msg;
-    if (cancel == NULL) return;
+    if (cancel == NULL) {
+        if (may_abandon) return 0;
+        /* embedded message: it must come back before it can be reused */
+        while (GetMsg(base->reply_port) != (struct Message *)msg) {
+            WaitPort(base->reply_port);
+        }
+        return 1;
+    }
 
     cancel->msg.mn_Node.ln_Type = NT_MESSAGE;
     cancel->msg.mn_ReplyPort    = base->reply_port;
@@ -94,10 +112,44 @@ static void tn_ipc_cancel_inflight(TnSocketBase *base, TnIpcMsg *msg)
     cancel->args[0]             = (LONG)(intptr_t)msg;
     PutMsg(base->tolunnet_port, (struct Message *)cancel);
 
+    if (bounded) {
+        struct Message *m;
+        tm        = (struct timerequest *)base->timer_io;
+        tm_sig    = 1UL << base->timer_port->mp_SigBit;
+        reply_sig = 1UL << base->reply_port->mp_SigBit;
+        while ((m = GetMsg(base->timer_port)) != NULL) {}
+        SetSignal(0, tm_sig);
+        t0 = tn_ticks_now();
+    }
+
     while (!got_msg || !got_cancel) {
         struct Message *early;
-        WaitPort(base->reply_port);
-        early = GetMsg(base->reply_port);
+        if (bounded) {
+            /* time-verified like the watchdog (TNET-151): a lying timer
+             * only costs another lap, never an early give-up */
+            ULONG elapsed_ms = (tn_ticks_now() - t0) * 20UL;
+            if (elapsed_ms >= base->ipc_timeout_ms) break;
+            early = GetMsg(base->reply_port);
+            if (early == NULL) {
+                struct Message *m;
+                ULONG rem = base->ipc_timeout_ms - elapsed_ms;
+                tm->tr_node.io_Command = TR_ADDREQUEST;
+                tm->tr_time.tv_secs    = rem / 1000;
+                tm->tr_time.tv_micro   = (rem % 1000) * 1000;
+                SendIO((struct IORequest *)tm);
+                Wait(reply_sig | tm_sig);
+                if (!CheckIO((struct IORequest *)tm)) {
+                    AbortIO((struct IORequest *)tm);
+                }
+                WaitIO((struct IORequest *)tm);
+                while ((m = GetMsg(base->timer_port)) != NULL) {}
+                SetSignal(0, tm_sig);
+                continue;
+            }
+        } else {
+            WaitPort(base->reply_port);
+            early = GetMsg(base->reply_port);
+        }
         if (early == NULL) continue;
         if ((TnIpcMsg *)early == msg) {
             /* z.ai step 7b item 3: if the daemon replied before the CANCEL
@@ -110,6 +162,33 @@ static void tn_ipc_cancel_inflight(TnSocketBase *base, TnIpcMsg *msg)
         }
         /* foreign replies stay dropped: they belong to earlier orphans */
     }
+    if (!got_cancel) {
+        /* bounded drain gave up: the daemon still holds the CANCEL message
+         * — park it on the orphan chain (freed at close), never reuse it */
+        cancel->orphan_next = base->ipc_orphan;
+        base->ipc_orphan = cancel;
+        /* fresh one so later breaks can still CANCEL (NULL = no cancel) */
+        base->ipc_cancel_msg = AllocVec(sizeof(TnIpcMsg), MEMF_CLEAR | MEMF_PUBLIC);
+    }
+    return got_msg;
+}
+
+/* Heap-mode reply: mirror the daemon's args/ptrs into the embedded message
+ * (callers such as gethostid read base->ipc_msg after the call), then free. */
+static void tn_ipc_release_heap(TnSocketBase *base, TnIpcMsg *heap_msg)
+{
+    if (heap_msg == NULL) return;
+    memcpy(base->ipc_msg.args, heap_msg->args, sizeof(base->ipc_msg.args));
+    memcpy(base->ipc_msg.ptrs, heap_msg->ptrs, sizeof(base->ipc_msg.ptrs));
+    base->ipc_msg.result = heap_msg->result;
+    base->ipc_msg.err_no = heap_msg->err_no;
+    FreeVec(heap_msg);
+}
+
+static void tn_ipc_orphan_heap(TnSocketBase *base, TnIpcMsg *heap_msg)
+{
+    heap_msg->orphan_next = base->ipc_orphan;
+    base->ipc_orphan = heap_msg;
 }
 
 /* z.ai step 7b item 2: commands whose DAEMON handler can return DEFER —
@@ -125,7 +204,7 @@ static int tn_cmd_may_park(TnIpcCmd cmd)
     case TN_IPC_CMD_RECVMSG:
     case TN_IPC_CMD_ACCEPT:
     case TN_IPC_CMD_CONNECT:
-    case TN_IPC_CMD_SEND:          /* snd_buf==0 path parks via retry loop */
+    case TN_IPC_CMD_SEND:          /* daemon parks blocking sends (snd_buf==0) */
     case TN_IPC_CMD_SENDTO:
     case TN_IPC_CMD_SENDMSG:
     case TN_IPC_CMD_GETHOSTBYNAME: /* DNS DEFER */
@@ -239,9 +318,7 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
                     {
                         /* z.ai step 7b item 2: break-aware only if the
                          * command can park (see tn_cmd_may_park table). */
-                        ULONG break_mask2 = tn_cmd_may_park(cmd)
-                            ? (base->sig_int ? base->sig_int : SIGBREAKF_CTRL_C)
-                            : 0;
+                        ULONG break_mask2 = tn_cmd_may_park(cmd) ? base->sig_int : 0;
                         fired = Wait(reply_sig | tm_sig | break_mask2);
                         if (fired & break_mask2) {
                             /* z.ai step 7 item 1: retire the armed timer
@@ -253,21 +330,29 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
                             WaitIO((struct IORequest *)tm);
                             while ((m = GetMsg(base->timer_port)) != NULL) {}
                             SetSignal(0, tm_sig);
-                            tn_ipc_cancel_inflight(base, msg);
+                            {
+                                int replied = tn_ipc_cancel_inflight(base, msg, 1);
+                                LONG r = msg->result, e = msg->err_no;
 
-                            /* z.ai step 6 item 3: re-assert at the END of
-                             * the path - WaitPort inside the drain can consume
-                             * bits via internal Wait() allocation. */
-                            SetSignal(fired & break_mask2, fired & break_mask2);
-                            if (heap_msg != NULL) {
-                                FreeVec(heap_msg); /* replied to us; safe now */
+                                /* z.ai step 6 item 3: re-assert at the END of
+                                 * the path - WaitPort inside the drain can consume
+                                 * bits via internal Wait() allocation. */
+                                SetSignal(fired & break_mask2, fired & break_mask2);
+                                if (!replied) {
+                                    /* still daemon-owned: orphan, never free */
+                                    tn_ipc_orphan_heap(base, heap_msg);
+                                    tn_set_errno_val(base, EINTR);
+                                    return -1;
+                                }
+                                /* TN-bugtrack 2.8: r/e read BEFORE the free */
+                                tn_ipc_release_heap(base, heap_msg);
+                                /* z.ai step 6 item 2: keep a real result */
+                                if (r >= 0 || e == 0) {
+                                    return r;
+                                }
+                                tn_set_errno_val(base, EINTR);
+                                return -1;
                             }
-                            /* z.ai step 6 item 2: keep a real result */
-                            if (msg->result >= 0 || msg->err_no == 0) {
-                                return msg->result;
-                            }
-                            tn_set_errno_val(base, EINTR);
-                            return -1;
                         }
                     }
 
@@ -295,9 +380,8 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
              * orphan chain remains only as the fallback if the CANCEL ack
              * itself never arrives. */
             base->ipc_timeouts++;
-            tn_ipc_cancel_inflight(base, msg);
-            heap_msg->orphan_next = base->ipc_orphan;
-            base->ipc_orphan = heap_msg;
+            (void)tn_ipc_cancel_inflight(base, msg, 1);
+            tn_ipc_orphan_heap(base, heap_msg);
             tn_set_errno_val(base, ETIMEDOUT);
             return -1;
         }
@@ -307,10 +391,8 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
          * accept / connect / DNS / WaitSelect). Everything else is answered
          * immediately — waiting break-aware there let stray CTRL_C-class
          * bits turn trivial calls into EINTR (bench 20260924-234434). */
-        ULONG break_mask = (tn_cmd_may_park(cmd) &&
-                            (base->sig_int ? base->sig_int : SIGBREAKF_CTRL_C) != 0)
-                           ? (base->sig_int ? base->sig_int : SIGBREAKF_CTRL_C)
-                           : 0;
+        /* TN-bugtrack 2.4: sig_int defaults to CTRL_C at open; 0 = no break */
+        ULONG break_mask = tn_cmd_may_park(cmd) ? base->sig_int : 0;
         ULONG reply_sig = 1UL << base->reply_port->mp_SigBit;
         ULONG fired2 = Wait(reply_sig | break_mask);
         if (fired2 & break_mask) {
@@ -323,19 +405,28 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
              * the call but leaves signal delivery to the application, so
              * CheckSignal(SIGBREAKF_CTRL_C) still sees the break after a
              * failed call. Do NOT clear the bit here. */
-            tn_ipc_cancel_inflight(base, msg);
-            if (heap_msg != NULL) {
-                FreeVec(heap_msg); /* replied to us; safe now */
+            {
+                int replied = tn_ipc_cancel_inflight(base, msg, heap_msg != NULL);
+                LONG r = msg->result, e = msg->err_no;
+
+                if (!replied) {
+                    /* bounded drain gave up (heap only): orphan, never free */
+                    tn_ipc_orphan_heap(base, heap_msg);
+                    tn_set_errno_val(base, EINTR);
+                    return -1;
+                }
+                /* TN-bugtrack 2.8: r/e read BEFORE the free */
+                tn_ipc_release_heap(base, heap_msg);
+                /* z.ai step 7b item 3: honor the daemon's full reply (result
+                 * AND err_no) if it won the race; EINTR only if the CANCEL
+                 * produced the interrupt itself. */
+                if (!(r == -1 && e == EINTR)) {
+                    tn_set_errno_val(base, e);
+                    return r;
+                }
+                tn_set_errno_val(base, EINTR);
+                return -1;
             }
-            /* z.ai step 7b item 3: honor the daemon's full reply (result
-             * AND err_no) if it won the race; EINTR only if the CANCEL
-             * produced the interrupt itself. */
-            if (!(msg->result == -1 && msg->err_no == EINTR)) {
-                tn_set_errno_val(base, msg->err_no);
-                return msg->result;
-            }
-            tn_set_errno_val(base, EINTR);
-            return -1;
         }
     }
     {
@@ -375,21 +466,17 @@ static LONG tn_ipc_call(TnSocketBase *base, TnIpcCmd cmd)
 
         {
             LONG r = msg->result;
-            if (heap_msg != NULL) {
-                FreeVec(heap_msg);
-            }
+            tn_ipc_release_heap(base, heap_msg); /* NULL-safe */
             return r;
         }
     }
 }
 
-/* z.ai step 5 item 1: cancel the in-flight request 'msg' and drain BOTH
- * replies (the cancelled request's EINTR and the CANCEL ack) before
- * returning. The CANCEL message is heap-allocated per base: a stack
- * cancel would let the daemon's late ReplyMsg write into a dead frame
- * and corrupt the next call (bench 20260924-145035: suite froze right
- * after a successful Ctrl-C interrupt). Returns after both replies are
- * consumed; *msg_out carries the EINTR result. */
+/* (break/timeout cancellation: see tn_ipc_cancel_inflight above) */
+
+/* TN-bugtrack 2.10: the root library every clone was opened through (one
+ * per daemon process; this file has no base-relative data). */
+static struct Library *tn_root_lib = NULL;
 
 /* ------------------------------------------------------------------ LIB_OPEN */
 struct Library *tn_lib_open(struct Library *lib, ULONG version)
@@ -439,24 +526,13 @@ struct Library *tn_lib_open(struct Library *lib, ULONG version)
     base->lib_node.lib_OpenCnt = 1;
 
     base->owner_task = SysBase->ThisTask;
+    base->sig_select_bit = -1;   /* raw_mem is MEMF_CLEAR: 0 would be a real bit */
     /* z.ai step 7 item 1: allocate the CANCEL message up front — a lazy
      * alloc inside the break path can fail exactly when we need it. */
     base->ipc_cancel_msg = AllocVec(sizeof(TnIpcMsg), MEMF_CLEAR | MEMF_PUBLIC);
-    if (base->ipc_cancel_msg == NULL) {
-        Forbid();
-        lib->lib_OpenCnt--;
-        Permit();
-        FreeVec(raw_mem);
-        return NULL;
-    }
+    if (base->ipc_cancel_msg == NULL) goto fail;
     base->reply_port = CreateMsgPort();
-    if (base->reply_port == NULL) {
-        Forbid();
-        lib->lib_OpenCnt--;
-        Permit();
-        FreeVec(raw_mem);
-        return NULL;
-    }
+    if (base->reply_port == NULL) goto fail;
 
     base->tolunnet_port = FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
     base->errno_ptr    = &base->task_errno;
@@ -466,7 +542,7 @@ struct Library *tn_lib_open(struct Library *lib, ULONG version)
     base->task_herrno  = 0;
     base->sig_io       = 0;
     base->sig_urg      = 0;
-    base->sig_int      = 0;
+    base->sig_int      = SIGBREAKF_CTRL_C; /* TN-bugtrack 2.4: SDK default; 0 = no break */
     base->sig_event    = 0;
 
     /* Allocate private signal bit for WaitSelect event-driven wakeups (§D) */
@@ -496,6 +572,7 @@ struct Library *tn_lib_open(struct Library *lib, ULONG version)
     base->netent_idx = 0;
     base->servent_idx = 0;
     base->protoent_idx = 0;
+    base->gse_last_fd  = -1;
 
     /* TN-bugtrack-2 item 4: per-base dynamic descriptor table */
     base->dtablesize = TN_DEFAULT_DTABLESIZE;
@@ -503,23 +580,39 @@ struct Library *tn_lib_open(struct Library *lib, ULONG version)
     base->events  = (ULONG *)AllocVec(sizeof(ULONG) * base->dtablesize, MEMF_PUBLIC | MEMF_CLEAR);
     base->event_masks = (ULONG *)AllocVec(sizeof(ULONG) * base->dtablesize, MEMF_PUBLIC | MEMF_CLEAR);
     if (base->fd_map == NULL || base->events == NULL || base->event_masks == NULL) {
-        if (base->fd_map) { FreeVec(base->fd_map); base->fd_map = NULL; }
-        if (base->events) { FreeVec(base->events); base->events = NULL; }
-        if (base->event_masks) { FreeVec(base->event_masks); base->event_masks = NULL; }
-        FreeVec((UBYTE *)base - base->lib_node.lib_NegSize);
-        Forbid();
-        lib->lib_OpenCnt--;
-        Permit();
-        return NULL;
+        goto fail;
     }
     for (i = 0; i < base->dtablesize; i++) {
         base->fd_map[i] = -1;
     }
 
-    /* Notify network task of new client opening */
-    tn_ipc_call(base, TN_IPC_CMD_OPEN);
+    /* TN-bugtrack 2.10: remember the real root for tn_lib_close */
+    tn_root_lib = lib;
+
+    /* Notify network task of new client opening. TN-bugtrack 3.1: a
+     * present daemon may refuse (-1/ENFILE, open-base registry full) —
+     * the base was never registered, so unwind without a CLOSE. An absent
+     * daemon (ENETDOWN) still opens, as before. */
+    if (tn_ipc_call(base, TN_IPC_CMD_OPEN) < 0 && base->task_errno != ENETDOWN) {
+        goto fail;
+    }
 
     return (struct Library *)base;
+
+fail:
+    /* TN-bugtrack 2.9: one unwind path, reverse order (the daemon holds
+     * nothing of this base: OPEN was never sent, or it was refused) */
+    if (base->fd_map)      FreeVec(base->fd_map);
+    if (base->events)      FreeVec(base->events);
+    if (base->event_masks) FreeVec(base->event_masks);
+    if (base->sig_select_bit != -1) FreeSignal(base->sig_select_bit);
+    if (base->reply_port)  DeleteMsgPort(base->reply_port);
+    if (base->ipc_cancel_msg) FreeVec(base->ipc_cancel_msg);
+    FreeVec(raw_mem);
+    Forbid();
+    lib->lib_OpenCnt--;
+    Permit();
+    return NULL;
 }
 
 /* ----------------------------------------------------------------- LIB_CLOSE */
@@ -595,8 +688,10 @@ BPTR tn_lib_close(struct Library *lib)
         }
 
         /* Decrement root library open count under Forbid (TNET-007) */
+        /* TN-bugtrack 2.10: the root recorded at open, not a LibList name
+         * lookup that can hit another "bsdsocket.library" node */
         Forbid();
-        root_lib = (struct Library *)FindName(&SysBase->LibList, (CONST_STRPTR)BSDSOCKET_NAME);
+        root_lib = tn_root_lib;
         if (root_lib != NULL && root_lib->lib_OpenCnt > 0) {
             root_lib->lib_OpenCnt--;
         }
@@ -675,7 +770,8 @@ LONG tn_lvo_socket(LONG domain, LONG type, LONG protocol, TnSocketBase *base)
 /* -36: bind(sock, name, namelen) */
 LONG tn_lvo_bind(LONG sock, struct sockaddr *name, socklen_t namelen, TnSocketBase *base)
 {
-    if (base == NULL || sock < 0) return -1;
+    if (base == NULL) return -1;
+    if (sock < 0) { tn_set_errno_val(base, EBADF); return -1; }
     base->ipc_msg.args[0] = sock;
     base->ipc_msg.ptrs[0] = (APTR)name;
     base->ipc_msg.args[1] = (LONG)namelen;
@@ -685,7 +781,8 @@ LONG tn_lvo_bind(LONG sock, struct sockaddr *name, socklen_t namelen, TnSocketBa
 /* -42: listen(sock, backlog) */
 LONG tn_lvo_listen(LONG sock, LONG backlog, TnSocketBase *base)
 {
-    if (base == NULL || sock < 0) return -1;
+    if (base == NULL) return -1;
+    if (sock < 0) { tn_set_errno_val(base, EBADF); return -1; }
     base->ipc_msg.args[0] = sock;
     base->ipc_msg.args[1] = backlog;
     return tn_ipc_call(base, TN_IPC_CMD_LISTEN);
@@ -695,7 +792,8 @@ LONG tn_lvo_listen(LONG sock, LONG backlog, TnSocketBase *base)
 LONG tn_lvo_accept(LONG sock, struct sockaddr *addr, socklen_t *addrlen, TnSocketBase *base)
 {
     LONG res;
-    if (base == NULL || sock < 0) return -1;
+    if (base == NULL) return -1;
+    if (sock < 0) { tn_set_errno_val(base, EBADF); return -1; }
     base->ipc_msg.args[0] = sock;
     base->ipc_msg.ptrs[0] = (APTR)addr;
     base->ipc_msg.ptrs[1] = (APTR)addrlen;
@@ -722,7 +820,8 @@ LONG tn_lvo_accept(LONG sock, struct sockaddr *addr, socklen_t *addrlen, TnSocke
 /* -54: connect(sock, name, namelen) */
 LONG tn_lvo_connect(LONG sock, struct sockaddr *name, socklen_t namelen, TnSocketBase *base)
 {
-    if (base == NULL || sock < 0) return -1;
+    if (base == NULL) return -1;
+    if (sock < 0) { tn_set_errno_val(base, EBADF); return -1; }
     base->ipc_msg.args[0] = sock;
     base->ipc_msg.ptrs[0] = (APTR)name;
     base->ipc_msg.args[1] = (LONG)namelen;
@@ -733,7 +832,8 @@ LONG tn_lvo_connect(LONG sock, struct sockaddr *name, socklen_t namelen, TnSocke
 LONG tn_lvo_sendto(LONG sock, const void *buf, LONG len, LONG flags,
                    const struct sockaddr *to, socklen_t tolen, TnSocketBase *base)
 {
-    if (base == NULL || sock < 0) return -1;
+    if (base == NULL) return -1;
+    if (sock < 0) { tn_set_errno_val(base, EBADF); return -1; }
     base->ipc_msg.args[0] = sock;
     base->ipc_msg.ptrs[0] = (APTR)buf;
     base->ipc_msg.args[1] = len;
@@ -746,7 +846,8 @@ LONG tn_lvo_sendto(LONG sock, const void *buf, LONG len, LONG flags,
 /* -66: send(sock, buf, len, flags) */
 LONG tn_lvo_send(LONG sock, const void *buf, LONG len, LONG flags, TnSocketBase *base)
 {
-    if (base == NULL || sock < 0) return -1;
+    if (base == NULL) return -1;
+    if (sock < 0) { tn_set_errno_val(base, EBADF); return -1; }
     base->ipc_msg.args[0] = sock;
     base->ipc_msg.ptrs[0] = (APTR)buf;
     base->ipc_msg.args[1] = len;
@@ -758,7 +859,8 @@ LONG tn_lvo_send(LONG sock, const void *buf, LONG len, LONG flags, TnSocketBase 
 LONG tn_lvo_recvfrom(LONG sock, void *buf, LONG len, LONG flags,
                      struct sockaddr *addr, socklen_t *addrlen, TnSocketBase *base)
 {
-    if (base == NULL || sock < 0) return -1;
+    if (base == NULL) return -1;
+    if (sock < 0) { tn_set_errno_val(base, EBADF); return -1; }
     base->ipc_msg.args[0] = sock;
     base->ipc_msg.ptrs[0] = (APTR)buf;
     base->ipc_msg.args[1] = len;
@@ -771,7 +873,8 @@ LONG tn_lvo_recvfrom(LONG sock, void *buf, LONG len, LONG flags,
 /* -78: recv(sock, buf, len, flags) */
 LONG tn_lvo_recv(LONG sock, void *buf, LONG len, LONG flags, TnSocketBase *base)
 {
-    if (base == NULL || sock < 0) return -1;
+    if (base == NULL) return -1;
+    if (sock < 0) { tn_set_errno_val(base, EBADF); return -1; }
     base->ipc_msg.args[0] = sock;
     base->ipc_msg.ptrs[0] = (APTR)buf;
     base->ipc_msg.args[1] = len;
@@ -782,7 +885,8 @@ LONG tn_lvo_recv(LONG sock, void *buf, LONG len, LONG flags, TnSocketBase *base)
 /* -84: shutdown(sock, how) */
 LONG tn_lvo_shutdown(LONG sock, LONG how, TnSocketBase *base)
 {
-    if (base == NULL || sock < 0) return -1;
+    if (base == NULL) return -1;
+    if (sock < 0) { tn_set_errno_val(base, EBADF); return -1; }
     base->ipc_msg.args[0] = sock;
     base->ipc_msg.args[1] = how;
     return tn_ipc_call(base, TN_IPC_CMD_SHUTDOWN);
@@ -792,7 +896,8 @@ LONG tn_lvo_shutdown(LONG sock, LONG how, TnSocketBase *base)
 LONG tn_lvo_setsockopt(LONG sock, LONG level, LONG optname, const void *optval,
                        socklen_t optlen, TnSocketBase *base)
 {
-    if (base == NULL || sock < 0) return -1;
+    if (base == NULL) return -1;
+    if (sock < 0) { tn_set_errno_val(base, EBADF); return -1; }
     /* TNET-122..127: SO_EVENTMASK filter lives client-side so the event
      * recording path can AND against it without an IPC round-trip. */
     if (level == SOL_SOCKET && optname == SO_EVENTMASK) {
@@ -818,7 +923,8 @@ LONG tn_lvo_setsockopt(LONG sock, LONG level, LONG optname, const void *optval,
 LONG tn_lvo_getsockopt(LONG sock, LONG level, LONG optname, void *optval,
                        socklen_t *optlen, TnSocketBase *base)
 {
-    if (base == NULL || sock < 0) return -1;
+    if (base == NULL) return -1;
+    if (sock < 0) { tn_set_errno_val(base, EBADF); return -1; }
     base->ipc_msg.args[0] = sock;
     base->ipc_msg.args[1] = level;
     base->ipc_msg.args[2] = optname;
@@ -830,7 +936,8 @@ LONG tn_lvo_getsockopt(LONG sock, LONG level, LONG optname, void *optval,
 /* -102: getsockname(sock, name, namelen) */
 LONG tn_lvo_getsockname(LONG sock, struct sockaddr *name, socklen_t *namelen, TnSocketBase *base)
 {
-    if (base == NULL || sock < 0) return -1;
+    if (base == NULL) return -1;
+    if (sock < 0) { tn_set_errno_val(base, EBADF); return -1; }
     base->ipc_msg.args[0] = sock;
     base->ipc_msg.ptrs[0] = (APTR)name;
     base->ipc_msg.ptrs[1] = (APTR)namelen;
@@ -840,7 +947,8 @@ LONG tn_lvo_getsockname(LONG sock, struct sockaddr *name, socklen_t *namelen, Tn
 /* -108: getpeername(sock, name, namelen) */
 LONG tn_lvo_getpeername(LONG sock, struct sockaddr *name, socklen_t *namelen, TnSocketBase *base)
 {
-    if (base == NULL || sock < 0) return -1;
+    if (base == NULL) return -1;
+    if (sock < 0) { tn_set_errno_val(base, EBADF); return -1; }
     base->ipc_msg.args[0] = sock;
     base->ipc_msg.ptrs[0] = (APTR)name;
     base->ipc_msg.ptrs[1] = (APTR)namelen;
@@ -850,7 +958,8 @@ LONG tn_lvo_getpeername(LONG sock, struct sockaddr *name, socklen_t *namelen, Tn
 /* -114: IoctlSocket(sock, req, argp) */
 LONG tn_lvo_ioctlsocket(LONG sock, ULONG req, APTR argp, TnSocketBase *base)
 {
-    if (base == NULL || sock < 0) return -1;
+    if (base == NULL) return -1;
+    if (sock < 0) { tn_set_errno_val(base, EBADF); return -1; }
     base->ipc_msg.args[0] = sock;
     base->ipc_msg.args[1] = (LONG)req;
     base->ipc_msg.ptrs[0] = argp;
@@ -897,14 +1006,77 @@ static BOOL tn_ensure_timer(TnSocketBase *base)
     return TRUE;
 }
 
+/* TN-bugtrack 2.2/2.3: WaitSelect carries two fd_set words (fds 0-63);
+ * like the daemon, word 1 is only touched when nfds > 32. */
+static void tn_ws_zero(fd_set *r, fd_set *w, fd_set *e, LONG nfds)
+{
+    int k, nw = (nfds > 32) ? 2 : 1;
+    for (k = 0; k < nw; k++) {
+        if (r) r->fds_bits[k] = 0;
+        if (w) w->fds_bits[k] = 0;
+        if (e) e->fds_bits[k] = 0;
+    }
+}
+
+static void tn_ws_save(const fd_set *s, ULONG *orig, LONG nfds)
+{
+    orig[0] = orig[1] = 0;
+    if (s == NULL) return;
+    orig[0] = s->fds_bits[0];
+    if (nfds > 32) orig[1] = s->fds_bits[1];
+}
+
+static void tn_ws_restore(fd_set *s, const ULONG *orig, LONG nfds)
+{
+    if (s == NULL) return;
+    s->fds_bits[0] = orig[0];
+    if (nfds > 32) s->fds_bits[1] = orig[1];
+}
+
+/* clear descriptor bits [from, to): fds beyond the clamped nfds can never
+ * be reported ready, so they must not read back as set */
+static void tn_ws_clear_range(fd_set *s, LONG from, LONG to)
+{
+    LONG fd;
+    if (s == NULL) return;
+    for (fd = from; fd < to; fd++) {
+        s->fds_bits[fd >> 5] &= ~(1UL << (fd & 31));
+    }
+}
+
+/* Signal wake: bits the caller asked for in *signals win - 0, *signals,
+ * EINTR, bits consumed (AmiTCP; bsdsocktest #66). A break bit (sig_int)
+ * the caller did NOT ask for aborts the call like every other blocking
+ * LVO: -1/EINTR with the bit left pending (TN-bugtrack 2.4). */
+static LONG tn_ws_interrupted(TnSocketBase *base, ULONG got, ULONG user_mask,
+                              ULONG brk_mask, ULONG *signals, fd_set *r,
+                              fd_set *w, fd_set *e, LONG nfds)
+{
+    ULONG user_got = got & user_mask;
+    ULONG brk_got  = got & brk_mask;
+
+    tn_ws_zero(r, w, e, nfds);
+    tn_set_errno_val(base, EINTR);
+    if (brk_got != 0) SetSignal(brk_got, brk_got); /* Wait() consumed it */
+    if (user_got != 0) {
+        SetSignal(0, user_got);
+        if (signals != NULL) *signals = user_got;
+        return 0;
+    }
+    if (signals != NULL) *signals = 0;
+    return -1;
+}
+
 /* -126: WaitSelect(nfds, read_fds, write_fds, except_fds, timeout, signals) */
 LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
                        fd_set *except_fds, struct timeval *timeout,
                        ULONG *signals, TnSocketBase *base)
 {
     LONG res;
-    ULONG orig_r = 0, orig_w = 0, orig_e = 0;
-    ULONG sig_mask = 0;
+    ULONG orig_r[2], orig_w[2], orig_e[2];
+    ULONG user_mask = 0;     /* signals the caller asked for in *signals */
+    ULONG brk_mask;          /* break bits the caller did not ask for */
+    ULONG sig_mask;
     ULONG received_sigs = 0;
     BOOL has_timeout = (timeout != NULL);
     BOOL zero_timeout = (has_timeout && timeout->tv_secs == 0 && timeout->tv_micro == 0);
@@ -918,32 +1090,42 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
         return -1;
     }
 
-    if (read_fds)   orig_r = read_fds->fds_bits[0];
-    if (write_fds)  orig_w = write_fds->fds_bits[0];
-    if (except_fds) orig_e = except_fds->fds_bits[0];
+    /* TN-bugtrack 2.3: only fds 0..63 travel to the daemon and no fd can
+     * reach dtablesize - clamp nfds (4.4BSD) and drop the bits above it. */
+    {
+        LONG lim = base->dtablesize;
+        if (lim > TN_FD_SETSIZE) lim = TN_FD_SETSIZE;
+        if (nfds > lim) {
+            /* fds >= 64 stay as the caller set them (outside the protocol) */
+            LONG top = (nfds < TN_FD_SETSIZE) ? nfds : TN_FD_SETSIZE;
+            tn_ws_clear_range(read_fds, lim, top);
+            tn_ws_clear_range(write_fds, lim, top);
+            tn_ws_clear_range(except_fds, lim, top);
+            nfds = lim;
+        }
+    }
+
+    tn_ws_save(read_fds, orig_r, nfds);
+    tn_ws_save(write_fds, orig_w, nfds);
+    tn_ws_save(except_fds, orig_e, nfds);
 
     if (signals != NULL) {
-        sig_mask = *signals;
+        user_mask = *signals;
     }
-    if (base->sig_int != 0) {
-        sig_mask |= base->sig_int;
-    }
+    brk_mask = base->sig_int & ~user_mask;
+    sig_mask = user_mask | brk_mask;
 
     /* Check AmigaOS user signals already pending */
     if (sig_mask != 0) {
         received_sigs = SetSignal(0, 0) & sig_mask;
         if (received_sigs != 0) {
-            SetSignal(0, received_sigs);
-            if (signals != NULL) *signals = received_sigs;
             /* AmiTCP WaitSelect: signal interrupt returns 0 with fd_sets
              * zeroed, but errno is set to EINTR (Roadshow autodocs: 'returns
              * 0 and sets errno to EINTR') — bsdsocktest #66 checks rc==0,
              * our tc_waitselect_eintr checks errno==EINTR. */
-            if (read_fds)   read_fds->fds_bits[0] = 0;
-            if (write_fds)  write_fds->fds_bits[0] = 0;
-            if (except_fds) except_fds->fds_bits[0] = 0;
-            tn_set_errno_val(base, EINTR);
-            base->dbg_wait_fired = 0x1; return 0;
+            base->dbg_wait_fired = 0x1;
+            return tn_ws_interrupted(base, received_sigs, user_mask, brk_mask,
+                                     signals, read_fds, write_fds, except_fds, nfds);
         }
     }
 
@@ -960,9 +1142,9 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
 
     if (nfds > 0) {
         base->ipc_msg.args[0] = nfds;
-        base->ipc_msg.args[1] = orig_r;
-        base->ipc_msg.args[2] = orig_w;
-        base->ipc_msg.args[3] = orig_e;
+        base->ipc_msg.args[1] = orig_r[0];
+        base->ipc_msg.args[2] = orig_w[0];
+        base->ipc_msg.args[3] = orig_e[0];
         base->ipc_msg.ptrs[0] = (APTR)read_fds;
         base->ipc_msg.ptrs[1] = (APTR)write_fds;
         base->ipc_msg.ptrs[2] = (APTR)except_fds;
@@ -987,9 +1169,7 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
 
         if (zero_timeout) {
             tn_ipc_call(base, TN_IPC_CMD_SELECT_DISARM);
-            if (read_fds)   read_fds->fds_bits[0] = 0;
-            if (write_fds)  write_fds->fds_bits[0] = 0;
-            if (except_fds) except_fds->fds_bits[0] = 0;
+            tn_ws_zero(read_fds, write_fds, except_fds, nfds);
             if (signals != NULL) *signals = 0;
             base->dbg_wait_fired = 0x4; return 0;
         }
@@ -999,10 +1179,15 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
          * signal arrives, not return at once. */
         if (!has_timeout || zero_timeout) {
             if (!has_timeout && sig_mask != 0) {
-                ULONG got2 = Wait(sig_mask);
-                SetSignal(got2 & sig_mask, got2 & sig_mask); /* leave the bits set */
-                if (signals != NULL) *signals = got2 & sig_mask;
+                ULONG got2 = Wait(sig_mask) & sig_mask;
+                SetSignal(got2, got2); /* leave the bits set */
                 tn_set_errno_val(base, EINTR);
+                if ((got2 & user_mask) == 0) {
+                    /* only the break mask fired (TN-bugtrack 2.4) */
+                    if (signals != NULL) *signals = 0;
+                    return -1;
+                }
+                if (signals != NULL) *signals = got2 & user_mask;
                 return 0;
             }
             if (signals != NULL) *signals = 0;
@@ -1079,9 +1264,7 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
                 ULONG remain_ticks = (gone - t0 >= budget_ticks) ? 0 : budget_ticks - (gone - t0);
                 if (remain_ticks == 0) {
                     /* budget already spent */
-                    if (read_fds)   { read_fds->fds_bits[0] = 0; read_fds->fds_bits[1] = 0; }
-                    if (write_fds)  { write_fds->fds_bits[0] = 0; write_fds->fds_bits[1] = 0; }
-                    if (except_fds) { except_fds->fds_bits[0] = 0; except_fds->fds_bits[1] = 0; }
+                    tn_ws_zero(read_fds, write_fds, except_fds, nfds);
                     if (signals != NULL) *signals = 0;
                     if (nfds > 0) tn_ipc_call(base, TN_IPC_CMD_SELECT_DISARM);
                     base->dbg_wait_fired = 0x5; return 0;
@@ -1116,15 +1299,9 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
 
             /* If interrupted by user signal */
             if (sig_mask != 0 && (fired & sig_mask)) {
-                ULONG received_sigs = fired & sig_mask;
-                SetSignal(0, received_sigs);
-                if (signals != NULL) *signals = received_sigs;
-                if (read_fds)   { read_fds->fds_bits[0] = 0; read_fds->fds_bits[1] = 0; }
-                if (write_fds)  { write_fds->fds_bits[0] = 0; write_fds->fds_bits[1] = 0; }
-                if (except_fds) { except_fds->fds_bits[0] = 0; except_fds->fds_bits[1] = 0; }
                 base->dbg_wait_fired = 0x6;
-                tn_set_errno_val(base, EINTR);
-                return 0;
+                return tn_ws_interrupted(base, fired & sig_mask, user_mask, brk_mask,
+                                         signals, read_fds, write_fds, except_fds, nfds);
             }
 
             DateStamp(&ds);
@@ -1137,9 +1314,9 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
             /* Socket activity or genuine timeout: query final ready sets.
              * A res==0 query with budget REMAINING means the wake was a
              * timer lie (or spurious) - retry instead of reporting timeout. */
-            if (read_fds)   read_fds->fds_bits[0] = orig_r;
-            if (write_fds)  write_fds->fds_bits[0] = orig_w;
-            if (except_fds) except_fds->fds_bits[0] = orig_e;
+            tn_ws_restore(read_fds, orig_r, nfds);
+            tn_ws_restore(write_fds, orig_w, nfds);
+            tn_ws_restore(except_fds, orig_e, nfds);
 
             base->ipc_msg.args[0] = nfds;
             base->ipc_msg.ptrs[0] = (APTR)read_fds;
@@ -1153,33 +1330,37 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
                 /* z.ai step 6 item 4: infinite wait NEVER returns 0 on a
                  * spurious wake — the selector was disarmed on wake, so
                  * re-ARM (via the same fast-path call) and keep waiting. */
+                tn_ws_restore(read_fds, orig_r, nfds);   /* query rewrote word 1 */
+                tn_ws_restore(write_fds, orig_w, nfds);
+                tn_ws_restore(except_fds, orig_e, nfds);
                 base->ipc_msg.args[0] = nfds;
-                base->ipc_msg.args[1] = orig_r;
-                base->ipc_msg.args[2] = orig_w;
-                base->ipc_msg.args[3] = orig_e;
+                base->ipc_msg.args[1] = orig_r[0];
+                base->ipc_msg.args[2] = orig_w[0];
+                base->ipc_msg.args[3] = orig_e[0];
                 base->ipc_msg.ptrs[0] = (APTR)read_fds;
                 base->ipc_msg.ptrs[1] = (APTR)write_fds;
                 base->ipc_msg.ptrs[2] = (APTR)except_fds;
                 {
                     LONG arm_res = tn_ipc_call(base, TN_IPC_CMD_SELECT_ARM);
                     if (arm_res > 0) return arm_res; /* already ready */
-                    if (arm_res < 0) return 0;
+                    if (arm_res < 0) return -1; /* errno set; not a timeout (2.11) */
                 }
                 continue;
             }
             if (elapsed + 3UL >= budget_ticks) {
                 /* genuine timeout (3-tick measurement slack) */
-                if (read_fds)   { read_fds->fds_bits[0] = 0; read_fds->fds_bits[1] = 0; }
-                if (write_fds)  { write_fds->fds_bits[0] = 0; write_fds->fds_bits[1] = 0; }
-                if (except_fds) { except_fds->fds_bits[0] = 0; except_fds->fds_bits[1] = 0; }
+                tn_ws_zero(read_fds, write_fds, except_fds, nfds);
                 base->dbg_wait_fired = 0x7; return 0;
             }
             /* timer lied or spurious wake - re-ARM (disarmed on wake) and
              * retry with the remaining budget (z.ai step 7 item 2c). */
+            tn_ws_restore(read_fds, orig_r, nfds);   /* query rewrote word 1 */
+            tn_ws_restore(write_fds, orig_w, nfds);
+            tn_ws_restore(except_fds, orig_e, nfds);
             base->ipc_msg.args[0] = nfds;
-            base->ipc_msg.args[1] = orig_r;
-            base->ipc_msg.args[2] = orig_w;
-            base->ipc_msg.args[3] = orig_e;
+            base->ipc_msg.args[1] = orig_r[0];
+            base->ipc_msg.args[2] = orig_w[0];
+            base->ipc_msg.args[3] = orig_e[0];
             base->ipc_msg.ptrs[0] = (APTR)read_fds;
             base->ipc_msg.ptrs[1] = (APTR)write_fds;
             base->ipc_msg.ptrs[2] = (APTR)except_fds;
@@ -1387,9 +1568,18 @@ struct hostent *tn_lvo_gethostbyname(CONST_STRPTR name, TnSocketBase *base)
     res = tn_ipc_call(base, TN_IPC_CMD_GETHOSTBYNAME);
     /* res==0: daemon answered NULL (not found); res==-1: transport failure
      * incl. the watchdog ETIMEDOUT — both are "no hostent", never a
-     * (hostent *)-1 poison pointer for callers that only check != NULL */
-    if (res <= 0) {
+     * (hostent *)-1 poison pointer for callers that only check != NULL.
+     * Any other value is a pointer: a base in fast RAM at >= 0x80000000
+     * is negative as LONG and still valid (TN-bugtrack 2.11). */
+    if (res == 0) {
         tn_set_herrno_val(base, HOST_NOT_FOUND);
+        return NULL;
+    }
+    if (res == -1) {
+        LONG e = base->task_errno;
+        tn_set_herrno_val(base, (e == ETIMEDOUT || e == EAGAIN || e == EINTR ||
+                                 e == ENETDOWN || e == ENOBUFS)
+                                ? TRY_AGAIN : HOST_NOT_FOUND);
         return NULL;
     }
     return (struct hostent *)(intptr_t)res;
@@ -1665,7 +1855,10 @@ LONG tn_lvo_gethostname(STRPTR name, LONG namelen, TnSocketBase *base)
 {
     const char *h = "amiga";
     int i = 0;
-    if (name == NULL || namelen <= 0) return -1;
+    if (name == NULL || namelen <= 0) {
+        tn_set_errno_val(base, EINVAL);
+        return -1;
+    }
     if (base != NULL && base->hostname[0] != '\0') h = base->hostname;
 
     while (h[i] && i < namelen - 1) {
@@ -1684,6 +1877,20 @@ in_addr_t tn_lvo_gethostid(TnSocketBase *base)
         return (in_addr_t)base->ipc_msg.args[0];
     }
     return INADDR_NONE;
+}
+
+/* SBTF_REF tag data points into client memory: byte-wise access keeps
+ * an odd pointer from raising a 68000 Address Error (TNET-139 class) */
+static ULONG tn_sbtc_ref_load(ULONG addr)
+{
+    ULONG v;
+    CopyMem((APTR)(uintptr_t)addr, &v, sizeof(v));
+    return v;
+}
+
+static void tn_sbtc_ref_store(ULONG addr, ULONG v)
+{
+    CopyMem(&v, (APTR)(uintptr_t)addr, sizeof(v));
 }
 
 /* -294: SocketBaseTagList(tags) (COMPAT-1 / TNET-036; per-tag logic in
@@ -1748,7 +1955,8 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
         st.release_str  = (uint32_t)(uintptr_t)"tolunnet " TOLUNNET_VERSION " (bsdsocket 4.1)";
 
         if (!tn_sbtc_dispatch_tag((uint32_t)tag->ti_Tag, (uint32_t)tag->ti_Data, &st, &r)) {
-            count++; /* count unknown tags only (TNET-036) */
+            count++; /* unknown tags (TNET-036) + failed DTABLESIZE sets; the
+                      * AmiTCP 1-based-index semantics are deferred (TN-bugtrack 2.5) */
             continue;
         }
 
@@ -1757,28 +1965,28 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
         switch (r.op) {
         case TN_SBTC_OP_GET:
             if (r.is_ref && tag->ti_Data != 0) {
-                *(ULONG *)(uintptr_t)tag->ti_Data = r.value;
+                tn_sbtc_ref_store(tag->ti_Data, (ULONG)(r.value));
             } else {
                 tag->ti_Data = r.value;
             }
             break;
         case TN_SBTC_OP_SET_SIGINT:
-            base->sig_int = (r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value;
+            base->sig_int = (r.is_ref && r.value != 0) ? tn_sbtc_ref_load(r.value) : r.value;
             break;
         case TN_SBTC_OP_SET_SIGIO:
-            base->sig_io = (r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value;
+            base->sig_io = (r.is_ref && r.value != 0) ? tn_sbtc_ref_load(r.value) : r.value;
             break;
         case TN_SBTC_OP_SET_SIGURG:
-            base->sig_urg = (r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value;
+            base->sig_urg = (r.is_ref && r.value != 0) ? tn_sbtc_ref_load(r.value) : r.value;
             break;
         case TN_SBTC_OP_SET_SIGEVENT:
-            base->sig_event = (r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value;
+            base->sig_event = (r.is_ref && r.value != 0) ? tn_sbtc_ref_load(r.value) : r.value;
             break;
         case TN_SBTC_OP_SET_ERRNO:
-            tn_set_errno_val(base, (LONG)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value));
+            tn_set_errno_val(base, (LONG)((r.is_ref && r.value != 0) ? tn_sbtc_ref_load(r.value) : r.value));
             break;
         case TN_SBTC_OP_SET_HERRNO:
-            tn_set_herrno_val(base, (LONG)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value));
+            tn_set_herrno_val(base, (LONG)((r.is_ref && r.value != 0) ? tn_sbtc_ref_load(r.value) : r.value));
             break;
         case TN_SBTC_OP_SET_ERRNO_PTR:
             base->errno_ptr   = (LONG *)(uintptr_t)r.value;
@@ -1788,31 +1996,34 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
             base->herrno_ptr = (LONG *)(uintptr_t)r.value;
             break;
         case TN_SBTC_OP_SET_FDCALLBACK:
-            base->fd_callback = (APTR)(uintptr_t)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value);
+            base->fd_callback = (APTR)(uintptr_t)((r.is_ref && r.value != 0) ? tn_sbtc_ref_load(r.value) : r.value);
             break;
         case TN_SBTC_OP_SET_LOGSTAT:
-            base->log_stat = (LONG)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value);
+            base->log_stat = (LONG)((r.is_ref && r.value != 0) ? tn_sbtc_ref_load(r.value) : r.value);
             break;
         case TN_SBTC_OP_SET_LOGTAGPTR:
-            base->log_tag_ptr = (APTR)(uintptr_t)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value);
+            base->log_tag_ptr = (APTR)(uintptr_t)((r.is_ref && r.value != 0) ? tn_sbtc_ref_load(r.value) : r.value);
             break;
         case TN_SBTC_OP_SET_LOGFACILITY:
-            base->log_facility = (LONG)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value);
+            base->log_facility = (LONG)((r.is_ref && r.value != 0) ? tn_sbtc_ref_load(r.value) : r.value);
             break;
         case TN_SBTC_OP_SET_LOGMASK:
-            base->log_mask = (LONG)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value);
+            base->log_mask = (LONG)((r.is_ref && r.value != 0) ? tn_sbtc_ref_load(r.value) : r.value);
             break;
         case TN_SBTC_OP_SET_UDPCHECKSUM:
-            base->udp_checksum = (LONG)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value);
+            base->udp_checksum = (LONG)((r.is_ref && r.value != 0) ? tn_sbtc_ref_load(r.value) : r.value);
             break;
         case TN_SBTC_OP_SET_IPDEFAULTTTL:
-            base->ip_default_ttl = (LONG)((r.is_ref && r.value != 0) ? *(ULONG *)(uintptr_t)r.value : r.value);
+            base->ip_default_ttl = (LONG)((r.is_ref && r.value != 0) ? tn_sbtc_ref_load(r.value) : r.value);
             break;
         case TN_SBTC_OP_SET_DTABLESIZE:
             {
                 /* TNET-121: grow the per-base descriptor table live.
                  * Never shrink below the highest open fd + 1. */
-                LONG newsize = (LONG)r.value;
+                /* TN-bugtrack 2.5: the dispatcher leaves is_ref clear for
+                 * this tag, so honour SBTF_REF from the raw tag here. */
+                LONG newsize = ((tag->ti_Tag & SBTF_REF) && r.value != 0)
+                               ? (LONG)tn_sbtc_ref_load(r.value) : (LONG)r.value;
                 LONG highest_open = -1;
                 LONG i;
                 if (newsize < 4) newsize = 4;
@@ -1821,43 +2032,61 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
                     for (i = base->dtablesize - 1; i >= 0; i--) {
                         if (base->fd_map[i] >= 0) { highest_open = i; break; }
                     }
-                    if (newsize <= highest_open + 1) break; /* EINVAL per spec */
+                    if (newsize < highest_open + 1) {
+                        /* EINVAL per spec — a failed tag (TN-bugtrack 2.5) */
+                        tn_set_errno_val(base, EINVAL);
+                        count++;
+                        break;
+                    }
                 }
                 if (newsize != base->dtablesize) {
                     LONG  *nm = (LONG *)AllocVec(sizeof(LONG) * newsize, MEMF_PUBLIC | MEMF_CLEAR);
                     ULONG *ne = (ULONG *)AllocVec(sizeof(ULONG) * newsize, MEMF_PUBLIC | MEMF_CLEAR);
                     ULONG *nk = (ULONG *)AllocVec(sizeof(ULONG) * newsize, MEMF_PUBLIC | MEMF_CLEAR);
                     if (nm != NULL && ne != NULL && nk != NULL) {
-                        LONG copy_n = (newsize < base->dtablesize) ? newsize : base->dtablesize;
-                        for (i = 0; i < copy_n; i++) {
-                            nm[i] = base->fd_map[i];
-                            ne[i] = base->events[i];
-                            nk[i] = base->event_masks[i];
-                        }
-                        for (i = copy_n; i < newsize; i++) {
+                        LONG  *om = base->fd_map;
+                        ULONG *oe = base->events;
+                        ULONG *ok = base->event_masks;
+                        LONG copy_n;
+                        for (i = 0; i < newsize; i++) {
                             nm[i] = -1;
                         }
-                        FreeVec(base->fd_map);
-                        FreeVec(base->events);
-                        FreeVec(base->event_masks);
+                        /* TN-bugtrack 2.6: the daemon walks fd_map/events up
+                         * to dtablesize (tn_record_socket_event) — copy and
+                         * swap with it locked out; size never exceeds the
+                         * live arrays (shrink: size first, grow: size last). */
+                        Forbid();
+                        copy_n = (newsize < base->dtablesize) ? newsize : base->dtablesize;
+                        for (i = 0; i < copy_n; i++) {
+                            nm[i] = om[i];
+                            ne[i] = oe[i];
+                            nk[i] = ok[i];
+                        }
+                        if (newsize < base->dtablesize) base->dtablesize = newsize;
                         base->fd_map = nm;
                         base->events = ne;
                         base->event_masks = nk;
                         base->dtablesize = newsize;
+                        Permit();
+                        FreeVec(om);
+                        FreeVec(oe);
+                        FreeVec(ok);
                     } else {
                         if (nm) FreeVec(nm);
                         if (ne) FreeVec(ne);
                         if (nk) FreeVec(nk);
+                        tn_set_errno_val(base, ENOMEM);
+                        count++; /* allocation failure is a failed tag */
                     }
                 }
             }
             break;
         case TN_SBTC_OP_GET_ERRNO_STR:
             {
-                int err = (int)((r.is_ref && tag->ti_Data != 0) ? *(ULONG *)(uintptr_t)tag->ti_Data : r.value);
+                int err = (int)((r.is_ref && tag->ti_Data != 0) ? tn_sbtc_ref_load(tag->ti_Data) : r.value);
                 const char *s = tn_strerror(err);
                 if (r.is_ref && tag->ti_Data != 0) {
-                    *(ULONG *)(uintptr_t)tag->ti_Data = (uint32_t)(uintptr_t)s;
+                    tn_sbtc_ref_store(tag->ti_Data, (ULONG)((uint32_t)(uintptr_t)s));
                 } else {
                     tag->ti_Data = (uint32_t)(uintptr_t)s;
                 }
@@ -1865,10 +2094,10 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
             break;
         case TN_SBTC_OP_GET_HERRNO_STR:
             {
-                int err = (int)((r.is_ref && tag->ti_Data != 0) ? *(ULONG *)(uintptr_t)tag->ti_Data : r.value);
+                int err = (int)((r.is_ref && tag->ti_Data != 0) ? tn_sbtc_ref_load(tag->ti_Data) : r.value);
                 const char *s = tn_hstrerror(err);
                 if (r.is_ref && tag->ti_Data != 0) {
-                    *(ULONG *)(uintptr_t)tag->ti_Data = (uint32_t)(uintptr_t)s;
+                    tn_sbtc_ref_store(tag->ti_Data, (ULONG)((uint32_t)(uintptr_t)s));
                 } else {
                     tag->ti_Data = (uint32_t)(uintptr_t)s;
                 }
@@ -1876,10 +2105,10 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
             break;
         case TN_SBTC_OP_GET_IOERRNO_STR:
             {
-                int err = (int)((r.is_ref && tag->ti_Data != 0) ? *(ULONG *)(uintptr_t)tag->ti_Data : r.value);
+                int err = (int)((r.is_ref && tag->ti_Data != 0) ? tn_sbtc_ref_load(tag->ti_Data) : r.value);
                 const char *s = tn_ioerror(err);
                 if (r.is_ref && tag->ti_Data != 0) {
-                    *(ULONG *)(uintptr_t)tag->ti_Data = (uint32_t)(uintptr_t)s;
+                    tn_sbtc_ref_store(tag->ti_Data, (ULONG)((uint32_t)(uintptr_t)s));
                 } else {
                     tag->ti_Data = (uint32_t)(uintptr_t)s;
                 }
@@ -1887,10 +2116,10 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
             break;
         case TN_SBTC_OP_GET_S2ERRNO_STR:
             {
-                int err = (int)((r.is_ref && tag->ti_Data != 0) ? *(ULONG *)(uintptr_t)tag->ti_Data : r.value);
+                int err = (int)((r.is_ref && tag->ti_Data != 0) ? tn_sbtc_ref_load(tag->ti_Data) : r.value);
                 const char *s = tn_s2error(err);
                 if (r.is_ref && tag->ti_Data != 0) {
-                    *(ULONG *)(uintptr_t)tag->ti_Data = (uint32_t)(uintptr_t)s;
+                    tn_sbtc_ref_store(tag->ti_Data, (ULONG)((uint32_t)(uintptr_t)s));
                 } else {
                     tag->ti_Data = (uint32_t)(uintptr_t)s;
                 }
@@ -1898,10 +2127,10 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
             break;
         case TN_SBTC_OP_GET_S2WERRNO_STR:
             {
-                int err = (int)((r.is_ref && tag->ti_Data != 0) ? *(ULONG *)(uintptr_t)tag->ti_Data : r.value);
+                int err = (int)((r.is_ref && tag->ti_Data != 0) ? tn_sbtc_ref_load(tag->ti_Data) : r.value);
                 const char *s = tn_s2werror(err);
                 if (r.is_ref && tag->ti_Data != 0) {
-                    *(ULONG *)(uintptr_t)tag->ti_Data = (uint32_t)(uintptr_t)s;
+                    tn_sbtc_ref_store(tag->ti_Data, (ULONG)((uint32_t)(uintptr_t)s));
                 } else {
                     tag->ti_Data = (uint32_t)(uintptr_t)s;
                 }
@@ -1921,19 +2150,18 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
 LONG tn_lvo_getsocketevents(ULONG *event_ptr, TnSocketBase *base)
 {
     int fd;
-    static int last_fd = -1; /* round-robin cursor (per-base is overkill:
-                              * bsdsocktest drives from a single task) */
     if (base == NULL || event_ptr == NULL) {
         if (base != NULL) tn_set_errno_val(base, EINVAL);
         return -1;
     }
     Forbid();
     for (fd = 0; fd < base->dtablesize; fd++) {
-        int check = (last_fd + 1 + fd) % base->dtablesize;
+        /* per-base round-robin cursor (TN-bugtrack 2.11) */
+        int check = (int)((base->gse_last_fd + 1 + fd) % base->dtablesize);
         if (base->events[check] != 0) {
             *event_ptr = base->events[check];
             base->events[check] = 0;
-            last_fd = check;
+            base->gse_last_fd = check;
             Permit();
             return check;
         }
@@ -2172,6 +2400,7 @@ struct hostent *tn_lvo_gethostbyname_r(CONST_STRPTR name, struct hostent *hp, AP
     int i = 0;
     while (res->h_name && res->h_name[i] && i < 63) { p[i] = res->h_name[i]; i++; }
     p[i++] = '\0';
+    p += i; /* step past the name before aligning (TN-bugtrack 2.1) */
     p = (char *)(((uintptr_t)p + 3) & ~3);
 
     /* p was 4-aligned above; the void* hop records that guarantee (TNET-139) */
@@ -2220,6 +2449,7 @@ struct hostent *tn_lvo_gethostbyaddr_r(CONST_STRPTR addr, LONG len, LONG type, s
     int i = 0;
     while (res->h_name && res->h_name[i] && i < 63) { p[i] = res->h_name[i]; i++; }
     p[i++] = '\0';
+    p += i; /* step past the name before aligning (TN-bugtrack 2.1) */
     p = (char *)(((uintptr_t)p + 3) & ~3);
 
     /* p was 4-aligned above; the void* hop records that guarantee (TNET-139) */

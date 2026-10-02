@@ -15,8 +15,8 @@
  * History notes: the 11m bench failures (164439/170403) were a DEAD
  * STACK - the rows ran after tc_cmd_stop_start - not System() or
  * ReadArgs; both spawn mechanisms returned the same rc=20/10/10/10
- * signature for that reason, so the checks run with LoadSeg +
- * RunCommand like the suite's own run_cmd. And lwIP resolves
+ * signature for that reason. The checks run through SystemTags (7.2:
+ * RunCommand from a WB-started process has no CLI). And lwIP resolves
  * (dns_gethostbyname) on UDP port 53 only, so gethostbyname-based
  * lookups can never reach a bench DNS on another port - the DNS
  * check queries the configured server directly.
@@ -37,34 +37,50 @@
 
 #define TN_CHECK_TMP "T:tn-check.out"
 
-/* Load the command and run it with RunCommand, capturing stdout.
- * This mirrors the conformance suite's run_cmd. The command line
- * MUST end with a newline or /N numeric scans hit garbage.
- * (History note, 11n: the earlier bench failures in 164439/170403
- * were a DEAD STACK - the rows ran after tc_cmd_stop_start - not
- * System()/ReadArgs; both spawn mechanisms returned the same
- * rc=20/10/10/10 signature for that reason.) */
+/* 7.2: run "<path> <args>" through SystemTags, not LoadSeg +
+ * RunCommand. TolunnetSetup/TolunnetPrefs are WB tools without a
+ * CLI; RunCommand from such a process starts the libnix C: command
+ * with pr_CLI == NULL, which then waits for a WBStartup message that
+ * never comes. System() gives the command its own shell/CLI, and the
+ * explicit NIL:/file handles cover a WB process whose Input()/Output()
+ * are 0. Synchronous System() does not close the handles - we do.
+ * -100 = command not found (checked first, System would only say
+ * "unknown command" through the return code). */
+static LONG run_cmd_to(const char *path, const char *args, BPTR out_fh)
+{
+    BPTR in_fh, lk;
+    LONG ret;
+    char cmdline[256];
+    int n;
+
+    lk = Lock((CONST_STRPTR)path, ACCESS_READ);
+    if (lk == (BPTR)0) return -100;
+    UnLock(lk);
+    n = snprintf(cmdline, sizeof(cmdline), "%s %s", path, args ? args : "");
+    if (n < 0 || (size_t)n >= sizeof(cmdline)) return -102;
+    in_fh = Open((CONST_STRPTR)"NIL:", MODE_OLDFILE);
+    if (in_fh == (BPTR)0) return -101;
+    ret = SystemTags((CONST_STRPTR)cmdline,
+                     SYS_Input, (ULONG)in_fh,
+                     SYS_Output, (ULONG)out_fh,
+                     NP_StackSize, 32768,
+                     TAG_END);
+    Close(in_fh);
+    return ret;
+}
+
+/* Run the command and capture its stdout through T:tn-check.out. */
 static LONG run_cmd_capture(const char *path, const char *args,
                             char *out, size_t outn)
 {
-    BPTR seg, old_out, out_fh, r;
-    LONG ret = -1, got, total;
-    char cmdline[160];
+    BPTR out_fh, r;
+    LONG ret, got, total;
 
     out[0] = '\0';
-    seg = LoadSeg((CONST_STRPTR)path);
-    if (seg == (BPTR)0) return -100;
     out_fh = Open((CONST_STRPTR)TN_CHECK_TMP, MODE_NEWFILE);
-    if (out_fh == (BPTR)0) {
-        UnLoadSeg(seg);
-        return -101;
-    }
-    old_out = SelectOutput(out_fh);
-    snprintf(cmdline, sizeof(cmdline), "%s\n", args ? args : "");
-    ret = RunCommand(seg, 32768, (CONST_STRPTR)cmdline, (LONG)strlen(cmdline));
-    SelectOutput(old_out);
+    if (out_fh == (BPTR)0) return -101;
+    ret = run_cmd_to(path, args, out_fh);
     Close(out_fh);
-    UnLoadSeg(seg);
 
     r = Open((CONST_STRPTR)TN_CHECK_TMP, MODE_OLDFILE);
     if (r != (BPTR)0) {
@@ -83,19 +99,13 @@ static LONG run_cmd_capture(const char *path, const char *args,
 /* Same, with stdout sent to NIL (no output wanted). */
 static LONG run_cmd_silent(const char *path, const char *args)
 {
-    BPTR seg, old_out, null_out;
-    LONG ret = -1;
-    char cmdline[160];
+    BPTR null_out;
+    LONG ret;
 
-    seg = LoadSeg((CONST_STRPTR)path);
-    if (seg == (BPTR)0) return -100;
     null_out = Open((CONST_STRPTR)"NIL:", MODE_NEWFILE);
-    old_out = SelectOutput(null_out != (BPTR)0 ? null_out : Output());
-    snprintf(cmdline, sizeof(cmdline), "%s\n", args ? args : "");
-    ret = RunCommand(seg, 32768, (CONST_STRPTR)cmdline, (LONG)strlen(cmdline));
-    SelectOutput(old_out);
-    if (null_out != (BPTR)0) Close(null_out);
-    UnLoadSeg(seg);
+    if (null_out == (BPTR)0) return -101;
+    ret = run_cmd_to(path, args, null_out);
+    Close(null_out);
     return ret;
 }
 

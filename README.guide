@@ -64,8 +64,11 @@ then install with Installer Install_Tolunnet from that drawer.
 @{b}Automatic Installation:@{ub}
 Run the Commodore Installer with the @{b}Install_Tolunnet@{ub} script
 (e.g. from a shell: Installer Install_Tolunnet). It copies the files,
-backs up what it replaces (S:tolunnet-undo restores it), updates the
-boot block and offers to start TolunnetSetup - the wizard that detects
+backs up what it replaces (S:tolunnet-undo restores it; an existing
+usergroup.library included, an existing LIBS:bsdsocket.library is
+parked as .pre-tolunnet or .pre-tn-newer and renamed back only when
+no live library exists), adds a boot block guarded by
+If EXISTS C:tolunnet ... EndIf and offers to start TolunnetSetup - the wizard that detects
 your network card and configures DHCP or a static address.
 
 @{b}Manual Installation:@{ub}
@@ -94,6 +97,9 @@ your network card and configures DHCP or a static address.
    Scans Exec's library list, S:User-Startup, and WBStartup for existing stacks (Miami, MiamiDx,
    Roadshow, AmiTCP, Genesis). Automatically comments out conflicting startup lines using
    a reversible @{i}; tolunnet-disabled:@{ui} prefix and backs up @{i}S:User-Startup.tolunnet-bak@{ui}.
+   Its changes are recorded in @{i}S:tolunnet-undo-stacks@{ui}, which @{i}S:tolunnet-undo@{ui} runs first.
+   The undo never copies the backup over a live S:User-Startup: the tolunnet block stays (it does
+   nothing without C:tolunnet; remove it by hand) and the backup is renamed to .tolunnet-old.
    Existing settings (interfaces, static IP, gateway, DNS) are imported automatically.
    @{i}Safety Note: No files are ever deleted. Use the "Undo" button in TolunnetPrefs to reverse all changes.@{ui}
 

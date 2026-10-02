@@ -107,22 +107,27 @@ açılmış olması.
    yazmalı. Önceden var olan bir config'in varsa içeriğine
    dokunulmamış olmalı.
 6. **User-Startup denetimi:** `Type S:User-Startup` — sona eklenmiş
-   tam olarak bir blok olmalı: `Stack 32768` ve
-   `Run <NIL: >NIL: C:tolunnet`. Bir de
+   tam olarak bir blok olmalı: `If EXISTS C:tolunnet`,
+   `Stack 32768`, `Run <NIL: >NIL: C:tolunnet`, `EndIf`. Bir de
    `S:User-Startup.tolunnet-bak` yedeği var olmalı.
 7. **Undo script denetimi:** `Type S:tolunnet-undo` — içinde
-   `S:User-Startup.tolunnet-bak`,
-   `LIBS:bsdsocket.library.pre-tolunnet` yedeği ve
+   `S:tolunnet-undo-stacks` çağrısı, `S:User-Startup.tolunnet-bak`,
+   `LIBS:bsdsocket.library.pre-tolunnet` (ya da `.pre-tn-newer`) ve
    `DEVS:tolunnet.config` geçmeli.
 8. **Yeniden başlat** ve stack'in geldiğini doğrula: `ping 127.0.0.1`
    cevap vermeli (kablolu SANA-II sürücü varsa gerçek arayüz de DHCP
    ile gelmeli).
 9. **Geri alma:** `Execute S:tolunnet-undo` çalıştır ve eski durumun
-   döndüğünü kontrol et: User-Startup bloğu gitmiş (yedekten geri
-   gelmiş), `DEVS:tolunnet.config` silinmiş, yapılmışsa
-   `LIBS:bsdsocket.library.pre-tolunnet` yedeği
-   `LIBS:bsdsocket.library` olarak geri gelmiş ve yedek silinmiş
-   olmalı. Bir kez daha yeniden başlat; `ping 127.0.0.1` artık
+   döndüğünü kontrol et: canlı `S:User-Startup` yerinde kalmış
+   olmalı (undo yedeği üzerine kopyalamaz); tolunnet bloğu
+   `If EXISTS C:tolunnet` ile korunduğu için artık bir şey yapmaz,
+   elle silinebilir — undo bunu ekrana yazar. Yedek
+   `S:User-Startup.tolunnet-old` adını almış olmalı.
+   `DEVS:tolunnet.config` silinmiş, önceden `usergroup.library` varsa
+   o geri gelmiş, `LIBS:bsdsocket.library` yoksa park edilmiş
+   `.pre-tolunnet`/`.pre-tn-newer` kopyası `Rename` ile geri gelmiş
+   olmalı (canlı bir kütüphane varsa park kopyası olduğu gibi kalır
+   ve undo bunu söyler). Bir kez daha yeniden başlat; `ping 127.0.0.1` artık
    başarısız olmalı (stack başlamıyor).
 
 Sonucu (adım adım geçti/kaldı, WinUAE mi donanım mı olduğunu) sürüm

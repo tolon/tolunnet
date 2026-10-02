@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /*
  * tolunnet — telnet command (CMD-4). ReadArgs: HOST/A,PORT/N
- * Simplified: raw TCP terminal, no NVT negotiation (connect + pipe).
+ * Minimal NVT: asks the server for ECHO + SGA, refuses every other
+ * option, sends CR LF line ends (6.10).
  */
 #include "cmdlib.h"
 #include <string.h>
@@ -25,6 +26,73 @@ TN_VERSTAG_DEF("telnet");
 #define OPT_NAWS 31
 #define CR 13
 #define LF 10
+
+/* 6.10: per-option state of the SERVER side (him), RFC 1143 style
+ * without the queue bits. Our own side is always "no": DO is refused
+ * with WONT, DONT needs no answer. A reply is only sent when it
+ * changes state or refuses a request - never in answer to an answer,
+ * so the two sides cannot loop. */
+#define OPT_NO      0
+#define OPT_YES     1
+#define OPT_WANTYES 2
+static UBYTE tn_him[256];
+
+static BOOL tn_want_him(UBYTE opt)
+{
+    return opt == OPT_ECHO || opt == OPT_SGA;
+}
+
+static void tn_send_opt(LONG fd, UBYTE cmd, UBYTE opt)
+{
+    UBYTE r[3];
+    r[0] = IAC; r[1] = cmd; r[2] = opt;
+    tn_call_send(fd, r, 3, 0);
+}
+
+static void tn_handle_opt(LONG fd, UBYTE cmd, UBYTE opt)
+{
+    switch (cmd) {
+    case WILL:
+        if (tn_him[opt] == OPT_WANTYES) {
+            tn_him[opt] = OPT_YES;           /* answer to our DO */
+        } else if (tn_him[opt] == OPT_NO) {
+            if (tn_want_him(opt)) {
+                tn_him[opt] = OPT_YES;
+                tn_send_opt(fd, DO, opt);
+            } else {
+                tn_send_opt(fd, DONT, opt);  /* refuse */
+            }
+        }
+        break;
+    case WONT:
+        if (tn_him[opt] == OPT_YES) {
+            tn_him[opt] = OPT_NO;
+            tn_send_opt(fd, DONT, opt);
+        } else if (tn_him[opt] == OPT_WANTYES) {
+            tn_him[opt] = OPT_NO;            /* our DO was refused */
+        }
+        break;
+    case DO:
+        tn_send_opt(fd, WONT, opt);          /* we enable nothing */
+        break;
+    default:                                 /* DONT: already off */
+        break;
+    }
+}
+
+/* Console bytes -> NVT: bare LF becomes CR LF, IAC is doubled.
+ * out must hold 2 * n bytes. */
+static LONG tn_to_nvt(const char *in, LONG n, char *out)
+{
+    LONG i, o = 0;
+    for (i = 0; i < n; i++) {
+        UBYTE c = (UBYTE)in[i];
+        if (c == LF && (i == 0 || (UBYTE)in[i - 1] != CR)) out[o++] = (char)CR;
+        else if (c == IAC) out[o++] = (char)IAC;
+        out[o++] = (char)c;
+    }
+    return o;
+}
 
 /* Telnet protocol parser states (SEC item 8) */
 enum {
@@ -83,21 +151,12 @@ int main(int argc, char **argv)
     }
     tn_cmd_printf("telnet: connected. Type Ctrl-C to quit.\n");
 
-    /* Refuse server's NVT options by sending WONT/DONT for common ones */
-    {
-        UBYTE nvt_refuse[] = {
-            IAC, WONT, OPT_TTYPE,
-            IAC, WONT, OPT_NAWS,
-            IAC, DONT, OPT_ECHO,  /* actually DO ECHO to ask server to echo */
-        };
-        /* Ask server to echo and suppress-go-ahead */
-        UBYTE nvt_request[] = {
-            IAC, DO, OPT_ECHO,
-            IAC, DO, OPT_SGA,
-        };
-        tn_call_send(fd, nvt_refuse, sizeof(nvt_refuse), 0);
-        tn_call_send(fd, nvt_request, sizeof(nvt_request), 0);
-    }
+    /* Ask the server to echo and suppress go-ahead (6.10: no
+     * unsolicited WONT/DONT - those options are already off). */
+    tn_him[OPT_ECHO] = OPT_WANTYES;
+    tn_send_opt(fd, DO, OPT_ECHO);
+    tn_him[OPT_SGA] = OPT_WANTYES;
+    tn_send_opt(fd, DO, OPT_SGA);
 
     /* Main loop: read from socket → write to console; read console → send */
     {
@@ -159,13 +218,7 @@ int main(int argc, char **argv)
                             break;
 
                         case TN_STATE_OPT:
-                            if (pending_cmd == DO) {
-                                UBYTE r[] = { IAC, WONT, c };
-                                tn_call_send(fd, r, 3, 0);
-                            } else if (pending_cmd == WILL) {
-                                UBYTE r[] = { IAC, DONT, c };
-                                tn_call_send(fd, r, 3, 0);
-                            }
+                            tn_handle_opt(fd, pending_cmd, c);
                             tn_state = TN_STATE_DATA;
                             break;
 
@@ -198,23 +251,19 @@ int main(int argc, char **argv)
             if (interactive) {
                 if (WaitForChar(Input(), 0)) {
                     if (FGets(Input(), (STRPTR)txbuf, sizeof(txbuf)) != NULL) {
-                        LONG len = strlen(txbuf);
+                        /* 6.10: Enter goes out as CR LF (NVT) */
+                        LONG len = tn_to_nvt(txbuf, (LONG)strlen(txbuf), crlf_buf);
                         if (len > 0) {
-                            tn_call_send(fd, txbuf, len, 0);
+                            tn_call_send(fd, crlf_buf, len, 0);
                         }
                     }
                 }
             } else if (!stdin_eof) {
                 LONG got = Read(Input(), (APTR)txbuf, sizeof(txbuf));
                 if (got > 0) {
-                    LONG i, o = 0;
-                    for (i = 0; i < got; i++) {
-                        if (txbuf[i] == LF && (o == 0 || crlf_buf[o - 1] != CR)) {
-                            crlf_buf[o++] = CR;
-                        }
-                        crlf_buf[o++] = txbuf[i];
-                    }
+                    LONG o = tn_to_nvt(txbuf, got, crlf_buf);
                     if (o > 0) {
+
                         tn_call_send(fd, crlf_buf, o, 0);
                     }
                     idle = 0;

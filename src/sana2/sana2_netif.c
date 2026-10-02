@@ -241,12 +241,16 @@ TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac)
     }
 
     if (!mac_valid && nif->addr_bytes == 6) {
-        nif->mac[0] = 0x00;
+        /* 5.9: a fixed fallback collided between machines on one LAN.
+         * Locally administered unicast (02:...) with the low 3 bytes from
+         * tn_rand(), seeded from timer/EClock before tn_s2_online runs. */
+        ULONG rnd = (ULONG)LWIP_RAND();
+        nif->mac[0] = 0x02;
         nif->mac[1] = 0x80;
         nif->mac[2] = 0x10;
-        nif->mac[3] = 0x32;
-        nif->mac[4] = 0x33;
-        nif->mac[5] = 0x34;
+        nif->mac[3] = (UBYTE)(rnd >> 16);
+        nif->mac[4] = (UBYTE)(rnd >> 8);
+        nif->mac[5] = (UBYTE)rnd;
     }
 
     for (i = 0; i < nif->addr_bytes; i++) {
@@ -694,17 +698,18 @@ static void tn_s2_handle_event_bits(TnSana2If *nif, struct netif *netif, ULONG b
     nif->tx_pending = FALSE;
             netif_set_link_up(netif);
             tn_s2_rearm_reads(nif);
-            if (g_daemon.prefs.use_dhcp) {
 #if LWIP_DHCP
-                if (netif_dhcp_data(netif) != NULL) {
-                    dhcp_renew(netif);
-                    tn_log(TN_LOG_BASIC, "tolunnet: link up: DHCP renew requested\n");
-                } else {
-                    dhcp_start(netif);
-                    tn_log(TN_LOG_BASIC, "tolunnet: link up: DHCP client started\n");
-                }
+            /* 5.5: decide from the netif, not prefs.use_dhcp - a CLI IP
+             * override clears only the daemon's local use_dhcp, so prefs
+             * can say DHCP while the interface runs static. The daemon
+             * starts the DHCP client iff the effective mode is DHCP, so
+             * attached client data is the effective flag. */
+            if (netif_dhcp_data(netif) != NULL) {
+                dhcp_renew(netif);
+                tn_log(TN_LOG_BASIC, "tolunnet: link up: DHCP renew requested\n");
+            } else
 #endif
-            } else {
+            {
                 netif_set_up(netif);
                 tn_log(TN_LOG_BASIC, "tolunnet: S2 link UP (online event)\n");
             }
@@ -945,7 +950,9 @@ err_t tn_sana2_netif_init(struct netif *netif)
     netif->name[1] = 't';
     netif->output = etharp_output;
     netif->linkoutput = tn_sana2_linkoutput;
-    netif->mtu = (u16_t)nif->mtu;
+    /* 5.2: lwIP's PBUF_POOL elements hold an Ethernet frame of MTU 1500;
+     * a driver reporting more (1514/1518 style) must not raise the IP MTU */
+    netif->mtu = (u16_t)((nif->mtu > 1500) ? 1500 : nif->mtu);
     netif->hwaddr_len = 6;
 
     for (i = 0; i < 6; i++) {
@@ -1047,8 +1054,11 @@ void tn_sana2_poll_input(TnSana2If *nif, struct netif *netif)
             ULONG flen = rio->ios2_DataLength;
             BOOL valid_packet = TRUE;
 
-            /* 1. Boundary & MTU bounds validation */
-            if (flen > nif->mtu || flen > (1600 - 14)) {
+            /* 1. Boundary & MTU bounds validation. 5.2: the frame plus header
+             * and pad must fit ONE PBUF_POOL element (CopyMem below writes
+             * it contiguously), whatever MTU the driver reported. */
+            if (flen > nif->mtu || flen > (1600 - 14) ||
+                flen + 14 + ETH_PAD_SIZE > PBUF_POOL_BUFSIZE) {
                 valid_packet = FALSE;
             }
 
@@ -1074,7 +1084,13 @@ void tn_sana2_poll_input(TnSana2If *nif, struct netif *netif)
                  * the ethernet header sits at (payload % 4) == 2 and the IP header
                  * at +14 is 4-aligned. Reclaim padding before passing to netif->input. */
                 struct pbuf *p = pbuf_alloc(PBUF_RAW, (u16_t)(total_len + ETH_PAD_SIZE), PBUF_POOL);
-                if (p != NULL) {
+                if (p != NULL && p->next != NULL) {
+                    /* 5.2: chained despite the size check - never copy
+                     * past the first element; drop and re-arm below */
+                    pbuf_free(p);
+                    p = NULL;
+                    g_daemon.s2_rx_drops++;
+                } else if (p != NULL) {
 #if ETH_PAD_SIZE
                     if (pbuf_remove_header(p, ETH_PAD_SIZE) != 0) {
                         pbuf_free(p);

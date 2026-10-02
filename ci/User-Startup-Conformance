@@ -6,11 +6,13 @@ makedir T:tnsbx/C
 makedir T:tnsbx/Storage
 makedir T:tnsbx/Storage/tolunnet-backup
 makedir T:tnsbx/Storage/tolunnet-backup/C
+makedir T:tnsbx/Storage/tolunnet-backup/new
 makedir T:tnsbx/S
 makedir T:tnsbx/LIBS
 makedir T:tnsbx/DEVS
 Copy >NIL: SYS:C/NetShutdown T:tnsbx/C/NetShutdown CLONE
 Copy >NIL: SYS:C/nc T:tnsbx/C/nc CLONE
+Echo new >T:tnsbx/Storage/tolunnet-backup/new/nc
 Echo ROADSHW >T:tnsbx/Storage/tolunnet-backup/C/NetShutdown
 Echo orig >T:tnsbx/S/User-Startup.tolunnet-bak
 Echo rs >T:tnsbx/LIBS/bsdsocket.library.pre-tolunnet
@@ -49,9 +51,9 @@ If EXISTS WORK:
   ; run after the cycles: the wizard test inside SocketConformance rewrites
   ; DEVS:tolunnet.config and the daemon stop/restart race leaves a window
   ; where a fresh daemon provides no bsdsocket.library (bench incident
-  ; 20260909-154725). Loopback tier only (hermetic, no host helper); its
-  ; failures do NOT gate the bench - they are recorded row-by-row in
-  ; ISSUES.md.
+  ; 20260909-154725). Loopback tier only (hermetic, no host helper).
+  ; 9.13: ci/bench.sh gates the score - passed < 126, failed > 2 or no
+  ; "# Results:" line fails the run (known failures: the MSG_OOB pair).
   C:bsdsocktest LOOPBACK NOPAGE LOG WORK:bsdsocktest.log
   Wait 2
 

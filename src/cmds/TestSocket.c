@@ -140,7 +140,6 @@ int main(int argc, char *argv[])
     if (SocketBase == NULL) {
         tn_log(TN_LOG_BASIC, "FAIL: OpenLibrary(bsdsocket.library, 4)\n");
         if (log_fh) Close(log_fh);
-        CloseLibrary(DOSBase);
         return 20;
     }
     tn_log(TN_LOG_BASIC, "PASS: OpenLibrary(bsdsocket.library, 4)\n");
@@ -264,6 +263,6 @@ int main(int argc, char *argv[])
     if (log_fh) {
         Close(log_fh);
     }
-    CloseLibrary(DOSBase);
+    /* 6.10: DOSBase belongs to the libnix startup, which closes it */
     return all_passed ? 0 : 20;
 }

@@ -41,7 +41,6 @@ static int dns_is_ipv4(const char *s)
 /* skip a (possibly compressed) name; returns offset past it or -1 */
 static LONG dns_skip_name(const UBYTE *pkt, LONG plen, LONG off)
 {
-    int guard = 0;
     while (off < plen) {
         UBYTE l = pkt[off];
         if (l == 0) return off + 1;
@@ -49,6 +48,7 @@ static LONG dns_skip_name(const UBYTE *pkt, LONG plen, LONG off)
             if (off + 1 >= plen) return -1;
             return off + 2;
         }
+        if ((l & 0xC0) != 0) return -1; /* 6.4: 0x40/0x80 label types */
         off += 1 + l;
     }
     return -1;
@@ -173,16 +173,25 @@ static int dns_parse_reply(const UBYTE *pkt, LONG plen, UWORD want_type,
             return 0;
         }
         if (type == DNS_TYPE_PTR && want_type == DNS_TYPE_PTR) {
+            /* 6.4: every read is bounded by lim - the RDATA end until
+             * the first compression pointer, the packet end after it. */
             LONG p2 = rdo;
+            LONG lim = rdo + rdlength;
             int guard2 = 0, o = 0;
-            while (p2 < rdo + rdlength && p2 < plen) {
-                UBYTE l = pkt[p2];
+            for (;;) {
+                UBYTE l;
+                if (p2 >= lim) return -1;
+                l = pkt[p2];
                 if (l == 0) break;
                 if ((l & 0xC0) == 0xC0) {
+                    if (p2 + 1 >= lim) return -1;
                     p2 = ((l & 0x3F) << 8) | pkt[p2 + 1];
+                    lim = plen;
                     if (++guard2 > 32) return -1;
                     continue;
                 }
+                if ((l & 0xC0) != 0) return -1; /* 0x40/0x80 label types */
+                if (p2 + 1 + l > lim) return -1;
                 if (o > 0 && o < out_size - 1) out[o++] = '.';
                 {
                     LONG k;
@@ -239,6 +248,12 @@ int main(int argc, char **argv)
 
     if (dns_is_ipv4(name)) qtype = DNS_TYPE_PTR;
     else qtype = DNS_TYPE_A;
+    /* 6.3: NAME is unbounded user input; a DNS name is <= 253 chars */
+    if (strlen(name) > 253) {
+        tn_cmd_printf("** name too long (max 253)\n");
+        FreeArgs(rdargs); tn_cmd_fini();
+        return TN_CMD_FAIL;
+    }
     strcpy(qname, name);
 
     if (server != NULL || qtype == DNS_TYPE_PTR) {
@@ -337,6 +352,12 @@ int main(int argc, char **argv)
                 tn_cmd_printf("** try %ld: recv got=%ld\n", (LONG)(tries + 1), got);
                 continue;
             }
+            /* 6.4: only the server we asked may answer */
+            if (from.sin_addr.s_addr != dst.sin_addr.s_addr ||
+                from.sin_port != dst.sin_port) {
+                tn_cmd_printf("** try %ld: reply from unexpected source\n", (LONG)(tries + 1));
+                continue;
+            }
             if (rx[0] != tx[0] || rx[1] != tx[1]) {
                 tn_cmd_printf("** try %ld: txid mismatch\n", (LONG)(tries + 1));
                 continue;
@@ -386,7 +407,8 @@ int main(int argc, char **argv)
                 for (i = 0; he->h_addr_list[i] != NULL && i < 4; i++) {
                     struct in_addr a;
                     memcpy(&a, he->h_addr_list[i], 4);
-                    tn_cmd_printf("Address%d:   %s\n", (LONG)(i + 1), tn_call_inet_ntoa(a));
+                    tn_cmd_printf("Address%ld:   %s\n", (LONG)(i + 1), tn_call_inet_ntoa(a));
+
                 }
                 if (he->h_name != NULL) {
                     tn_cmd_printf("Canonical: %s\n", he->h_name);

@@ -10,8 +10,8 @@
 ; DOS itself asks for tolunnet2 when the volume is missing; the Echo
 ; lines tell a Gotek user to select disk 2 before that.
 
-If NOT EXISTS {DEST}
-    makedir {DEST}
+If NOT EXISTS "{DEST}"
+    MakeDir "{DEST}"
 EndIf
 
 Echo "tolunnet two-disk install: copying disk 1 to {DEST} ..."

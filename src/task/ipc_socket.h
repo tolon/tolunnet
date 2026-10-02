@@ -22,4 +22,8 @@ int tn_ipc_cmd_ioctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot);
 int tn_ipc_cmd_getsockname(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot);
 int tn_ipc_cmd_getpeername(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot);
 
+/* bugtrack 4.10: leave every multicast group joined through slot_idx
+ * (ipc_setsockopt.c). Installed as d->slot_free_hook by the daemon. */
+void tn_mcast_leave_all(TnDaemon *d, int slot_idx);
+
 #endif /* TOLUNNET_IPC_SOCKET_H */

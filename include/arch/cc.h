@@ -2,7 +2,7 @@
  * tolunnet — lwIP compiler and architecture definitions for 68k AmigaOS.
  *
  * Included by lwIP headers via #include "arch/cc.h".
- * Target: Motorola 68020+ (Big-Endian), GCC (amiga-gcc / -m68020 -noixemul).
+ * Target: Motorola 68000+ (Big-Endian), GCC (amiga-gcc / -m68000 -noixemul).
  */
 
 #ifndef TOLUNNET_ARCH_CC_H

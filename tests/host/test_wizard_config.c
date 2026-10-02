@@ -14,9 +14,12 @@
 
 TN_TEST(test_startup_script_comment_and_uncomment)
 {
+    /* 1.6: only the command word counts - an Assign naming a stack
+     * directory stays active */
     const char *orig =
         "; User-Startup header\n"
         "Assign Miami: SYS:Miami\n"
+        "Execute AmiTCP:bin/startnet\n"
         "Run <>NIL: Miami:Miami\n"
         "MiamiInit\n"
         "AmiTCP:bin/startnet\n"
@@ -32,6 +35,8 @@ TN_TEST(test_startup_script_comment_and_uncomment)
 
     TN_ASSERT_TRUE(len > 0);
     TN_ASSERT_EQ(dis_count, 8);
+    TN_ASSERT_TRUE(strstr(disabled_buf, "\nAssign Miami: SYS:Miami\n") != NULL);
+    TN_ASSERT_TRUE(strstr(disabled_buf, "; tolunnet-disabled: Execute AmiTCP:bin/startnet") != NULL);
     TN_ASSERT_TRUE(strstr(disabled_buf, "; tolunnet-disabled: Run <>NIL: Miami:Miami") != NULL);
     TN_ASSERT_TRUE(strstr(disabled_buf, "; tolunnet-disabled: MiamiInit") != NULL);
     TN_ASSERT_TRUE(strstr(disabled_buf, "; tolunnet-disabled: AmiTCP:bin/startnet") != NULL);
@@ -48,6 +53,7 @@ TN_TEST(test_startup_script_comment_and_uncomment)
 
     TN_ASSERT_TRUE(rlen > 0);
     TN_ASSERT_EQ(res_count, 8);
+    TN_ASSERT_TRUE(strcmp(restored_buf, orig) == 0);
     TN_ASSERT_TRUE(strstr(restored_buf, "; tolunnet-disabled:") == NULL);
     TN_ASSERT_TRUE(strstr(restored_buf, "Run <>NIL: Miami:Miami") != NULL);
     TN_ASSERT_TRUE(strstr(restored_buf, "MiamiInit") != NULL);
@@ -73,12 +79,12 @@ TN_TEST(test_startup_script_robustness)
     TN_ASSERT_TRUE(strstr(out_buf, "; tolunnet-disabled: Run Miami:Miami\n") != NULL);
 
     /* 2. Missing trailing newline */
-    const char *no_newline = "Assign Miami: SYS:Miami";
+    const char *no_newline = "Run >NIL: Miami:MiamiDx";
     count = 0;
     len = tn_parse_startup_script(no_newline, out_buf, sizeof(out_buf), &count);
     TN_ASSERT_TRUE(len > 0);
     TN_ASSERT_EQ(count, 1);
-    TN_ASSERT_STREQ(out_buf, "; tolunnet-disabled: Assign Miami: SYS:Miami");
+    TN_ASSERT_STREQ(out_buf, "; tolunnet-disabled: Run >NIL: Miami:MiamiDx");
 
     /* 3. Empty file */
     count = 0;
@@ -95,6 +101,96 @@ TN_TEST(test_startup_script_robustness)
     TN_ASSERT_EQ(count, 1);
     TN_ASSERT_TRUE(strstr(out_buf, "; tolunnet-disabled: MiamiInit\r\n") != NULL);
     TN_ASSERT_TRUE(strstr(out_buf, "Echo Done\r\n") != NULL);
+}
+
+/* 1.6: the stack keyword must be the command itself, not any
+ * substring of the line */
+TN_TEST(test_startup_script_command_word_only)
+{
+    const char *keep[] = {
+        "Assign Genesis: Work:Emu/Genesis",
+        "Path Work:Tools/AmiTCP-utils ADD",
+        "Echo \"Miami is not here\"",
+        "Copy Work:MiamiDx RAM:",
+        "If EXISTS AmiTCP:bin/startnet",
+        "Run >NIL: Work:Tools/MyGenesisTool",
+        "  ; Run MiamiDx",
+        NULL
+    };
+    const char *drop[] = {
+        "Run <>NIL: Miami:Miami",
+        "Execute AmiTCP:bin/startnet",
+        "Run >NIL: \"Work:My Stack/MiamiDx\"",
+        "  run <nil: >nil: miamidx",
+        "C:AddNetInterface DEVS:NetInterfaces/WiFiPi",
+        "Genesis",
+        "Run >NIL: AmiTCP:bin/startnet\r",
+        "C:Run >NIL: Miami:Miami",
+        "SYS:C/Execute AmiTCP:bin/startnet",
+        NULL
+    };
+    char out[256];
+    int i, count;
+
+    for (i = 0; keep[i] != NULL; i++) {
+        count = -1;
+        tn_parse_startup_script(keep[i], out, sizeof(out), &count);
+        TN_ASSERT_EQ(count, 0);
+        TN_ASSERT_STREQ(out, keep[i]);
+    }
+    for (i = 0; drop[i] != NULL; i++) {
+        count = -1;
+        tn_parse_startup_script(drop[i], out, sizeof(out), &count);
+        TN_ASSERT_EQ(count, 1);
+        TN_ASSERT_TRUE(strncmp(out, "; tolunnet-disabled: ", 21) == 0);
+    }
+}
+
+/* 1.10 / 7.1: Wireless.prefs carries exactly the network the user
+ * picked (wifi_ssid_str is the truth), never unrequested open APs,
+ * and an unformattable selection is a failure, not an empty file. */
+TN_TEST(test_wireless_prefs_content)
+{
+    static WizardState ws;
+    char buf[2048];
+    int len;
+
+    memset(&ws, 0, sizeof(ws));
+    ws.wifi_count = 3;
+    strcpy(ws.wifi[0].ssid, "Strongest");
+    ws.wifi[0].encryption = 3;
+    strcpy(ws.wifi[1].ssid, "CafeOpen");
+    ws.wifi[1].encryption = 0;
+    strcpy(ws.wifi[2].ssid, "Picked");
+    ws.wifi[2].encryption = 3;
+    ws.selected_wifi_idx = 0;           /* stale index from the scan */
+    strcpy(ws.wifi_ssid_str, "Picked");
+    strcpy(ws.wifi_pass, "GoodPassword1");
+
+    len = tn_build_wireless_prefs(&ws, buf, sizeof(buf));
+    TN_ASSERT_TRUE(len > 0);
+    TN_ASSERT_TRUE(strstr(buf, "ssid=\"Picked\"") != NULL);
+    TN_ASSERT_TRUE(strstr(buf, "psk=\"GoodPassword1\"") != NULL);
+    TN_ASSERT_TRUE(strstr(buf, "Strongest") == NULL);
+    TN_ASSERT_TRUE(strstr(buf, "CafeOpen") == NULL);
+
+    /* bad passphrase: no file content at all (no open-AP fallback) */
+    strcpy(ws.wifi_pass, "short");
+    len = tn_build_wireless_prefs(&ws, buf, sizeof(buf));
+    TN_ASSERT_EQ(len, 0);
+
+    /* empty SSID field falls back to the highlighted list entry */
+    strcpy(ws.wifi_pass, "");
+    ws.wifi_ssid_str[0] = '\0';
+    ws.selected_wifi_idx = 1;
+    len = tn_build_wireless_prefs(&ws, buf, sizeof(buf));
+    TN_ASSERT_TRUE(len > 0);
+    TN_ASSERT_TRUE(strstr(buf, "ssid=\"CafeOpen\"") != NULL);
+
+    /* nothing selected at all */
+    ws.selected_wifi_idx = -1;
+    len = tn_build_wireless_prefs(&ws, buf, sizeof(buf));
+    TN_ASSERT_EQ(len, 0);
 }
 
 TN_TEST(test_wireless_block_formatting)
@@ -289,6 +385,8 @@ int main(void)
 {
     TN_TEST_RUN(test_startup_script_comment_and_uncomment);
     TN_TEST_RUN(test_startup_script_robustness);
+    TN_TEST_RUN(test_startup_script_command_word_only);
+    TN_TEST_RUN(test_wireless_prefs_content);
     TN_TEST_RUN(test_wireless_block_formatting);
     TN_TEST_RUN(test_wireless_block_injection_defense);
     TN_TEST_RUN(test_wifi_tagitem_parsing);

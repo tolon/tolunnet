@@ -60,6 +60,26 @@ TN_TEST(delimiters_rejected)
     TN_ASSERT_EQ_U(tn_inet_addr_parse("10.0.2"), IP(10, 0, 0, 2));
 }
 
+TN_TEST(overflow_rejected)
+{
+    /* 9.9: a part that does not fit 32 bits must not wrap silently */
+    uint32_t a = 0;
+    TN_ASSERT_EQ(tn_inet_addr_parse_ex("4294967306", &a), 0);       /* 2^32+10 */
+    TN_ASSERT_EQ(tn_inet_addr_parse_ex("1.2.3.4294967297", &a), 0); /* 2^32+1 */
+    TN_ASSERT_EQ(tn_inet_addr_parse_ex("4294967296", &a), 0);       /* 2^32 */
+    TN_ASSERT_EQ(tn_inet_addr_parse_ex("0x100000000", &a), 0);
+    TN_ASSERT_EQ(tn_inet_addr_parse_ex("040000000000", &a), 0);     /* octal 2^32 */
+    /* the 32-bit edge itself is still a valid one-part address */
+    TN_ASSERT_EQ(tn_inet_addr_parse_ex("4294967295", &a), 1);
+    TN_ASSERT_EQ_U(a, 0xFFFFFFFFu);
+    TN_ASSERT_EQ(tn_inet_addr_parse_ex("0xFFFFFFFF", &a), 1);
+    TN_ASSERT_EQ_U(a, 0xFFFFFFFFu);
+    TN_ASSERT_EQ(tn_inet_addr_parse_ex("037777777777", &a), 1);
+    TN_ASSERT_EQ_U(a, 0xFFFFFFFFu);
+    TN_ASSERT_EQ(tn_inet_addr_parse_ex("255.255.255.255", &a), 1);
+    TN_ASSERT_EQ_U(a, 0xFFFFFFFFu);
+}
+
 int main(void)
 {
     TN_TEST_RUN(four_part_decimal);
@@ -68,6 +88,7 @@ int main(void)
     TN_TEST_RUN(octal_and_hex_parts);
     TN_TEST_RUN(range_and_junk_rejected);
     TN_TEST_RUN(delimiters_rejected);
+    TN_TEST_RUN(overflow_rejected);
     TN_TEST_PLAN();
     return tn_test_failures();
 }

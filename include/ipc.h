@@ -393,6 +393,10 @@ typedef struct TnSocketBase {
     int             netent_idx;
     int             servent_idx;
     int             protoent_idx;
+
+    /* TN-bugtrack 2.11: GetSocketEvents round-robin cursor (was a static
+     * shared by every opener). Appended last: earlier offsets unchanged. */
+    LONG            gse_last_fd;
 } TnSocketBase;
 
 #endif /* TOLUNNET_IPC_H */

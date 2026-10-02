@@ -23,6 +23,12 @@ extern int             g_log_level;
  * console/file writes so a throwing sink cannot swallow the local log. */
 extern void (*g_log_sink)(const char *msg);
 
+/* 5.1: record the calling task as the log owner (the daemon). Once set,
+ * tn_log on any other task only fills the DIAG ring: no Output(), no
+ * g_log_file write, no sink. Called by tn_log_open_file and when the
+ * syslog sink is armed; single-task binaries never need it. */
+void tn_log_set_owner(void);
+
 /* Write a raw string to current Output() and optional log file. */
 void tn_log(int tier, const char *msg);
 

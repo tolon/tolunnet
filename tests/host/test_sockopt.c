@@ -539,6 +539,225 @@ TN_TEST(setsockopt_unaligned_buffer)
     TN_ASSERT_EQ(slot.opt_linger.l_linger, 300);
 }
 
+/* bugtrack 4.9: getsockopt must not do typed stores/loads through odd
+ * client optval/optlen pointers (68000 address error; UBSan here). */
+TN_TEST(getsockopt_unaligned_buffer)
+{
+    TnSocketSlot slot;
+    TnIpcMsg msg;
+    char raw_buf[32];
+    char raw_len[16];
+    void *odd_val = &raw_buf[1];
+    void *odd_len = &raw_len[1];
+    socklen_t len = sizeof(int);
+    int got = 0;
+    struct timeval tv;
+
+    memset(&slot, 0, sizeof(slot));
+    slot.type = SOCK_STREAM;
+    slot.opt_sndbuf = 0x1234;
+    slot.opt_rcvtimeo.tv_secs = 7;
+    slot.opt_rcvtimeo.tv_micro = 5000;
+
+    memcpy(odd_len, &len, sizeof(len));
+    memset(&msg, 0, sizeof(msg));
+    msg.args[1] = SOL_SOCKET;
+    msg.args[2] = SO_SNDBUF;
+    msg.ptrs[0] = odd_val;
+    msg.ptrs[1] = odd_len;
+    tn_ipc_cmd_getsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, 0);
+    memcpy(&got, odd_val, sizeof(int));
+    TN_ASSERT_EQ(got, 0x1234);
+    memcpy(&len, odd_len, sizeof(len));
+    TN_ASSERT_EQ(len, sizeof(int));
+
+    /* timeval form */
+    len = sizeof(struct timeval);
+    memcpy(odd_len, &len, sizeof(len));
+    msg.args[2] = SO_RCVTIMEO;
+    tn_ipc_cmd_getsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, 0);
+    memcpy(&tv, odd_val, sizeof(tv));
+    TN_ASSERT_EQ(tv.tv_secs, 7u);
+    TN_ASSERT_EQ(tv.tv_micro, 5000u);
+
+    /* SO_LINGER */
+    slot.opt_linger.l_onoff = 1;
+    slot.opt_linger.l_linger = 9;
+    len = sizeof(struct linger);
+    memcpy(odd_len, &len, sizeof(len));
+    msg.args[2] = SO_LINGER;
+    tn_ipc_cmd_getsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, 0);
+    {
+        struct linger l;
+        memcpy(&l, odd_val, sizeof(l));
+        TN_ASSERT_EQ(l.l_onoff, 1);
+        TN_ASSERT_EQ(l.l_linger, 9);
+    }
+}
+
+/* bugtrack 4.10: TCP_MAXSEG may only lower the mss; keepalive timers > 0
+ * and overflow-safe in milliseconds. */
+TN_TEST(setsockopt_tcp_maxseg_keepalive_validation)
+{
+    TnSocketSlot slot;
+    struct tcp_pcb pcb;
+    TnIpcMsg msg;
+    int val;
+
+    memset(&slot, 0, sizeof(slot));
+    memset(&pcb, 0, sizeof(pcb));
+    slot.type = SOCK_STREAM;
+    slot.tcp_state = TN_TCP_STATE_ESTABLISHED;
+    slot.tcp_pcb = &pcb;
+    pcb.mss = 1000;
+    pcb.keep_idle = 7200000UL;
+
+    memset(&msg, 0, sizeof(msg));
+    msg.args[1] = IPPROTO_TCP;
+    msg.args[2] = TCP_MAXSEG;
+    msg.args[3] = sizeof(int);
+    msg.ptrs[0] = &val;
+
+    val = 0;
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, -1);
+    TN_ASSERT_EQ(msg.err_no, EINVAL);
+    val = -1;
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.err_no, EINVAL);
+    val = 1460; /* above the negotiated 1000 */
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, -1);
+    TN_ASSERT_EQ(msg.err_no, EINVAL);
+    TN_ASSERT_EQ(pcb.mss, 1000);
+    TN_ASSERT_EQ(slot.opt_mss, 0);
+    val = 0x10000 + 536; /* would truncate to 536 as u16 */
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.err_no, EINVAL);
+    TN_ASSERT_EQ(pcb.mss, 1000);
+    val = 536;
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, 0);
+    TN_ASSERT_EQ(pcb.mss, 536);
+    TN_ASSERT_EQ(slot.opt_mss, 536);
+
+    /* unconnected pcb: lwIP's INITIAL_MSS placeholder is not the bound */
+    slot.tcp_state = TN_TCP_STATE_CLOSED;
+    slot.opt_mss = 0;
+    pcb.mss = 536;
+    val = 1400;
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, 0);
+    TN_ASSERT_EQ(pcb.mss, 1400);
+    pcb.mss = 536;
+
+    /* LISTENING socket: bound is opt_mss / TCP_MSS, pcb untouched */
+    slot.tcp_state = TN_TCP_STATE_LISTENING;
+    slot.opt_mss = 0;
+    val = TCP_MSS + 1;
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.err_no, EINVAL);
+    val = 1200;
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, 0);
+    TN_ASSERT_EQ(slot.opt_mss, 1200);
+    TN_ASSERT_EQ(pcb.mss, 536);
+    slot.tcp_state = TN_TCP_STATE_ESTABLISHED;
+
+    /* keepalive knobs */
+    {
+        static const int names[3] = { TCP_KEEPIDLE, TCP_KEEPINTVL, TCP_KEEPCNT };
+        int k;
+        for (k = 0; k < 3; k++) {
+            msg.args[2] = names[k];
+            val = 0;
+            tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+            TN_ASSERT_EQ(msg.result, -1);
+            TN_ASSERT_EQ(msg.err_no, EINVAL);
+            val = -5;
+            tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+            TN_ASSERT_EQ(msg.err_no, EINVAL);
+        }
+    }
+    TN_ASSERT_EQ(pcb.keep_idle, 7200000UL);
+
+    msg.args[2] = TCP_KEEPIDLE;
+    val = 4294968; /* * 1000 overflows u32 */
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, -1);
+    TN_ASSERT_EQ(msg.err_no, EINVAL);
+    TN_ASSERT_EQ(pcb.keep_idle, 7200000UL);
+    val = 4294967; /* largest that fits */
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, 0);
+    TN_ASSERT_EQ(pcb.keep_idle, 4294967000UL);
+
+    msg.args[2] = TCP_KEEPCNT;
+    val = 5;
+    tn_ipc_cmd_setsockopt(NULL, &msg, &slot);
+    TN_ASSERT_EQ(msg.result, 0);
+    TN_ASSERT_EQ(pcb.keep_cnt, 5u);
+}
+
+/* bugtrack 4.10: IP_ADD_MEMBERSHIP is recorded per slot and left on free */
+TN_TEST(setsockopt_mcast_membership_tracking)
+{
+    static TnDaemon d;
+    TnSocketSlot *slot;
+    TnIpcMsg msg;
+    struct ip_mreq mreq;
+    int i, used;
+
+    memset(&d, 0, sizeof(d));
+    slot = &d.sockets[5];
+    slot->in_use = TRUE;
+    slot->type = SOCK_DGRAM;
+
+    memset(&mreq, 0, sizeof(mreq));
+    mreq.imr_multiaddr.s_addr = 0xE00000FBUL;
+    memset(&msg, 0, sizeof(msg));
+    msg.args[1] = IPPROTO_IP;
+    msg.args[2] = IP_ADD_MEMBERSHIP;
+    msg.args[3] = sizeof(mreq);
+    msg.ptrs[0] = &mreq;
+    tn_ipc_cmd_setsockopt(&d, &msg, slot);
+    TN_ASSERT_EQ(msg.result, 0);
+
+    used = 0;
+    for (i = 0; i < TN_MCAST_JOINS_MAX; i++) {
+        if (d.mcast_joins[i].in_use) {
+            used++;
+            TN_ASSERT_EQ(d.mcast_joins[i].slot, 5);
+            TN_ASSERT_EQ_U(d.mcast_joins[i].grp, mreq.imr_multiaddr.s_addr);
+        }
+    }
+    TN_ASSERT_EQ(used, 1);
+
+    /* explicit drop clears the record */
+    msg.args[2] = IP_DROP_MEMBERSHIP;
+    tn_ipc_cmd_setsockopt(&d, &msg, slot);
+    TN_ASSERT_EQ(msg.result, 0);
+    for (i = 0; i < TN_MCAST_JOINS_MAX; i++) TN_ASSERT_FALSE(d.mcast_joins[i].in_use);
+
+    /* table full -> ENOBUFS, then leave-all frees the slot's records */
+    msg.args[2] = IP_ADD_MEMBERSHIP;
+    for (i = 0; i < TN_MCAST_JOINS_MAX; i++) {
+        mreq.imr_multiaddr.s_addr = 0xE0000100UL + (uint32_t)i;
+        tn_ipc_cmd_setsockopt(&d, &msg, slot);
+        TN_ASSERT_EQ(msg.result, 0);
+    }
+    mreq.imr_multiaddr.s_addr = 0xE0000200UL;
+    tn_ipc_cmd_setsockopt(&d, &msg, slot);
+    TN_ASSERT_EQ(msg.result, -1);
+    TN_ASSERT_EQ(msg.err_no, ENOBUFS);
+
+    tn_mcast_leave_all(&d, 5);
+    for (i = 0; i < TN_MCAST_JOINS_MAX; i++) TN_ASSERT_FALSE(d.mcast_joins[i].in_use);
+}
+
 int main(void)
 {
     TN_TEST_RUN(getsockopt_null_checks);
@@ -554,6 +773,9 @@ int main(void)
     TN_TEST_RUN(setsockopt_timeo_bounds);
     TN_TEST_RUN(setsockopt_ipproto_tcp_ip_bounds);
     TN_TEST_RUN(setsockopt_unaligned_buffer);
+    TN_TEST_RUN(getsockopt_unaligned_buffer);
+    TN_TEST_RUN(setsockopt_tcp_maxseg_keepalive_validation);
+    TN_TEST_RUN(setsockopt_mcast_membership_tracking);
     TN_TEST_PLAN();
     return tn_test_failures();
 }

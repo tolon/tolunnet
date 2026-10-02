@@ -6,6 +6,7 @@
  */
 #include "ipc_msg.h"
 #include "slot_table.h"
+#include "ipc_tcp.h" /* tn_ipc_cmd_send (single-iovec TCP sendmsg) */
 #include "netif_mgr.h"
 #include "../common/sockaddr_util.h"
 
@@ -58,7 +59,17 @@ int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         have_to = 1;
     }
 
-    if (slot->type == SOCK_STREAM) {
+    if (slot->type == SOCK_STREAM && msg->msg_iovlen == 1) {
+        /* 4.2: one iovec is a plain send() - reuse its blocking/park path.
+         * The message is re-shaped in place to send()'s layout; the client
+         * only reads result/err_no back. */
+        imsg->ptrs[0] = msg->msg_iov[0].iov_base;
+        imsg->args[1] = (LONG)msg->msg_iov[0].iov_len;
+        imsg->args[2] = flags;
+        return tn_ipc_cmd_send(d, imsg, slot);
+    } else if (slot->type == SOCK_STREAM) {
+        /* multi-iovec: non-blocking semantics kept (EWOULDBLOCK when the
+         * send buffer is full, short count otherwise) */
         u16_t snd_buf;
         u16_t to_send;
         u16_t remaining;
@@ -143,8 +154,36 @@ int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         struct pbuf *p;
         ip_addr_t dst_ip;
         u16_t dst_port;
-        u16_t send_len = (total_len > 0xFFFF) ? 0xFFFF : (u16_t)total_len;
+        u16_t send_len;
         u16_t offset = 0;
+        err_t uerr;
+        int is_connected = (ip_addr_get_ip4_u32(&slot->udp_pcb->remote_ip) != 0 &&
+                            slot->udp_pcb->remote_port != 0);
+
+        /* 3.4: same destination/size/err_t checks as sendto (ipc_dgram.c) */
+        if (have_to) {
+            if (is_connected) {
+                imsg->result = -1;
+                imsg->err_no = EISCONN;
+                return 0;
+            }
+            ip_addr_set_ip4_u32(&dst_ip, to_addr_be);
+            dst_port = to_port_host;
+        } else {
+            if (!is_connected) {
+                imsg->result = -1;
+                imsg->err_no = EDESTADDRREQ;
+                return 0;
+            }
+            dst_ip = slot->udp_pcb->remote_ip;
+            dst_port = slot->udp_pcb->remote_port;
+        }
+        if (total_len > 65507) { /* 65535 - 8 UDP - 20 IP */
+            imsg->result = -1;
+            imsg->err_no = EMSGSIZE;
+            return 0;
+        }
+        send_len = (u16_t)total_len;
 
         p = pbuf_alloc(PBUF_TRANSPORT, send_len, PBUF_RAM);
         if (p == NULL) {
@@ -161,17 +200,14 @@ int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             }
         }
 
-        if (have_to) {
-            ip_addr_set_ip4_u32(&dst_ip, to_addr_be);
-            dst_port = to_port_host;
-        } else {
-            dst_ip = slot->udp_pcb->remote_ip;
-            dst_port = slot->udp_pcb->remote_port;
-        }
-
-        udp_sendto(slot->udp_pcb, p, &dst_ip, dst_port);
+        uerr = udp_sendto(slot->udp_pcb, p, &dst_ip, dst_port);
         pbuf_free(p);
         tn_drain_loopback();
+        if (uerr != ERR_OK) {
+            imsg->result = -1;
+            imsg->err_no = (uerr == ERR_MEM) ? ENOBUFS : EHOSTUNREACH;
+            return 0;
+        }
 
         imsg->result = (LONG)send_len;
         imsg->err_no = 0;

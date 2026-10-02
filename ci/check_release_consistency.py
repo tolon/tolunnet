@@ -10,7 +10,11 @@ Checks:
   - TOLUNNET_VER_DATE in version.h == the CHANGELOG section date;
   - every docs/screenshots/*.png referenced in README.md exists, and
     every PNG in docs/screenshots/ is referenced;
-  - every relative link in README.md and STATUS.md resolves on disk.
+  - every relative link in README.md and STATUS.md resolves on disk;
+  - STATUS.md quotes one digest per release asset (a second, different
+    digest for the same asset FAILS; a digest absent from
+    build/release-assets/SHA256SUMS.txt only WARNS - rebuild drift);
+  - README.md lists exactly the tests/host/test_*.c programs.
 
 With --write-notes <path>: writes a release-notes file = the CHANGELOG
 rc5 section + a "which file do I download" block + known limitations +
@@ -173,6 +177,8 @@ def main(argv):
     # notes can never lag behind build/release-assets/ again.
     if len(argv) > 1 and argv[1] == "--write-notes":
         write_notes(version)
+    check_status_digests_self(read("STATUS.md"))
+    check_host_test_list()
     check_asset_checksums(version)
 
     if BAD:
@@ -228,6 +234,13 @@ def check_asset_checksums(version):
         print("[check_release_consistency] WARNING: STATUS.md quotes "
               "a different build (expected after a rebuild); refresh "
               "it before tagging")
+    # 9.11: an EXTRA STATUS digest that names no current asset is the
+    # same rebuild-drift class - warn (fe33177), listing each one
+    for kind, digest in status_asset_digests(status_body):
+        if digest not in digests:
+            print("[check_release_consistency] WARNING: STATUS.md %s "
+                  "digest %s... is not in build/release-assets/"
+                  "SHA256SUMS.txt (stale row?)" % (kind, digest[:12]))
     notes_path = notes_file_for(version)
     if not os.path.isfile(notes_path):
         print("[check_release_consistency] no RELEASE-NOTES file - "
@@ -245,6 +258,64 @@ def check_asset_checksums(version):
               "match build/release-assets OK"
               + ("; STATUS refreshed separately" if not status_current
                  else "; STATUS current"))
+
+
+STATUS_DIGEST_RE = re.compile(r"\b[0-9a-f]{64}\b")
+STATUS_KIND_RE = re.compile(r"disk1|disk2|\.lha\b|\blha\b")
+
+
+def status_asset_digests(body):
+    """9.11: (kind, digest) for every 64-hex digest in STATUS.md; kind is
+    the nearest preceding lha/disk1/disk2 token on the same line."""
+    out = []
+    for line in body.splitlines():
+        for m in STATUS_DIGEST_RE.finditer(line):
+            kinds = STATUS_KIND_RE.findall(line[max(0, m.start() - 80):
+                                                m.start()])
+            kind = kinds[-1].strip(".") if kinds else "?"
+            out.append((kind, m.group(0)))
+    return out
+
+
+def status_digest_conflicts(body):
+    """9.11: assets that STATUS.md quotes with two different digests
+    (a stale row next to the current one). Independent of build/, so
+    it is NOT rebuild drift - it is a hard failure."""
+    seen = {}
+    for kind, digest in status_asset_digests(body):
+        seen.setdefault(kind, set()).add(digest)
+    return {k: sorted(v) for k, v in seen.items()
+            if k != "?" and len(v) > 1}
+
+
+def check_status_digests_self(body):
+    conflicts = status_digest_conflicts(body)
+    for kind, ds in sorted(conflicts.items()):
+        fail("STATUS.md quotes %d different %s digests (%s) - delete "
+             "the stale one" % (len(ds), kind,
+                                ", ".join(d[:12] for d in ds)))
+    if not conflicts:
+        print("[check_release_consistency] STATUS.md: one digest per "
+              "asset OK")
+
+
+def check_host_test_list():
+    """9.15: README.md must list exactly the tests/host/test_*.c
+    programs (the count is not hard-coded anywhere)."""
+    import glob
+    disk = sorted(os.path.basename(f)[:-2] for f in
+                  glob.glob(os.path.join(ROOT, "tests", "host",
+                                         "test_*.c")))
+    listed = sorted(set(re.findall(r"`(test_[a-z0-9_]+)`",
+                                   read("README.md"))))
+    if disk != listed:
+        fail("README.md host-test list != tests/host/test_*.c "
+             "(missing %s, extra %s)"
+             % (sorted(set(disk) - set(listed)),
+                sorted(set(listed) - set(disk))))
+    else:
+        print("[check_release_consistency] README host-test list: %d "
+              "programs OK" % len(disk))
 
 
 def notes_selftest():
@@ -274,7 +345,21 @@ def notes_selftest():
           % bad_ok)
     print("check_release_consistency notes selftest: right digest PASS=%s"
           % good_ok)
-    return bad_ok and good_ok
+
+    # 9.11: STATUS with a stale duplicate LHA row must FAIL, the
+    # single-row STATUS must PASS
+    dc = "c" * 64
+    stale_status = ("| Package LHA | `build/tolunnet-1.2.0-rc5.lha` "
+                    "(`%s`) |\n| checksums | lha `%s`, disk1 `%s` |\n"
+                    % (dc, da, db))
+    good_status = "| checksums | lha `%s`, disk1 `%s` |\n" % (da, db)
+    st_bad_ok = bool(status_digest_conflicts(stale_status))
+    st_good_ok = not status_digest_conflicts(good_status)
+    print("check_release_consistency STATUS selftest: stale duplicate "
+          "FAIL=%s" % st_bad_ok)
+    print("check_release_consistency STATUS selftest: single digest "
+          "PASS=%s" % st_good_ok)
+    return bad_ok and good_ok and st_bad_ok and st_good_ok
 
 
 def notes_file_for(version):

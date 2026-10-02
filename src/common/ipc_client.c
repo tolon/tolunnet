@@ -23,11 +23,8 @@ int tn_ipc_oneshot_ex(TnIpcCmd cmd, const LONG *args, int arg_count, const APTR 
     int rc = -1;
     int i;
 
-    daemon_port = FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
-    if (daemon_port == NULL) {
-        return -1;
-    }
-
+    /* 3.6: allocate first, then FindPort+PutMsg under one Forbid so the
+     * daemon cannot RemPort/drain/DeleteMsgPort between lookup and send */
     reply_port = CreateMsgPort();
     if (reply_port == NULL) {
         return -1;
@@ -60,7 +57,18 @@ int tn_ipc_oneshot_ex(TnIpcCmd cmd, const LONG *args, int arg_count, const APTR 
         }
     }
 
-    PutMsg(daemon_port, (struct Message *)msg);
+    Forbid();
+    daemon_port = FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME);
+    if (daemon_port != NULL) {
+        PutMsg(daemon_port, (struct Message *)msg);
+    }
+    Permit();
+    if (daemon_port == NULL) {
+        FreeMem(msg, sizeof(TnIpcMsg));
+        DeleteMsgPort(reply_port);
+        return -1;
+    }
+
     WaitPort(reply_port);
     GetMsg(reply_port);
 

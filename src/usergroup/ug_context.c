@@ -30,9 +30,13 @@ struct UgTaskContext *ug_get_task_context(struct UserGroupBase *base, APTR task)
 #endif
     }
 
+    /* 5.8: lookup and insert form one critical section, so two first
+     * callers cannot both miss and both link a node */
+    UG_LOCK(base);
     for (node = base->contexts.mlh_Head; node->mln_Succ != NULL; node = node->mln_Succ) {
         ctx = (struct UgTaskContext *)node;
         if (ctx->task == task) {
+            UG_UNLOCK(base);
             return ctx;
         }
     }
@@ -43,7 +47,10 @@ struct UgTaskContext *ug_get_task_context(struct UserGroupBase *base, APTR task)
 #else
     ctx = (struct UgTaskContext *)calloc(1, sizeof(struct UgTaskContext));
 #endif
-    if (!ctx) return NULL;
+    if (!ctx) {
+        UG_UNLOCK(base);
+        return NULL;
+    }
 
     ctx->task = task;
     ctx->creds.cr_ruid = 0;
@@ -63,6 +70,7 @@ struct UgTaskContext *ug_get_task_context(struct UserGroupBase *base, APTR task)
         tailpred->mln_Succ = &ctx->node;
         base->contexts.mlh_TailPred = &ctx->node;
     }
+    UG_UNLOCK(base);
 
     return ctx;
 }

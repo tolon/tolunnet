@@ -263,7 +263,8 @@ static void setup_font(int argc, char **argv)
     const char *src = NULL;
     int i;
 
-    for (i = 1; argv && argv[i]; i++) {
+    /* 7.8: argc == 0 means argv is the WBStartup message, not a list */
+    for (i = 1; i < argc && argv && argv[i]; i++) {
         if (strncmp(argv[i], "FONT=", 5) == 0) {
             src = argv[i] + 5;
             break;
@@ -553,34 +554,105 @@ static void update_screen_title(void)
 #include <intuition/sghooks.h>
 
 static char s_pass_display_buf[64];
+/* 7.5: how the live Passphrase gadget was built - only an unmasked
+ * gadget's buffer is the real text; a masked one holds '*'s. */
+static BOOL s_pass_gad_masked = FALSE;
+/* 7.1: what the SSID gadget was last built with / synced from; the
+ * gadget wins only when the user actually edited it since. */
+static char s_ssid_gad_shown[34];
 
+static void pass_edit_reject(struct SGWork *sgw)
+{
+    sgw->Actions &= ~SGA_USE;
+    sgw->Actions |= SGA_BEEP;
+}
+
+/* 7.5: masked passphrase editing. The real text lives in
+ * g_ws.wifi_pass; the gadget only ever holds '*'. Every edit is
+ * mapped by position (old length from PrevBuffer, new length and
+ * cursor from SGWork): inserts at the cursor, deletes backward,
+ * forward, to either end, and clear. Anything that cannot be mapped
+ * (undo/reset to a masked buffer, '"', control chars, a replace
+ * that is not one char) is refused, so the two can never drift. */
 static ULONG pass_edit_hook_fn(struct Hook *hook __asm__("a0"),
                                struct SGWork *sgw __asm__("a2"),
                                ULONG *msg __asm__("a1"))
 {
+    char *real = g_ws.wifi_pass;
+    LONG cap = (LONG)sizeof(g_ws.wifi_pass) - 1;
+    LONG old_len, new_len, pos, k, i;
+
     (void)hook;
     if (!msg || *msg != SGH_KEY) return 1;
+    if (!s_pass_gad_masked) return 1;
+    if (!(sgw->Actions & SGA_USE)) return 1;
 
-    if (g_ws.wifi_show_pass) return 1;
+    old_len = (LONG)strlen((const char *)sgw->PrevBuffer);
+    new_len = (LONG)sgw->NumChars;
+    pos     = (LONG)sgw->BufferPos;
+    if (old_len != (LONG)strlen(real)) {
+        /* out of step (should not happen): drop both, start over */
+        memset(real, 0, sizeof(g_ws.wifi_pass));
+        sgw->WorkBuffer[0] = '\0';
+        sgw->NumChars = 0;
+        sgw->BufferPos = 0;
+        sgw->Actions |= SGA_REDISPLAY;
+        return 1;
+    }
 
-    if (sgw->EditOp == EO_INSERTCHAR || sgw->EditOp == EO_REPLACECHAR) {
-        UWORD code = sgw->Code;
-        if (code >= 32 && code < 127 && code != '"') {
-            WORD pos = sgw->BufferPos;
-            if (pos > 0 && pos < (WORD)sizeof(g_ws.wifi_pass)) {
-                g_ws.wifi_pass[pos - 1] = (char)code;
-                g_ws.wifi_pass[pos] = '\0';
-                sgw->WorkBuffer[pos - 1] = '*';
+    if (sgw->EditOp == EO_RESET || sgw->EditOp == EO_UNDO) {
+        pass_edit_reject(sgw);
+    } else if (new_len > old_len) {
+        /* insert k chars ending at the new cursor */
+        k = new_len - old_len;
+        if (new_len > cap || pos < k || pos > new_len) {
+            pass_edit_reject(sgw);
+            return 1;
+        }
+        for (i = pos - k; i < pos; i++) {
+            UBYTE c = (UBYTE)sgw->WorkBuffer[i];
+            if (c < 32 || c == 127 || c == '"') {
+                pass_edit_reject(sgw);
+                return 1;
             }
         }
-    } else if (sgw->EditOp == EO_DELBACKWARD) {
-        WORD pos = sgw->BufferPos;
-        if (pos >= 0 && pos < (WORD)sizeof(g_ws.wifi_pass)) {
-            g_ws.wifi_pass[pos] = '\0';
+        memmove(real + pos, real + pos - k, (size_t)(old_len - (pos - k)));
+        for (i = pos - k; i < pos; i++) {
+            real[i] = sgw->WorkBuffer[i];
+            sgw->WorkBuffer[i] = '*';
         }
-    } else if (sgw->EditOp == EO_RESET || sgw->EditOp == EO_CLEAR) {
-        volatile char *vp = (volatile char *)g_ws.wifi_pass;
-        for (size_t i = 0; i < sizeof(g_ws.wifi_pass); i++) vp[i] = 0;
+        real[new_len] = '\0';
+    } else if (new_len < old_len) {
+        /* k chars removed starting at the new cursor */
+        k = old_len - new_len;
+        if (pos < 0 || pos + k > old_len) {
+            pass_edit_reject(sgw);
+            return 1;
+        }
+        memmove(real + pos, real + pos + k, (size_t)(old_len - pos - k));
+        memset(real + new_len, 0, (size_t)(old_len - new_len));
+    } else if (sgw->EditOp == EO_REPLACECHAR) {
+        UBYTE c;
+        if (pos < 1 || pos > new_len) {
+            pass_edit_reject(sgw);
+            return 1;
+        }
+        c = (UBYTE)sgw->WorkBuffer[pos - 1];
+        if (c < 32 || c == 127 || c == '"') {
+            pass_edit_reject(sgw);
+            return 1;
+        }
+        real[pos - 1] = (char)c;
+        sgw->WorkBuffer[pos - 1] = '*';
+    } else {
+        /* same length, not a replace: cursor moves are fine, any
+         * other rewrite of the visible text is refused */
+        for (i = 0; i < new_len; i++) {
+            if (sgw->WorkBuffer[i] != '*') {
+                pass_edit_reject(sgw);
+                return 1;
+            }
+        }
     }
     return 1;
 }
@@ -605,7 +677,11 @@ static void sync_page_gadgets_to_state(void)
             if (si && si->Buffer) {
                 switch (g->GadgetID) {
                 case GID_P3_PASS_STR:
-                    if (g_ws.wifi_show_pass) {
+                    /* 7.5: a masked gadget's buffer is '*'s - the
+                     * hook already keeps wifi_pass; copy only from a
+                     * gadget built unmasked (whatever the flag says
+                     * now - Show may just have been toggled). */
+                    if (!s_pass_gad_masked) {
                         strncpy(g_ws.wifi_pass, (const char *)si->Buffer, sizeof(g_ws.wifi_pass) - 1);
                         g_ws.wifi_pass[sizeof(g_ws.wifi_pass) - 1] = '\0';
                     }
@@ -635,7 +711,14 @@ static void sync_page_gadgets_to_state(void)
                     strncpy(g_ws.domain_str, (const char *)si->Buffer, sizeof(g_ws.domain_str) - 1);
                     break;
                 case GID_P3_SSID_STR:
-                    strncpy(g_ws.wifi_ssid_str, (const char *)si->Buffer, sizeof(g_ws.wifi_ssid_str) - 1);
+                    /* 7.1: only a real edit in the field overrides
+                     * the state (a list pick / ARexx SELECT sets it) */
+                    if (strcmp((const char *)si->Buffer, s_ssid_gad_shown) != 0) {
+                        strncpy(g_ws.wifi_ssid_str, (const char *)si->Buffer, sizeof(g_ws.wifi_ssid_str) - 1);
+                        g_ws.wifi_ssid_str[sizeof(g_ws.wifi_ssid_str) - 1] = '\0';
+                        strncpy(s_ssid_gad_shown, g_ws.wifi_ssid_str, sizeof(s_ssid_gad_shown) - 1);
+                        s_ssid_gad_shown[sizeof(s_ssid_gad_shown) - 1] = '\0';
+                    }
                     break;
                 }
 
@@ -680,14 +763,14 @@ static BOOL validate_address_page(void)
             if (vals[i][0] == '\0') {
                 snprintf(msg, sizeof(msg), "Fill in the %s first",
                          labels[i]);
-                set_status(msg);
+                set_status("%s", msg);   /* 7.4: never a format */
                 return FALSE;
             }
             if (tn_inet_addr_parse_ex(vals[i], &addr) != 1) {
                 snprintf(msg, sizeof(msg),
                          "The %s is not a valid address: %s",
                          labels[i], vals[i]);
-                set_status(msg);
+                set_status("%s", msg);
                 return FALSE;
             }
         }
@@ -939,7 +1022,7 @@ static void set_test_summary_status(void)
         snprintf(buf, sizeof(buf),
                  "Tests complete - %d passed, %d failed, %d skipped",
                  np, nf, ns);
-        set_status(buf);
+        set_status("%s", buf);
     }
 }
 
@@ -1078,15 +1161,17 @@ static void save_test_log(void)
         fh = Open((CONST_STRPTR)path, MODE_NEWFILE);
     }
     if (fh) {
+        ULONG args[1];
         Write(fh, (CONST_APTR)report, strlen(report));
         Close(fh);
-        char msg[160];
-        snprintf(msg, sizeof(msg), "Test log written to:\n%s", path);
-        es.es_TextFormat = (STRPTR)msg;
+        /* 7.4: the user-chosen path is an argument, never the format */
+        args[0] = (ULONG)path;
+        es.es_TextFormat = (STRPTR)"Test log written to:\n%s";
+        EasyRequestArgs(g_win, &es, NULL, args);
     } else {
         es.es_TextFormat = (STRPTR)"Could not write the test log\nto RAM: - disk full?";
+        EasyRequestArgs(g_win, &es, NULL, NULL);
     }
-    EasyRequestArgs(g_win, &es, NULL, NULL);
 }
 
 /* Layout self-report for tc_wizard_ntsc: window + lowest gadget edge in
@@ -1158,8 +1243,11 @@ static BOOL associate_wifi_page(void)
         return FALSE;
     }
 
+    if (!tn_wifi_write_prefs_multi(&g_ws)) {
+        set_status("Wireless.prefs not written: passphrase 8-63 chars, no \"");
+        return FALSE;
+    }
     set_status("Associating with %s (<= 30 s)...", g_ws.wifi_ssid_str);
-    tn_wifi_write_prefs(g_ws.wifi_ssid_str, g_ws.wifi_pass);
     tn_wifi_start_manager(hw->device_name, hw->unit);
     err[0] = '\0';
     if (tn_wifi_wait_association(hw->device_name, hw->unit, 30, err, sizeof(err))) {
@@ -1479,6 +1567,8 @@ static void rebuild_page_gadgets(void)
             ng.ng_GadgetText = (STRPTR)"SSID:";
             ng.ng_GadgetID   = GID_P3_SSID_STR;
             ng.ng_Flags      = PLACETEXT_LEFT;
+            strncpy(s_ssid_gad_shown, g_ws.wifi_ssid_str, sizeof(s_ssid_gad_shown) - 1);
+            s_ssid_gad_shown[sizeof(s_ssid_gad_shown) - 1] = '\0';
             prev = CreateGadget(STRING_KIND, prev, &ng,
                                 GTST_String, (ULONG)g_ws.wifi_ssid_str,
                                 GTST_MaxChars, 33,
@@ -1492,6 +1582,7 @@ static void rebuild_page_gadgets(void)
             ng.ng_GadgetText = (STRPTR)"Passphrase:";
             ng.ng_GadgetID   = GID_P3_PASS_STR;
             ng.ng_Flags      = PLACETEXT_LEFT;
+            s_pass_gad_masked = !g_ws.wifi_show_pass;
             if (g_ws.wifi_show_pass) {
                 strncpy(s_pass_display_buf, g_ws.wifi_pass, sizeof(s_pass_display_buf) - 1);
                 s_pass_display_buf[sizeof(s_pass_display_buf) - 1] = '\0';
@@ -1803,8 +1894,38 @@ static void rebuild_page_gadgets(void)
     write_layout_geom();
 }
 
-static void apply_wizard_finish(void)
+/* 1.9: Finish failures are collected here and shown in one requester
+ * (wlog alone prints nothing for a Workbench launch). An ARexx
+ * FINISH gets the failure as its return code instead - a requester
+ * would hold the reply until someone clicks it. */
+static char g_finish_errs[320];
+
+static void finish_failed(const char *what)
 {
+    size_t n = strlen(g_finish_errs);
+    wlog(what);
+    if (n + strlen(what) + 2 < sizeof(g_finish_errs)) {
+        if (n > 0) g_finish_errs[n++] = '\n';
+        strcpy(g_finish_errs + n, what);
+    }
+}
+
+/* 7.8: is g one of the gadgets currently attached (nav bar or page)? */
+static BOOL gadget_is_live(const struct Gadget *g)
+{
+    const struct Gadget *x;
+    for (x = g_nav_glist; x != NULL; x = x->NextGadget) {
+        if (x == g) return TRUE;
+    }
+    for (x = g_page_glist; x != NULL; x = x->NextGadget) {
+        if (x == g) return TRUE;
+    }
+    return FALSE;
+}
+
+static BOOL apply_wizard_finish(void)
+{
+    g_finish_errs[0] = '\0';
     sync_page_gadgets_to_state();
 
     /* TNET-110: explicit MTU overrides the driver default in the writer */
@@ -1816,24 +1937,26 @@ static void apply_wizard_finish(void)
         }
     }
 
-    /* 1. Migrate / disable other stacks */
+    /* 1. Migrate / disable other stacks. 1.9: when that failed the
+     * old stack is NOT stopped - it is still what boots. */
     if (g_ws.replace_stacks) {
-        tn_stack_apply_replacement(&g_ws);
-        tn_stack_request_quit(&g_ws);
+        if (tn_stack_apply_replacement(&g_ws)) {
+            tn_stack_request_quit(&g_ws);
+        } else {
+            finish_failed("Other stacks: could not disable them in S:User-Startup / S:Network-Startup (left running)");
+        }
     }
 
-    /* 2. Write WiFi credentials if wireless (saved networks with
-     * priority= in Wireless.prefs, TNET-110 part 3) */
+    /* 2. Write WiFi credentials if wireless. 7.1/1.10: the SSID field
+     * is the truth; no made-up fallback network is ever written. */
     if (g_ws.selected_hw_idx >= 0 && g_ws.selected_hw_idx < g_ws.hw_count) {
         if (g_ws.hw[g_ws.selected_hw_idx].is_wireless) {
-            if (!tn_wifi_write_prefs_multi(&g_ws)) {
-                const char *ssid = (g_ws.selected_wifi_idx >= 0 &&
-                                    g_ws.selected_wifi_idx < g_ws.wifi_count)
-                                   ? g_ws.wifi[g_ws.selected_wifi_idx].ssid : "DefaultAP";
-                tn_wifi_write_prefs(ssid, g_ws.wifi_pass);
+            if (tn_wifi_write_prefs_multi(&g_ws)) {
+                tn_wifi_start_manager(g_ws.hw[g_ws.selected_hw_idx].device_name,
+                                      g_ws.hw[g_ws.selected_hw_idx].unit);
+            } else {
+                finish_failed("WiFi: ENVARC:Sys/Wireless.prefs not written (network or passphrase invalid)");
             }
-            tn_wifi_start_manager(g_ws.hw[g_ws.selected_hw_idx].device_name,
-                                  g_ws.hw[g_ws.selected_hw_idx].unit);
         }
     }
 
@@ -1841,13 +1964,13 @@ static void apply_wizard_finish(void)
      * when the Advanced checkbox is set). 11l item 3: failures are
      * shown in the log instead of being swallowed. */
     if (!tn_write_tolunnet_config(&g_ws)) {
-        wlog("config: FAILED to write DEVS:tolunnet.config");
+        finish_failed("config: FAILED to write DEVS:tolunnet.config");
     }
 
     /* 4. Write Roadshow interface if requested */
     if (g_ws.write_roadshow) {
         if (!tn_write_roadshow_interface(&g_ws)) {
-            wlog("roadshow: FAILED to write DEVS:NetInterfaces (old file kept)");
+            finish_failed("roadshow: FAILED to write DEVS:NetInterfaces (old file kept)");
         }
     }
 
@@ -1855,7 +1978,7 @@ static void apply_wizard_finish(void)
     if (g_ws.start_at_boot) {
         /* 11l item 2: a failed rewrite must be visible in the log */
         if (!tn_install_boot_block(TRUE)) {
-            wlog("boot block: FAILED to update S:User-Startup (original kept)");
+            finish_failed("boot block: FAILED to update S:User-Startup (original kept)");
         }
     }
 
@@ -1891,6 +2014,19 @@ static void apply_wizard_finish(void)
     for (size_t i = 0; i < sizeof(s_pass_display_buf); i++) {
         vdisp[i] = 0;
     }
+
+    if (g_finish_errs[0] == '\0') return TRUE;
+    if (g_ws.rexx_finish_msg == NULL && IntuitionBase != NULL) {
+        ULONG args[1];
+        struct EasyStruct es = {
+            sizeof(struct EasyStruct), 0,
+            (STRPTR)"Network Setup",
+            (STRPTR)"Finish could not complete:\n\n%s",
+            (STRPTR)"OK" };
+        args[0] = (ULONG)g_finish_errs;
+        EasyRequestArgs(g_win, &es, NULL, args);
+    }
+    return FALSE;
 }
 
 /* 1 s status tick (timer.device, in the Wait mask — never Delay()) */
@@ -1905,6 +2041,12 @@ static BOOL start_status_tick(void)
     g_tick_io->tr_node.io_Message.mn_Length = (UWORD)sizeof(struct timerequest);
     if (OpenDevice((CONST_STRPTR)TIMERNAME, UNIT_VBLANK,
                    (struct IORequest *)g_tick_io, 0UL) != 0) {
+        /* 7.8: never opened - stop_status_tick must not AbortIO/
+         * WaitIO/CloseDevice it */
+        FreeVec(g_tick_io);
+        g_tick_io = NULL;
+        DeleteMsgPort(g_tick_port);
+        g_tick_port = NULL;
         return FALSE;
     }
     g_tick_sig = 1UL << g_tick_port->mp_SigBit;
@@ -1956,6 +2098,25 @@ static void stop_status_tick(void)
 int main(int argc, char **argv)
 {
     memset(&g_ws, 0, sizeof(g_ws));
+
+    /* 1.1/1.8: "TolunnetSetup UNDOSTACKS" is what S:tolunnet-undo-stacks
+     * runs - the line-level undo of what Finish changed for other
+     * stacks, no GUI. RC 0 = done, 20 = something could not be put
+     * back (the script then falls back / tells the user). */
+    if (argc >= 2 && argv != NULL && argv[1] != NULL &&
+        strcasecmp(argv[1], TN_UNDO_STACKS_ARG) == 0) {
+        /* also drop the ";BEGIN tolunnet" boot block (ours or the
+         * Installer's) - line editing a DOS script cannot do */
+        BOOL ok_lines = tn_stack_undo_replacement();
+        BOOL ok_block = tn_install_boot_block(FALSE);
+        if (ok_lines && ok_block) {
+            return 0;
+        }
+        if (Output() != (BPTR)0) {
+            PutStr((CONST_STRPTR)"TolunnetSetup: could not restore every startup line\n");
+        }
+        return 20;
+    }
     g_ws.replace_stacks = TRUE;
     /* 11l item 3: Roadshow files are written only on request; a
      * real Roadshow DEVS:NetInterfaces config is never clobbered
@@ -2128,10 +2289,6 @@ int main(int argc, char **argv)
                                    WA_PubScreen,    (ULONG)scr,
                                    TAG_END);
 
-            if (!owns_screen) {
-                UnlockPubScreen(NULL, scr);
-            }
-
             if (g_win) {
                 GT_RefreshWindow(g_win, NULL);
                 rebuild_page_gadgets();
@@ -2155,9 +2312,9 @@ int main(int argc, char **argv)
             if (rexx_port && (sigs & rexx_sig)) {
                 tn_setup_rexx_process(rexx_port, &g_ws, NULL, NULL);
                 if (g_ws.rexx_done) {
-                    apply_wizard_finish();
+                    BOOL fin_ok = apply_wizard_finish();
                     if (g_ws.rexx_finish_msg) {
-                        ReplyMsg(g_ws.rexx_finish_msg);
+                        tn_setup_rexx_reply(g_ws.rexx_finish_msg, fin_ok ? 0 : 10);
                         g_ws.rexx_finish_msg = NULL;
                     }
                     break;
@@ -2189,9 +2346,10 @@ int main(int argc, char **argv)
         if (rexx_port && (sigs & rexx_sig)) {
             tn_setup_rexx_process(rexx_port, &g_ws, rebuild_page_gadgets, run_page_tests);
             if (g_ws.rexx_done) {
-                apply_wizard_finish();
+                /* 7.7: a failed Finish is RC_ERROR (10) for ARexx */
+                BOOL fin_ok = apply_wizard_finish();
                 if (g_ws.rexx_finish_msg) {
-                    ReplyMsg(g_ws.rexx_finish_msg);
+                    tn_setup_rexx_reply(g_ws.rexx_finish_msg, fin_ok ? 0 : 10);
                     g_ws.rexx_finish_msg = NULL;
                 }
                 running = FALSE;
@@ -2243,6 +2401,10 @@ int main(int argc, char **argv)
                 case IDCMP_GADGETUP: {
                     struct Gadget *gad = (struct Gadget *)im_iaddr;
                     if (!gad) break;
+                    /* 7.8: a GADGETUP queued before a rebuild points at
+                     * a freed gadget - only touch gadgets still in our
+                     * lists */
+                    if (!gadget_is_live(gad)) break;
 
                     switch (gad->GadgetID) {
                     case GID_BTN_NEXT:
@@ -2304,12 +2466,21 @@ int main(int argc, char **argv)
                         break;
 
                     case GID_P3_SHOWPASS_CHK:
+                        /* 7.5: capture the field as it is BEFORE the
+                         * mode flips (the sync keys off how the live
+                         * gadget was built, not off the flag) */
+                        sync_page_gadgets_to_state();
                         g_ws.wifi_show_pass = !g_ws.wifi_show_pass;
                         rebuild_page_gadgets();
                         break;
 
                     case GID_P3_NETLIST:
                         if ((int)im_code < g_ws.wifi_count) {
+                            /* 7.1: keep typed text first, then the
+                             * pick replaces the SSID field for good -
+                             * association and Finish both read
+                             * wifi_ssid_str */
+                            sync_page_gadgets_to_state();
                             g_ws.selected_wifi_idx = im_code;
                             strncpy(g_ws.wifi_ssid_str,
                                     g_ws.wifi[im_code].ssid,
@@ -2411,7 +2582,7 @@ int main(int argc, char **argv)
     } /* else */
 
     if (g_ws.rexx_finish_msg) {
-        ReplyMsg(g_ws.rexx_finish_msg);
+        tn_setup_rexx_reply(g_ws.rexx_finish_msg, 10);   /* never applied */
         g_ws.rexx_finish_msg = NULL;
     }
 
@@ -2441,10 +2612,11 @@ int main(int argc, char **argv)
         FreeGadgets(g_nav_glist);
     }
 
-    if (g_font != NULL) {
+    /* 7.8: GfxBase->DefaultFont was borrowed, not opened */
+    if (g_font != NULL && !(GfxBase && g_font == GfxBase->DefaultFont)) {
         CloseFont(g_font);
-        g_font = NULL;
     }
+    g_font = NULL;
 
     if (g_vi) {
         FreeVisualInfo(g_vi);
@@ -2456,6 +2628,10 @@ int main(int argc, char **argv)
     if (owns_screen && scr) {
         PubScreenStatus(scr, PSNF_PRIVATE);
         CloseScreen(scr);
+    } else if (scr) {
+        /* 7.8: unlocked here on every path (it used to be skipped
+         * when GetVisualInfo failed, leaving the WB screen locked) */
+        UnlockPubScreen(NULL, scr);
     }
 
     if (AslBase)        CloseLibrary(AslBase);

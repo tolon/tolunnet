@@ -20,6 +20,17 @@ BPTR            g_log_file  = (BPTR)0;
 int             g_log_level = TN_LOG_OFF;
 void          (*g_log_sink)(const char *msg) = NULL;
 
+/* 5.1: the task that owns the log file and the sink (the daemon). tn_log
+ * also runs on library client tasks (syslog(), VERBOSE LVO traces); those
+ * must not enter lwIP through the sink, share the daemon's file handle, or
+ * call Output() on a plain Task. NULL = single-task binary, no restriction. */
+static struct Task *g_log_owner = NULL;
+
+void tn_log_set_owner(void)
+{
+    g_log_owner = FindTask(NULL);
+}
+
 /* TNET-139 DIAG ring: static storage, NUL-terminated slots, trap-safe. */
 static int  g_ring_on = 0;
 static int  g_ring_next = 0;
@@ -46,6 +57,8 @@ static void ring_capture(const char *msg)
 {
     int i = 0;
     if (!g_ring_on) return;
+    /* 5.1: shared ring, written from any task - a <=96-byte copy */
+    Forbid();
     while (msg[i] != '\0' && i < TN_LOG_RING_LEN - 1) {
         g_ring[g_ring_next][i] = msg[i];
         i++;
@@ -53,24 +66,32 @@ static void ring_capture(const char *msg)
     g_ring[g_ring_next][i] = '\0';
     g_ring_next = (g_ring_next + 1) % TN_LOG_RING_LINES;
     if (g_ring_used < TN_LOG_RING_LINES) g_ring_used++;
+    Permit();
 }
 
 void tn_log(int tier, const char *msg)
 {
     LONG len;
     BPTR out;
+    struct Task *self;
 
     if (msg == NULL) return;
     ring_capture(msg);
     if (tier > g_log_level) return;
     if (g_log_dos == NULL) return;
 
+    /* 5.1: a foreign task (library client) only gets the ring above */
+    self = FindTask(NULL);
+    if (g_log_owner != NULL && self != g_log_owner) return;
+
     len = 0;
     while (msg[len] != '\0') len++;
 
-    out = Output();
-    if (out != (BPTR)0) {
-        Write(out, (CONST APTR)msg, len);
+    if (self->tc_Node.ln_Type == NT_PROCESS) {   /* Output() needs a Process */
+        out = Output();
+        if (out != (BPTR)0) {
+            Write(out, (CONST APTR)msg, len);
+        }
     }
 
     if (g_log_file != (BPTR)0) {
@@ -78,7 +99,8 @@ void tn_log(int tier, const char *msg)
         Flush(g_log_file);
     }
 
-    if (g_log_sink != NULL) {
+    /* the sink sends through lwIP: only on the owner task that armed it */
+    if (g_log_sink != NULL && g_log_owner != NULL) {
         g_log_sink(msg);
     }
 }
@@ -89,6 +111,7 @@ BOOL tn_log_open_file(const char *path)
     APTR old_wp = NULL;
     BPTR fh = (BPTR)0;
 
+    tn_log_set_owner();   /* 5.1: the file belongs to the opening (daemon) task */
     if (g_log_file != (BPTR)0) {
         Close(g_log_file);
         g_log_file = (BPTR)0;

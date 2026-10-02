@@ -8,7 +8,9 @@
 int tn_fdset_check_nfds(int nfds)
 {
     if (nfds < 0) return TN_EINVAL;
-    return 0; /* nfds is clamped to dtablesize by the callers (4.4BSD select) */
+    /* 4.4BSD select: the client LVO clamps nfds to min(nfds, dtablesize, 64)
+     * and the daemon (ipc_select.c) clamps again before scanning */
+    return 0;
 }
 
 uint32_t tn_waitselect_timeout_ms(uint32_t secs, uint32_t micros)

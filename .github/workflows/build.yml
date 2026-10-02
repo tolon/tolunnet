@@ -2,7 +2,8 @@
 #
 # Two jobs on every push (no branch filter) + manual dispatch:
 #   host  — native gcc unit tests (make test-host, TAP output, sanitizers)
-#   amiga — cross-compile with amiga-gcc, package, upload artefacts
+#   amiga — cross-compile with amiga-gcc, package (LhA + Gotek ADF set,
+#           both read back byte for byte), upload artefacts
 #
 # Container: sebastianbergmann/amiga-gcc (Bebbo amiga-gcc). If the image is
 # ever unavailable, fall back to the AmigaPorts prebuilt (QUESTIONS.md) — do
@@ -52,7 +53,16 @@ jobs:
       - name: Build binaries (incl. SocketConformance)
         run: make all
 
-      - name: Package LhA
+      # 9.15: the Gotek ADF set is built and byte-parity-checked here too -
+      # build_adf.py and check_package_parity.py FAIL under CI=true when
+      # xdftool (amitools) is missing instead of skipping with a warning.
+      - name: amitools (xdftool) for the ADF set
+        run: |
+          python3 -m pip --version || { apt-get update && apt-get install -y python3-pip; }
+          python3 -m pip install amitools || python3 -m pip install --break-system-packages amitools
+          command -v xdftool
+
+      - name: Package LhA + ADF set
         run: make package
 
       - name: Artefact listing
@@ -63,6 +73,13 @@ jobs:
         with:
           name: tolunnet-lha
           path: build/*.lha
+          if-no-files-found: error
+
+      - name: Upload release assets (lha + 2 ADFs + SHA256SUMS)
+        uses: actions/upload-artifact@v4
+        with:
+          name: tolunnet-release-assets
+          path: build/release-assets/
           if-no-files-found: error
 
       - name: Upload release tree

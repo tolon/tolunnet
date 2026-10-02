@@ -1,6 +1,7 @@
 #include "sockaddr_util.h"
 #include <stdio.h>
 #include <string.h>
+#include <stddef.h>
 
 #define TAP_TEST(desc, cond) do { \
     test_num++; \
@@ -109,6 +110,51 @@ int main(void)
         ok = tn_ip_from_sockaddr(odd_sa, salen, &ip, &port);
         TAP_TEST("extract_from_odd_buffer",
                  ok == 1 && ip.family == AF_INET && ip.u.ip4 == 0x0A000002u && port == 53);
+    }
+
+    /* 9.10: assert the exact wire bytes, not just a store/load round trip
+     * (a round trip passes even if both halves use the wrong byte order).
+     * Port 8080 must be 0x1F 0x90 in memory on every host; the address is
+     * already network order and is copied through untouched. */
+    {
+        unsigned char raw[32];
+        unsigned char *odd = raw + 1;
+        const size_t po = offsetof(struct sockaddr_in, sin_port);
+        const size_t ao = offsetof(struct sockaddr_in, sin_addr);
+        const uint32_t addr_net = 0x7F000001u;
+
+        memset(raw, 0xAA, sizeof(raw));
+        tn_sockin_store_bytes(odd, AF_INET, 8080, addr_net);
+        TAP_TEST("store_port_wire_bytes", odd[po] == 0x1F && odd[po + 1] == 0x90);
+        TAP_TEST("store_addr_bytes_verbatim", memcmp(odd + ao, &addr_net, 4) == 0);
+#ifdef __AMIGA__
+        TAP_TEST("store_sin_len", odd[0] == sizeof(struct sockaddr_in));
+#endif
+    }
+    {
+        unsigned char raw[64];
+        unsigned char *odd = raw + 1;
+        const size_t po = offsetof(struct sockaddr_in, sin_port);
+        socklen_t salen = sizeof(struct sockaddr_in);
+        tn_ip_addr_t ip;
+        uint16_t port = 0;
+        int ok;
+
+        memset(raw, 0, sizeof(raw));
+        ip.family = AF_INET;
+        ip.u.ip4 = 0x0A000002u;
+        ok = tn_sockaddr_from_ip((struct sockaddr *)odd, &salen, &ip, 8080);
+        TAP_TEST("marshal_port_wire_bytes",
+                 ok == 1 && odd[po] == 0x1F && odd[po + 1] == 0x90);
+#ifdef __AMIGA__
+        TAP_TEST("marshal_sin_len", odd[0] == sizeof(struct sockaddr_in));
+#endif
+        /* a hand-built wire image loads back as host-order 8080 */
+        memset(raw, 0, sizeof(raw));
+        odd[po] = 0x1F;
+        odd[po + 1] = 0x90;
+        tn_sockin_load_bytes(odd, NULL, &port, NULL);
+        TAP_TEST("load_port_from_wire_bytes", port == 8080);
     }
 
     printf("1..%d\n", test_num);

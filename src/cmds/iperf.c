@@ -53,6 +53,7 @@ static void fmt_mb(char *out, ULONG bytes)
 {
     ULONG mb = bytes / (1024UL * 1024UL);
     ULONG tenth = (bytes % (1024UL * 1024UL)) / (104857UL); /* /1048576*10 */
+    if (tenth > 9) tenth = 9; /* 6.10: 1048570+ would print ':' */
     ULONG v = mb;
     int n = 0;
     char tmp[12];
@@ -130,7 +131,7 @@ int main(int argc, char **argv)
             fmt_mb(mb, total);
             fmt_kbps(rate, total, t1 - t0);
             tn_cmd_printf("iperf: received %s MB in %ld.%ld s = %s KB/s\n",
-                          mb, (t1 - t0) / 50, (t1 - t0) % 50, rate);
+                          mb, (LONG)((t1 - t0) / 50), (LONG)(((t1 - t0) % 50) / 5), rate); /* 6.10: s.tenth */
         }
         tn_call_closesocket(lst);
     } else if (opts[0] != 0) {
@@ -182,7 +183,7 @@ int main(int argc, char **argv)
         fmt_mb(mb, total);
         fmt_kbps(rate, total, t1 - t0);
         tn_cmd_printf("iperf: sent %s MB in %ld.%ld s = %s KB/s\n",
-                      mb, (t1 - t0) / 50, (t1 - t0) % 50, rate);
+                      mb, (LONG)((t1 - t0) / 50), (LONG)(((t1 - t0) % 50) / 5), rate);
     } else {
         tn_cmd_printf("iperf: use SERVER or CLIENT <host> (see README)\n");
         rc = TN_CMD_USAGE;

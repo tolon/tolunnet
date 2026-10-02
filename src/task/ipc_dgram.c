@@ -11,6 +11,27 @@
 #include "netif_mgr.h"
 #include "ipc_dispatch.h"
 #include "../common/sockaddr_util.h"
+#include <string.h>
+
+/* 4.5: store a peer sockaddr_in for recvfrom()/accept(). BSD semantics:
+ * copy min(*addrlen, 16) bytes, then set *addrlen to the full 16. Both
+ * pointers are CLIENT memory with no alignment guarantee (68000 Address
+ * Error on a typed access) - go through locals + memcpy. Nothing is
+ * written unless both are non-NULL. */
+void tn_store_client_sockaddr(void *addr, socklen_t *addrlen, u16_t port_host, u32_t addr_net)
+{
+    unsigned char sa[sizeof(struct sockaddr_in)];
+    socklen_t cap;
+    socklen_t full = (socklen_t)sizeof(struct sockaddr_in);
+
+    if (addr == NULL || addrlen == NULL) return;
+    memcpy(&cap, addrlen, sizeof(cap));
+    if ((LONG)cap < 0) cap = 0;     /* negative int from a sloppy caller */
+    if (cap > full) cap = full;
+    tn_sockin_store_bytes(sa, AF_INET, port_host, addr_net);
+    if (cap > 0) memcpy(addr, sa, (size_t)cap);
+    memcpy(addrlen, &full, sizeof(full));
+}
 
 void tn_udp_recv_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p,
                    const ip_addr_t *addr, u16_t port)
@@ -351,7 +372,8 @@ int tn_ipc_cmd_recvfrom(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         int ret = tn_ipc_cmd_recv(d, imsg, slot);
         if (ret == 0 && imsg->result >= 0) {
             if (fromlen != NULL) {
-                *fromlen = 0;
+                socklen_t zero = 0;
+                memcpy(fromlen, &zero, sizeof(zero)); /* 4.5: client memory */
             }
         }
         return ret;
@@ -363,12 +385,9 @@ int tn_ipc_cmd_recvfrom(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             TnRxPacket *pkt = slot->rx_head;
             u16_t copied = pbuf_copy_partial(pkt->p, buf, req_len, 0);
 
-            if (from != NULL) {
-                /* TNET-139: byte-wise store into client buffer */
-                tn_sockin_store_bytes(from, AF_INET, pkt->src_port,
-                                      ip_addr_get_ip4_u32(&pkt->src_ip));
-                if (fromlen != NULL) *fromlen = sizeof(struct sockaddr_in);
-            }
+            /* TNET-139/4.5: byte-wise, truncated to *fromlen */
+            tn_store_client_sockaddr(from, fromlen, pkt->src_port,
+                                     ip_addr_get_ip4_u32(&pkt->src_ip));
 
             if (!(flags & MSG_PEEK)) {
                 slot->rx_head = pkt->next;
@@ -402,12 +421,9 @@ int tn_ipc_cmd_recvfrom(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
             pbuf_copy_partial(pkt->p, buf, to_copy, 0);
 
-            if (from != NULL) {
-                /* TNET-139: byte-wise store into client buffer */
-                tn_sockin_store_bytes(from, AF_INET, 0,
-                                      ip_addr_get_ip4_u32(&pkt->src_ip));
-                if (fromlen != NULL) *fromlen = sizeof(struct sockaddr_in);
-            }
+            /* TNET-139/4.5: byte-wise, truncated to *fromlen */
+            tn_store_client_sockaddr(from, fromlen, 0,
+                                     ip_addr_get_ip4_u32(&pkt->src_ip));
 
             if (!(flags & MSG_PEEK)) {
                 slot->rx_head = pkt->next;

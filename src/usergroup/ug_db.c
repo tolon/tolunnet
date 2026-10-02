@@ -32,6 +32,23 @@ static void minlist_add_tail(struct MinList *list, struct MinNode *node)
     list->mlh_TailPred = node;
 }
 
+/* 5.9: the db files are read on the first db call, from the caller's
+ * Process, not from the RTF_AUTOINIT init (ramlib context, where DOS I/O
+ * that needs a handler loaded can deadlock). Caller holds base->lock. */
+static void ug_db_ensure_loaded(struct UserGroupBase *base)
+{
+#ifdef __AMIGA__
+    struct Task *self;
+    if (base->files_loaded) return;
+    self = FindTask(NULL);
+    if (self == NULL || self->tc_Node.ln_Type != NT_PROCESS) return; /* retry from a Process */
+    base->files_loaded = TRUE;  /* first: the parser's dedupe calls getpwnam */
+    ug_db_load_files(base);
+#else
+    (void)base;
+#endif
+}
+
 BOOL ug_db_add_user(struct UserGroupBase *base, CONST_STRPTR name, CONST_STRPTR passwd,
                     LONG uid, LONG gid, CONST_STRPTR gecos, CONST_STRPTR dir, CONST_STRPTR shell)
 {
@@ -59,7 +76,9 @@ BOOL ug_db_add_user(struct UserGroupBase *base, CONST_STRPTR name, CONST_STRPTR 
     u->pwd.pw_dir    = u->dir;
     u->pwd.pw_shell  = u->shell;
 
+    UG_LOCK(base);
     minlist_add_tail(&base->users, &u->node);
+    UG_UNLOCK(base);
     return TRUE;
 }
 
@@ -101,7 +120,9 @@ BOOL ug_db_add_group(struct UserGroupBase *base, CONST_STRPTR name, CONST_STRPTR
     g->members[idx] = NULL;
     g->grp.gr_mem = g->members;
 
+    UG_LOCK(base);
     minlist_add_tail(&base->groups, &g->node);
+    UG_UNLOCK(base);
     return TRUE;
 }
 
@@ -123,8 +144,7 @@ void ug_db_init(struct UserGroupBase *base)
     ug_db_add_group(base, "wheel", "*", 0, "root,amiga");
     ug_db_add_group(base, "staff", "*", 1000, "amiga");
     ug_db_add_group(base, "nobody", "*", 65534, "");
-
-    ug_db_load_files(base);
+    /* files: ug_db_ensure_loaded on first use (5.9) */
 }
 
 void ug_db_free(struct UserGroupBase *base)
@@ -169,106 +189,148 @@ void ug_db_free(struct UserGroupBase *base)
 struct passwd *ug_db_getpwnam(struct UserGroupBase *base, CONST_STRPTR name)
 {
     struct MinNode *node;
+    struct passwd *res = NULL;
     if (!base || !name) return NULL;
 
+    UG_LOCK(base);
+    ug_db_ensure_loaded(base);
     for (node = base->users.mlh_Head; node->mln_Succ != NULL; node = node->mln_Succ) {
         struct UgUser *u = (struct UgUser *)node;
         if (strcmp(u->pwd.pw_name, name) == 0) {
-            return &u->pwd;
+            res = &u->pwd;
+            break;
         }
     }
-    return NULL;
+    UG_UNLOCK(base);
+    return res;
 }
 
 struct passwd *ug_db_getpwuid(struct UserGroupBase *base, LONG uid)
 {
     struct MinNode *node;
+    struct passwd *res = NULL;
     if (!base) return NULL;
 
+    UG_LOCK(base);
+    ug_db_ensure_loaded(base);
     for (node = base->users.mlh_Head; node->mln_Succ != NULL; node = node->mln_Succ) {
         struct UgUser *u = (struct UgUser *)node;
         if (u->pwd.pw_uid == uid) {
-            return &u->pwd;
+            res = &u->pwd;
+            break;
         }
     }
-    return NULL;
+    UG_UNLOCK(base);
+    return res;
 }
 
 void ug_db_setpwent(struct UserGroupBase *base)
 {
     if (base) {
+        UG_LOCK(base);
+        ug_db_ensure_loaded(base);
         base->cur_user_node = base->users.mlh_Head;
+        UG_UNLOCK(base);
     }
 }
 
 struct passwd *ug_db_getpwent(struct UserGroupBase *base)
 {
-    struct UgUser *u;
-    if (!base || !base->cur_user_node || base->cur_user_node->mln_Succ == NULL) {
-        return NULL;
+    struct UgUser *u = NULL;
+    if (!base) return NULL;
+
+    UG_LOCK(base);
+    ug_db_ensure_loaded(base);
+    /* 5.9: no setpwent yet (or after endpwent): start at the head */
+    if (base->cur_user_node == NULL) base->cur_user_node = base->users.mlh_Head;
+    if (base->cur_user_node->mln_Succ != NULL) {
+        u = (struct UgUser *)base->cur_user_node;
+        base->cur_user_node = base->cur_user_node->mln_Succ;
     }
-    u = (struct UgUser *)base->cur_user_node;
-    base->cur_user_node = base->cur_user_node->mln_Succ;
-    return &u->pwd;
+    UG_UNLOCK(base);
+    return u ? &u->pwd : NULL;
 }
 
 void ug_db_endpwent(struct UserGroupBase *base)
 {
     if (base) {
+        UG_LOCK(base);
         base->cur_user_node = NULL;
+        UG_UNLOCK(base);
     }
 }
 
 struct group *ug_db_getgrnam(struct UserGroupBase *base, CONST_STRPTR name)
 {
     struct MinNode *node;
+    struct group *res = NULL;
     if (!base || !name) return NULL;
 
+    UG_LOCK(base);
+    ug_db_ensure_loaded(base);
     for (node = base->groups.mlh_Head; node->mln_Succ != NULL; node = node->mln_Succ) {
         struct UgGroup *g = (struct UgGroup *)node;
         if (strcmp(g->grp.gr_name, name) == 0) {
-            return &g->grp;
+            res = &g->grp;
+            break;
         }
     }
-    return NULL;
+    UG_UNLOCK(base);
+    return res;
 }
 
 struct group *ug_db_getgrgid(struct UserGroupBase *base, LONG gid)
 {
     struct MinNode *node;
+    struct group *res = NULL;
     if (!base) return NULL;
 
+    UG_LOCK(base);
+    ug_db_ensure_loaded(base);
     for (node = base->groups.mlh_Head; node->mln_Succ != NULL; node = node->mln_Succ) {
         struct UgGroup *g = (struct UgGroup *)node;
         if (g->grp.gr_gid == gid) {
-            return &g->grp;
+            res = &g->grp;
+            break;
         }
     }
-    return NULL;
+    UG_UNLOCK(base);
+    return res;
 }
 
 void ug_db_setgrent(struct UserGroupBase *base)
 {
     if (base) {
+        UG_LOCK(base);
+        ug_db_ensure_loaded(base);
         base->cur_grp_node = base->groups.mlh_Head;
+        UG_UNLOCK(base);
     }
 }
 
 struct group *ug_db_getgrent(struct UserGroupBase *base)
 {
-    struct UgGroup *g;
-    if (!base || !base->cur_grp_node || base->cur_grp_node->mln_Succ == NULL) {
-        return NULL;
+    struct UgGroup *g = NULL;
+    if (!base) return NULL;
+
+    UG_LOCK(base);
+    ug_db_ensure_loaded(base);
+    /* 5.9: no setgrent yet (or after endgrent): start at the head */
+    if (base->cur_grp_node == NULL) base->cur_grp_node = base->groups.mlh_Head;
+    if (base->cur_grp_node->mln_Succ != NULL) {
+        g = (struct UgGroup *)base->cur_grp_node;
+        base->cur_grp_node = base->cur_grp_node->mln_Succ;
     }
-    g = (struct UgGroup *)base->cur_grp_node;
-    base->cur_grp_node = base->cur_grp_node->mln_Succ;
-    return &g->grp;
+    UG_UNLOCK(base);
+    return g ? &g->grp : NULL;
 }
 
 void ug_db_endgrent(struct UserGroupBase *base)
 {
     if (base) {
+        UG_LOCK(base);
         base->cur_grp_node = NULL;
+        UG_UNLOCK(base);
     }
 }
 

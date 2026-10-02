@@ -11,7 +11,7 @@
 - **Try it** on a PiStorm, an accelerated Amiga, a CF/HD setup or through a Gotek, and tell us what happens — working or not.
 - **Follow the checklist** in [docs/MANUAL-TEST-rc5.md](docs/MANUAL-TEST-rc5.md) (about 20 minutes) and report back with photos if you can.
 - **Report** via GitHub Issues: your Amiga model, CPU/accelerator, Kickstart/Workbench version, network card or SANA-II driver, what you did and what you saw. Screenshots of the Setup wizard or the Preferences window are very welcome.
-- Always **keep a backup** of `S:User-Startup` and your current TCP/IP stack. The installer writes an undo script (`S:tolunnet-undo`), and the default Installer mode is *pretend* (nothing is written until you choose to).
+- Always **keep a backup** of `S:User-Startup` and your current TCP/IP stack. The installer writes an undo script (`S:tolunnet-undo`), and the default Installer mode is *pretend* (nothing is written until you choose to). The undo never copies a backup over a live `S:User-Startup`: it leaves the tolunnet block there (harmless once `C:tolunnet` is gone; remove it by hand) and keeps the pre-install copy as `S:User-Startup.tolunnet-old`.
 
 ### A first look
 
@@ -48,8 +48,8 @@ Classic AmigaOS has long lacked an actively maintained, production-grade, 100% o
 - **Roadshow 1.8 & AmiTCP V4 API:** socket primitives (`socket`, `bind`, `listen`, `accept`, `connect`, `shutdown`, `getsockname`, `getpeername`, `send`/`recv`/`sendmsg`/`recvmsg`), `SocketBaseTagList` (-294), `WaitSelect` (timer-driven, SIGIO delivery), `IoctlSocket`, `GetSocketEvents`, `Dup2Socket`, netdb (`gethostbyname`, `getservbyname`/`byport`, `getprotobyname`/`bynumber`, `getnetbyname`/`byaddr`, `getaddrinfo`/`getnameinfo`), `inet_*` helpers, `gethostname`, `gethostid` and `vsyslog`.
 - **Exec message-port IPC:** client calls reach the daemon through native `PutMsg`/`WaitPort`/`ReplyMsg`. The fast path reuses one message per library base; a per-call `MEMF_PUBLIC` message is allocated only in IPC-timeout mode.
 - **Universal 68k code (`-m68000 -msoft-float`):** one binary set for 68000 … 68060, no FPU required.
-- **68000 alignment defence:** 4-byte memory pool alignment (`MEM_ALIGNMENT 4`) and `ETH_PAD_SIZE 2` keep IP/TCP headers aligned. `-Werror=cast-align` and `make align-check` catch `#80000003` Address Error regressions at build time.
-- **SANA-II Rev 7 driver interface:** register-convention buffer-management hooks (`A0`/`A1`/`D0`), multiple outstanding reads, `S2_ONEVENT` link tracking and an optional pipelined TX request pool (`TX_QUEUE`; the default `0` is synchronous `DoIO`). Works with standard Ethernet and wireless SANA-II drivers such as `a2065.device`, `ariadne.device`, `cnet.device` and `wifipi.device`.
+- **68000 alignment defence:** 4-byte memory pool alignment (`MEM_ALIGNMENT 4`) and `ETH_PAD_SIZE 2` keep IP/TCP headers aligned. `-Werror=cast-align` in the m68k build catches explicit less-aligned casts at build time; `make align-check` adds a host `-Wcast-align=strict` pass (files the host cannot parse are re-checked with the cross compiler, and an unchecked file fails the gate) and a lint for `(void *)` cast hops and typed dereferences of client pointers, which neither compiler sees.
+- **SANA-II Rev 7 driver interface:** register-convention buffer-management hooks (`A0`/`A1`/`D0`), multiple outstanding reads, `S2_ONEVENT` link tracking (active only with `TX_QUEUE=0`; the TX pool turns it off) and an optional pipelined TX request pool (`TX_QUEUE`; the default `0` is synchronous `DoIO`). Works with standard Ethernet and wireless SANA-II drivers such as `a2065.device`, `ariadne.device`, `cnet.device` and `wifipi.device`.
 - **PRNG seeding:** the lwIP random source is seeded at start-up from `GetSysTime` (µs resolution) and free Chip/Fast RAM, then from the adapter MAC address once the interface is open.
 - **Text configuration:** `DEVS:tolunnet.config` (`KEY=VALUE`), described under [Configuration](#configuration). `ENV:tolunnet.prefs` overrides it when newer. Changes take effect after `tolunnet RECONFIG` or `TolunnetControl RECONFIG`.
 - **`usergroup.library`:** resident library (`LIBS:usergroup.library`, 39 public LVOs) for user/group identity and credentials (`getuid`, `geteuid`, `getpwuid`, `getpwnam`, `getgrnam`, `getgroups`, `crypt`, …).
@@ -200,30 +200,32 @@ LOG=NIL:
 AmigaOS has no memory protection, so one unaligned access or use-after-free ends in a Guru Meditation. Every change therefore goes through three layers of testing. [STATUS.md](STATUS.md) has the current results.
 
 ### 1. Host unit tests (`make test-host`)
-The 20 test programs in `tests/host/` are built with the host compiler under AddressSanitizer and UndefinedBehaviorSanitizer (`-Werror`). They compile against the real project headers, with a mock lwIP/Exec layer underneath:
+Every `tests/host/test_*.c` program (the Makefile globs them; `ci/check_release_consistency.py` keeps the list below in sync) is built with the host compiler under AddressSanitizer and UndefinedBehaviorSanitizer (`-Werror`). They compile against the real project headers, with a mock lwIP/Exec layer underneath:
 
-`test_config`, `test_constants`, `test_dns_pending`, `test_errstr`, `test_fdset`, `test_http`, `test_ifreader`, `test_inet_addr`, `test_ipc`, `test_ipc_dispatch`, `test_lvo_table`, `test_queues`, `test_route`, `test_sbtc`, `test_slot_table`, `test_sockaddr`, `test_sockopt`, `test_stats`, `test_usergroup`, `test_wizard_config`.
+`test_config`, `test_constants`, `test_dns_pending`, `test_errstr`, `test_fdset`, `test_http`, `test_ifreader`, `test_inet_addr`, `test_ipc`, `test_ipc_dispatch`, `test_log_format`, `test_lvo_table`, `test_manifest_match`, `test_nslookup_parse`, `test_queues`, `test_route`, `test_sbtc`, `test_slot_table`, `test_sockaddr`, `test_sockopt`, `test_stats`, `test_usergroup`, `test_wizard_config`, `test_wrap`.
 
-After the tests, `make test-host` runs `python-checks`: the LVO table generators must be up to date, icon formats are validated, and a gate checks the `Forbid()`/`Disable()` regions.
+After the tests, `make test-host` runs `python-checks`: the LVO table generators must be up to date, icon formats are validated, and a gate checks the `Forbid()`/`Disable()` regions and a lint bans `(T *)(void *)` hops and typed dereferences of client pointers outside a reviewed waiver list (`scripts/check-cast-known.txt`).
 
 ### 2. Emulated conformance bench (`ci/bench.sh`)
 A headless WinUAE harness boots a clean Workbench 3.0 hard-disk image on Kickstart 3.1, in two profiles:
 1. **a1200**: 68EC020, AGA, PAL.
 2. **68000**: A600-class 68000, ECS, NTSC, Fast RAM.
 
+Each profile runs twice: with `TX_QUEUE=4` (the pipelined TX pool) and with `TX_QUEUE=0` (the release default: synchronous `DoIO`, `S2_ONEVENT` link tracking on). Every result row names its `TX_QUEUE`.
+
 Each run does two cycles in the same OS session, without rebooting:
 - **Cycle 1:**
   - Start the daemon and obtain a DHCP lease.
   - Run the `SocketConformance` suite: TCP/UDP/raw ICMP, non-blocking `WaitSelect`, socket events, a call into each of the 139 LVO slots, and every bundled command.
-  - Run the third-party `bsdsocktest` suite, then stop the daemon.
+  - Run the third-party `bsdsocktest` suite, then stop the daemon. Its score gates the run: fewer than 126 passed, more than 2 failed, or no result fails it.
 - **Cycle 2:** relaunch the daemon, which re-opens the SANA-II device and gets a fresh lease, then repeat the tests.
 
-A run only counts if the tree was clean (`dirty: NO`). The harness has a MuForce/Enforcer hook, but it currently reports SKIP because the tool image is not part of the bench.
+A run only counts if the tree was clean (`dirty: NO`). There is no MuForce/Enforcer pass: the tool image is not part of the bench, every run records SKIP, and setting `MUFORCE_ADF` aborts the run.
 
 ### 3. Session-profile soak (`ci/bench.sh soak`)
-Hobbyist Amigas are used for a few hours at a time, so the soak models many short sessions rather than long uptime. It runs 12 cycles of 10 minutes on the a1200 profile with `TX_QUEUE=4`:
-- Each cycle runs periodic loopback `ping` and `wget` requests and takes an `Avail` snapshot, then `TolunnetControl STOP` / `START`.
-- The run is then reviewed for Gurus and freezes, `not ok` lines, one fresh lwIP initialisation per cycle, and Fast RAM drift (budget: 8 KB or less).
+Hobbyist Amigas are used for a few hours at a time, so the soak models many short sessions rather than long uptime. It runs 12 cycles of 10 minutes on the a1200 profile (`SOAK_TX_QUEUE`, default `4`; `0` soaks the release-default TX path):
+- Each cycle pings the slirp gateway `10.0.2.2` (through SANA-II), downloads from the bench HTTP service (`ci/netsvc.py`), takes an `Avail` snapshot, then runs `TolunnetControl STOP` / `START`. Every command's return code is checked and logged as an `ok` / `not ok` line.
+- The run fails on a Guru or freeze, any `not ok` line, fewer `ok` lines than planned, fewer than 13 lwIP initialisations, Chip RAM drift, or Fast RAM drift (measured from the pre-session baseline) above the per-cycle budget.
 
 ### Real hardware
 The owner's target machine is an Amiga 500 with a PiStorm and `wifipi.device`. Real-hardware retests are done by hand on that machine.
@@ -274,8 +276,9 @@ Requirements: AmigaOS 3.0+, 68000 or higher, about 1.2 MB free for the unpacked 
 1. Extract `tolunnet-<version>.lha` to `RAM:` or any drawer.
 2. Double-click **`Install_Tolunnet`** (or run `Installer Install_Tolunnet` from a shell). The script asks nothing about hardware:
    - It copies the complete command set to `SYS:C/`, `usergroup.library` to `SYS:Libs/`, and the two preference tools (with icons) to `SYS:Prefs/`.
-   - It detects existing TCP/IP stacks (Roadshow, Miami, AmiTCP), backs up what it replaces and emits `S:tolunnet-undo`.
-   - It writes `DEVS:tolunnet.config` and adds the config-driven startup line to `S:User-Startup`.
+   - It detects existing TCP/IP stacks (Roadshow, Miami, AmiTCP), backs up what it replaces (an existing `usergroup.library` included) and emits `S:tolunnet-undo`. An existing `LIBS:bsdsocket.library` is parked with `Rename` as `.pre-tolunnet` (or `.pre-tn-newer` when an older park already exists).
+   - It writes `DEVS:tolunnet.config` and adds the config-driven startup block to `S:User-Startup`, guarded as `If EXISTS C:tolunnet` … `EndIf`.
+   - `S:tolunnet-undo` first runs `S:tolunnet-undo-stacks` (the wizard's changes to other stacks), restores the replaced files and `usergroup.library`, and renames a parked `bsdsocket.library` back only when no live one exists. It leaves a live `S:User-Startup` as it is and renames `S:User-Startup.tolunnet-bak` to `.tolunnet-old`; with no live `S:User-Startup` the backup is renamed back into place.
 3. It then offers to start `SYS:Prefs/TolunnetSetup` - the wizard asks for the SANA-II device and unit and configures DHCP or a static address (you can refuse and run it later).
 
 ### Manual

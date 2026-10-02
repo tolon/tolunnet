@@ -196,7 +196,19 @@ struct UserGroupBase {
     BOOL                initialized;
     struct utmp         cur_utmp;
     struct lastlog      cur_lastlog;
+    BOOL                files_loaded;   /* 5.9: db files read lazily, once */
+    BOOL                utmp_served;    /* 5.6: getutent's one entry handed out */
 };
+
+/* 5.8: base->lock guards the context list, the db lists and cursors, the
+ * utmp cursor and crypt()'s static tables. SignalSemaphores nest per task. */
+#ifdef __AMIGA__
+#define UG_LOCK(b)   ObtainSemaphore(&(b)->lock)
+#define UG_UNLOCK(b) ReleaseSemaphore(&(b)->lock)
+#else
+#define UG_LOCK(b)   ((void)(b))
+#define UG_UNLOCK(b) ((void)(b))
+#endif
 
 /* Internal function prototypes */
 void ug_db_init(struct UserGroupBase *base);

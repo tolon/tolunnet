@@ -1,248 +1,634 @@
 ;BEGIN tolunnet 10-minute soak cycle (traffic + STATS + stop/start)
 ; 19 blocks of ~30 s = ~570 s traffic, followed by stats and stop/start cycle.
+; 9.5: the traffic crosses SANA-II (ping the slirp gateway 10.0.2.2, GET
+; from the netsvc HTTP service on the host); every command's RC is checked
+; and logged as an "ok soak ..." / "not ok soak ..." line that ci/bench.sh
+; counts (78 ok lines per cycle). __HTTP_PORT__ is substituted by
+; ci/bench.sh from ci/netsvc.ports.
+FailAt 21
 
 ; Block 1
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 1)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 1)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 1)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 1)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
 EndIf
 
 ; Block 2
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 2)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 2)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 2)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 2)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
 EndIf
 
 ; Block 3
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 3)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 3)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 3)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 3)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
 EndIf
 
 ; Block 4
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 4)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 4)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 4)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 4)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
 EndIf
 
 ; Block 5
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 5)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 5)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 5)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 5)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
 EndIf
 
 ; Block 6
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 6)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 6)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 6)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 6)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
 EndIf
 
 ; Block 7
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 7)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 7)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 7)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 7)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
 EndIf
 
 ; Block 8
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 8)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 8)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 8)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 8)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
 EndIf
 
 ; Block 9
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 9)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 9)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 9)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 9)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
 EndIf
 
 ; Block 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 10)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 10)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 10)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 10)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
 EndIf
 
 ; Block 11
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 11)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 11)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 11)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 11)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
 EndIf
 
 ; Block 12
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 12)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 12)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 12)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 12)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
 EndIf
 
 ; Block 13
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 13)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 13)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 13)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 13)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
 EndIf
 
 ; Block 14
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 14)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 14)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 14)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 14)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
 EndIf
 
 ; Block 15
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 15)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 15)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 15)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 15)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
 EndIf
 
 ; Block 16
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 16)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 16)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 16)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 16)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
 EndIf
 
 ; Block 17
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 17)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 17)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 17)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 17)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
 EndIf
 
 ; Block 18
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 18)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 18)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 18)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 18)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
 EndIf
 
 ; Block 19
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 19)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 19)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 10
-C:TolunnetPing 127.0.0.1 COUNT=1 INTERVAL=1 QUIET >>WORK:soak.log
+C:TolunnetPing 10.0.2.2 COUNT=1 INTERVAL=1 >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak ping 10.0.2.2 (block 19)"
+Else
+  Echo >>WORK:soak.log "ok soak ping"
+EndIf
 Wait 8
-C:TolunnetGet http://10.0.2.2:1/ QUIET >>WORK:soak.log
+C:TolunnetGet http://10.0.2.2:__HTTP_PORT__/soak TO NIL: >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak http get (block 19)"
+Else
+  Echo >>WORK:soak.log "ok soak http"
+EndIf
 Wait 2
 If EXISTS WORK:soak-stop
   Quit
@@ -253,8 +639,18 @@ C:TolunnetControl STATS >>WORK:soak.log
 Echo >>WORK:soak.log "--- AVAIL BEFORE STOP ---"
 Avail >>WORK:soak.log
 C:TolunnetControl STOP >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak STOP"
+Else
+  Echo >>WORK:soak.log "ok soak STOP"
+EndIf
 Wait 3
 C:TolunnetControl START >>WORK:soak.log
+If WARN
+  Echo >>WORK:soak.log "not ok soak START"
+Else
+  Echo >>WORK:soak.log "ok soak START"
+EndIf
 Wait 7
 Echo >>WORK:soak.log "--- AVAIL AFTER START ---"
 Avail >>WORK:soak.log

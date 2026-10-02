@@ -6,8 +6,10 @@
  * these in §C11 (TNET-067); until then the unit is validated on the host
  * (test_fdset.c) so the adoption cannot change behaviour unnoticed.
  *
- * NDK netinclude uses a 64-bit fd_set for bsdsocket (FD_SETSIZE 64); tolunnet
- * supports 32 descriptors per opener (TN_MAX_FDS_PER_TASK).
+ * NDK netinclude uses a 64-bit fd_set for bsdsocket (FD_SETSIZE 64); an
+ * opener's descriptor table is dtablesize entries, and select/WaitSelect
+ * scan at most min(nfds, dtablesize, 64) of them (clamped in the client
+ * LVO and again in the daemon).
  */
 #ifndef TOLUNNET_FDSET_UTIL_H
 #define TOLUNNET_FDSET_UTIL_H

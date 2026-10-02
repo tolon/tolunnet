@@ -28,45 +28,92 @@ extern struct DosLibrary *DOSBase;
 #endif
 
 
-static int case_slice_contains(const char *haystack, size_t hlen, const char *needle)
+/* Next blank-separated token of [*pp, end); a leading '"' runs to the
+ * closing quote. Returns its length (0 = none), *tok = its start. */
+static size_t next_token(const char **pp, const char *end, const char **tok)
 {
-    if (!haystack || !needle) return 0;
-    size_t nlen = strlen(needle);
-    if (nlen > hlen) return 0;
+    const char *p = *pp;
+    const char *s;
 
-    for (size_t i = 0; i <= hlen - nlen; i++) {
-        size_t j;
-        for (j = 0; j < nlen; j++) {
-            char c1 = tolower((unsigned char)haystack[i + j]);
-            char c2 = tolower((unsigned char)needle[j]);
-            if (c1 != c2) break;
-        }
-        if (j == nlen) return 1;
+    while (p < end && (*p == ' ' || *p == '\t')) p++;
+    if (p < end && *p == '"') {
+        s = ++p;
+        while (p < end && *p != '"') p++;
+        *tok = s;
+        *pp = (p < end) ? p + 1 : p;
+        return (size_t)(p - s);
     }
-    return 0;
+    s = p;
+    while (p < end && *p != ' ' && *p != '\t') p++;
+    *tok = s;
+    *pp = p;
+    return (size_t)(p - s);
 }
 
+static int token_is(const char *tok, size_t len, const char *word)
+{
+    size_t i;
+    if (strlen(word) != len) return 0;
+    for (i = 0; i < len; i++) {
+        if (tolower((unsigned char)tok[i]) != word[i]) return 0;
+    }
+    return 1;
+}
+
+/* 1.6: a line is a stack line only when the COMMAND it runs (first
+ * token, or the program after Run/Execute and redirections) has one
+ * of these exact names - "Assign Genesis: ..." or "Path .../AmiTCP-
+ * utils" are left alone. */
 static int is_stack_keyword_slice(const char *line, size_t len)
 {
+    static const char *const names[] = {
+        "miami", "miamidx", "miamiinit", "amitcp", "addnetinterface",
+        "configurenetinterface", "netshutdown", "genesis", "startnet",
+        "stopnet", NULL
+    };
     const char *p = line;
     const char *end = line + len;
+    const char *tok;
+    size_t tlen;
+    int i;
+
     while (p < end && (*p == ' ' || *p == '\t')) p++;
     if (p < end && (*p == ';' || *p == '#')) {
         return 0;
     }
 
-    size_t active_len = (size_t)(end - p);
-    if (case_slice_contains(p, active_len, "miamidx") ||
-        case_slice_contains(p, active_len, "miami") ||
-        case_slice_contains(p, active_len, "miamiinit") ||
-        case_slice_contains(p, active_len, "amitcp") ||
-        case_slice_contains(p, active_len, "addnetinterface") ||
-        case_slice_contains(p, active_len, "configurenetinterface") ||
-        case_slice_contains(p, active_len, "netshutdown") ||
-        case_slice_contains(p, active_len, "genesis") ||
-        case_slice_contains(p, active_len, "startnet") ||
-        case_slice_contains(p, active_len, "stopnet")) {
-        return 1;
+    tlen = next_token(&p, end, &tok);
+    {
+        /* "C:Run" / "C:Execute" count as Run / Execute */
+        const char *b = tok;
+        size_t blen = tlen;
+        for (i = (int)tlen - 1; i >= 0; i--) {
+            if (tok[i] == ':' || tok[i] == '/') {
+                b = tok + i + 1;
+                blen = tlen - (size_t)(i + 1);
+                break;
+            }
+        }
+        if (token_is(b, blen, "run") || token_is(b, blen, "execute")) {
+            tlen = 0;   /* program follows */
+        }
+    }
+    if (tlen == 0) {
+        do {
+            tlen = next_token(&p, end, &tok);
+        } while (tlen > 0 && (tok[0] == '<' || tok[0] == '>'));
+    }
+    if (tlen == 0) return 0;
+
+    /* basename: after the last ':' or '/' */
+    for (i = (int)tlen - 1; i >= 0; i--) {
+        if (tok[i] == ':' || tok[i] == '/') break;
+    }
+    tok += i + 1;
+    tlen -= (size_t)(i + 1);
+
+    for (i = 0; names[i] != NULL; i++) {
+        if (token_is(tok, tlen, names[i])) return 1;
     }
     return 0;
 }
@@ -182,6 +229,29 @@ int tn_uncomment_startup_script(const char *content, char *out_buf, int out_max,
 }
 
 #ifdef __AMIGA__
+
+/* Transient park name while swapping LIBS:bsdsocket.library. OFS/FFS
+ * names stop at 30 chars: the old ".tolunnet-prev" made it 31 and
+ * every Rename to it failed. "bsdsocket.library.tn-prev" = 25. */
+#define TN_LIB_PARK "LIBS:bsdsocket.library.tn-prev"
+
+static int case_slice_contains(const char *haystack, size_t hlen, const char *needle)
+{
+    if (!haystack || !needle) return 0;
+    size_t nlen = strlen(needle);
+    if (nlen > hlen) return 0;
+
+    for (size_t i = 0; i <= hlen - nlen; i++) {
+        size_t j;
+        for (j = 0; j < nlen; j++) {
+            char c1 = tolower((unsigned char)haystack[i + j]);
+            char c2 = tolower((unsigned char)needle[j]);
+            if (c1 != c2) break;
+        }
+        if (j == nlen) return 1;
+    }
+    return 0;
+}
 
 static BOOL file_exists(const char *path)
 {
@@ -340,22 +410,66 @@ void tn_stack_detect_all(WizardState *ws)
     }
 }
 
+/* 7.8: WB launches have no Output() - log only when there is one */
+static void sd_log(const char *msg)
+{
+    BPTR out = Output();
+    if (out != (BPTR)0) {
+        Write(out, (APTR)msg, (LONG)strlen(msg));
+    }
+}
+
+/* 1.13: copy src to dst; FALSE (and no dst left behind) on any
+ * open/read/write error, so a partial backup is never kept. */
+static BOOL copy_file_checked(const char *src, const char *dst)
+{
+    BPTR in = Open((CONST_STRPTR)src, MODE_OLDFILE);
+    BPTR out;
+    char chunk[512];
+    LONG n;
+    BOOL ok = TRUE;
+
+    if (!in) return FALSE;
+    out = Open((CONST_STRPTR)dst, MODE_NEWFILE);
+    if (!out) {
+        Close(in);
+        return FALSE;
+    }
+    while ((n = Read(in, chunk, sizeof(chunk))) > 0) {
+        if (Write(out, chunk, n) != n) {
+            ok = FALSE;
+            break;
+        }
+    }
+    if (n < 0) ok = FALSE;
+    Close(in);
+    Close(out);
+    if (!ok) DeleteFile((CONST_STRPTR)dst);
+    return ok;
+}
+
+/* 1.9: a missing or empty file has nothing to rewrite - that is
+ * success, not failure. */
 static BOOL rewrite_file_with_parser(const char *filepath, int (*parser)(const char *, char *, int, int *))
 {
     BPTR fh = Open((CONST_STRPTR)filepath, MODE_OLDFILE);
-    if (!fh) return FALSE;
+    if (!fh) return file_exists(filepath) ? FALSE : TRUE;
 
     struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
-    LONG file_size = 0;
+    LONG file_size = -1;
     if (fib) {
         if (ExamineFH(fh, fib)) {
             file_size = fib->fib_Size;
         }
         FreeDosObject(DOS_FIB, fib);
     }
-    if (file_size <= 0) {
+    if (file_size < 0) {
         Close(fh);
         return FALSE;
+    }
+    if (file_size == 0) {
+        Close(fh);
+        return TRUE;
     }
 
     /* Allocate buffer for reading file plus null terminator */
@@ -365,9 +479,15 @@ static BOOL rewrite_file_with_parser(const char *filepath, int (*parser)(const c
         return FALSE;
     }
 
-    LONG r = Read(fh, in_buf, file_size);
+    /* 1.13: loop - one short Read() must not install a cut script */
+    LONG r = 0;
+    while (r < file_size) {
+        LONG got = Read(fh, in_buf + r, file_size - r);
+        if (got <= 0) break;
+        r += got;
+    }
     Close(fh);
-    if (r <= 0) {
+    if (r != file_size) {
         FreeVec(in_buf);
         return FALSE;
     }
@@ -419,26 +539,115 @@ static BOOL rewrite_file_with_parser(const char *filepath, int (*parser)(const c
     return TRUE;
 }
 
+/* 1.1/1.8: standalone undo for everything tn_stack_apply_replacement
+ * changes. The line-level restore of the "; tolunnet-disabled: "
+ * lines (no whole-file copy over later edits, see 1.3) cannot be
+ * done in AmigaDOS script, so the script calls back into
+ * TolunnetSetup (tn_stack_undo_replacement); when that binary is
+ * gone it restores what plain Rename can and says what is left. */
+static const char s_undo_stacks_text[] =
+    "; tolunnet-undo-stacks - undoes what TolunnetSetup changed for other\n"
+    "; TCP/IP stacks (startup lines, LIBS:bsdsocket.library, WBStartup)\n"
+    "; and removes the tolunnet boot block from S:User-Startup.\n"
+    "; Execute it alone or from S:tolunnet-undo. It deletes itself.\n"
+    "FailAt 21\n"
+    "IF EXISTS SYS:Prefs/TolunnetSetup\n"
+    "  SYS:Prefs/TolunnetSetup " TN_UNDO_STACKS_ARG "\n"
+    "ENDIF\n"
+    "IF EXISTS LIBS:bsdsocket.library.roadshow\n"
+    "  IF NOT EXISTS LIBS:bsdsocket.library\n"
+    "    Rename >NIL: LIBS:bsdsocket.library.roadshow LIBS:bsdsocket.library\n"
+    "  ENDIF\n"
+    "ENDIF\n"
+    "IF EXISTS LIBS:bsdsocket.library.miami\n"
+    "  IF NOT EXISTS LIBS:bsdsocket.library\n"
+    "    Rename >NIL: LIBS:bsdsocket.library.miami LIBS:bsdsocket.library\n"
+    "  ENDIF\n"
+    "ENDIF\n"
+    "IF EXISTS LIBS:bsdsocket.library.amitcp\n"
+    "  IF NOT EXISTS LIBS:bsdsocket.library\n"
+    "    Rename >NIL: LIBS:bsdsocket.library.amitcp LIBS:bsdsocket.library\n"
+    "  ENDIF\n"
+    "ENDIF\n"
+    "IF EXISTS LIBS:bsdsocket.library.genesis\n"
+    "  IF NOT EXISTS LIBS:bsdsocket.library\n"
+    "    Rename >NIL: LIBS:bsdsocket.library.genesis LIBS:bsdsocket.library\n"
+    "  ENDIF\n"
+    "ENDIF\n"
+    "IF EXISTS " TN_LIB_PARK "\n"
+    "  IF NOT EXISTS LIBS:bsdsocket.library\n"
+    "    Rename >NIL: " TN_LIB_PARK " LIBS:bsdsocket.library\n"
+    "  ENDIF\n"
+    "ENDIF\n"
+    "IF EXISTS SYS:WBStartup/Miami.info.pre-tolunnet\n"
+    "  IF NOT EXISTS SYS:WBStartup/Miami.info\n"
+    "    Rename >NIL: SYS:WBStartup/Miami.info.pre-tolunnet SYS:WBStartup/Miami.info\n"
+    "  ENDIF\n"
+    "ENDIF\n"
+    "IF EXISTS SYS:WBStartup/Genesis.info.pre-tolunnet\n"
+    "  IF NOT EXISTS SYS:WBStartup/Genesis.info\n"
+    "    Rename >NIL: SYS:WBStartup/Genesis.info.pre-tolunnet SYS:WBStartup/Genesis.info\n"
+    "  ENDIF\n"
+    "ENDIF\n"
+    "IF EXISTS S:User-Startup\n"
+    "  Search >NIL: S:User-Startup \"; tolunnet-disabled: \" QUIET\n"
+    "  IF NOT WARN\n"
+    "    Echo \"S:User-Startup: remove the '; tolunnet-disabled: ' prefixes by hand.\"\n"
+    "  ENDIF\n"
+    "ENDIF\n"
+    "IF EXISTS S:Network-Startup\n"
+    "  Search >NIL: S:Network-Startup \"; tolunnet-disabled: \" QUIET\n"
+    "  IF NOT WARN\n"
+    "    Echo \"S:Network-Startup: remove the '; tolunnet-disabled: ' prefixes by hand.\"\n"
+    "  ENDIF\n"
+    "ENDIF\n"
+    "Echo \"Other TCP/IP stack settings restored.\"\n"
+    "Run >NIL: Delete >NIL: " TN_UNDO_STACKS_SCRIPT " QUIET\n";
+
+static BOOL write_undo_stacks_script(void)
+{
+    const char *tmp = TN_UNDO_STACKS_SCRIPT ".new";
+    LONG len = (LONG)sizeof(s_undo_stacks_text) - 1;
+    BPTR fh;
+    LONG w;
+
+    if (file_exists(TN_UNDO_STACKS_SCRIPT)) return TRUE;
+    fh = Open((CONST_STRPTR)tmp, MODE_NEWFILE);
+    if (!fh) return FALSE;
+    w = Write(fh, (APTR)s_undo_stacks_text, len);
+    Close(fh);
+    if (w != len || !Rename((CONST_STRPTR)tmp, (CONST_STRPTR)TN_UNDO_STACKS_SCRIPT)) {
+        DeleteFile((CONST_STRPTR)tmp);
+        return FALSE;
+    }
+    SetProtection((CONST_STRPTR)TN_UNDO_STACKS_SCRIPT, FIBF_SCRIPT);
+    return TRUE;
+}
+
 BOOL tn_stack_apply_replacement(WizardState *ws)
 {
     if (!ws || !ws->replace_stacks) return TRUE;
 
-    /* 1. Backup S:User-Startup once */
+    /* 1. Backup S:User-Startup once. 1.13: checked copy - a failed
+     * or partial backup is deleted and nothing is changed. */
     if (file_exists("S:User-Startup") && !file_exists("S:User-Startup.tolunnet-bak")) {
-        BPTR in_fh = Open((CONST_STRPTR)"S:User-Startup", MODE_OLDFILE);
-        BPTR out_fh = Open((CONST_STRPTR)"S:User-Startup.tolunnet-bak", MODE_NEWFILE);
-        if (in_fh && out_fh) {
-            char chunk[1024];
-            LONG n;
-            while ((n = Read(in_fh, chunk, sizeof(chunk))) > 0) {
-                Write(out_fh, chunk, n);
-            }
+        if (!copy_file_checked("S:User-Startup", "S:User-Startup.tolunnet-bak")) {
+            sd_log("tolunnet: cannot back up S:User-Startup - nothing changed\n");
+            return FALSE;
         }
-        if (in_fh) Close(in_fh);
-        if (out_fh) Close(out_fh);
     } else if (file_exists("S:User-Startup.tolunnet-bak")) {
         /* 11k item 2: an older backup wins - say so in the log */
-        Printf((CONST_STRPTR)"tolunnet: keeping existing S:User-Startup.tolunnet-bak\n");
+        sd_log("tolunnet: keeping existing S:User-Startup.tolunnet-bak\n");
+    }
+
+    /* 1b. 1.1/1.8: the wizard's own undo goes to S:tolunnet-undo-stacks
+     * (S:tolunnet-undo belongs to the installer, which Executes this
+     * one first). Written before anything changes; an existing one
+     * from an earlier run is kept - it already undoes to the state
+     * before the FIRST run. */
+    if (!write_undo_stacks_script()) {
+        sd_log("tolunnet: cannot write S:tolunnet-undo-stacks - nothing changed\n");
+        return FALSE;
     }
 
     /* 2. Comment out stack lines in S:User-Startup and S:Network-Startup.
@@ -484,7 +693,7 @@ BOOL tn_stack_apply_replacement(WizardState *ws)
         char backup_path[64];
         char park_path[80];
         snprintf(backup_path, sizeof(backup_path), "LIBS:bsdsocket.library.%s", stack_suffix);
-        snprintf(park_path, sizeof(park_path), "LIBS:bsdsocket.library.tolunnet-prev");
+        snprintf(park_path, sizeof(park_path), TN_LIB_PARK);
         DeleteFile((CONST_STRPTR)park_path);
         /* 11k item 2: park the live library first; only after the
          * parked copy sits under the backup name is the swap done.
@@ -506,32 +715,6 @@ BOOL tn_stack_apply_replacement(WizardState *ws)
     if (file_exists("SYS:WBStartup/Genesis.info")) {
         Rename((CONST_STRPTR)"SYS:WBStartup/Genesis.info",
                (CONST_STRPTR)"SYS:WBStartup/Genesis.info.pre-tolunnet");
-    }
-
-    /* 5. Write S:tolunnet-undo restoration script */
-    BPTR undo_fh = Open((CONST_STRPTR)"S:tolunnet-undo", MODE_NEWFILE);
-    if (undo_fh) {
-        char undo_content[1024];
-        snprintf(undo_content, sizeof(undo_content),
-                 "; tolunnet-undo — restores previous TCP/IP stack\n"
-                 "FailAt 21\n"
-                 "IF EXISTS S:User-Startup.tolunnet-bak\n"
-                 "  Copy S:User-Startup.tolunnet-bak S:User-Startup CLONE QUIET\n"
-                 "ENDIF\n"
-                 "IF EXISTS LIBS:bsdsocket.library.%s\n"
-                 "  Copy LIBS:bsdsocket.library.%s LIBS:bsdsocket.library CLONE QUIET\n"
-                 "  Delete LIBS:bsdsocket.library.%s QUIET\n"
-                 "ENDIF\n"
-                 "IF EXISTS LIBS:bsdsocket.library.pre-tolunnet\n"
-                 "  Copy LIBS:bsdsocket.library.pre-tolunnet LIBS:bsdsocket.library CLONE QUIET\n"
-                 "  Delete LIBS:bsdsocket.library.pre-tolunnet QUIET\n"
-                 "ENDIF\n"
-                 "Delete >NIL: DEVS:tolunnet.config QUIET\n"
-                 "Echo \"Previous TCP/IP stack configuration restored.\"\n",
-                 stack_suffix, stack_suffix, stack_suffix);
-        Write(undo_fh, undo_content, strlen(undo_content));
-        Close(undo_fh);
-        SetProtection((CONST_STRPTR)"S:tolunnet-undo", FIBF_SCRIPT);
     }
 
     return TRUE;
@@ -561,7 +744,7 @@ BOOL tn_stack_undo_replacement(void)
         char park_path[80];
         snprintf(path, sizeof(path), "LIBS:bsdsocket.library.%s", suffixes[i]);
         if (file_exists(path)) {
-            snprintf(park_path, sizeof(park_path), "LIBS:bsdsocket.library.tolunnet-prev");
+            snprintf(park_path, sizeof(park_path), TN_LIB_PARK);
             if (file_exists("LIBS:bsdsocket.library")) {
                 /* park the replacement, put the original back, and
                  * delete the park only after the original is in
@@ -592,6 +775,11 @@ BOOL tn_stack_undo_replacement(void)
         Rename((CONST_STRPTR)"SYS:WBStartup/Genesis.info.pre-tolunnet",
                (CONST_STRPTR)"SYS:WBStartup/Genesis.info");
     }
+
+    /* 1.1/1.8: everything is back - the wizard's undo script has
+     * nothing left to do. (Run from inside that script the delete
+     * fails "in use"; the script removes itself at its end.) */
+    DeleteFile((CONST_STRPTR)TN_UNDO_STACKS_SCRIPT);
 
     return TRUE;
 }

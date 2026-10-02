@@ -18,6 +18,8 @@ struct MsgPort *tn_setup_rexx_init(void);
 void tn_setup_rexx_cleanup(struct MsgPort *port);
 void tn_setup_rexx_process(struct MsgPort *port, WizardState *ws, void (*on_refresh)(void),
                            void (*on_test)(void));
+/* Reply a port message; a real RexxMsg also gets rc in rm_Result1 */
+void tn_setup_rexx_reply(struct Message *msg, LONG rc);
 
 #endif
 

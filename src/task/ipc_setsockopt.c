@@ -16,6 +16,39 @@ static inline int tn_load_opt_int(const void *p)
     return v;
 }
 
+/* bugtrack 4.10: per-slot IP_ADD_MEMBERSHIP records (d->mcast_joins).
+ * slot_idx < 0 finds a free record; otherwise the slot's matching join. */
+static int tn_mcast_find(TnDaemon *d, int slot_idx, uint32_t grp, uint32_t ifa)
+{
+    int i;
+    for (i = 0; i < TN_MCAST_JOINS_MAX; i++) {
+        if (slot_idx < 0) {
+            if (!d->mcast_joins[i].in_use) return i;
+        } else if (d->mcast_joins[i].in_use &&
+                   d->mcast_joins[i].slot == (uint8_t)slot_idx &&
+                   d->mcast_joins[i].grp == grp &&
+                   d->mcast_joins[i].ifa == ifa) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void tn_mcast_leave_all(TnDaemon *d, int slot_idx)
+{
+    int i;
+    if (d == NULL || slot_idx < 0) return;
+    for (i = 0; i < TN_MCAST_JOINS_MAX; i++) {
+        if (d->mcast_joins[i].in_use && d->mcast_joins[i].slot == (uint8_t)slot_idx) {
+            ip4_addr_t grp, ifa;
+            grp.addr = d->mcast_joins[i].grp;
+            ifa.addr = d->mcast_joins[i].ifa;
+            (void)igmp_leavegroup(&ifa, &grp); /* netif may already be gone */
+            d->mcast_joins[i].in_use = 0;
+        }
+    }
+}
+
 int tn_ipc_cmd_setsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
     LONG level = imsg->args[1];
@@ -164,6 +197,18 @@ int tn_ipc_cmd_setsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                 imsg->err_no = EINVAL;
                 return 0;
             }
+            /* 4.2: re-arm the deadline of an already parked send */
+            if (slot->pending_send_msg != NULL) {
+                if (slot->opt_sndtimeo.tv_secs > 0 || slot->opt_sndtimeo.tv_micro > 0) {
+                    uint32_t ms = (uint32_t)slot->opt_sndtimeo.tv_secs * 1000 +
+                                  (uint32_t)(slot->opt_sndtimeo.tv_micro + 999) / 1000;
+                    uint32_t ticks = (ms + 99) / 100;
+                    if (ticks == 0) ticks = 1;
+                    slot->send_deadline_tick = (d != NULL) ? (d->mainloop_ticks + ticks) : 0;
+                } else {
+                    slot->send_deadline_tick = 0;
+                }
+            }
             break;
 
         case SO_ERROR:
@@ -228,13 +273,25 @@ int tn_ipc_cmd_setsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             }
             {
                 int mss = tn_load_opt_int(optval);
-                if (mss > 0) {
-                    slot->opt_mss = (u16_t)mss;
+                BOOL live = (slot->tcp_pcb != NULL &&
+                             slot->tcp_state != TN_TCP_STATE_LISTENING);
+                /* only a connected pcb carries a negotiated mss; before
+                 * connect() lwIP holds INITIAL_MSS (536) as a placeholder */
+                BOOL conn = (live && (slot->tcp_state == TN_TCP_STATE_ESTABLISHED ||
+                                      slot->tcp_state == TN_TCP_STATE_PEER_CLOSED));
+                int cur = conn ? (int)slot->tcp_pcb->mss
+                               : (slot->opt_mss ? (int)slot->opt_mss : TCP_MSS);
+                /* bugtrack 4.10: the mss may only be lowered (never above
+                 * the negotiated/default one, never truncated to u16). */
+                if (mss < 1 || mss > cur) {
+                    imsg->result = -1;
+                    imsg->err_no = EINVAL;
+                    return 0;
                 }
+                slot->opt_mss = (u16_t)mss;
                 /* z.ai step 7 item 5: never write mss into a LISTEN pcb —
                  * tcp_pcb_listen has no mss field (out-of-bounds). */
-                if (mss > 0 && slot->tcp_pcb != NULL &&
-                    slot->tcp_state != TN_TCP_STATE_LISTENING) {
+                if (live) {
                     slot->tcp_pcb->mss = (u16_t)mss;
                 }
             }
@@ -248,6 +305,12 @@ int tn_ipc_cmd_setsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             }
             {
                 int val = tn_load_opt_int(optval);
+                /* bugtrack 4.10: seconds > 0, and val * 1000 must fit u32 */
+                if (val <= 0 || (u32_t)val > 0xFFFFFFFFUL / 1000UL) {
+                    imsg->result = -1;
+                    imsg->err_no = EINVAL;
+                    return 0;
+                }
                 slot->opt_keepidle = val;
                 /* z.ai step 7g item 2: never write keep_* into a LISTEN
                  * pcb - tcp_pcb_listen has no such fields. */
@@ -266,6 +329,12 @@ int tn_ipc_cmd_setsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             }
             {
                 int val = tn_load_opt_int(optval);
+                /* bugtrack 4.10: seconds > 0, and val * 1000 must fit u32 */
+                if (val <= 0 || (u32_t)val > 0xFFFFFFFFUL / 1000UL) {
+                    imsg->result = -1;
+                    imsg->err_no = EINVAL;
+                    return 0;
+                }
                 slot->opt_keepintvl = val;
                 /* z.ai step 7g item 2: never write keep_* into a LISTEN
                  * pcb - tcp_pcb_listen has no such fields. */
@@ -284,6 +353,11 @@ int tn_ipc_cmd_setsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             }
             {
                 int val = tn_load_opt_int(optval);
+                if (val <= 0) { /* bugtrack 4.10 */
+                    imsg->result = -1;
+                    imsg->err_no = EINVAL;
+                    return 0;
+                }
                 slot->opt_keepcnt = val;
                 /* z.ai step 7g item 2: never write keep_* into a LISTEN
                  * pcb - tcp_pcb_listen has no such fields. */
@@ -409,14 +483,30 @@ int tn_ipc_cmd_setsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                 struct ip_mreq mreq;
                 ip4_addr_t grp, ifa;
                 err_t err;
+                int rec = -1;
                 memcpy(&mreq, optval, sizeof(struct ip_mreq));
                 grp.addr = mreq.imr_multiaddr.s_addr;
                 ifa.addr = mreq.imr_interface.s_addr;
+                /* bugtrack 4.10: record the join so the slot leaves on close */
+                if (d != NULL) {
+                    rec = tn_mcast_find(d, -1, 0, 0);
+                    if (rec < 0) {
+                        imsg->result = -1;
+                        imsg->err_no = ENOBUFS;
+                        return 0;
+                    }
+                }
                 err = igmp_joingroup(&ifa, &grp);
                 if (err != ERR_OK) {
                     imsg->result = -1;
                     imsg->err_no = (err == ERR_MEM) ? ENOBUFS : EINVAL;
                     return 0;
+                }
+                if (rec >= 0) {
+                    d->mcast_joins[rec].in_use = 1;
+                    d->mcast_joins[rec].slot = (uint8_t)(slot - d->sockets);
+                    d->mcast_joins[rec].grp = grp.addr;
+                    d->mcast_joins[rec].ifa = ifa.addr;
                 }
             }
             break;
@@ -439,6 +529,10 @@ int tn_ipc_cmd_setsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                     imsg->result = -1;
                     imsg->err_no = (err == ERR_MEM) ? ENOBUFS : EINVAL;
                     return 0;
+                }
+                if (d != NULL) {
+                    int rec = tn_mcast_find(d, (int)(slot - d->sockets), grp.addr, ifa.addr);
+                    if (rec >= 0) d->mcast_joins[rec].in_use = 0;
                 }
             }
             break;

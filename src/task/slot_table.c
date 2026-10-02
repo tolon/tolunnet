@@ -67,6 +67,9 @@ void tn_slot_table_init(TnDaemon *d)
     d->max_selectors = (d->selectors != NULL) ? TN_MAX_SELECTORS : 0;
     d->selector_count = 0;
     d->next_park_id = 1;
+    /* bugtrack 4.10: installed by the daemon AFTER this init (host tests
+     * pass uninitialised stack TnDaemons) */
+    d->slot_free_hook = NULL;
 }
 
 BOOL tn_selector_table_grow(TnDaemon *d, uint32_t new_max)
@@ -166,10 +169,14 @@ static void tn_init_socket_slot(TnSocketSlot *s, TnSocketBase *base, struct Task
     s->accept_head         = NULL;
     s->accept_tail         = NULL;
     s->accept_count        = 0;
+    s->listen_backlog      = TN_ACCEPT_QUEUE_MAX;
     s->pending_connect_msg = NULL;
     s->pending_accept_msg  = NULL;
     s->pending_recv_msg    = NULL;
     s->recv_deadline_tick  = 0;
+    s->pending_send_msg    = NULL;
+    s->send_deadline_tick  = 0;
+    s->send_done           = 0;
     s->park_id             = 0;
     s->is_parked           = FALSE;
 }
@@ -244,17 +251,38 @@ void tn_slot_free(TnDaemon *d, int slot_idx)
     slot = &d->sockets[slot_idx];
     if (!slot->in_use) return;
 
+    /* bugtrack 4.10: leave the slot's IP_ADD_MEMBERSHIP groups
+     * (tn_mcast_leave_all, ipc_setsockopt.c) */
+    if (d->slot_free_hook != NULL) {
+        d->slot_free_hook(d, slot_idx);
+    }
     if (slot->udp_pcb != NULL) {
         udp_remove(slot->udp_pcb);
         slot->udp_pcb = NULL;
     }
     if (slot->tcp_pcb != NULL) {
-        tcp_arg(slot->tcp_pcb, NULL);
-        tcp_recv(slot->tcp_pcb, NULL);
-        tcp_err(slot->tcp_pcb, NULL);
-        tcp_accept(slot->tcp_pcb, NULL);
-        tcp_close(slot->tcp_pcb);
+        struct tcp_pcb *pcb = slot->tcp_pcb;
         slot->tcp_pcb = NULL;
+        if (slot->tcp_state == TN_TCP_STATE_LISTENING) {
+            /* 4.1: a LISTEN pcb is the smaller struct tcp_pcb_listen -
+             * tcp_recv/sent/err/poll would write past its end. lwIP's own
+             * api_msg only touches arg/accept here; closing a listener
+             * cannot fail. */
+            tcp_arg(pcb, NULL);
+            tcp_accept(pcb, NULL);
+            tcp_close(pcb);
+        } else {
+            tcp_arg(pcb, NULL);
+            tcp_recv(pcb, NULL);
+            tcp_sent(pcb, NULL);
+            tcp_err(pcb, NULL);
+            tcp_poll(pcb, NULL, 0);
+            /* 3.9: ERR_MEM leaves the pcb alive and unreferenced - abort
+             * it instead (callbacks already detached above). */
+            if (tcp_close(pcb) != ERR_OK) {
+                tcp_abort(pcb);
+            }
+        }
     }
     if (slot->raw_pcb != NULL) {
         raw_remove(slot->raw_pcb);
@@ -285,6 +313,9 @@ void tn_slot_free(TnDaemon *d, int slot_idx)
         rmsg->result = -1;
         rmsg->err_no = EBADF;
         ReplyMsg((struct Message *)rmsg);
+    }
+    if (slot->pending_send_msg != NULL) {
+        tn_slot_reply_send(slot, EBADF, 1);
     }
 
     slot->rx_tail             = NULL;
@@ -608,6 +639,19 @@ void tn_accept_queue_drain(TnSocketSlot *slot)
     slot->accept_count = 0;
 }
 
+/* 3.7: same pointer-only registry test as ipc_select.c's
+ * tn_selector_base_alive - a base outside open_bases is freed memory
+ * (client died without CloseLibrary) and its task may be gone. */
+BOOL tn_slot_owner_alive(const TnDaemon *d, const TnSocketBase *base)
+{
+    int b;
+    if (d == NULL || base == NULL) return FALSE;
+    for (b = 0; b < TN_CLIENT_BASES_MAX; b++) {
+        if (d->open_bases[b] == base) return TRUE;
+    }
+    return FALSE;
+}
+
 void tn_record_socket_event(TnDaemon *d, TnSocketSlot *slot, ULONG event_mask)
 {
     if (d != NULL && slot != NULL && slot->in_use && slot->owner_base != NULL) {
@@ -615,6 +659,11 @@ void tn_record_socket_event(TnDaemon *d, TnSocketSlot *slot, ULONG event_mask)
         int slot_idx = (int)(slot - d->sockets);
         int fd;
         BOOL posted = FALSE;
+        if (!tn_slot_owner_alive(d, base)) {
+            slot->owner_base = NULL;
+            slot->owner_task = NULL;
+            return;
+        }
         if (base->fd_map == NULL || base->events == NULL) return;
 
         for (fd = 0; fd < base->dtablesize; fd++) {
@@ -664,12 +713,58 @@ int tn_slot_park_recv(TnDaemon *d, TnSocketSlot *slot, TnIpcMsg *imsg)
     return 1; /* TN_IPC_DEFER */
 }
 
+/* 4.2: finish a parked blocking send. BSD sosend semantics: once any
+ * bytes were queued the call returns that count (timeout, signal, error
+ * after progress); otherwise -1 with err_no. reply=0 is the dead-client
+ * reap path (no ReplyMsg to a vanished task). */
+void tn_slot_reply_send(TnSocketSlot *slot, LONG err_no, int reply)
+{
+    TnIpcMsg *smsg;
+    if (slot == NULL || slot->pending_send_msg == NULL) return;
+    smsg = slot->pending_send_msg;
+    slot->pending_send_msg   = NULL;
+    slot->send_deadline_tick = 0;
+    if (slot->send_done > 0) {
+        smsg->result = slot->send_done;
+        smsg->err_no = 0;
+    } else {
+        smsg->result = -1;
+        smsg->err_no = err_no;
+    }
+    slot->send_done = 0;
+    if (reply) {
+        ReplyMsg((struct Message *)smsg);
+    }
+}
+
+/* 4.2: CANCEL (client break) for a parked send - TRUE if target was
+ * found and replied (EINTR, or the partial count). */
+BOOL tn_slot_cancel_parked_send(TnDaemon *d, TnIpcMsg *target)
+{
+    int i;
+    if (d == NULL || target == NULL) return FALSE;
+    for (i = 0; i < TN_MAX_GLOBAL_SOCKETS; i++) {
+        TnSocketSlot *slot = &d->sockets[i];
+        if (slot->in_use && slot->pending_send_msg == target) {
+            tn_slot_reply_send(slot, EINTR, 1);
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
 void tn_slot_check_recv_timeouts(TnDaemon *d)
 {
     int i;
     if (d == NULL) return;
     for (i = 0; i < TN_MAX_GLOBAL_SOCKETS; i++) {
         TnSocketSlot *slot = &d->sockets[i];
+        /* 4.2: SO_SNDTIMEO expiry of a parked send -> EWOULDBLOCK (or the
+         * partial count), like the recv deadline below */
+        if (slot->in_use && slot->pending_send_msg != NULL && slot->send_deadline_tick != 0 &&
+            (int32_t)(d->mainloop_ticks - slot->send_deadline_tick) >= 0) {
+            tn_slot_reply_send(slot, EWOULDBLOCK, 1);
+        }
         if (slot->in_use && slot->pending_recv_msg != NULL && slot->recv_deadline_tick != 0) {
             if ((int32_t)(d->mainloop_ticks - slot->recv_deadline_tick) >= 0) {
                 TnIpcMsg *imsg = slot->pending_recv_msg;
@@ -704,6 +799,11 @@ void tn_recv_cancel_for_base2(TnDaemon *d, TnSocketBase *base, int reply)
                     ReplyMsg((struct Message *)rmsg);
                 }
             }
+        }
+        /* 4.2: a parked send of the closing/reaped base goes the same way */
+        if (slot->in_use && slot->pending_send_msg != NULL &&
+            slot->pending_send_msg->socket_base == (struct Library *)base) {
+            tn_slot_reply_send(slot, ECONNABORTED, reply);
         }
     }
 }

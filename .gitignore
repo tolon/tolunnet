@@ -69,3 +69,7 @@ graft/
 /docs/history/
 /docs/prompts/
 STOP-REPORT*.md
+
+# bench-generated per-leg config and soak cycle
+ci/.bench-tolunnet*.config
+ci/.soak-cycle

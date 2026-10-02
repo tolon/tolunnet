@@ -10,6 +10,7 @@
 
 #include "ipc_socket.h"
 #include "slot_table.h"
+#include <string.h>
 
 #ifndef RAW_FLAGS_HDRINCL
 #define RAW_FLAGS_HDRINCL 0x01
@@ -18,14 +19,28 @@
 #define raw_is_flag_set(pcb, flag) 0
 #endif
 
+/* bugtrack 4.9: optval/optlen are client pointers with no alignment
+ * guarantee (68000: odd word/long access = address error) - every
+ * load/store goes through an aligned local and memcpy. */
+static void tn_store_optlen(void *optlen, socklen_t v)
+{
+    memcpy(optlen, &v, sizeof(v));
+}
+
+#define WRITE_OPT_BYTES(src, size) do { \
+    memcpy(optval, (src), (size)); \
+    tn_store_optlen(optlen, (socklen_t)(size)); \
+} while (0)
+
 #define WRITE_OPT_INT(val) do { \
-    if (*optlen < sizeof(int)) { \
+    int opt_v_; \
+    if (olen < sizeof(int)) { \
         imsg->result = -1; \
         imsg->err_no = EINVAL; \
         return 0; \
     } \
-    *(int *)optval = (val); \
-    *optlen = sizeof(int); \
+    opt_v_ = (val); \
+    WRITE_OPT_BYTES(&opt_v_, sizeof(int)); \
 } while (0)
 
 int tn_ipc_cmd_getsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
@@ -33,7 +48,8 @@ int tn_ipc_cmd_getsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     LONG level = imsg->args[1];
     LONG optname = imsg->args[2];
     void *optval = imsg->ptrs[0];
-    socklen_t *optlen = (socklen_t *)imsg->ptrs[1];
+    void *optlen = imsg->ptrs[1];
+    socklen_t olen;
     (void)d;
 
     if (slot == NULL || optval == NULL) {
@@ -46,6 +62,7 @@ int tn_ipc_cmd_getsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         imsg->err_no = EINVAL;
         return 0;
     }
+    memcpy(&olen, optlen, sizeof(olen));
 
     if (level == SOL_SOCKET) {
         switch (optname) {
@@ -62,24 +79,25 @@ int tn_ipc_cmd_getsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             break;
 
         case SO_LINGER:
-            if (*optlen < sizeof(struct linger)) {
+            if (olen < sizeof(struct linger)) {
                 imsg->result = -1;
                 imsg->err_no = EINVAL;
                 return 0;
             }
-            *(struct linger *)optval = slot->opt_linger;
-            *optlen = sizeof(struct linger);
+            WRITE_OPT_BYTES(&slot->opt_linger, sizeof(struct linger));
             break;
 
         case SO_ERROR:
-            if (*optlen < sizeof(int)) {
-                imsg->result = -1;
-                imsg->err_no = EINVAL;
-                return 0;
+            {
+                int err_v = (int)slot->last_error;
+                if (olen < sizeof(int)) {
+                    imsg->result = -1;
+                    imsg->err_no = EINVAL;
+                    return 0;
+                }
+                WRITE_OPT_BYTES(&err_v, sizeof(int));
+                slot->last_error = 0;
             }
-            *(int *)optval = (int)slot->last_error;
-            slot->last_error = 0;
-            *optlen = sizeof(int);
             break;
 
         case SO_SNDBUF:
@@ -99,32 +117,30 @@ int tn_ipc_cmd_getsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             break;
 
         case SO_RCVTIMEO:
-            if (*optlen < sizeof(int)) {
+            if (olen < sizeof(int)) {
                 imsg->result = -1;
                 imsg->err_no = EINVAL;
                 return 0;
             }
-            if (*optlen >= sizeof(struct timeval)) {
-                *(struct timeval *)optval = slot->opt_rcvtimeo;
-                *optlen = sizeof(struct timeval);
+            if (olen >= sizeof(struct timeval)) {
+                WRITE_OPT_BYTES(&slot->opt_rcvtimeo, sizeof(struct timeval));
             } else {
-                *(int *)optval = slot->opt_rcvtimeo.tv_secs * 1000 + slot->opt_rcvtimeo.tv_micro / 1000;
-                *optlen = sizeof(int);
+                int ms_v = slot->opt_rcvtimeo.tv_secs * 1000 + slot->opt_rcvtimeo.tv_micro / 1000;
+                WRITE_OPT_BYTES(&ms_v, sizeof(int));
             }
             break;
 
         case SO_SNDTIMEO:
-            if (*optlen < sizeof(int)) {
+            if (olen < sizeof(int)) {
                 imsg->result = -1;
                 imsg->err_no = EINVAL;
                 return 0;
             }
-            if (*optlen >= sizeof(struct timeval)) {
-                *(struct timeval *)optval = slot->opt_sndtimeo;
-                *optlen = sizeof(struct timeval);
+            if (olen >= sizeof(struct timeval)) {
+                WRITE_OPT_BYTES(&slot->opt_sndtimeo, sizeof(struct timeval));
             } else {
-                *(int *)optval = slot->opt_sndtimeo.tv_secs * 1000 + slot->opt_sndtimeo.tv_micro / 1000;
-                *optlen = sizeof(int);
+                int ms_v = slot->opt_sndtimeo.tv_secs * 1000 + slot->opt_sndtimeo.tv_micro / 1000;
+                WRITE_OPT_BYTES(&ms_v, sizeof(int));
             }
             break;
 
@@ -227,3 +243,4 @@ int tn_ipc_cmd_getsockopt(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     }
 }
 #undef WRITE_OPT_INT
+#undef WRITE_OPT_BYTES

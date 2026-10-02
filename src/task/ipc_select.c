@@ -27,6 +27,34 @@ static BOOL tn_selector_base_alive(const TnDaemon *d, const void *base)
     return FALSE;
 }
 
+/* 2.3: the selector/WaitSelect bookkeeping covers two fd_set words (fds
+ * 0-63). 4.4BSD select clamps nd to the descriptor table; we clamp to that
+ * and to 64. */
+#define TN_SELECT_MAX_FDS 64
+
+static LONG tn_select_clamp_nfds(const TnSocketBase *base, LONG nfds)
+{
+    if (nfds > TN_SELECT_MAX_FDS) nfds = TN_SELECT_MAX_FDS;
+    if (base != NULL && nfds > (LONG)base->dtablesize) nfds = (LONG)base->dtablesize;
+    if (nfds < 0) nfds = 0;
+    return nfds;
+}
+
+/* 2.3: result words the daemon does not evaluate (fds >= 64, or the hi
+ * word when nfds was clamped to <= 32) must not keep the caller's request
+ * bits - they would read back as "ready". The caller's fd_set has at least
+ * (req_nfds + 31) / 32 words. */
+#define TN_SELECT_FDSET_WORDS (256 / 32) /* netinclude default FD_SETSIZE */
+static void tn_select_clear_tail(ULONG *set, LONG clamped, LONG req_nfds)
+{
+    LONG w = (clamped > 32) ? 2 : 1;
+    LONG nw = (req_nfds + 31) / 32;
+    /* never past a default-size fd_set: nfds itself is client-controlled */
+    if (nw > TN_SELECT_FDSET_WORDS) nw = TN_SELECT_FDSET_WORDS;
+    if (set == NULL) return;
+    for (; w < nw; w++) set[w] = 0;
+}
+
 /* TNET-151: keep selector_count true - recompute from the table instead
  * of trusting increment/decrement pairs across grow/disarm/arm churn. */
 static void tn_selector_count_resync(TnDaemon *d)
@@ -46,7 +74,12 @@ void tn_signal_socket(TnDaemon *d, TnSocketSlot *slot)
 
     if (slot == NULL || !slot->in_use) return;
 
-    /* Legacy SIGIO delivery */
+    /* Legacy SIGIO delivery. 3.7: only to a base still in the open-bases
+     * registry - otherwise base and task may both be freed memory. */
+    if (slot->owner_base != NULL && d != NULL && !tn_selector_base_alive(d, slot->owner_base)) {
+        slot->owner_base = NULL;
+        slot->owner_task = NULL;
+    }
     if (slot->owner_task != NULL && slot->owner_base != NULL) {
         ULONG sig_io = slot->owner_base->sig_io;
         if (sig_io != 0) {
@@ -117,8 +150,17 @@ BOOL tn_select_can_read(const TnSocketSlot *slot)
 BOOL tn_select_can_write(const TnSocketSlot *slot)
 {
     if (slot == NULL || !slot->in_use) return FALSE;
-    if (slot->tcp_state == TN_TCP_STATE_ESTABLISHED || slot->tcp_state == TN_TCP_STATE_ERROR) return TRUE;
+    if (slot->tcp_state == TN_TCP_STATE_ERROR) return TRUE;
     if (slot->type == 2 /* UDP */ || slot->type == 3 /* RAW */) return TRUE;
+    /* 4.6: 4.4BSD sowriteable - connected (CLOSE_WAIT included) with send
+     * space, or CANTSENDMORE (send fails at once with EPIPE). */
+    if (slot->tcp_state == TN_TCP_STATE_ESTABLISHED ||
+        slot->tcp_state == TN_TCP_STATE_PEER_CLOSED) {
+        if (slot->shut_wr) return TRUE;
+        if (slot->tcp_pcb == NULL || slot->pending_send_msg != NULL) return FALSE;
+        return (tcp_sndbuf(slot->tcp_pcb) > 0 &&
+                tcp_sndqueuelen(slot->tcp_pcb) < TCP_SND_QUEUELEN) ? TRUE : FALSE;
+    }
     return FALSE;
 }
 
@@ -143,6 +185,7 @@ int tn_ipc_cmd_select_arm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     int chk;
     int i;
     int sel_slot = -1;
+    LONG req_nfds;
     (void)slot;
 
     if (d == NULL || imsg == NULL) return 0;
@@ -172,6 +215,8 @@ int tn_ipc_cmd_select_arm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         imsg->err_no = chk;
         return 0;
     }
+    req_nfds = nfds;
+    nfds = tn_select_clamp_nfds(base, nfds); /* 2.3 */
 
     /* z.ai step 6 item 4: fd_set carries TWO words (64 fds). The LO word
      * rides args[1..3]; the HI word is read from / written to the client
@@ -205,7 +250,7 @@ int tn_ipc_cmd_select_arm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                 (void)lo;
             } else {
                 ULONG g = (ULONG)i - 32;
-                ULONG m2 = (1UL << g);
+                ULONG m2 = (1UL << (g & 31));
                 if (((hi_r | hi_w | hi_e) & m2) == 0) continue;
                 int slot_idx;
                 TnSocketSlot *s = tn_slot_lookup(d, base, i, &slot_idx);
@@ -225,6 +270,9 @@ int tn_ipc_cmd_select_arm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             if (rfds) { rfds[0] = out_r; if (nfds > 32) rfds[1] = hi_out_r; }
             if (wfds) { wfds[0] = out_w; if (nfds > 32) wfds[1] = hi_out_w; }
             if (efds) { efds[0] = out_e; if (nfds > 32) efds[1] = hi_out_e; }
+            tn_select_clear_tail(rfds, nfds, req_nfds);
+            tn_select_clear_tail(wfds, nfds, req_nfds);
+            tn_select_clear_tail(efds, nfds, req_nfds);
             imsg->result = ready_cnt;
             imsg->err_no = 0;
             return 0;
@@ -336,6 +384,7 @@ int tn_ipc_cmd_waitselect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     ULONG in_r, in_w, in_e;
     ULONG out_r = 0, out_w = 0, out_e = 0;
     LONG ready_cnt = 0;
+    LONG req_nfds;
     int chk;
     int i;
     (void)slot;
@@ -361,6 +410,8 @@ int tn_ipc_cmd_waitselect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         imsg->err_no = chk;
         return 0; /* TN_IPC_REPLY_NOW */
     }
+    req_nfds = nfds;
+    nfds = tn_select_clamp_nfds(base, nfds); /* 2.3 */
 
     /* z.ai step 6 item 4: HI word (fds 32-63) read from client fd_sets */
     ULONG hi_r = 0, hi_w = 0, hi_e = 0;      /* input (client request) */
@@ -412,6 +463,9 @@ int tn_ipc_cmd_waitselect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     if (rfds) { rfds[0] = out_r; if (nfds > 32) rfds[1] = hi_out_r; }
     if (wfds) { wfds[0] = out_w; if (nfds > 32) wfds[1] = hi_out_w; }
     if (efds) { efds[0] = out_e; if (nfds > 32) efds[1] = hi_out_e; }
+    tn_select_clear_tail(rfds, nfds, req_nfds);
+    tn_select_clear_tail(wfds, nfds, req_nfds);
+    tn_select_clear_tail(efds, nfds, req_nfds);
 
     imsg->result = ready_cnt;
     imsg->err_no = 0;

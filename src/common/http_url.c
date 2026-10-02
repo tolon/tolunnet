@@ -234,6 +234,7 @@ void tn_chunk_init(struct TnChunkState *st)
         st->state = TN_CHUNK_STATE_SIZE;
         st->chunk_size = 0;
         st->chunk_rem = 0;
+        st->in_ext = 0;
     }
 }
 
@@ -255,13 +256,23 @@ enum TnChunkStateEnum tn_chunk_feed(struct TnChunkState *st,
     while (pos < in_len) {
         if (st->state == TN_CHUNK_STATE_SIZE) {
             char c = in[pos++];
-            if (c >= '0' && c <= '9') {
-                st->chunk_size = (st->chunk_size << 4) | (c - '0');
-            } else if (c >= 'a' && c <= 'f') {
-                st->chunk_size = (st->chunk_size << 4) | (c - 'a' + 10);
-            } else if (c >= 'A' && c <= 'F') {
-                st->chunk_size = (st->chunk_size << 4) | (c - 'A' + 10);
+            int hex = -1;
+            if (c >= '0' && c <= '9') hex = c - '0';
+            else if (c >= 'a' && c <= 'f') hex = c - 'a' + 10;
+            else if (c >= 'A' && c <= 'F') hex = c - 'A' + 10;
+
+            if (c == ';') {
+                st->in_ext = 1;          /* 5.3: chunk extension, skip to LF */
+            } else if (hex >= 0 && !st->in_ext) {
+                /* 5.3: a size past 0x7FFFFFF would overflow int32 */
+                if (st->chunk_size > 0x07FFFFF) {
+                    st->state = TN_CHUNK_STATE_ERROR;
+                    *consumed = pos;
+                    return st->state;
+                }
+                st->chunk_size = (st->chunk_size << 4) | hex;
             } else if (c == '\n') {
+                st->in_ext = 0;
                 if (st->chunk_size == 0) {
                     st->state = TN_CHUNK_STATE_DONE;
                     *consumed = pos;
@@ -275,6 +286,11 @@ enum TnChunkStateEnum tn_chunk_feed(struct TnChunkState *st,
             int avail = in_len - pos;
             int take = (avail < st->chunk_rem) ? avail : st->chunk_rem;
 
+            if (take < 0) {
+                st->state = TN_CHUNK_STATE_ERROR;
+                *consumed = pos;
+                return st->state;
+            }
             *out_data = in + pos;
             *out_len = take;
             st->chunk_rem -= take;

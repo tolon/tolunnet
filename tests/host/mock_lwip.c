@@ -17,10 +17,31 @@ struct raw_pcb mock_raw_pcb_connected;
 static MockCall s_calls[MOCK_MAX_CALLS];
 static int      s_call_count = 0;
 
+/* 9.14: fault injection knobs (healthy defaults) */
+static u16_t s_tcp_sndbuf      = TCP_SND_BUF;
+static u16_t s_tcp_sndqueuelen = 0;
+static err_t s_tcp_write_err   = ERR_OK;
+static err_t s_tcp_close_err   = ERR_OK;
+static err_t s_tcp_connect_err = ERR_OK;
+static err_t s_udp_sendto_err  = ERR_OK;
+
+void mock_set_tcp_sndbuf(u16_t v)      { s_tcp_sndbuf = v; }
+void mock_set_tcp_sndqueuelen(u16_t v) { s_tcp_sndqueuelen = v; }
+void mock_set_tcp_write_err(err_t e)   { s_tcp_write_err = e; }
+void mock_set_tcp_close_err(err_t e)   { s_tcp_close_err = e; }
+void mock_set_tcp_connect_err(err_t e) { s_tcp_connect_err = e; }
+void mock_set_udp_sendto_err(err_t e)  { s_udp_sendto_err = e; }
+
 void mock_lwip_reset(void)
 {
     memset(s_calls, 0, sizeof(s_calls));
     s_call_count = 0;
+    s_tcp_sndbuf      = TCP_SND_BUF;
+    s_tcp_sndqueuelen = 0;
+    s_tcp_write_err   = ERR_OK;
+    s_tcp_close_err   = ERR_OK;
+    s_tcp_connect_err = ERR_OK;
+    s_udp_sendto_err  = ERR_OK;
 }
 
 void mock_lwip_record(MockCallType type, void *p1, void *p2, uint32_t a1, uint32_t a2)
@@ -177,7 +198,7 @@ void tcp_accept(struct tcp_pcb *pcb, void *func)
 err_t tcp_close(struct tcp_pcb *pcb)
 {
     mock_lwip_record(MOCK_CALL_TCP_CLOSE, pcb, NULL, 0, 0);
-    return ERR_OK;
+    return s_tcp_close_err;
 }
 
 void tcp_abort(struct tcp_pcb *pcb)
@@ -188,13 +209,24 @@ void tcp_abort(struct tcp_pcb *pcb)
 u16_t tcp_sndbuf(struct tcp_pcb *pcb)
 {
     (void)pcb;
-    return TCP_SND_BUF;
+    return s_tcp_sndbuf;
+}
+
+u16_t tcp_sndqueuelen(struct tcp_pcb *pcb)
+{
+    (void)pcb;
+    return s_tcp_sndqueuelen;
+}
+
+void tcp_poll(struct tcp_pcb *pcb, void *func, u8_t interval)
+{
+    mock_lwip_record(MOCK_CALL_TCP_POLL, pcb, func, interval, 0);
 }
 
 err_t tcp_write(struct tcp_pcb *pcb, const void *arg, u16_t len, u8_t apiflags)
 {
     mock_lwip_record(MOCK_CALL_TCP_WRITE, pcb, (void *)arg, len, apiflags);
-    return ERR_OK;
+    return s_tcp_write_err;
 }
 
 err_t tcp_output(struct tcp_pcb *pcb)
@@ -206,7 +238,7 @@ err_t tcp_output(struct tcp_pcb *pcb)
 err_t udp_sendto(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_ip, u16_t dst_port)
 {
     mock_lwip_record(MOCK_CALL_UDP_SENDTO, pcb, p, dst_port, dst_ip ? dst_ip->addr : 0);
-    return ERR_OK;
+    return s_udp_sendto_err;
 }
 
 err_t raw_sendto(struct raw_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_ip)
@@ -245,6 +277,7 @@ err_t raw_send(struct raw_pcb *pcb, struct pbuf *p)
 err_t tcp_connect(struct tcp_pcb *pcb, const ip_addr_t *ip, u16_t port, void *connected)
 {
     (void)connected;
+    if (s_tcp_connect_err != ERR_OK) return s_tcp_connect_err;
     if (pcb != NULL) {
         if (ip != NULL) pcb->remote_ip = *ip;
         pcb->remote_port = port;
@@ -254,12 +287,12 @@ err_t tcp_connect(struct tcp_pcb *pcb, const ip_addr_t *ip, u16_t port, void *co
 
 void tcp_sent(struct tcp_pcb *pcb, void *func)
 {
-    (void)pcb; (void)func;
+    mock_lwip_record(MOCK_CALL_TCP_SENT, pcb, func, 0, 0);
 }
 
 err_t tcp_shutdown(struct tcp_pcb *pcb, int shut_rx, int shut_tx)
 {
-    (void)pcb; (void)shut_rx; (void)shut_tx;
+    mock_lwip_record(MOCK_CALL_TCP_SHUTDOWN, pcb, NULL, (uint32_t)shut_rx, (uint32_t)shut_tx);
     return ERR_OK;
 }
 

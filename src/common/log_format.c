@@ -123,7 +123,7 @@ void tn_logf_vformat(char *buf, unsigned long cap, const char *fmt, va_list ap)
             if (!left) {
                 while (pad-- > 0 && o + 1 < cap) buf[o++] = ' ';
             }
-            buf[o++] = (char)c;
+            if (o + 1 < cap) buf[o++] = (char)c;   /* 5.9: keep the NUL in bounds */
             if (left) {
                 while (pad-- > 0 && o + 1 < cap) buf[o++] = ' ';
             }

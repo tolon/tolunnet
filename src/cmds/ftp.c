@@ -17,30 +17,76 @@ TN_VERSTAG_DEF("ftp");
 #define BUF_SIZE 1024
 #define CTRL_BUF 512
 
-/* Read one CRLF line from the control connection; returns length or -1 */
+/* 6.10: the 512-byte line buffers and 1 KB transfer buffer are static
+ * so the default 4 KB CLI stack is ample. __stack is honoured because
+ * the Makefile links libnix's swapstack.o (STKSWAP_LDFLAGS, TNET-157). */
+unsigned long __stack = 16384;
+
+/* Control-connection read-ahead. File scope so a new connection can
+ * drop what the previous one left behind (6.10). */
+static char ftp_rx[BUF_SIZE];
+static LONG ftp_rx_len = 0, ftp_rx_pos = 0;
+
+/* Data-transfer buffer, off the stack (6.10). */
+static char ftp_xfer[BUF_SIZE];
+
+static void ftp_rx_reset(void)
+{
+    ftp_rx_len = 0;
+    ftp_rx_pos = 0;
+}
+
+/* Read one CRLF line from the control connection; returns length or -1.
+ * A line longer than maxlen - 1 is truncated and the rest of it, up to
+ * the LF, discarded - never returned as a separate (fake) reply line. */
 static LONG ftp_read_line(LONG fd, char *buf, LONG maxlen)
 {
-    static char rx[BUF_SIZE];
-    static LONG rx_len = 0, rx_pos = 0;
     LONG i = 0;
+    BOOL full = FALSE;
 
-    while (i < maxlen - 1) {
-        if (rx_pos >= rx_len) {
-            rx_pos = 0;
-            rx_len = tn_call_recv(fd, rx, sizeof(rx), 0);
-            if (rx_len <= 0) return -1;
+    for (;;) {
+        char c;
+        if (ftp_rx_pos >= ftp_rx_len) {
+            ftp_rx_pos = 0;
+            ftp_rx_len = tn_call_recv(fd, ftp_rx, sizeof(ftp_rx), 0);
+            if (ftp_rx_len <= 0) { ftp_rx_len = 0; return -1; }
         }
-        buf[i] = rx[rx_pos];
-        rx_pos++;
-        if (buf[i] == '\n') {
-            buf[i] = '\0';
-            if (i > 0 && buf[i-1] == '\r') buf[i-1] = '\0';
-            return i;
+        c = ftp_rx[ftp_rx_pos++];
+        if (c == '\n') break;
+        if (!full) {
+            buf[i++] = c;
+            if (i >= maxlen - 1) full = TRUE; /* discard the tail */
         }
-        i++;
     }
-    buf[maxlen - 1] = '\0';
+    if (i > 0 && buf[i-1] == '\r') i--;
+    buf[i] = '\0';
     return i;
+}
+
+/* 6.7: copy a data connection to fh until EOF. Polls Ctrl-C (and
+ * consumes it, so the session stays usable). Returns 0 at EOF, 1 on
+ * Ctrl-C, -1 on a receive error, -2 on a short Write(). */
+static int ftp_recv_to(LONG data_fd, BPTR fh, ULONG *total)
+{
+    for (;;) {
+        LONG got;
+        if (tn_cmd_check_ctrlc()) return 1;
+        got = tn_call_recv(data_fd, ftp_xfer, sizeof(ftp_xfer), 0);
+        if (got == 0) return 0;
+        if (got < 0) return tn_cmd_check_ctrlc() ? 1 : -1;
+        if (Write(fh, (CONST APTR)ftp_xfer, got) != got) return -2;
+        *total += (ULONG)got;
+    }
+}
+
+static void ftp_report_xfer(int xrc, const char *name, ULONG total)
+{
+    if (xrc == 1)
+        tn_cmd_printf("ftp: *** Break - transfer aborted, %s incomplete (%ld bytes)\n", name, (LONG)total);
+    else if (xrc == -1)
+        tn_cmd_printf("ftp: receive error - %s incomplete (%ld bytes)\n", name, (LONG)total);
+    else if (xrc == -2)
+        tn_cmd_printf("ftp: write error - %s incomplete (%ld bytes)\n", name, (LONG)total);
 }
 
 /* Send VERB [ARG], read the reply per RFC 959: the reply ends at the
@@ -51,11 +97,11 @@ static LONG ftp_read_line(LONG fd, char *buf, LONG maxlen)
 static LONG ftp_cmd_resp(LONG fd, const char *verb, const char *arg,
                          char *last_line, LONG last_max, BOOL quiet)
 {
-    char line[CTRL_BUF];
+    static char line[CTRL_BUF]; /* 6.10: static - keeps the CLI stack small */
     LONG code = -1, first = -1, len;
 
     if (verb != NULL) {
-        char buf[CTRL_BUF];
+        static char buf[CTRL_BUF];
         int n = 0;
         /* SEC item 6: bounded copy prevents overflow from long argv */
         while (verb[n] && n < (int)sizeof(buf) - 3) { buf[n] = verb[n]; n++; }
@@ -131,7 +177,7 @@ static int ftp_parse_pasv(const char *resp, ULONG *ip, UWORD *port, ULONG peer_i
 static int ftp_pasv(LONG ctrl, ULONG *ip, UWORD *port, ULONG peer_ip,
                     BOOL pasv_any, BOOL quiet)
 {
-    char resp[CTRL_BUF];
+    static char resp[CTRL_BUF];
     if (ftp_cmd_resp(ctrl, "PASV", NULL, resp, sizeof(resp), quiet) != 227) return 0;
     return ftp_parse_pasv(resp, ip, port, peer_ip, pasv_any);
 }
@@ -168,11 +214,12 @@ int main(int argc, char **argv)
     int rc = TN_CMD_OK;
     LONG ctrl = -1;
     ULONG srv_addr = 0;
-    char line[CTRL_BUF];
+    static char line[CTRL_BUF];
     BPTR script_fh = (BPTR)0;
     BOOL quiet;
     BOOL pasv_any;
     BOOL running = TRUE;
+    BOOL xfer_break = FALSE; /* Ctrl-C ended a transfer: stops a SCRIPT */
     char cur_host[64];
 
     cur_host[0] = '\0';
@@ -220,6 +267,7 @@ int main(int argc, char **argv)
         dst.sin_family = AF_INET;
         dst.sin_port = htons((UWORD)port);
         dst.sin_addr.s_addr = srv_addr;
+        ftp_rx_reset();
 
         if (!quiet) tn_cmd_printf("ftp: connecting to %s:%ld...\n", cur_host, port);
         if (tn_call_connect(ctrl, (struct sockaddr *)&dst, sizeof(dst)) != 0) {
@@ -252,6 +300,16 @@ int main(int argc, char **argv)
 
     /* Main loop: read commands from console or script */
     while (running) {
+        /* 6.7: a break left over from an interrupted socket call would
+         * make every later socket call fail with EINTR; consume it. */
+        if (tn_cmd_check_ctrlc()) {
+            tn_cmd_printf("*** Break\n");
+            if (script_fh != (BPTR)0) { rc = TN_CMD_WARN; break; }
+        }
+        if (xfer_break && script_fh != (BPTR)0) {
+            tn_cmd_printf("ftp: script stopped\n"); /* rc is already FAIL */
+            break;
+        }
         if (script_fh != (BPTR)0) {
             if (FGets(script_fh, (STRPTR)line, sizeof(line)) == NULL) {
                 Close(script_fh);
@@ -278,6 +336,8 @@ int main(int argc, char **argv)
                 int n = strlen(line);
                 while (n > 0 && (line[n-1] == '\n' || line[n-1] == '\r')) line[--n] = '\0';
             }
+            /* Ctrl-C typed at the prompt: drop the line, keep the session */
+            if (tn_cmd_check_ctrlc()) { tn_cmd_printf("*** Break\n"); continue; }
         }
 
         if (line[0] == '\0') continue;
@@ -326,6 +386,7 @@ int main(int argc, char **argv)
                 dst.sin_family = AF_INET;
                 dst.sin_port = htons((UWORD)port);
                 dst.sin_addr.s_addr = srv_addr;
+                ftp_rx_reset();
                 if (tn_call_connect(ctrl, (struct sockaddr *)&dst, sizeof(dst)) == 0) {
                     if (ftp_cmd_resp(ctrl, NULL, NULL, NULL, 0, quiet) < 200 ||
                         ftp_cmd_resp(ctrl, "USER", "anonymous", NULL, 0, quiet) != 331) {
@@ -382,13 +443,13 @@ int main(int argc, char **argv)
                 continue;
             }
             {
-                char rxbuf[BUF_SIZE];
-                LONG got;
-                while ((got = tn_call_recv(data_fd, rxbuf, sizeof(rxbuf), 0)) > 0) {
-                    Write(Output(), (CONST APTR)rxbuf, got);
-                }
+                ULONG total = 0;
+                int xrc = ftp_recv_to(data_fd, Output(), &total);
+                tn_call_closesocket(data_fd);
+                ftp_report_xfer(xrc, "listing", total);
+                if (xrc != 0) rc = TN_CMD_FAIL;
+                if (xrc == 1) xfer_break = TRUE;
             }
-            tn_call_closesocket(data_fd);
             code = ftp_cmd_resp(ctrl, NULL, NULL, NULL, 0, quiet);
             if (code != 226 && code != 250) rc = TN_CMD_FAIL;
         } else if (strncasecmp(line, "bin", 3) == 0) {
@@ -404,7 +465,6 @@ int main(int argc, char **argv)
             LONG data_fd, code;
             BPTR out_fh;
             char *remote, *local, *p;
-            char rxbuf[BUF_SIZE];
 
             if (ctrl < 0) continue;
             remote = ftp_skip_ws(&line[4]);
@@ -441,16 +501,14 @@ int main(int argc, char **argv)
                 continue;
             }
             {
-                LONG got;
                 ULONG total = 0;
-                while ((got = tn_call_recv(data_fd, rxbuf, sizeof(rxbuf), 0)) > 0) {
-                    Write(out_fh, (CONST APTR)rxbuf, got);
-                    total += got;
-                }
+                int xrc = ftp_recv_to(data_fd, out_fh, &total);
                 Close(out_fh);
                 tn_call_closesocket(data_fd);
+                ftp_report_xfer(xrc, local, total);
                 code = ftp_cmd_resp(ctrl, NULL, NULL, NULL, 0, quiet);
-                if (code < 200 || code >= 300) {
+                if (xrc == 1) xfer_break = TRUE;
+                if (xrc != 0 || code < 200 || code >= 300) {
                     rc = TN_CMD_FAIL;
                 } else {
                     tn_cmd_printf("ftp: %s received (%lu bytes)\n", local, total);
@@ -463,7 +521,6 @@ int main(int argc, char **argv)
             LONG data_fd, code;
             BPTR in_fh;
             char *local, *remote, *p;
-            char txbuf[BUF_SIZE];
 
             if (ctrl < 0) continue;
             local = ftp_skip_ws(&line[4]);
@@ -507,17 +564,30 @@ int main(int argc, char **argv)
             {
                 LONG nread;
                 ULONG total = 0;
-                while ((nread = Read(in_fh, txbuf, sizeof(txbuf))) > 0) {
-                    if (tn_call_send(data_fd, txbuf, nread, 0) != nread) {
-                        rc = TN_CMD_FAIL;
+                int xrc = 0;
+                for (;;) {
+                    /* 6.7: Ctrl-C aborts the upload, the session lives on */
+                    if (tn_cmd_check_ctrlc()) { xrc = 1; break; }
+                    nread = Read(in_fh, ftp_xfer, sizeof(ftp_xfer));
+                    if (nread == 0) break;
+                    if (nread < 0) { xrc = -2; break; }
+                    if (tn_call_send(data_fd, ftp_xfer, nread, 0) != nread) {
+                        xrc = tn_cmd_check_ctrlc() ? 1 : -1;
                         break;
                     }
                     total += nread;
                 }
                 Close(in_fh);
                 tn_call_closesocket(data_fd);
+                if (xrc == 1)
+                    tn_cmd_printf("ftp: *** Break - upload aborted, %s incomplete on server (%ld bytes)\n", remote, (LONG)total);
+                else if (xrc == -1)
+                    tn_cmd_printf("ftp: send error - %s incomplete on server (%ld bytes)\n", remote, (LONG)total);
+                else if (xrc == -2)
+                    tn_cmd_printf("ftp: read error on %s\n", local);
                 code = ftp_cmd_resp(ctrl, NULL, NULL, NULL, 0, quiet);
-                if (code < 200 || code >= 300) {
+                if (xrc == 1) xfer_break = TRUE;
+                if (xrc != 0 || code < 200 || code >= 300) {
                     rc = TN_CMD_FAIL;
                 } else {
                     tn_cmd_printf("ftp: %s sent (%lu bytes)\n", local, total);

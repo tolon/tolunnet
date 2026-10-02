@@ -24,55 +24,34 @@
 #include <string.h>
 TN_VERSTAG_DEF("TolunnetGet");
 
+/* 6.10: the private LVO wrappers that read results from A0 are gone -
+ * the bsdsocket ABI returns in D0; cmdlib's tn_call_* wrappers do. */
 
-
-
-
-
-
-static STRPTR call_inet_ntoa(in_addr_t ip)
+/* 6.5: body bytes to the output; 0 ok, -1 short Write, -2 bad chunking */
+static int get_feed_body(BPTR fh, struct TnChunkState *cst, int chunked,
+                         const char *buf, LONG n, LONG *total)
 {
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register LONG d0 __asm__("d0") = (LONG)ip;
-    register STRPTR a0 __asm__("a0");
-
-    __asm__ __volatile__ (
-        "jsr -174(%%a6)"
-        : "=r"(a0), "+r"(d0)
-        : "r"(a6), "r"(d0)
-        : "d1", "a1", "memory"
-    );
-    return a0;
-}
-
-static in_addr_t call_inet_addr(CONST_STRPTR cp)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register CONST_STRPTR a0 __asm__("a0") = cp;
-    register LONG d0 __asm__("d0");
-
-    __asm__ __volatile__ (
-        "jsr -180(%%a6)"
-        : "=r"(d0)
-        : "r"(a6), "r"(a0)
-        : "d1", "a1", "memory"
-    );
-    return (in_addr_t)d0;
-}
-
-static struct hostent *call_gethostbyname(CONST_STRPTR name)
-{
-    register struct Library *a6 __asm__("a6") = SocketBase;
-    register CONST_STRPTR a0 __asm__("a0") = name;
-    register struct hostent *res __asm__("a0");
-
-    __asm__ __volatile__ (
-        "jsr -210(%%a6)"
-        : "=r"(res)
-        : "r"(a6), "r"(a0)
-        : "d0", "d1", "a1", "memory"
-    );
-    return res;
+    if (chunked) {
+        LONG pos = 0;
+        while (pos < n && cst->state != TN_CHUNK_STATE_DONE) {
+            int consumed = 0;
+            const char *chunk_data = NULL;
+            int chunk_len = 0;
+            tn_chunk_feed(cst, buf + pos, (int)(n - pos),
+                          &consumed, &chunk_data, &chunk_len);
+            if (cst->state == TN_CHUNK_STATE_ERROR) return -2;
+            pos += consumed;
+            if (chunk_len > 0) {
+                if (Write(fh, (APTR)chunk_data, chunk_len) != chunk_len) return -1;
+                *total += chunk_len;
+            }
+            if (consumed <= 0 && chunk_len <= 0) return -2; /* no progress */
+        }
+    } else if (n > 0) {
+        if (Write(fh, (APTR)buf, n) != n) return -1;
+        *total += n;
+    }
+    return 0;
 }
 
 static int str_len(const char *s)
@@ -118,7 +97,6 @@ int main(void)
     rdargs = ReadArgs((CONST_STRPTR)"URL/A,PORT/N,PATH,TO/K,QUIET/S,CONTINUE/S", opts, NULL);
     if (rdargs == NULL) {
         PrintFault(IoErr(), (CONST_STRPTR)"wget");
-        CloseLibrary(DOSBase);
         return 20;
     }
 
@@ -136,7 +114,6 @@ int main(void)
     if (tn_http_parse_url((const char *)opts[OPT_URL], &current_url) != 0) {
         PutStr((CONST_STRPTR)"wget: invalid URL or hostname\n");
         FreeArgs(rdargs);
-        CloseLibrary(DOSBase);
         return 20;
     }
 
@@ -156,7 +133,6 @@ int main(void)
     if (current_url.scheme == TN_SCHEME_HTTPS) {
         PutStr((CONST_STRPTR)"https:// not supported; URL requires TLS/SSL\n");
         FreeArgs(rdargs);
-        CloseLibrary(DOSBase);
         return 20;
     }
 
@@ -183,7 +159,6 @@ int main(void)
     if (SocketBase == NULL) {
         PutStr((CONST_STRPTR)"wget: unable to open bsdsocket.library\n");
         FreeArgs(rdargs);
-        CloseLibrary(DOSBase);
         return 20;
     }
 
@@ -205,9 +180,9 @@ int main(void)
         }
 
         /* Resolve Host */
-        target_ip = call_inet_addr((CONST_STRPTR)current_url.host);
+        target_ip = (in_addr_t)tn_call_inet_addr(current_url.host);
         if (target_ip == (in_addr_t)INADDR_NONE) {
-            he = call_gethostbyname((CONST_STRPTR)current_url.host);
+            he = tn_call_gethostbyname(current_url.host);
             if (he != NULL && he->h_addr_list != NULL && he->h_addr_list[0] != NULL) {
                 memcpy(&target_ip, he->h_addr_list[0], sizeof(target_ip)); /* TNET-139 */
             } else {
@@ -218,8 +193,10 @@ int main(void)
         }
 
         if (!quiet) {
+            struct in_addr ia;
+            ia.s_addr = target_ip;
             tn_logf(TN_LOG_BASIC, "wget: connecting to %s (%s) port %lu...\n",
-                    current_url.host, call_inet_ntoa(target_ip), (ULONG)current_url.port);
+                    current_url.host, tn_call_inet_ntoa(ia), (ULONG)current_url.port);
         }
 
         sock = tn_call_socket(AF_INET, SOCK_STREAM, 0);
@@ -357,30 +334,17 @@ int main(void)
         tn_chunk_init(&cst);
         int init_body_len = hdr_len - body_offset;
         const char *init_body_data = hdr_buf + body_offset;
+        /* 6.5: why the body ended early; NULL = complete */
+        const char *fail = NULL;
+        int feed_rc = 0;
 
         if (init_body_len > 0) {
-            if (hdr_info.is_chunked) {
-                int pos = 0;
-                while (pos < init_body_len && cst.state != TN_CHUNK_STATE_DONE) {
-                    int consumed = 0;
-                    const char *chunk_data = NULL;
-                    int chunk_len = 0;
-                    tn_chunk_feed(&cst, init_body_data + pos, init_body_len - pos,
-                                  &consumed, &chunk_data, &chunk_len);
-                    pos += consumed;
-                    if (chunk_len > 0) {
-                        Write(out_fh, (APTR)chunk_data, chunk_len);
-                        total_written += chunk_len;
-                    }
-                }
-            } else {
-                Write(out_fh, (APTR)init_body_data, init_body_len);
-                total_written += init_body_len;
-            }
+            feed_rc = get_feed_body(out_fh, &cst, hdr_info.is_chunked,
+                                    init_body_data, init_body_len, &total_written);
         }
 
         /* Stream Remainder of Body */
-        while (1) {
+        while (feed_rc == 0) {
             if (hdr_info.is_chunked && cst.state == TN_CHUNK_STATE_DONE) break;
             /* z.ai step 8b item 4: stop when the bytes of THIS response
              * reach its Content-Length (total_written includes any
@@ -388,26 +352,17 @@ int main(void)
             if (!hdr_info.is_chunked && hdr_info.content_length > 0 &&
                 total_written - resp_start >= hdr_info.content_length) break;
 
+            if (tn_cmd_check_ctrlc()) {
+                fail = "interrupted (Ctrl-C)";
+                exit_code = 10;
+                break;
+            }
+
             LONG n = tn_call_recv(sock, rx_buf, sizeof(rx_buf), 0);
             if (n > 0) {
-                if (hdr_info.is_chunked) {
-                    int pos = 0;
-                    while (pos < n && cst.state != TN_CHUNK_STATE_DONE) {
-                        int consumed = 0;
-                        const char *chunk_data = NULL;
-                        int chunk_len = 0;
-                        tn_chunk_feed(&cst, rx_buf + pos, n - pos,
-                                      &consumed, &chunk_data, &chunk_len);
-                        pos += consumed;
-                        if (chunk_len > 0) {
-                            Write(out_fh, (APTR)chunk_data, chunk_len);
-                            total_written += chunk_len;
-                        }
-                    }
-                } else {
-                    Write(out_fh, (APTR)rx_buf, n);
-                    total_written += n;
-                }
+                feed_rc = get_feed_body(out_fh, &cst, hdr_info.is_chunked,
+                                        rx_buf, n, &total_written);
+                if (feed_rc != 0) break;
 
                 /* Display Progress if downloading to file */
                 if (!quiet && to_file && hdr_info.content_length > 0) {
@@ -426,13 +381,32 @@ int main(void)
                     }
                 }
             } else if (n == 0) {
-                break; /* EOF */
+                /* EOF: complete only when nothing else marks the end */
+                if (hdr_info.is_chunked) fail = "connection closed before the final chunk";
+                else if (hdr_info.content_length > 0) fail = "connection closed before Content-Length";
+                break;
             } else {
-                break; /* Socket error / timeout */
+                /* Socket error / timeout / Ctrl-C (EINTR) */
+                if (tn_cmd_check_ctrlc()) {
+                    fail = "interrupted (Ctrl-C)";
+                    exit_code = 10;
+                } else {
+                    fail = "receive error";
+                }
+                break;
             }
         }
+        if (feed_rc == -1) fail = "write error on output";
+        else if (feed_rc == -2) fail = "malformed chunked encoding";
 
-        if (!quiet) {
+        if (fail != NULL) {
+            /* 6.5: partial body - never report success (RC 0) */
+            if (exit_code == 0) exit_code = 20;
+            if (!quiet) {
+                tn_logf(TN_LOG_BASIC, "\nwget: transfer incomplete: %s (%ld bytes kept).\n",
+                        fail, total_written);
+            }
+        } else if (!quiet) {
             if (to_file) {
                 tn_logf(TN_LOG_BASIC, "wget: transfer complete (%ld bytes written to '%s').\n",
                         total_written, to_path);
@@ -443,7 +417,7 @@ int main(void)
 
         tn_call_closesocket(sock);
         sock = -1;
-        break; /* Done successfully */
+        break; /* Done (exit_code says whether it was complete) */
     }
 
     if (redirect_count > 5) {
@@ -463,6 +437,7 @@ int main(void)
 
     CloseLibrary(SocketBase);
     FreeArgs(rdargs);
-    CloseLibrary(DOSBase);
+    /* 6.10: DOSBase belongs to the libnix startup, which closes it */
     return exit_code;
+
 }

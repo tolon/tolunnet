@@ -649,6 +649,27 @@ TN_TEST(merge_preserves_unknown_and_long)
     TN_ASSERT_TRUE(tn_config_merge_preserve(new_text, old_text, merged, 32) < 0);
 }
 
+TN_TEST(merge_drops_hand_edited_known_key)
+{
+    /* 5.4: the loader reads "IP = 1.2.3.4" as key IP (tn_str_copy_clean
+     * stops at the space), so the merge must treat it as known too -
+     * otherwise the stale line is carried after the new IP= and wins on
+     * the next load. */
+    static const char *new_text = "IP=5.6.7.8\nDHCP=NO\n";
+    static const char *old_text = "IP = 1.2.3.4\nDHCP\t=YES\nMYSTERYKEY = 1\n";
+    char merged[256];
+    int n, count = 0;
+    const char *p;
+
+    n = tn_config_merge_preserve(new_text, old_text, merged, (int)sizeof(merged));
+    TN_ASSERT_TRUE(n >= 0);
+    TN_ASSERT_TRUE(strstr(merged, "1.2.3.4") == NULL);
+    TN_ASSERT_TRUE(strstr(merged, "DHCP\t=YES") == NULL);
+    TN_ASSERT_TRUE(strstr(merged, "MYSTERYKEY = 1") != NULL);
+    for (p = merged; (p = strstr(p, "IP")) != NULL; p++) count++;
+    TN_ASSERT_EQ(count, 1);
+}
+
 int main(void)
 {
     TN_TEST_RUN(round_trip_all_keys);
@@ -670,6 +691,7 @@ int main(void)
     TN_TEST_RUN(diag_key_tnet139);
     TN_TEST_RUN(checknetconfig_vocabulary);
     TN_TEST_RUN(merge_preserves_unknown_and_long);
+    TN_TEST_RUN(merge_drops_hand_edited_known_key);
     TN_TEST_PLAN();
     return tn_test_failures();
 }

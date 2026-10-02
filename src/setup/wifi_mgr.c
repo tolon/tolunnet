@@ -109,6 +109,32 @@ int tn_format_wireless_block(const char *ssid, const char *passphrase, char *out
     return tn_format_wireless_block_priority(ssid, passphrase, 0, out_buf, out_max);
 }
 
+/* 7.1 / 1.10: the SSID field is the single source of truth (the list
+ * click copies into it); only the chosen network is written - no
+ * unrequested open APs - and a block that cannot be formatted (bad
+ * passphrase, bad SSID, no room) makes the whole write fail. */
+int tn_build_wireless_prefs(const WizardState *ws, char *out_buf, int out_max)
+{
+    const char *ssid;
+    int len;
+
+    if (!ws || !out_buf || out_max <= 0) return 0;
+    out_buf[0] = '\0';
+    ssid = ws->wifi_ssid_str;
+    if (ssid[0] == '\0' &&
+        ws->selected_wifi_idx >= 0 && ws->selected_wifi_idx < ws->wifi_count) {
+        ssid = ws->wifi[ws->selected_wifi_idx].ssid;
+    }
+    if (ssid[0] == '\0') return 0;
+
+    len = tn_format_wireless_block_priority(ssid, ws->wifi_pass, 4, out_buf, out_max);
+    if (len <= 0 || len >= out_max) {
+        out_buf[0] = '\0';
+        return 0;
+    }
+    return len;
+}
+
 
 BOOL tn_wifi_validate_devname(const char *devname)
 {
@@ -219,6 +245,7 @@ BOOL tn_parse_wifi_tagitem(const void *tags_ptr, WifiNetwork *out_net)
 #include <utility/tagitem.h>
 #include <dos/dos.h>
 #include <dos/dostags.h>
+#include "../common/safe_replace.h"
 
 static void sort_wifi_by_signal(WizardState *ws)
 {
@@ -306,13 +333,75 @@ void tn_wifi_scan(WizardState *ws)
     }
 }
 
+/* 1.10: seed <path>.tolunnet-bak once with the user's own file -
+ * tn_safe_replace keeps only one generation and the wizard writes on
+ * Next AND Finish, so .tolunnet-prev alone would hold our own copy. */
+static void seed_backup_once(const char *path)
+{
+    char bak[64];
+    char chunk[512];
+    BPTR in, out, lk;
+    LONG n;
+    BOOL ok = TRUE;
+
+    snprintf(bak, sizeof(bak), "%s.tolunnet-bak", path);
+    lk = Lock((CONST_STRPTR)bak, ACCESS_READ);
+    if (lk) {
+        UnLock(lk);
+        return;
+    }
+    in = Open((CONST_STRPTR)path, MODE_OLDFILE);
+    if (!in) return;
+    out = Open((CONST_STRPTR)bak, MODE_NEWFILE);
+    if (!out) {
+        Close(in);
+        return;
+    }
+    while ((n = Read(in, chunk, sizeof(chunk))) > 0) {
+        if (Write(out, chunk, n) != n) {
+            ok = FALSE;
+            break;
+        }
+    }
+    if (n < 0) ok = FALSE;
+    Close(in);
+    Close(out);
+    if (!ok) DeleteFile((CONST_STRPTR)bak);
+}
+
+/* 1.10: never truncate the live file - write <path>.tolunnet-new and
+ * move it over through tn_safe_replace (old copy in .tolunnet-prev). */
 static BOOL write_text_to_file(const char *path, const char *text, int len)
 {
-    BPTR fh = Open((CONST_STRPTR)path, MODE_NEWFILE);
+    char tmp[64];
+    char prev[64];
+    BPTR fh;
+    LONG w;
+
+    snprintf(tmp, sizeof(tmp), "%s.tolunnet-new", path);
+    snprintf(prev, sizeof(prev), "%s.tolunnet-prev", path);
+    fh = Open((CONST_STRPTR)tmp, MODE_NEWFILE);
     if (!fh) return FALSE;
-    LONG w = Write(fh, (CONST_APTR)text, len);
+    w = Write(fh, (CONST_APTR)text, len);
     Close(fh);
-    return (w == len);
+    if (w != len) {
+        DeleteFile((CONST_STRPTR)tmp);
+        return FALSE;
+    }
+    return tn_safe_replace(tmp, path, prev);
+}
+
+static BOOL write_wireless_prefs(const char *text, int len)
+{
+    BPTR lock = CreateDir((CONST_STRPTR)"ENVARC:Sys");
+    if (lock) UnLock(lock);
+    lock = CreateDir((CONST_STRPTR)"ENV:Sys");
+    if (lock) UnLock(lock);
+
+    seed_backup_once("ENVARC:Sys/Wireless.prefs");
+    BOOL ok1 = write_text_to_file("ENVARC:Sys/Wireless.prefs", text, len);
+    BOOL ok2 = write_text_to_file("ENV:Sys/Wireless.prefs", text, len);
+    return (ok1 || ok2);
 }
 
 BOOL tn_wifi_write_prefs(const char *ssid, const char *passphrase)
@@ -321,16 +410,9 @@ BOOL tn_wifi_write_prefs(const char *ssid, const char *passphrase)
 
     char block[512];
     int len = tn_format_wireless_block(ssid, passphrase, block, sizeof(block));
-    if (len <= 0) return FALSE;
+    if (len <= 0 || len >= (int)sizeof(block)) return FALSE;
 
-    /* Ensure parent directories exist */
-    BPTR lock = CreateDir((CONST_STRPTR)"ENVARC:Sys");
-    if (lock) UnLock(lock);
-    lock = CreateDir((CONST_STRPTR)"ENV:Sys");
-    if (lock) UnLock(lock);
-
-    BOOL ok1 = write_text_to_file("ENVARC:Sys/Wireless.prefs", block, len);
-    BOOL ok2 = write_text_to_file("ENV:Sys/Wireless.prefs", block, len);
+    BOOL ok = write_wireless_prefs(block, len);
 
     /* Zero the memory containing passphrase after writing */
     volatile char *vblk = (volatile char *)block;
@@ -338,62 +420,26 @@ BOOL tn_wifi_write_prefs(const char *ssid, const char *passphrase)
         vblk[i] = 0;
     }
 
-    return (ok1 || ok2);
+    return ok;
 }
 
 BOOL tn_wifi_write_prefs_multi(const WizardState *ws)
 {
+    char combined[512];
+    int total_len;
+    BOOL ok;
+
     if (!ws) return FALSE;
-
-    /* If only primary ssid is present */
-    const char *ssid = (ws->selected_wifi_idx >= 0 && ws->selected_wifi_idx < ws->wifi_count)
-                       ? ws->wifi[ws->selected_wifi_idx].ssid : ws->wifi_ssid_str;
-    if (!ssid || ssid[0] == '\0') {
-        ssid = ws->wifi_ssid_str;
-    }
-    if (!ssid || ssid[0] == '\0') return FALSE;
-
-    char combined[2048];
-    int total_len = 0;
-
-    /* Write selected network with priority 4 */
-    int len = tn_format_wireless_block_priority(ssid, ws->wifi_pass, 4,
-                                                combined + total_len,
-                                                sizeof(combined) - total_len);
-    if (len > 0) total_len += len;
-
-    /* Include up to 3 additional scanned networks with lower priorities if needed */
-    int added = 1;
-    for (int i = 0; i < ws->wifi_count && added < 4; i++) {
-        if (i == ws->selected_wifi_idx) continue;
-        if (ws->wifi[i].ssid[0] == '\0') continue;
-        if (strcmp(ws->wifi[i].ssid, ssid) == 0) continue;
-        if (ws->wifi[i].encryption == 0) { /* Open networks can be written without pass */
-            len = tn_format_wireless_block_priority(ws->wifi[i].ssid, NULL, 4 - added,
-                                                    combined + total_len,
-                                                    sizeof(combined) - total_len);
-            if (len > 0) {
-                total_len += len;
-                added++;
-            }
-        }
-    }
-
+    total_len = tn_build_wireless_prefs(ws, combined, sizeof(combined));
     if (total_len <= 0) return FALSE;
 
-    BPTR lock = CreateDir((CONST_STRPTR)"ENVARC:Sys");
-    if (lock) UnLock(lock);
-    lock = CreateDir((CONST_STRPTR)"ENV:Sys");
-    if (lock) UnLock(lock);
-
-    BOOL ok1 = write_text_to_file("ENVARC:Sys/Wireless.prefs", combined, total_len);
-    BOOL ok2 = write_text_to_file("ENV:Sys/Wireless.prefs", combined, total_len);
+    ok = write_wireless_prefs(combined, total_len);
 
     volatile char *vc = (volatile char *)combined;
     for (size_t i = 0; i < sizeof(combined); i++) {
         vc[i] = 0;
     }
-    return (ok1 || ok2);
+    return ok;
 }
 
 

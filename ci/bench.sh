@@ -10,10 +10,17 @@
 #   ./ci/bench.sh                  # both configs
 #   CONFIGS="a1200" ./ci/bench.sh  # one config
 #   SKIP_BUILD=1 ./ci/bench.sh     # reuse build/ as-is
+#   TX_QUEUES="0" ./ci/bench.sh    # TX legs (default "4 0": pool + release default)
+#   BENCH_LINKTEST=1 ./ci/bench.sh # TX_QUEUE=0 legs also flip the link (S2Toggle)
 #
-# MuForce/Enforcer pass: not automated yet — the tool is not present on this
-# bench (searched 2026-09-05). Set MUFORCE_ADF=<path> to enable the hook when
-# it is supplied; until then the second pass prints an explicit SKIP note.
+# 9.4: every config runs once per TX_QUEUES value (leg = <cfg>-txq<N>);
+# TX_QUEUE=0 is the release default (synchronous DoIO + S2_ONEVENT), the
+# pool (TX_QUEUE>0) turns S2_ONEVENT off. 9.13: bsdsocktest gates the run
+# (BSDTEST_MIN_PASS / BSDTEST_MAX_FAIL, default 126 / 2).
+#
+# MuForce/Enforcer pass: not automated - the tool is not present on this
+# bench (searched 2026-09-05). Every run records an explicit SKIP note;
+# setting MUFORCE_ADF aborts (9.15: the hook was never implemented).
 #
 # Quit mechanism: the bench HDF has no ARexx (C:RX), so WinUAE is terminated
 # from the host after the bench-done marker + grace period. This is safe:
@@ -43,16 +50,63 @@ die() { echo "[bench] FATAL: $*" >&2; exit 1; }
 [ -x "$WINUAE" ] || die "winuae64.exe not found at $WINUAE"
 [ -f "$PRISTINE_HDF" ] || die "pristine bench HDF not found"
 command -v wsl >/dev/null || die "wsl not available (xdftool runs in WSL)"
+# 9.15: the MuForce hook was never implemented - do not pretend it ran.
+[ -z "${MUFORCE_ADF:-}" ] || die "MUFORCE_ADF is set, but the MuForce/Enforcer pass is not implemented"
+
+NETSVC_HTTP_PORT=$(sed -n 's/^HTTP_PORT=\([0-9]*\).*/\1/p' ci/netsvc.ports)
+[ -n "$NETSVC_HTTP_PORT" ] || die "HTTP_PORT missing from ci/netsvc.ports"
+
+SUCCESS=0
+NETSVC_PID=""
+cleanup() {
+    rm -f "${BENCH_CFG:-ci/.bench-tolunnet.config}" "${SOAK_CYCLE:-ci/.soak-cycle}" 2>/dev/null || true
+    rm -f "$WORK_DIR/linktest-on" 2>/dev/null || true
+    if [ -n "${NETSVC_PID:-}" ]; then
+        say "stopping hermetic slirp host services (PID $NETSVC_PID)"
+        kill -9 "$NETSVC_PID" 2>/dev/null || true
+        wait "$NETSVC_PID" 2>/dev/null || true
+        sleep 1
+        python.exe ci/netsvc.py --check-free || say "warning: netsvc ports not free after shutdown"
+    fi
+    if [ "${SUCCESS:-0}" != "1" ] && [ -n "${LOG_ROOT:-}" ] && [ -d "$LOG_ROOT" ]; then
+        say "run had failures; keeping log directory for analysis: $LOG_ROOT"
+    fi
+}
+
+# start_netsvc <logfile>: hermetic slirp host mock services (ci/netsvc.py)
+start_netsvc() {
+    say "verifying netsvc ports are free"
+    python.exe ci/netsvc.py --check-free || python.exe ci/netsvc.py --kill-stale
+    python.exe ci/netsvc.py --check-free || die "netsvc ports not free before bench run (see HOLDER lines above)"
+    say "starting hermetic slirp host services (ci/netsvc.py)"
+    python.exe ci/netsvc.py --log "$1" &
+    NETSVC_PID=$!
+    say "probing netsvc readiness (5s limit)..."
+    python.exe ci/netsvc.py --probe || die "netsvc readiness probe failed"
+    say "netsvc ready (PID $NETSVC_PID)"
+}
+
+# tn_config <txq> <out>: guest config from the template, TX_QUEUE replaced
+tn_config() {
+    sed -e "s/__DNS_PORT__/$BENCH_DNS_PORT/" -e "s/^TX_QUEUE=.*/TX_QUEUE=$1/" \
+        ci/tolunnet.config > "$2"
+    grep -qx "TX_QUEUE=$1" "$2" || die "config template has no TX_QUEUE= line"
+}
 
 # ANX-01: the bench must never exercise WinUAE's own bsdsocket.library.
 # ---- RC3 item 3: soak mode -------------------------------------------------
-# ci/bench.sh soak  ->  a1200 profile, 24 h driver loop (User-Startup-Soak via
-# the standard User-Startup-Boot shim), TX_QUEUE=4 config, pass = bench-done +
-# no Guru lines + RAM drift <= 8 KB between the Avail snapshots in soak.log.
+# ci/bench.sh soak  ->  a1200 profile, 12 x 10 min session cycles
+# (User-Startup-Soak via the standard User-Startup-Boot shim). 9.5/9.6:
+# netsvc runs, the cycles ping the slirp gateway and GET from netsvc, every
+# command logs ok/not ok; pass = bench-done + no Guru + 0 not ok + all
+# planned ok lines + >= 13 lwIP inits + chip drift 0 + fast drift from the
+# pre-session baseline within SOAK_FAST_BUDGET_PER_CYCLE x 12.
+# SOAK_TX_QUEUE (default 4) picks the TX path; 0 soaks the release default.
 if [ "${1:-}" = "soak" ]; then
     BENCH_DNS_PORT="${BENCH_DNS_PORT:-15353}"
     SOAK_HRS="${SOAK_HOURS:-2}"
-    say "soak mode: a1200, ${SOAK_HRS} h (session-profile: 12x 10min stop/start), TX_QUEUE=4"
+    SOAK_TXQ="${SOAK_TX_QUEUE:-4}"
+    say "soak mode: a1200, ${SOAK_HRS} h (session-profile: 12x 10min stop/start), TX_QUEUE=$SOAK_TXQ"
     if [ "$SOAK_HRS" -lt 2 ]; then
         SOAK_PREFIX="soakquick"
     else
@@ -69,9 +123,13 @@ if [ "${1:-}" = "soak" ]; then
     fi
 
     BENCH_CFG="ci/.soak-tolunnet.config"
-    sed -e "s/__DNS_PORT__/$BENCH_DNS_PORT/" ci/tolunnet.config > "$BENCH_CFG"
-    echo "TX_QUEUE=4" >> "$BENCH_CFG"
-    say "soak config: $(wc -c < "$BENCH_CFG") bytes, TX_QUEUE=4"
+    tn_config "$SOAK_TXQ" "$BENCH_CFG"
+    say "soak config: $(wc -c < "$BENCH_CFG") bytes, TX_QUEUE=$SOAK_TXQ"
+    # 9.5: the cycle GETs from the netsvc HTTP port (template in git)
+    SOAK_CYCLE="ci/.soak-cycle"
+    sed -e "s/__HTTP_PORT__/$NETSVC_HTTP_PORT/g" ci/Soak-Cycle > "$SOAK_CYCLE"
+    grep -q "__HTTP_PORT__" "$SOAK_CYCLE" && die "Soak-Cycle port template not substituted"
+    trap cleanup EXIT INT TERM
 
     STAGE_DIR="/e/amiga/Amigatolon/bench/tolunnet"
     rm -rf "$STAGE_DIR"
@@ -122,14 +180,15 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
     xd write "$SREL/C/ping" C/ping                  || die "soak staging: ping"
     xd write "$SREL/C/TolunnetGet" C/TolunnetGet    || die "soak staging: TolunnetGet"
     xd write "$SREL/C/TolunnetControl" C/TolunnetControl || die "soak staging: TolunnetControl"
-    xd write ci/Soak-Cycle S/Soak-Cycle         || die "soak staging: cycle script"
+    xd write "$SOAK_CYCLE" S/Soak-Cycle         || die "soak staging: cycle script"
     xd write ci/User-Startup-Soak S/Conformance-Script || die "soak staging: driver script"
     xd write ci/User-Startup-Boot S/User-Startup || die "soak staging: boot shim"
     xd write "$BENCH_CFG" Devs/tolunnet.config  || die "soak staging: config"
     say "soak staged -> $HDF_WIN"
 
     rm -f "$WORK_DIR/bench-done" "$WORK_DIR/soak.log" "$WORK_DIR/soak-daemon.log" \
-          "$WORK_DIR/tolunnet-task.log" "$WORK_DIR/soak-avail-base.txt"
+          "$WORK_DIR/tolunnet-task.log" "$WORK_DIR/soak-avail-base.txt" "$WORK_DIR/linktest-on"
+    start_netsvc "$SOAK_DIR/netsvc.log"
 
     CFG_WIN=$(cygpath -w "$REPO_ROOT/ci/tolunnet-a1200.uae")
     LIMIT="${SOAK_LIMIT_SECS:-$(( ${SOAK_HOURS:-4} * 3600 + 1800 ))}"
@@ -168,58 +227,89 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
     say "  Guru/Exception lines: $GURUS"
     [ "$GURUS" -ne 0 ] && SOAK_STATUS="FAIL"
 
-    NOT_OK=$(grep -F "not ok" "$SOAK_DIR"/soak.log 2>/dev/null | wc -l)
+    # 9.5: every soak command logs "ok soak ..." / "not ok soak ..."
+    NOT_OK=$(grep -c "^not ok" "$SOAK_DIR"/soak.log 2>/dev/null | tr -d '\r')
+    NOT_OK=${NOT_OK:-0}
     say "  not ok count: $NOT_OK"
-    [ "$NOT_OK" -ne 0 ] && SOAK_STATUS="FAIL"
+    [ "$NOT_OK" -ne 0 ] && { SOAK_STATUS="FAIL"; grep "^not ok" "$SOAK_DIR"/soak.log | sort | uniq -c | head -20; }
 
     CYCLES=$(grep -F "=== CYCLE " "$SOAK_DIR"/soak.log 2>/dev/null | wc -l)
     EXPECTED_CYCLES=12
     say "  Cycles executed: $CYCLES (expected: $EXPECTED_CYCLES)"
     [ "$CYCLES" -ne "$EXPECTED_CYCLES" ] && SOAK_STATUS="FAIL"
 
-    RESTARTS=$(grep -F "lwIP 2.2.0 initialized" "$SOAK_DIR"/tolunnet-task.log 2>/dev/null | wc -l)
-    say "  lwIP initializations: $RESTARTS (target: >= 12)"
-    [ "$RESTARTS" -lt 12 ] && SOAK_STATUS="FAIL"
+    # ok lines planned per cycle = what ci/Soak-Cycle can emit (a Quit
+    # before the GET or a dead command must not pass as "0 not ok")
+    OK_PER_CYCLE=$(grep -c '^ *Echo .*"ok soak' ci/Soak-Cycle)
+    OK_EXPECTED=$(( OK_PER_CYCLE * EXPECTED_CYCLES ))
+    OK_SEEN=$(grep -c "^ok soak" "$SOAK_DIR"/soak.log 2>/dev/null | tr -d '\r')
+    OK_SEEN=${OK_SEEN:-0}
+    say "  ok lines: $OK_SEEN (expected: $OK_EXPECTED)"
+    [ "$OK_SEEN" -ne "$OK_EXPECTED" ] && SOAK_STATUS="FAIL"
 
-    BASE_CHIP=$(grep -i "chip" "$SOAK_DIR"/soak-avail-base.txt 2>/dev/null | awk '{print $2}')
-    LAST_CHIP=$(grep -i "chip" "$SOAK_DIR"/soak.log 2>/dev/null | tail -n 1 | awk '{print $2}')
+    # 9.6: 1 boot start + 12 STOP/START restarts = 13 initialisations
+    RESTARTS=$(grep -F "lwIP 2.2.0 initialized" "$SOAK_DIR"/tolunnet-task.log 2>/dev/null | wc -l)
+    EXPECTED_INITS=$(( EXPECTED_CYCLES + 1 ))
+    say "  lwIP initializations: $RESTARTS (target: >= $EXPECTED_INITS)"
+    [ "$RESTARTS" -lt "$EXPECTED_INITS" ] && SOAK_STATUS="FAIL"
+
+    # 9.6: Avail columns - type, available, in-use, maximum, largest.
+    # The reference is soak-avail-base.txt (taken before the first
+    # session), so the first session's leak is inside the window.
+    BASE_CHIP=$(grep -i "^[[:space:]]*chip" "$SOAK_DIR"/soak-avail-base.txt 2>/dev/null | awk '{print $2}')
+    LAST_CHIP=$(grep -i "^[[:space:]]*chip" "$SOAK_DIR"/soak.log 2>/dev/null | tail -n 1 | awk '{print $2}')
     CHIP_DRIFT=0
     if [ -n "$BASE_CHIP" ] && [ -n "$LAST_CHIP" ]; then
         CHIP_DRIFT=$(( BASE_CHIP - LAST_CHIP ))
+        say "  Chip RAM baseline: $BASE_CHIP, final: $LAST_CHIP, drift: $CHIP_DRIFT bytes (limit: <= ${SOAK_CHIP_BUDGET:-0})"
+        [ "$CHIP_DRIFT" -gt "${SOAK_CHIP_BUDGET:-0}" ] && SOAK_STATUS="FAIL"
+    else
+        say "  Chip RAM: missing snapshot for baseline or final"
+        SOAK_STATUS="FAIL"
     fi
 
-    BASE_FAST=$(grep -i "fast" "$SOAK_DIR"/soak-avail-base.txt 2>/dev/null | awk '{print $2}')
-    CYCLE1_FAST=$(grep -i "fast" "$SOAK_DIR"/soak.log 2>/dev/null | sed -n '3p' | awk '{print $2}')
-    LAST_FAST=$(grep -i "fast" "$SOAK_DIR"/soak.log 2>/dev/null | tail -n 1 | awk '{print $2}')
+    BASE_FAST=$(grep -i "^[[:space:]]*fast" "$SOAK_DIR"/soak-avail-base.txt 2>/dev/null | awk '{print $2}')
+    LAST_FAST=$(grep -i "^[[:space:]]*fast" "$SOAK_DIR"/soak.log 2>/dev/null | tail -n 1 | awk '{print $2}')
+    FAST_BUDGET_PER_CYCLE="${SOAK_FAST_BUDGET_PER_CYCLE:-256}"
+    FAST_BUDGET=$(( FAST_BUDGET_PER_CYCLE * EXPECTED_CYCLES ))
     DRIFT=0
-    REF_FAST="${CYCLE1_FAST:-$BASE_FAST}"
-    if [ -n "$REF_FAST" ] && [ -n "$LAST_FAST" ]; then
-        DRIFT=$(( REF_FAST - LAST_FAST ))
-        say "  Fast RAM reference: $REF_FAST, final: $LAST_FAST, drift: $DRIFT bytes (limit: <= 8192 bytes)"
-        ABS_DRIFT=${DRIFT#-}
-        if [ "$ABS_DRIFT" -gt 8192 ]; then
-            say "  Fast RAM drift exceeds 8192 bytes limit!"
-            SOAK_STATUS="FAIL"
-        fi
+    if [ -n "$BASE_FAST" ] && [ -n "$LAST_FAST" ]; then
+        DRIFT=$(( BASE_FAST - LAST_FAST ))
+        say "  Fast RAM baseline: $BASE_FAST, final: $LAST_FAST, drift: $DRIFT bytes (limit: <= $FAST_BUDGET = $FAST_BUDGET_PER_CYCLE/cycle)"
+        [ "$DRIFT" -gt "$FAST_BUDGET" ] && { say "  Fast RAM drift exceeds the budget!"; SOAK_STATUS="FAIL"; }
     else
         say "  Fast RAM: missing snapshot for baseline or final"
         SOAK_STATUS="FAIL"
     fi
+    # per-cycle slope: the free Fast RAM after each START, cycle to cycle
+    PREV=""
+    n=0
+    grep -A3 -F -- "--- AVAIL AFTER START ---" "$SOAK_DIR"/soak.log 2>/dev/null |
+        grep -i "^[[:space:]]*fast" | awk '{print $2}' > "$SOAK_DIR/fast-after-start.txt"
+    while read -r v; do
+        n=$((n + 1))
+        if [ -n "$PREV" ]; then
+            say "  cycle $n: fast after START $v (delta $(( PREV - v )))"
+        else
+            say "  cycle $n: fast after START $v (delta from baseline $(( ${BASE_FAST:-$v} - v )))"
+        fi
+        PREV=$v
+    done < "$SOAK_DIR/fast-after-start.txt"
 
     # Emit SUMMARY.txt in $SOAK_DIR
     cat <<EOF > "$SOAK_DIR/SUMMARY.txt"
 bench: session-profile soak (${SOAK_HRS}h, ${EXPECTED_CYCLES} sessions)
-profile: a1200 / 68EC020 (TX_QUEUE=4)
+profile: a1200 / 68EC020 (TX_QUEUE=$SOAK_TXQ)
 duration_secs: ${el:-0}
 cycles_executed: $CYCLES
 lwip_initializations: $RESTARTS
 guru_count: $GURUS
+ok_count: $OK_SEEN / $OK_EXPECTED
 not_ok_count: $NOT_OK
 chip_ram_drift_bytes: $CHIP_DRIFT
 fast_ram_baseline: ${BASE_FAST:-0}
-fast_ram_cycle1: ${CYCLE1_FAST:-0}
 fast_ram_final: ${LAST_FAST:-0}
-fast_ram_drift_cycle1_to_final: $DRIFT
+fast_ram_drift_baseline_to_final: $DRIFT (budget $FAST_BUDGET)
 status: $SOAK_STATUS
 EOF
 
@@ -291,10 +381,7 @@ mkdir -p "$LOG_ROOT"
 # a timeout or a port failure must never be silent again.
 exec > >(tee "$LOG_ROOT/bench-stdout.txt") 2>&1
 
-MUFORCE_NOTE="done"
-if [ -z "${MUFORCE_ADF:-}" ]; then
-    MUFORCE_NOTE="SKIP (MuForce/Enforcer not present on this bench; MUFORCE_ADF unset)"
-fi
+MUFORCE_NOTE="SKIP (MuForce/Enforcer pass not implemented; tool not present on this bench)"
 
 # TNET-111: DNS_PORT is the loopback resolver port used by
 # tc_dns_local (5353 must be avoided: system mDNS on Windows).
@@ -302,48 +389,41 @@ BENCH_DNS_PORT="${BENCH_DNS_PORT:-15353}"
 
 # Generate the guest bench config from the template. NOTE: keep it inside
 # the repo tree — Git Bash /tmp is invisible to the WSL xdftool invocation.
+# The config is generated per leg (TX_QUEUE differs, 9.4).
 BENCH_CFG="ci/.bench-tolunnet.config"
-sed -e "s/__DNS_PORT__/$BENCH_DNS_PORT/" ci/tolunnet.config > "$BENCH_CFG"
-if [ "${BENCH_EXTERNAL:-0}" = "1" ]; then
-    echo "TEST_EXTERNAL=YES" >> "$BENCH_CFG"
-fi
-# TN_DIAG=1: stage the daemon with crash-diagnostics ON (TNET-139; the
-# config key arms the trap handler + RAM:tolunnet-crash.log capture).
-if [ "${TN_DIAG:-0}" = "1" ]; then
-    echo "DIAG=YES" >> "$BENCH_CFG"
-fi
-say "bench config: resolver 127.0.0.1:$BENCH_DNS_PORT (loopback), external=${BENCH_EXTERNAL:-0}"
+TX_QUEUES="${TX_QUEUES:-4 0}"
+BSDTEST_MIN_PASS="${BSDTEST_MIN_PASS:-126}"
+BSDTEST_MAX_FAIL="${BSDTEST_MAX_FAIL:-2}"
+say "bench config: resolver 127.0.0.1:$BENCH_DNS_PORT (loopback), external=${BENCH_EXTERNAL:-0}, TX_QUEUES=\"$TX_QUEUES\""
 
-SUCCESS=0
-cleanup() {
-    rm -f "${BENCH_CFG:-ci/.bench-tolunnet.config}" 2>/dev/null || true
-    if [ -n "${NETSVC_PID:-}" ]; then
-        say "stopping hermetic slirp host services (PID $NETSVC_PID)"
-        kill -9 "$NETSVC_PID" 2>/dev/null || true
-        wait "$NETSVC_PID" 2>/dev/null || true
-        sleep 1
-        python.exe ci/netsvc.py --check-free || say "warning: netsvc ports not free after shutdown"
-    fi
-    if [ "${SUCCESS:-0}" != "1" ] && [ -n "${LOG_ROOT:-}" ] && [ -d "$LOG_ROOT" ]; then
-        say "run had failures; keeping log directory for analysis: $LOG_ROOT"
-    fi
-}
 trap cleanup EXIT INT TERM
+start_netsvc "$LOG_ROOT/netsvc.log"
 
-# ---- start hermetic slirp host mock services (ci/netsvc.py) -----------------
-say "verifying netsvc ports are free"
-python.exe ci/netsvc.py --check-free || python.exe ci/netsvc.py --kill-stale
-python.exe ci/netsvc.py --check-free || die "netsvc ports not free before bench run (see HOLDER lines above)"
-say "starting hermetic slirp host services (ci/netsvc.py)"
-python.exe ci/netsvc.py --log "$LOG_ROOT/netsvc.log" &
-NETSVC_PID=$!
-say "probing netsvc readiness (5s limit)..."
-python.exe ci/netsvc.py --probe || die "netsvc readiness probe failed"
-say "netsvc ready (PID $NETSVC_PID)"
+# 11aa item 3 / 9.15: the Gotek set of THIS version (never an older rc)
+TN_VERSION=$(sed -n 's/^#define TOLUNNET_VERSION "\(.*\)"/\1/p' include/version.h)
+[ -n "$TN_VERSION" ] || die "cannot read TOLUNNET_VERSION from include/version.h"
 
 fail=0
+LEGS=""
 for cfg in $CONFIGS; do
-    say "===== config: $cfg ====="
+    for txq in $TX_QUEUES; do
+        LEGS="$LEGS $cfg-txq$txq"
+    done
+done
+for leg in $LEGS; do
+    cfg=${leg%-txq*}
+    txq=${leg##*-txq}
+    CFG_WIN=""   # per leg: never reuse the previous leg's .uae
+    say "===== leg: $leg (config $cfg, TX_QUEUE=$txq) ====="
+    tn_config "$txq" "$BENCH_CFG"
+    if [ "${BENCH_EXTERNAL:-0}" = "1" ]; then
+        echo "TEST_EXTERNAL=YES" >> "$BENCH_CFG"
+    fi
+    # TN_DIAG=1: stage the daemon with crash-diagnostics ON (TNET-139; the
+    # config key arms the trap handler + RAM:tolunnet-crash.log capture).
+    if [ "${TN_DIAG:-0}" = "1" ]; then
+        echo "DIAG=YES" >> "$BENCH_CFG"
+    fi
 
     # ---- stage the HDF copy -------------------------------------------
     say "staging HDF copy for $cfg"
@@ -460,12 +540,24 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
     say "staged: tolunnet + SocketConformance + bsdsocktest + cmds + usergroup.library + TolunnetSetup + TolunnetPrefs + Conformance-Script + User-Startup + tolunnet.config -> $HDF_WIN"
 
     # ---- run headless ---------------------------------------------------
+    # 9.7: the link-flip row runs only on a TX_QUEUE=0 leg (S2_ONEVENT on)
+    # and only on request - uaenet froze the suite on S2_OFFLINE before
+    # (556ea30/184cd29); with the marker an absent event is "not ok".
+    rm -f "$WORK_DIR/linktest-on"
+    if [ "${BENCH_LINKTEST:-0}" = "1" ] && [ "$txq" = "0" ]; then
+        echo "bench $leg" > "$WORK_DIR/linktest-on"
+        say "link-flip test armed (WORK:linktest-on)"
+    fi
     rm -f "$WORK_DIR/conformance.log" "$WORK_DIR/conformance2.log" "$WORK_DIR/bench-done" "$WORK_DIR/tolunnet-task.log" "$WORK_DIR/bsdsocktest.log" "$WORK_DIR"/wizard-*.iff "$WORK_DIR"/prefs-*.iff "$WORK_DIR"/crash-*.iff "$WORK_DIR"/prefs-crash.log "$WORK_DIR"/TolunnetPrefs.map
     # 11aa item 3: attach the Gotek disk set as DF0/DF1 when it is
     # built, and stage the expected list for tc_floppy_install.
-    DISK1=$(ls "$REPO_ROOT"/build/tolunnet-*-disk1.adf 2>/dev/null | head -1)
-    if [ -n "$DISK1" ] && [ -f "$DISK1" ]; then
-        DISK2=$(ls "$REPO_ROOT"/build/tolunnet-*-disk2.adf 2>/dev/null | head -1)
+    DISK1="$REPO_ROOT/build/tolunnet-$TN_VERSION-disk1.adf"
+    if ls "$REPO_ROOT"/build/tolunnet-*-disk1.adf >/dev/null 2>&1 && [ ! -f "$DISK1" ]; then
+        die "build/ has an ADF set, but not for $TN_VERSION (run make package)"
+    fi
+    if [ -f "$DISK1" ]; then
+        DISK2="$REPO_ROOT/build/tolunnet-$TN_VERSION-disk2.adf"
+        [ -f "$DISK2" ] || die "$(basename "$DISK2") missing next to $(basename "$DISK1")"
         RUN_CFG="$REPO_ROOT/ci/.bench-floppy.uae"
         cp "$REPO_ROOT/ci/tolunnet-$cfg.uae" "$RUN_CFG"
         # the base configs disable the drives (floppy0type=-1);
@@ -483,7 +575,7 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
             # 11ad item 1: Disk.info IS copied (the script copies the
             # whole volume) - it belongs in the expected list.
             if [ -f "$REPO_ROOT/$mpath" ]; then mfile="$REPO_ROOT/$mpath"; else mfile="$REPO_ROOT/build/release/tolunnet/$mpath"; fi
-            [ -f "$mfile" ] || continue
+            [ -f "$mfile" ] || die "adf_manifest.txt lists $mpath, not found in the repo or the release tree"
             echo "$mpath $(wc -c < "$mfile")" >> "$EXP"
         done < <(awk 'NF==2 && ($2=="1" || $2=="2")' "$REPO_ROOT/scripts/adf_manifest.txt")
         xd delete S/adf-expected.txt >/dev/null 2>&1
@@ -516,7 +608,8 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
     sleep 2
 
     # ---- collect --------------------------------------------------------
-    OUT="$LOG_ROOT/$cfg"
+    rm -f "$WORK_DIR/linktest-on"
+    OUT="$LOG_ROOT/$leg"
     mkdir -p "$OUT"
     cp "$WORK_DIR/conformance.log"   "$OUT/" 2>/dev/null || echo "(missing)" > "$OUT/conformance.log"
     cp "$WORK_DIR/conformance2.log"  "$OUT/" 2>/dev/null || echo "(missing)" > "$OUT/conformance2.log"
@@ -539,25 +632,33 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
 
     # ANX-01: per-config bsdsocktest score line -> SUMMARY.txt
     # log format: "# Results: N passed, F failed, K known, S skipped (T total)"
-    {
-        bs_line=$(grep '^# Results:' "$OUT/bsdsocktest.log" | tail -1)
-        bs_n=$(echo "$bs_line" | sed -n 's/^# Results: \([0-9]*\) passed.*/\1/p')
-        bs_t=$(echo "$bs_line" | sed -n 's/.*(\([0-9]*\) total)/\1/p')
-        bs_f=$(echo "$bs_line" | sed -n 's/.*, \([0-9]*\) failed.*/\1/p')
-        if [ -n "$bs_n" ] && [ -n "$bs_t" ]; then
-            echo "$cfg: bsdsocktest: $bs_n/$bs_t (failed ${bs_f:-?}) — $LOG_ROOT/$cfg/bsdsocktest.log"
-        else
-            echo "$cfg: bsdsocktest: NO-RESULT (log incomplete or crashed) — $LOG_ROOT/$cfg/bsdsocktest.log"
+    # 9.13: the score gates the run (baseline 126/142, 2 MSG_OOB failures)
+    bs_line=$(grep '^# Results:' "$OUT/bsdsocktest.log" | tail -1 | tr -d '\r')
+    bs_n=$(echo "$bs_line" | sed -n 's/^# Results: \([0-9]*\) passed.*/\1/p')
+    bs_t=$(echo "$bs_line" | sed -n 's/.*(\([0-9]*\) total)/\1/p')
+    bs_f=$(echo "$bs_line" | sed -n 's/.*, \([0-9]*\) failed.*/\1/p')
+    if [ -n "$bs_n" ] && [ -n "$bs_t" ] && [ -n "$bs_f" ]; then
+        bs_gate="ok"
+        if [ "$bs_n" -lt "$BSDTEST_MIN_PASS" ] || [ "$bs_f" -gt "$BSDTEST_MAX_FAIL" ]; then
+            bs_gate="FAIL (need >= $BSDTEST_MIN_PASS passed, <= $BSDTEST_MAX_FAIL failed)"
+            fail=1
         fi
-    } >> "$LOG_ROOT/SUMMARY.txt"
+        echo "$leg: bsdsocktest: $bs_n/$bs_t (failed $bs_f) $bs_gate — $LOG_ROOT/$leg/bsdsocktest.log" >> "$LOG_ROOT/SUMMARY.txt"
+    else
+        bs_gate="FAIL (NO-RESULT)"
+        fail=1
+        echo "$leg: bsdsocktest: NO-RESULT (log incomplete or crashed) FAIL — $LOG_ROOT/$leg/bsdsocktest.log" >> "$LOG_ROOT/SUMMARY.txt"
+    fi
+    say "$leg: bsdsocktest: ${bs_n:-?}/${bs_t:-?} failed ${bs_f:-?} -> $bs_gate"
 
     # CLOSE §B.6 / ANX-18g: tc_iperf_loopback throughput number -> SUMMARY.txt
     ip_line=$(grep '^# iperf loopback:' "$OUT/conformance.log" 2>/dev/null | tail -1)
     if [ -n "$ip_line" ]; then
-        echo "$cfg: $ip_line — $LOG_ROOT/$cfg/conformance.log" >> "$LOG_ROOT/SUMMARY.txt"
+        echo "$leg: $ip_line — $LOG_ROOT/$leg/conformance.log" >> "$LOG_ROOT/SUMMARY.txt"
     fi
     {
-        echo "$cfg: $(date)"
+        echo "$leg: $(date)"
+        echo "TX_QUEUE=$txq"
         for lg in conformance.log conformance2.log; do
             c_ok=$(grep -c '^ok' "$OUT/$lg" 2>/dev/null | tr -d '\r' || echo 0)
             c_nok=$(grep -c '^not ok' "$OUT/$lg" 2>/dev/null | tr -d '\r' || echo 0)
@@ -614,7 +715,8 @@ for junk in Tools/BRU Tools/HDToolBox Tools/HDBackup Tools/HDBackup.help Tools/M
     done
 done
 
-NET_TODO=$(grep -c 'net_.*# TODO' "$LOG_ROOT/a1200/conformance.log" 2>/dev/null || echo 0)
+NET_TODO_LEG=$(for l in $LEGS; do case $l in (a1200-*) echo "$l"; break ;; esac; done)
+NET_TODO=$(grep -c 'net_.*# TODO' "$LOG_ROOT/${NET_TODO_LEG:-a1200-txq4}/conformance.log" 2>/dev/null || echo 0)
 echo "net TODO remaining: $NET_TODO" >> "$LOG_ROOT/SUMMARY.txt"
 say "net TODO remaining: $NET_TODO"
 

@@ -39,6 +39,7 @@ static const char tn_verstag[] __attribute__((used)) = TN_VERSTAG("tolunnet");
 #include "crash_log.h"
 #include "ipc_dispatch.h"
 #include "ipc_socket.h" /* tn_ipc_cmd_close for the TNET-150 reap path */
+#include "ipc_netdb.h"  /* tn_dns_cancel_for_base2 (reap path) */
 #include "sana2/sana2_netif.h"
 #include "timers.h"
 #include "lib/lib_init.h"
@@ -209,6 +210,26 @@ static void tn_autoip_cleanup(TnNetif *prim)
     }
 }
 
+/* bugtrack 3.6: delete the (already RemPort'ed) IPC port without leaving a
+ * message unanswered - a client that found the port before RemPort may
+ * still have queued a request. Drain, reply ENETDOWN and delete under one
+ * Forbid so nothing lands on a freed port in between. */
+static void tn_ipc_port_drain_delete(struct MsgPort *port)
+{
+    struct Message *msg;
+
+    if (port == NULL) return;
+    Forbid();
+    while ((msg = GetMsg(port)) != NULL) {
+        TnIpcMsg *imsg = (TnIpcMsg *)msg;
+        imsg->result = -1;
+        imsg->err_no = ENETDOWN;
+        ReplyMsg(msg);
+    }
+    DeleteMsgPort(port);
+    Permit();
+}
+
 static int tn_task_real_main(int argc, char *argv[])
 {
     struct Library *DOSBase;
@@ -224,6 +245,7 @@ static int tn_task_real_main(int argc, char *argv[])
     BOOL            autoip_logged = FALSE;
     ULONG           tick_count = 0;
     int             i;
+    int             fail_rc = 20;   /* bugtrack 3.10: startup error exit code */
     TnNetif        *prim = tn_netif_primary(&g_daemon);
 
     DOSBase = OpenLibrary((CONST_STRPTR)"dos.library", 0);
@@ -246,7 +268,9 @@ static int tn_task_real_main(int argc, char *argv[])
         tn_log_ring_enable();
         tn_crash_arm();
         g_log_level = TN_LOG_VERBOSE; /* step logs are VERBOSE-tier */
-        tn_log(TN_LOG_BASIC, "tolunnet: DIAG mode ON - crash log -> RAM:tolunnet-crash.log\n");
+        tn_logf(TN_LOG_BASIC,
+                "tolunnet: DIAG crash buffer at $%08lx (file written only if the task survives)\n",
+                (unsigned long)tn_crash_report);
     }
 
 
@@ -256,6 +280,7 @@ static int tn_task_real_main(int argc, char *argv[])
         CloseLibrary(DOSBase);
         return 20;
     }
+    g_daemon.slot_free_hook = tn_mcast_leave_all; /* bugtrack 4.10: leave IGMP groups on slot free */
     g_daemon.stats_enabled = g_daemon.prefs.stats;
     g_daemon.if_count = 1;
     prim->in_use = TRUE;
@@ -332,9 +357,8 @@ static int tn_task_real_main(int argc, char *argv[])
         if (FindPort((CONST_STRPTR)TOLUNNET_PORT_NAME) != NULL) {
             tn_log(TN_LOG_BASIC,
                    "tolunnet: REFUSING start - tolunnet.port exists (previous daemon alive)\n");
-            SetTaskPri(self_task, old_pri);
-            CloseLibrary(DOSBase);
-            return 21;
+            fail_rc = 21;
+            goto tn_fail_log;
         }
     }
 
@@ -350,13 +374,12 @@ static int tn_task_real_main(int argc, char *argv[])
     /* TNET-108 (§D3): mirror daemon log lines to SYSLOG=host via UDP-514.
      * The sink is inert until tn_syslog_apply arms it (after lwIP is up). */
     g_log_sink = tn_syslog_sink;
+    tn_log_set_owner(); /* 5.1: the daemon task owns the log sink */
 
     /* 1. Initialize timer.device */
     if (!tn_timer_init(&g_daemon.timer)) {
         tn_log(TN_LOG_BASIC, "tolunnet: failed to initialize timer.device\n");
-        SetTaskPri(self_task, old_pri);
-        CloseLibrary(DOSBase);
-        return 20;
+        goto tn_fail_timer;
     }
     g_daemon.start_sec = g_daemon.timer.boot_time.tv_secs;
 
@@ -372,19 +395,14 @@ static int tn_task_real_main(int argc, char *argv[])
     s2res = tn_s2_open(&prim->s2if, device, unit);
     if (s2res != TN_S2_OK) {
         tn_logf(TN_LOG_BASIC, "tolunnet: SANA-II open failed (%s, %lu)\n", device, unit);
-        tn_timer_fini(&g_daemon.timer);
-        CloseLibrary(DOSBase);
-        return 20;
+        goto tn_fail_timer;
     }
 
     /* 4. Bring SANA-II interface online */
     s2res = tn_s2_online(&prim->s2if, NULL);
     if (s2res != TN_S2_OK) {
         tn_log(TN_LOG_BASIC, "tolunnet: SANA-II online failed\n");
-        tn_s2_offline_close(&prim->s2if);
-        tn_timer_fini(&g_daemon.timer);
-        CloseLibrary(DOSBase);
-        return 20;
+        goto tn_fail_s2;
     }
 
     tn_logf(TN_LOG_BASIC, "tolunnet: %s:%lu online (MAC %02x:%02x:%02x:%02x:%02x:%02x, MTU %lu)\n",
@@ -400,10 +418,7 @@ static int tn_task_real_main(int argc, char *argv[])
     if (netif_add(&prim->lwip_if, &ipaddr, &netmask, &gw, &prim->s2if,
                   tn_sana2_netif_init, ethernet_input) == NULL) {
         tn_log(TN_LOG_BASIC, "tolunnet: netif_add failed\n");
-        tn_s2_offline_close(&prim->s2if);
-        tn_timer_fini(&g_daemon.timer);
-        CloseLibrary(DOSBase);
-        return 20;
+        goto tn_fail_s2;
     }
 
     netif_set_default(&prim->lwip_if);
@@ -438,13 +453,7 @@ static int tn_task_real_main(int argc, char *argv[])
     }
     if (tn_s2_arm_reads(&prim->s2if) != TN_S2_OK) {
         tn_log(TN_LOG_BASIC, "tolunnet: tn_s2_arm_reads failed\n");
-        tn_mdns_cleanup(prim);
-        netif_set_down(&prim->lwip_if);
-        netif_remove(&prim->lwip_if);
-        tn_s2_offline_close(&prim->s2if);
-        tn_timer_fini(&g_daemon.timer);
-        CloseLibrary(DOSBase);
-        return 20;
+        goto tn_fail_netif;
     }
 
     /* TNET-109: arm S2_ONEVENT link tracking (dedicated port; a driver that
@@ -485,13 +494,7 @@ static int tn_task_real_main(int argc, char *argv[])
     g_daemon.ipc_port = CreateMsgPort();
     if (g_daemon.ipc_port == NULL) {
         tn_log(TN_LOG_BASIC, "tolunnet: failed to create IPC port\n");
-        tn_mdns_cleanup(prim);
-        netif_set_down(&prim->lwip_if);
-        netif_remove(&prim->lwip_if);
-        tn_s2_offline_close(&prim->s2if);
-        tn_timer_fini(&g_daemon.timer);
-        CloseLibrary(DOSBase);
-        return 20;
+        goto tn_fail_netif;
     }
     g_daemon.ipc_port->mp_Node.ln_Name = (char *)TOLUNNET_PORT_NAME;
     g_daemon.ipc_port->mp_Node.ln_Pri  = 0;
@@ -506,15 +509,7 @@ static int tn_task_real_main(int argc, char *argv[])
     g_daemon.bsd_lib = tn_lib_create();
     if (g_daemon.bsd_lib == NULL) {
         tn_log(TN_LOG_BASIC, "tolunnet: failed to create bsdsocket.library\n");
-        RemPort(g_daemon.ipc_port);
-        DeleteMsgPort(g_daemon.ipc_port);
-        tn_mdns_cleanup(prim);
-        netif_set_down(&prim->lwip_if);
-        netif_remove(&prim->lwip_if);
-        tn_s2_offline_close(&prim->s2if);
-        tn_timer_fini(&g_daemon.timer);
-        CloseLibrary(DOSBase);
-        return 20;
+        goto tn_fail_port;
     }
     tn_log(TN_LOG_BASIC, "tolunnet: bsdsocket.library v4.1 registered with Exec\n");
 
@@ -539,6 +534,7 @@ static int tn_task_real_main(int argc, char *argv[])
 tn_main_loop:
     while (g_daemon.running) {
         ULONG sigs = Wait(wait_mask);
+        tn_crash_flush_pending(); /* no-op unless a DIAG crash report is pending */
 
         /* Ctrl-C Signal -> Shutdown.
          * TNET-059: per-opener clones embed jump tables that point into this
@@ -687,6 +683,16 @@ tn_main_loop:
             g_daemon.timer.armed = FALSE;
         }
         tn_timer_arm(&g_daemon.timer, 100000);
+        /* bugtrack 3.5: back in service - expunge must refuse again, and a
+         * parked STOP is answered now (else its caller waits forever and
+         * every later STOP gets EALREADY). */
+        g_daemon.stopping = FALSE;
+        if (g_daemon.stop_msg != NULL) {
+            g_daemon.stop_msg->result = -1;
+            g_daemon.stop_msg->err_no = EBUSY;
+            ReplyMsg((struct Message *)g_daemon.stop_msg);
+            g_daemon.stop_msg = NULL;
+        }
         g_daemon.running = TRUE;
         goto tn_main_loop;
     }
@@ -734,6 +740,7 @@ tn_main_loop:
             tn_slot_free(&g_daemon, i);
         }
     }
+    tn_rxpkt_fini(); /* bugtrack 3.8: release the rx-packet freelist the loop above refilled */
 
     tn_log(TN_LOG_BASIC, "tolunnet: closing timer.device...\n");
     tn_timer_fini(&g_daemon.timer);
@@ -746,7 +753,7 @@ tn_main_loop:
 
     if (g_daemon.ipc_port != NULL) {
         tn_log(TN_LOG_BASIC, "tolunnet: deleting IPC port...\n");
-        DeleteMsgPort(g_daemon.ipc_port);
+        tn_ipc_port_drain_delete(g_daemon.ipc_port);
         g_daemon.ipc_port = NULL;
     }
 
@@ -761,6 +768,33 @@ tn_main_loop:
     tn_log_close_file();
     CloseLibrary(DOSBase);
     return 0;
+
+    /* bugtrack 3.10: startup failure unwinding, innermost resource first
+     * (mirrors the shutdown sequence); the log file closes last so the
+     * failure line reaches it. */
+tn_fail_port:
+    RemPort(g_daemon.ipc_port); /* public since AddPort */
+    tn_ipc_port_drain_delete(g_daemon.ipc_port);
+    g_daemon.ipc_port = NULL;
+tn_fail_netif:
+    tn_mdns_cleanup(prim);
+    tn_autoip_cleanup(prim);
+    if (use_dhcp) {
+        dhcp_stop(&prim->lwip_if);
+    }
+    netif_set_down(&prim->lwip_if);
+    netif_remove(&prim->lwip_if);
+tn_fail_s2:
+    tn_s2_offline_close(&prim->s2if);
+tn_fail_timer:
+    tn_timer_fini(&g_daemon.timer);
+tn_fail_log:
+    SetTaskPri(self_task, old_pri);
+    tn_syslog_shutdown();
+    tn_selector_table_free(&g_daemon);
+    tn_log_close_file();
+    CloseLibrary(DOSBase);
+    return fail_rc;
 }
 
 enum {
@@ -1108,7 +1142,7 @@ int main(int argc, char *argv[])
          * line boots a useless default stack - say one clear line and
          * exit; the wizard (SYS:Prefs/TolunnetSetup) writes the config.
          * Explicit START re-enters this path and gets the same answer. */
-        if (opts[OPT_DEVICE] == NULL && opts[OPT_IP] == NULL &&
+        if (opts[OPT_DEVICE] == 0 && opts[OPT_IP] == 0 &&
             !tn_prefs_any_store_exists()) {
             PutStr((CONST_STRPTR)"tolunnet: no configuration found - run SYS:Prefs/TolunnetSetup\n");
             FreeArgs(rdargs);
@@ -1135,25 +1169,25 @@ int main(int argc, char *argv[])
                 cli_dev_buf[k] = 0;
                 g_cli_device = cli_dev_buf;
             }
-            if (opts[OPT_UNIT] != NULL) {
+            if (opts[OPT_UNIT] != 0) {
                 cli_unit_val = *(const LONG *)opts[OPT_UNIT];
                 g_cli_unit = &cli_unit_val;
             }
-            if (opts[OPT_IP] != NULL) {
+            if (opts[OPT_IP] != 0) {
                 int k = 0;
                 const char *v = (const char *)opts[OPT_IP];
                 while (v[k] != 0 && k < (int)sizeof(cli_ip_buf) - 1) { cli_ip_buf[k] = v[k]; k++; }
                 cli_ip_buf[k] = 0;
                 g_cli_ip = cli_ip_buf;
             }
-            if (opts[OPT_NETMASK] != NULL) {
+            if (opts[OPT_NETMASK] != 0) {
                 int k = 0;
                 const char *v = (const char *)opts[OPT_NETMASK];
                 while (v[k] != 0 && k < (int)sizeof(cli_nm_buf) - 1) { cli_nm_buf[k] = v[k]; k++; }
                 cli_nm_buf[k] = 0;
                 g_cli_netmask = cli_nm_buf;
             }
-            if (opts[OPT_GATEWAY] != NULL) {
+            if (opts[OPT_GATEWAY] != 0) {
                 int k = 0;
                 const char *v = (const char *)opts[OPT_GATEWAY];
                 while (v[k] != 0 && k < (int)sizeof(cli_gw_buf) - 1) { cli_gw_buf[k] = v[k]; k++; }

@@ -598,6 +598,9 @@ int tn_config_merge_preserve(const char *new_text, const char *old_text,
             key[ki++] = p[ci];
         }
         key[ki] = 0;
+        /* 5.4: judge the key the way the loader reads it ("IP " -> IP),
+         * or a hand-edited known key outlives every rewrite */
+        tn_str_copy_clean(key, key, (int)sizeof(key));
         if (!keep && p[0] != 35 /* # */ && ki > 0 &&
             !tn_config_key_known(key)) {
             keep = 1;

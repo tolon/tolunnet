@@ -1,0 +1,17 @@
+# check-cast-known.txt - waivers for the cast-hop / client-pointer deref
+# lint in scripts/check_cast_align.sh (9.1). One waiver per line:
+#   path|exact source line with leading/trailing blanks stripped
+# A waiver whose line no longer exists is reported as stale. Each entry
+# is a reviewed site whose pointer is known to be even/aligned (static
+# or AllocMem'd buffer, pool block, computed offset of an aligned base);
+# do NOT add sites that cast client-supplied memory (imsg->ptrs, optval,
+# argp) - copy those with memcpy instead.
+src/cmds/TolunnetPing.c|icmp->chksum = in_cksum((const UWORD *)(const void *)tx_buf, (int)total_len) /* static buffer, even */;
+src/cmds/TolunnetPing.c|struct tn_icmp_hdr *icmp = (struct tn_icmp_hdr *)(void *)tx_buf; /* static buffer, even */
+src/cmds/TolunnetPing.c|struct tn_icmp_hdr *rep = (struct tn_icmp_hdr *)(void *)(rx_buf + ip_hlen);
+src/common/log.c|return (const char *const *)(const void *)g_ring;
+src/lib/lib_vectors.c|base = (TnSocketBase *)(void *)(raw_mem + neg_size);
+src/lib/lib_vectors.c|sa = (struct sockaddr_in *)(void *)((UBYTE *)ai + sizeof(struct addrinfo));
+src/lib/lib_vectors.c|STRPTR *addrs = (STRPTR *)(void *)p;
+src/lib/lib_vectors.c|STRPTR *aliases = (STRPTR *)(void *)p;
+src/lib/lib_vectors.c|uint32_t *ip_storage = (uint32_t *)(void *)p;

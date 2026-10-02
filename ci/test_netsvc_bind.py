@@ -90,6 +90,14 @@ def main():
         print(f"not ok 4 - exclusive-probe still sees {port} busy after close")
         failures += 1
 
+    # 9.15: bind_exclusive has a per-platform branch; only the one of
+    # THIS host ran above (Linux CI: SO_REUSEADDR). The Windows
+    # SO_EXCLUSIVEADDRUSE branch the bench host uses is covered only
+    # when this test runs on Windows.
+    branch = ("SO_EXCLUSIVEADDRUSE (win32)" if sys.platform == "win32"
+              else "SO_REUSEADDR (%s; win32 branch NOT exercised)"
+              % sys.platform)
+    print("# bind_exclusive branch exercised: " + branch)
     print("1..4")
     return 1 if failures else 0
 

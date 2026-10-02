@@ -21,7 +21,8 @@ system rounds files to 512-byte blocks and adds header/extension and
 mandatory - OFS stores only 488 bytes per block).
 
 Without xdftool the image build is skipped with a WARNING and `make
-package` still produces the LHA (CI); with xdftool a pack error of the
+package` still produces the LHA - except under CI (CI=true), where a
+missing xdftool FAILS (9.15); with xdftool a pack error of the
 manifest-fixed content fails the build.
 
 Usage: build_adf.py [lha_path]
@@ -94,9 +95,28 @@ def source_of(path):
     return os.path.join(RELEASE, *path.split("/"))
 
 
+def resolve_xdftool():
+    """9.15: the path that is actually executed - a PATH install
+    (pip in the CI container) is found by name, not just detected."""
+    for cand in (XDFTOOL, os.path.basename(XDFTOOL)):
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+        found = shutil.which(cand)
+        if found:
+            return found
+    return None
+
+
+def under_ci():
+    return os.environ.get("CI", "").lower() in ("1", "true", "yes")
+
+
 def have_xdftool():
-    return (os.access(XDFTOOL, os.X_OK) or shutil.which(XDFTOOL)
-            or shutil.which(os.path.basename(XDFTOOL))) is not None
+    global XDFTOOL
+    found = resolve_xdftool()
+    if found:
+        XDFTOOL = found
+    return found is not None
 
 
 def trial_pack(staging, image):
@@ -133,6 +153,10 @@ def main(argv):
         fail("manifest lists unknown paths: %s" % unknown)
 
     if not have_xdftool():
+        # 9.15: CI must build (and parity-check) the Gotek set too
+        if under_ci():
+            fail("xdftool not found and CI is set - the ADF set must be "
+                 "built in CI (pip install amitools)")
         print("WARNING: xdftool not found, ADF skipped")
         return 0
 

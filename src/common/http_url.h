@@ -46,6 +46,7 @@ struct TnChunkState {
     enum TnChunkStateEnum state;
     int32_t chunk_size;
     int32_t chunk_rem;
+    int     in_ext;      /* 5.3: inside a ";ext" after the size digits */
 };
 
 int tn_http_parse_url(const char *url_str, struct TnUrl *out);

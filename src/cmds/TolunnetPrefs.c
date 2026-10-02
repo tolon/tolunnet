@@ -171,7 +171,9 @@ static void notify_daemon_reconfig(void)
 static void daemon_start(void)
 {
     if (daemon_running()) return;
-    PutStr((CONST_STRPTR)"TolunnetPrefs: starting daemon with 32 KB stack...\n");
+    if (Output() != (BPTR)0) {   /* 7.8: no console for a WB launch */
+        PutStr((CONST_STRPTR)"TolunnetPrefs: starting daemon with 32 KB stack...\n");
+    }
     SystemTags((CONST_STRPTR)"C:tolunnet",
                SYS_Asynch, TRUE,
                SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE),
@@ -183,12 +185,20 @@ static void daemon_start(void)
 /* TNET-065/079/081: ask the daemon task to exit (non-blocking, no Delay loops) */
 static void daemon_stop(struct Window *win)
 {
-    struct MsgPort *port = find_daemon_port();
+    struct MsgPort *port;
+    BOOL sent = FALSE;
 
-    if (port == NULL) return;
-    PutStr((CONST_STRPTR)"TolunnetPrefs: sending stop signal to daemon...\n");
-    if (port->mp_SigTask != NULL) {
+    /* 7.8: FindPort and the mp_SigTask use under one Forbid - the
+     * daemon may remove its port and exit in between */
+    Forbid();
+    port = find_daemon_port();
+    if (port != NULL && port->mp_SigTask != NULL) {
         Signal((struct Task *)port->mp_SigTask, SIGBREAKF_CTRL_C);
+        sent = TRUE;
+    }
+    Permit();
+    if (sent && Output() != (BPTR)0) {
+        PutStr((CONST_STRPTR)"TolunnetPrefs: sent stop signal to daemon\n");
     }
     (void)win;
 }
@@ -487,6 +497,7 @@ int main(int argc, char *argv[])
     BOOL running = TRUE;
     TnPrefs prefs;
     CONST_STRPTR pubscreen_name = NULL;
+    char pubscreen_buf[MAXPUBSCREENNAME + 1];
 
     FindTask(NULL)->tc_Node.ln_Name = (char *)"TolunnetPrefs";
 
@@ -534,7 +545,10 @@ int main(int argc, char *argv[])
             if (dobj->do_ToolTypes != NULL) {
                 STRPTR tt;
                 if ((tt = (STRPTR)FindToolType((CONST_STRPTR *)dobj->do_ToolTypes, (CONST_STRPTR)"PUBSCREEN")) != NULL) {
-                    pubscreen_name = (CONST_STRPTR)tt;
+                    /* 7.6: tt points into dobj, freed below - keep a copy */
+                    strncpy(pubscreen_buf, (const char *)tt, sizeof(pubscreen_buf) - 1);
+                    pubscreen_buf[sizeof(pubscreen_buf) - 1] = '\0';
+                    pubscreen_name = (CONST_STRPTR)pubscreen_buf;
                 }
                 if ((tt = (STRPTR)FindToolType((CONST_STRPTR *)dobj->do_ToolTypes, (CONST_STRPTR)"TOOLPRI")) != NULL) {
                     LONG pri = 0;
@@ -869,6 +883,7 @@ int main(int argc, char *argv[])
     /* Event Message Loop (TNET-079: non-blocking timer in Wait mask) */
     while (running) {
         ULONG sigs = Wait((1UL << win->UserPort->mp_SigBit) | timer_sig | SIGBREAKF_CTRL_C);
+        tn_crash_flush_pending();   /* no-op unless a crash report waits */
         if (sigs & SIGBREAKF_CTRL_C) break;
 
         if (timer_active && (sigs & timer_sig)) {
@@ -1003,11 +1018,34 @@ int main(int argc, char *argv[])
                         update_daemon_buttons(win, gad_start, gad_stop);
                         break;
 
-                    case GID_SETUP:
-                        SystemTags((CONST_STRPTR)"Run <>NIL: C:TolunnetSetup",
-                                   SYS_Asynch, TRUE,
-                                   TAG_END);
+                    case GID_SETUP: {
+                        /* 7.8: an asynchronous System() closes its
+                         * handles on exit - give it its own NIL:
+                         * pair, never the caller's console */
+                        BPTR in_nil = Open((CONST_STRPTR)"NIL:", MODE_OLDFILE);
+                        BPTR out_nil = Open((CONST_STRPTR)"NIL:", MODE_NEWFILE);
+                        LONG src = -1;
+                        /* the installer puts the wizard in SYS:Prefs;
+                         * C: is the dev-tree fallback */
+                        CONST_STRPTR setup_cmd = (CONST_STRPTR)"C:TolunnetSetup";
+                        BPTR setup_lk = Lock((CONST_STRPTR)"SYS:Prefs/TolunnetSetup", ACCESS_READ);
+                        if (setup_lk != (BPTR)0) {
+                            UnLock(setup_lk);
+                            setup_cmd = (CONST_STRPTR)"SYS:Prefs/TolunnetSetup";
+                        }
+                        if (in_nil != (BPTR)0 && out_nil != (BPTR)0) {
+                            src = SystemTags(setup_cmd,
+                                             SYS_Asynch, TRUE,
+                                             SYS_Input, (ULONG)in_nil,
+                                             SYS_Output, (ULONG)out_nil,
+                                             TAG_END);
+                        }
+                        if (src == -1) {
+                            if (in_nil != (BPTR)0) Close(in_nil);
+                            if (out_nil != (BPTR)0) Close(out_nil);
+                        }
                         break;
+                    }
 
                     case GID_UNDO:
                         tn_stack_undo_replacement();

@@ -7,12 +7,14 @@ Rules enforced:
 - Inside a Forbid()..Permit() region none of the banned blocking/allocating
   calls may appear: Wait, WaitPort, WaitIO, DoIO, Delay, ObtainSemaphore,
   AllocVec, AllocMem, OpenLibrary, OpenDevice, Open(, Lock(, Execute, PutStr,
-  Printf, tn_logf.
+  Printf, tn_logf, CreateMsgPort, Close(, Read(, Write(, FPrintf.
 - Inside a Disable()..Enable() region ANY call except Permit/Enable/Forbid/
   Disable is banned (interrupts are off; nothing may touch shared state).
-- Line-based scanner: keeps a nesting stack per function; the stack resets
-  at the next function boundary (a '}' at column 0). Comments and strings
-  are not parsed away — keep such regions clean of banned words.
+- Token scanner with brace depth (9.8): an early-exit Permit() nested
+  deeper than its Forbid() (followed by return/break/goto) does not end
+  the region; the rest of the Forbid() line is scanned. The stack resets
+  at the next function boundary (a '}' at column 0). Comments and string
+  literals are stripped first.
 
 Known exceptions: scripts/check-forbid-known.txt, lines of
   path:function:reason
@@ -31,6 +33,8 @@ BANNED_IN_FORBID = [
     "Wait", "WaitPort", "WaitIO", "DoIO", "Delay", "ObtainSemaphore",
     "AllocVec", "AllocMem", "OpenLibrary", "OpenDevice", "Open", "Lock",
     "Execute", "PutStr", "Printf", "tn_logf",
+    # 9.8: port allocation and blocking DOS I/O
+    "CreateMsgPort", "Close", "Read", "Write", "FPrintf",
 ]
 
 ALLOWED_IN_DISABLE = {"Permit", "Enable", "Forbid", "Disable"}
@@ -57,13 +61,34 @@ def load_known():
     return known
 
 
+STRING_RE = re.compile(r'"(?:\\.|[^"\\])*"' + r"|'(?:\\.|[^'\\])+'")
+# 9.8: one token stream per line, in source order, so the remainder of a
+# Forbid() line and the head of a Permit() line are scanned too.
+TOKEN_RE = re.compile(r"[{}]|\b(?:return|break|continue|goto)\b|"
+                      r"\b[A-Za-z_][A-Za-z0-9_]*\s*\(")
+JUMP_WORDS = {"return", "break", "continue", "goto"}
+REGION_WORDS = {"Forbid", "Disable", "Permit", "Enable"}
+
+
 def scan_file(path, known):
+    """Brace-depth region matcher (9.8). A region opens at Forbid()/
+    Disable() and records the brace depth there. A Permit()/Enable() at
+    that depth (or shallower) closes it. One at a DEEPER depth is an
+    early-exit path ("if (!port) { Permit(); return; }"): when a
+    return/break/continue/goto follows it in the same block it does
+    NOT close the region; when the block ends without a jump (if/else
+    branches that each Permit) the region closes at that block's '}'."""
     rel = os.path.relpath(path, ROOT).replace("\\", "/")
     findings = []
     regions = []
-    stack = []  # entries: [type, start_line, calls[list]]
+    stack = []  # entries: dict(type, start, calls, depth, pending, jumped)
     func = "?"
+    depth = 0
     in_block_comment = False  # strip /* */ and // so prose cannot open regions
+
+    def close(ent, lineno):
+        regions.append((rel, ent["type"], ent["start"], lineno, func,
+                        ent["calls"]))
 
     with open(path, encoding="utf-8", errors="replace") as f:
         for lineno, raw in enumerate(f, 1):
@@ -77,21 +102,25 @@ def scan_file(path, known):
                 else:
                     line = line[end + 2:]
                     in_block_comment = False
-            if "/*" in line:
+            while "/*" in line:
                 start = line.find("/*")
                 if "*/" in line[start:]:
                     line = line[:start] + line[line.find("*/", start) + 2:]
                 else:
                     line = line[:start]
                     in_block_comment = True
+            line = STRING_RE.sub('""', line)
             if "//" in line:
                 line = line[:line.find("//")]
+            if line.lstrip().startswith("#"):
+                continue  # preprocessor lines carry no calls or braces
 
             if raw.startswith("}"):  # function boundary (col 0)
                 for ent in stack:
-                    regions.append((rel, ent[0], ent[1], lineno - 1, func, ent[2]))
+                    close(ent, lineno - 1)
                 stack = []
                 func = "?"
+                depth = 0
                 continue
 
             m = FUNC_HEAD_RE.match(line)
@@ -100,30 +129,53 @@ def scan_file(path, known):
                 if name and not name.startswith(("if", "for", "while", "switch", "return")):
                     func = name
 
-            opens_forbid = re.search(r"\bForbid\s*\(", line)
-            opens_disable = re.search(r"\bDisable\s*\(", line)
-            if opens_forbid:
-                stack.append(["forbid", lineno, []])
-                continue
-            if opens_disable:
-                stack.append(["disable", lineno, []])
-                continue
-
-            if re.search(r"\bPermit\s*\(", line) or re.search(r"\bEnable\s*\(", line):
-                if stack:
-                    ent = stack.pop()
-                    regions.append((rel, ent[0], ent[1], lineno, func, ent[2]))
-                continue
-
-            if stack:
-                for cm in CALL_RE.finditer(line):
-                    call = cm.group(1)
-                    if stack[-1][0] == "forbid":
+            for tm in TOKEN_RE.finditer(line):
+                tok = tm.group(0)
+                top = stack[-1] if stack else None
+                if tok == "{":
+                    depth += 1
+                    continue
+                if tok == "}":
+                    depth -= 1
+                    # the branch that Permit()ed ends here: with a jump the
+                    # region resumes after it, without one it ends with it
+                    while (top is not None and top["pending"] is not None
+                           and depth < top["pending"]):
+                        if top["jumped"]:
+                            top["pending"] = None
+                            break
+                        close(stack.pop(), lineno)
+                        top = stack[-1] if stack else None
+                    continue
+                suspended = (top is not None and top["pending"] is not None
+                             and depth >= top["pending"])
+                if tok in JUMP_WORDS:
+                    if suspended:
+                        top["jumped"] = True
+                    continue
+                call = re.match(r"[A-Za-z_][A-Za-z0-9_]*", tok).group(0)
+                if suspended:
+                    continue  # after an early-exit Permit(): not inside
+                if call in ("Forbid", "Disable"):
+                    stack.append({"type": call.lower(), "start": lineno,
+                                  "calls": [], "depth": depth,
+                                  "pending": None, "jumped": False})
+                    continue
+                if call in ("Permit", "Enable"):
+                    if top is not None:
+                        if depth <= top["depth"]:
+                            close(stack.pop(), lineno)
+                        else:
+                            top["pending"] = depth
+                            top["jumped"] = False
+                    continue
+                if top is not None and call not in REGION_WORDS:
+                    if top["type"] == "forbid":
                         if call in BANNED_IN_FORBID:
-                            stack[-1][2].append((lineno, call))
+                            top["calls"].append((lineno, call))
                     else:  # disable region: everything but the allowlist
                         if call not in ALLOWED_IN_DISABLE:
-                            stack[-1][2].append((lineno, call))
+                            top["calls"].append((lineno, call))
 
     return findings, regions
 

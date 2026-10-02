@@ -31,6 +31,7 @@ struct netif *tn_route_hook_src(const ip4_addr_t *src, const ip4_addr_t *dest)
     /* on-link on any netif: lwIP's own logic is correct, stay out of it */
     NETIF_FOREACH(n) {
         if (n == NULL || n->name == NULL) continue;
+        if (ip4_addr_isany_val(*netif_ip4_addr(n))) continue; /* bugtrack 4.10: unconfigured 0.0.0.0/0 matches everything */
         if (ip4_addr_net_eq(dest, netif_ip4_addr(n), netif_ip4_netmask(n))) {
             return NULL;
         }
@@ -46,6 +47,7 @@ struct netif *tn_route_hook_src(const ip4_addr_t *src, const ip4_addr_t *dest)
          * network, else the default netif */
         NETIF_FOREACH(n) {
             if (n == NULL || n->name == NULL) continue;
+            if (ip4_addr_isany_val(*netif_ip4_addr(n))) continue; /* bugtrack 4.10 */
             net.addr = r->mask & netif_ip4_addr(n)->addr;
             if (net.addr == r->dest) return n;
         }
@@ -57,6 +59,7 @@ struct netif *tn_route_hook_src(const ip4_addr_t *src, const ip4_addr_t *dest)
     gw_netif = NULL;
     NETIF_FOREACH(n) {
         if (n == NULL || n->name == NULL) continue;
+        if (ip4_addr_isany_val(*netif_ip4_addr(n))) continue; /* bugtrack 4.10: unconfigured 0.0.0.0/0 matches everything */
         if (ip4_addr_net_eq(&net, netif_ip4_addr(n), netif_ip4_netmask(n))) {
             gw_netif = n;
             break;

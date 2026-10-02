@@ -52,7 +52,17 @@ int tn_ipc_cmd_getstatus(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         memcpy(v2->netmask, &prim->lwip_if.netmask, 4);
         memcpy(v2->gw, &prim->lwip_if.gw, 4);
         v2->active_sockets = active_socks;
-        v2->flags = (netif_is_link_up(&prim->lwip_if) ? 1 : 0) | (d->prefs.use_dhcp ? 2 : 0);
+        {
+            /* bit 2 = effective DHCP (a CLI IP / IFCTL SET overrides prefs) */
+            BOOL dhcp_on = d->prefs.use_dhcp;
+#if !defined(TN_HOST_BUILD)
+            {
+                struct dhcp *dh = netif_dhcp_data(&prim->lwip_if);
+                dhcp_on = (dh != NULL && dh->state != DHCP_STATE_OFF);
+            }
+#endif
+            v2->flags = (netif_is_link_up(&prim->lwip_if) ? 1 : 0) | (dhcp_on ? 2 : 0);
+        }
     }
 
     imsg->result = 0;
@@ -165,7 +175,9 @@ int tn_ipc_cmd_reconfig(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         d->deferred_replies = 0;
         d->sigio_sent = 0;
         d->selector_wakeups = 0;
-        d->mainloop_ticks = 0;
+        /* bugtrack 4.8: mainloop_ticks is also the SO_RCVTIMEO deadline
+         * clock - never reset it; GETSTATS reports relative to a baseline. */
+        d->stats_tick_base = d->mainloop_ticks;
         d->s2_rx_frames = 0;
         d->s2_rx_bytes = 0;
         d->s2_rx_drops = 0;
@@ -306,6 +318,8 @@ int tn_ipc_cmd_cancel(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             goto done;
         }
     }
+    /* 4.2: a blocking send parked by ipc_tcp.c (replied EINTR there) */
+    if (tn_slot_cancel_parked_send(d, target)) goto done;
     /* DNS pending bucket */
     {
         int p;
@@ -360,10 +374,14 @@ int tn_ipc_cmd_enumsockets(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
                 if (d->sockets[s].type == 1 /* TCP */ && d->sockets[s].tcp_pcb != NULL) {
                     ent->local_port  = d->sockets[s].tcp_pcb->local_port;
-                    ent->remote_port = d->sockets[s].tcp_pcb->remote_port;
                     memcpy(ent->local_addr, &ip_2_ip4(&d->sockets[s].tcp_pcb->local_ip)->addr, 4);
                     memcpy(ent->remote_addr, &ip_2_ip4(&d->sockets[s].tcp_pcb->remote_ip)->addr, 4);
-                    ent->send_q      = (uint32_t)tcp_sndbuf(d->sockets[s].tcp_pcb);
+                    /* bugtrack 4.1: a LISTEN slot holds the smaller
+                     * tcp_pcb_listen - remote_port/snd_buf lie past its end */
+                    if (d->sockets[s].tcp_state != TN_TCP_STATE_LISTENING) {
+                        ent->remote_port = d->sockets[s].tcp_pcb->remote_port;
+                        ent->send_q      = (uint32_t)tcp_sndbuf(d->sockets[s].tcp_pcb);
+                    }
                 } else if (d->sockets[s].type == 2 /* UDP */ && d->sockets[s].udp_pcb != NULL) {
                     ent->local_port  = d->sockets[s].udp_pcb->local_port;
                     ent->remote_port = d->sockets[s].udp_pcb->remote_port;
@@ -390,10 +408,14 @@ int tn_ipc_cmd_enumsockets(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
                 if (d->sockets[s].type == 1 /* TCP */ && d->sockets[s].tcp_pcb != NULL) {
                     ent->local_port  = d->sockets[s].tcp_pcb->local_port;
-                    ent->remote_port = d->sockets[s].tcp_pcb->remote_port;
                     ent->local_ip    = ip_2_ip4(&d->sockets[s].tcp_pcb->local_ip)->addr;
                     ent->remote_ip   = ip_2_ip4(&d->sockets[s].tcp_pcb->remote_ip)->addr;
-                    ent->send_q      = (ULONG)tcp_sndbuf(d->sockets[s].tcp_pcb);
+                    ent->remote_port = 0;
+                    /* bugtrack 4.1: no remote_port/snd_buf in tcp_pcb_listen */
+                    if (d->sockets[s].tcp_state != TN_TCP_STATE_LISTENING) {
+                        ent->remote_port = d->sockets[s].tcp_pcb->remote_port;
+                        ent->send_q      = (ULONG)tcp_sndbuf(d->sockets[s].tcp_pcb);
+                    }
                 } else if (d->sockets[s].type == 2 /* UDP */ && d->sockets[s].udp_pcb != NULL) {
                     ent->local_port  = d->sockets[s].udp_pcb->local_port;
                     ent->remote_port = d->sockets[s].udp_pcb->remote_port;
@@ -597,7 +619,7 @@ int tn_ipc_cmd_getstats(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         out->daemon.deferred_replies = d->deferred_replies;
         out->daemon.sigio_sent       = d->sigio_sent;
         out->daemon.selector_wakeups = d->selector_wakeups;
-        out->daemon.mainloop_ticks   = d->mainloop_ticks;
+        out->daemon.mainloop_ticks   = d->mainloop_ticks - d->stats_tick_base;
         out->daemon.dns_late_replies = d->dns_late_replies;
         out->daemon.s2_rx_frames     = d->s2_rx_frames;
         out->daemon.s2_rx_bytes      = d->s2_rx_bytes;
@@ -606,7 +628,7 @@ int tn_ipc_cmd_getstats(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         out->daemon.s2_tx_bytes      = d->s2_tx_bytes;
         out->daemon.s2_tx_drops      = d->s2_tx_drops;
         out->daemon.rx_high_water    = d->rx_high_water;
-        out->daemon.uptime_secs      = d->mainloop_ticks / 10;
+        out->daemon.uptime_secs      = (d->mainloop_ticks - d->stats_tick_base) / 10;
     }
 
     /* TNET-108: STATS=NO — reporting off. Counters were zeroed when the key

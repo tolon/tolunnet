@@ -11,13 +11,20 @@
 
 #include "setup_types.h"
 
+/* 1.1/1.8: the wizard's own undo script (never S:tolunnet-undo, which
+ * is the installer's) and the TolunnetSetup argument it runs to put
+ * the disabled startup lines back. */
+#define TN_UNDO_STACKS_SCRIPT "S:tolunnet-undo-stacks"
+#define TN_UNDO_STACKS_ARG    "UNDOSTACKS"
+
 /* Detect any installed or running TCP/IP stacks */
 void tn_stack_detect_all(WizardState *ws);
 
 /* Apply replacement: comment startup lines, rename .library & .info, import settings */
 BOOL tn_stack_apply_replacement(WizardState *ws);
 
-/* Undo replacement: restore lines, restore renamed files */
+/* Undo replacement: restore lines, restore renamed files; on full
+ * success S:tolunnet-undo-stacks is deleted (nothing left to undo) */
 BOOL tn_stack_undo_replacement(void);
 
 /* Ask running stacks to quit gracefully (ARexx QUIT, NetShutdown) */

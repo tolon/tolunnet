@@ -18,6 +18,8 @@ TN_VERSTAG_DEF("tftp");
 #define BLK 512
 #define RETRIES 5
 #define TIMEOUT 3
+#define TIMEOUT_TICKS (TIMEOUT * 50L)
+#define STRAY_MAX 64 /* non-matching packets tolerated per block */
 
 #define OP_RRQ 1
 #define OP_WRQ 2
@@ -64,11 +66,28 @@ static int tftp_addr_eq(const struct sockaddr_in *a, const struct sockaddr_in *b
     return a->sin_port == b->sin_port && a->sin_addr.s_addr == b->sin_addr.s_addr;
 }
 
-/* Wait up to TIMEOUT for one packet, dropping packets from foreign
- * transfer IDs. Returns the byte count, 0 on timeout, -1 on Ctrl-C. */
+/* 1/50 s ticks since midnight (DateStamp) and the time since `since`,
+ * across the midnight wrap. */
+static LONG tftp_ticks(void)
+{
+    struct DateStamp ds;
+    DateStamp(&ds);
+    return ds.ds_Minute * 3000L + ds.ds_Tick;
+}
+
+static LONG tftp_elapsed(LONG since)
+{
+    LONG el = tftp_ticks() - since;
+    if (el < 0) el += 24L * 60 * 3000;
+    return el;
+}
+
+/* Wait up to `ticks` (1/50 s) for one packet, dropping packets from
+ * foreign transfer IDs. Returns the byte count, 0 on timeout or a
+ * dropped packet, -1 on Ctrl-C. */
 static LONG tftp_wait_packet(LONG fd, UBYTE *pkt, LONG maxlen,
                              const struct sockaddr_in *tid,
-                             struct sockaddr_in *from)
+                             struct sockaddr_in *from, LONG ticks)
 {
     fd_set r;
     struct timeval tv;
@@ -76,8 +95,8 @@ static LONG tftp_wait_packet(LONG fd, UBYTE *pkt, LONG maxlen,
 
     FD_ZERO(&r);
     FD_SET(fd, &r);
-    tv.tv_secs = TIMEOUT;
-    tv.tv_micro = 0;
+    tv.tv_secs = ticks / 50;
+    tv.tv_micro = (ticks % 50) * 20000L;
     if (tn_call_waitselect(fd + 1, &r, NULL, NULL, &tv, NULL) <= 0) return 0;
     fromlen = (LONG)sizeof(*from);
     got = tn_call_recvfrom(fd, pkt, maxlen, 0, (struct sockaddr *)from, &fromlen);
@@ -102,7 +121,8 @@ int main(int argc, char **argv)
     int rc = TN_CMD_OK;
     LONG fd;
     struct sockaddr_in peer, tid, from;
-    static UBYTE pkt[BLK + 16];
+    static UBYTE pkt[BLK + 16]; /* request / outgoing DATA */
+    static UBYTE rx[BLK + 16];  /* replies (6.1: never clobber pkt) */
     LONG got, pos, tries;
     ULONG addr;
 
@@ -166,7 +186,7 @@ int main(int argc, char **argv)
         for (tries = 0; tries < RETRIES && got <= 0; tries++) {
             if (tn_cmd_check_ctrlc()) { rc = TN_CMD_WARN; goto out; }
             tn_call_sendto(fd, pkt, pos, 0, (struct sockaddr *)&peer, sizeof(peer));
-            got = tftp_wait_packet(fd, pkt, sizeof(pkt), NULL, &from);
+            got = tftp_wait_packet(fd, rx, sizeof(rx), NULL, &from, TIMEOUT_TICKS);
             if (got < 0) { rc = TN_CMD_WARN; goto out; }
         }
         if (got <= 0) {
@@ -174,9 +194,9 @@ int main(int argc, char **argv)
             rc = TN_CMD_FAIL;
             goto out;
         }
-        if (pkt[1] == OP_ERROR) { rc = tftp_report_error(pkt, got); goto out; }
-        if (pkt[1] != OP_DATA || got < 4) {
-            tn_cmd_printf("tftp: unexpected reply (op %ld)\n", (LONG)pkt[1]);
+        if (got >= 4 && rx[1] == OP_ERROR) { rc = tftp_report_error(rx, got); goto out; }
+        if (got < 4 || rx[1] != OP_DATA) {
+            tn_cmd_printf("tftp: unexpected reply (op %ld)\n", (LONG)rx[1]);
             rc = TN_CMD_FAIL;
             goto out;
         }
@@ -191,12 +211,16 @@ int main(int argc, char **argv)
         }
 
         for (;;) {
-            UWORD blk = pkt_block(pkt);
-            LONG dlen = got - 4;
+            UWORD blk = pkt_block(rx);
+            LONG dlen = got - 4; /* got >= 4 is checked before every pass */
             if (tn_cmd_check_ctrlc()) { rc = TN_CMD_WARN; break; }
 
             if (blk == (UWORD)(last_acked + 1)) {
-                if (dlen > 0) Write(fh, (CONST APTR)&pkt[4], dlen);
+                if (dlen > 0 && Write(fh, (CONST APTR)&rx[4], dlen) != dlen) {
+                    tn_cmd_printf("tftp: write error on %s\n", local);
+                    rc = TN_CMD_FAIL;
+                    break;
+                }
                 last_acked = blk;
                 tftp_send_ack(fd, blk, &tid);
                 if (dlen < BLK) {
@@ -212,13 +236,14 @@ int main(int argc, char **argv)
             tries = 0;
             for (;;) {
                 if (tn_cmd_check_ctrlc()) { rc = TN_CMD_WARN; break; }
-                got = tftp_wait_packet(fd, pkt, sizeof(pkt), &tid, &from);
+                got = tftp_wait_packet(fd, rx, sizeof(rx), &tid, &from, TIMEOUT_TICKS);
                 if (got < 0) { rc = TN_CMD_WARN; break; }
-                if (got > 0) {
-                    if (pkt[1] == OP_ERROR) { rc = tftp_report_error(pkt, got); break; }
-                    if (pkt[1] == OP_DATA) break;
+                if (got >= 4) {
+                    if (rx[1] == OP_ERROR) { rc = tftp_report_error(rx, got); break; }
+                    if (rx[1] == OP_DATA) break;
                     continue; /* stray ACK etc. */
                 }
+                if (got > 0) continue; /* runt packet: drop */
                 /* timeout: re-ACK the last block so the server
                  * retransmits; fail after RETRIES idle rounds */
                 if (++tries > RETRIES) {
@@ -236,6 +261,8 @@ int main(int argc, char **argv)
         BPTR fh;
         UWORD block = 0;
         LONG dlen;
+        BOOL resend;
+        LONG stray, sent_at = 0;
 
         fh = Open((CONST_STRPTR)local, MODE_OLDFILE);
         if (fh == (BPTR)0) {
@@ -249,7 +276,7 @@ int main(int argc, char **argv)
         for (tries = 0; tries < RETRIES && got <= 0; tries++) {
             if (tn_cmd_check_ctrlc()) { rc = TN_CMD_WARN; break; }
             tn_call_sendto(fd, pkt, pos, 0, (struct sockaddr *)&peer, sizeof(peer));
-            got = tftp_wait_packet(fd, pkt, sizeof(pkt), NULL, &from);
+            got = tftp_wait_packet(fd, rx, sizeof(rx), NULL, &from, TIMEOUT_TICKS);
             if (got < 0) { rc = TN_CMD_WARN; break; }
         }
         if (rc != TN_CMD_OK) { Close(fh); goto out; }
@@ -259,8 +286,8 @@ int main(int argc, char **argv)
             rc = TN_CMD_FAIL;
             goto out;
         }
-        if (pkt[1] == OP_ERROR) { rc = tftp_report_error(pkt, got); Close(fh); goto out; }
-        if (pkt[1] != OP_ACK || got < 4) {
+        if (got >= 4 && rx[1] == OP_ERROR) { rc = tftp_report_error(rx, got); Close(fh); goto out; }
+        if (got < 4 || rx[1] != OP_ACK) {
             tn_cmd_printf("tftp: unexpected reply to WRQ\n");
             Close(fh);
             rc = TN_CMD_FAIL;
@@ -273,28 +300,56 @@ int main(int argc, char **argv)
          * UWORD and wraps. */
         do {
             dlen = Read(fh, (APTR)&pkt[4], BLK);
-            if (dlen < 0) dlen = 0;
+            if (dlen < 0) {
+                tn_cmd_printf("tftp: read error on %s\n", local);
+                rc = TN_CMD_FAIL;
+                break;
+            }
             block = (UWORD)(block + 1); /* wraps at 65535 */
             pkt[0] = 0; pkt[1] = OP_DATA;
             pkt[2] = (UBYTE)(block >> 8); pkt[3] = (UBYTE)(block & 0xFF);
 
+            /* 6.1: replies land in rx, so pkt still holds this DATA block
+             * for a retransmit. The retransmit timer is a deadline from
+             * the last send: stale ACKs / foreign packets neither resend
+             * (Sorcerer's Apprentice) nor restart the timer, so a lost
+             * DATA is resent TIMEOUT s after it went out. */
             tries = 0;
+            stray = 0;
+            resend = TRUE;
             for (;;) {
+                LONG el;
                 if (tn_cmd_check_ctrlc()) { rc = TN_CMD_WARN; break; }
-                tn_call_sendto(fd, pkt, 4 + dlen, 0, (struct sockaddr *)&tid, sizeof(tid));
-                got = tftp_wait_packet(fd, pkt, sizeof(pkt), &tid, &from);
-                if (got < 0) { rc = TN_CMD_WARN; break; }
-                if (got > 0) {
-                    if (pkt[1] == OP_ERROR) { rc = tftp_report_error(pkt, got); break; }
-                    if (pkt[1] == OP_ACK && pkt_block(pkt) == block) break;
-                    continue; /* stale or foreign ACK */
+                if (resend) {
+                    tn_call_sendto(fd, pkt, 4 + dlen, 0, (struct sockaddr *)&tid, sizeof(tid));
+                    sent_at = tftp_ticks();
+                    resend = FALSE;
                 }
-                /* timeout: the DATA block is re-sent by the loop above */
+                el = tftp_elapsed(sent_at);
+                if (el < TIMEOUT_TICKS) {
+                    got = tftp_wait_packet(fd, rx, sizeof(rx), &tid, &from, TIMEOUT_TICKS - el);
+                    if (got < 0) { rc = TN_CMD_WARN; break; }
+                    if (got >= 4) {
+                        if (rx[1] == OP_ERROR) { rc = tftp_report_error(rx, got); break; }
+                        if (rx[1] == OP_ACK && pkt_block(rx) == block) break;
+                    }
+                    if (tftp_elapsed(sent_at) < TIMEOUT_TICKS) {
+                        /* stale / foreign / runt before the deadline */
+                        if (++stray > STRAY_MAX) {
+                            tn_cmd_printf("tftp: too many stray packets at block %ld\n", (LONG)block);
+                            rc = TN_CMD_FAIL;
+                            break;
+                        }
+                        continue;
+                    }
+                }
+                /* deadline passed: retransmit, fail after RETRIES */
                 if (++tries > RETRIES) {
                     tn_cmd_printf("tftp: timeout at block %ld\n", (LONG)block);
                     rc = TN_CMD_FAIL;
                     break;
                 }
+                resend = TRUE;
             }
         } while (rc == TN_CMD_OK && dlen == BLK);
 

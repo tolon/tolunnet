@@ -85,6 +85,7 @@ struct timeval {
 
 #define TN_MAX_GLOBAL_SOCKETS 64
 #define TN_MAX_RX_QUEUE_PER_SOCKET 32
+#define TN_ACCEPT_QUEUE_MAX 8   /* listen() backlog ceiling (accept queue) */
 
 /* TCP Socket State Machine */
 typedef enum TnTcpState {
@@ -165,10 +166,15 @@ typedef struct TnSocketSlot {
     TnAcceptEntry  *accept_head;
     TnAcceptEntry  *accept_tail;
     ULONG           accept_count;
+    ULONG           listen_backlog;     /* accept-queue cap, 1..TN_ACCEPT_QUEUE_MAX */
     TnIpcMsg       *pending_connect_msg;
     TnIpcMsg       *pending_accept_msg;
     TnIpcMsg       *pending_recv_msg;
     uint32_t        recv_deadline_tick;
+    /* 4.2: blocking TCP send parked until sndbuf space (sent/poll cb) */
+    TnIpcMsg       *pending_send_msg;
+    uint32_t        send_deadline_tick; /* 0 = no SO_SNDTIMEO */
+    LONG            send_done;          /* bytes of pending send already queued */
     LONG            park_id;
     BOOL            is_parked;
 } TnSocketSlot;
@@ -257,6 +263,7 @@ typedef struct TnDaemon {
     uint32_t        s2_link_errors;  /* S2EVENT_ERROR-class events (TNET-109) */
     uint32_t        rx_high_water;
     uint32_t        dns_late_replies;   /* TNET-150: found_cb with no pending record */
+    uint32_t        stats_tick_base;    /* bugtrack 4.8: STATS reset baseline; mainloop_ticks stays monotonic */
     ULONG           start_sec;
 
     /* TNET-150: deferred gethostbyname tracking (TnDnsPending array) */
@@ -269,6 +276,18 @@ typedef struct TnDaemon {
 #define TN_CLIENT_BASES_MAX 16
     TnSocketBase   *open_bases[TN_CLIENT_BASES_MAX];
     uint8_t         open_base_count;
+
+    /* bugtrack 4.10: IP_ADD_MEMBERSHIP joins per socket slot (ipc_setsockopt.c),
+     * left by tn_mcast_leave_all() via slot_free_hook when the slot is freed.
+     * The hook is NULL in host tests (slot_table.c links without ipc_setsockopt.c). */
+#define TN_MCAST_JOINS_MAX 8   /* = lwIP MEMP_NUM_IGMP_GROUP default */
+    struct {
+        uint8_t     in_use;
+        uint8_t     slot;       /* owning slot index */
+        uint32_t    grp;        /* group address (network order) */
+        uint32_t    ifa;        /* interface address (network order) */
+    } mcast_joins[TN_MCAST_JOINS_MAX];
+    void          (*slot_free_hook)(struct TnDaemon *d, int slot_idx);
 } TnDaemon;
 
 static inline TnNetif *tn_netif_primary(TnDaemon *d)

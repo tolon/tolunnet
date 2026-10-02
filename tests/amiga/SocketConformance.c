@@ -1823,16 +1823,20 @@ static void tc_waitselect_eintr(void)
         return;
     }
 
-    /* Test break signal via SetSocketSignals */
+    /* Test break signal via SetSocketSignals. TN-bugtrack 2.4: a break
+     * bit the caller did not pass in *signals aborts like every other
+     * blocking LVO - -1/EINTR, and the bit stays pending for the caller. */
     call_setsocketsignals(sig_mask, 0, 0);
     Signal((struct Task *)FindTask(NULL), sig_mask);
     res = call_waitselect(0, NULL, NULL, NULL, &tv, NULL);
-    call_setsocketsignals(0, 0, 0);
+    sigs = SetSignal(0, sig_mask) & sig_mask; /* read + clear the break bit */
+    call_setsocketsignals(SIGBREAKF_CTRL_C, 0, 0); /* 0 would disable breaks */
 
-    if (res != 0 || call_errno() != EINTR) {
-        tapf("# sig_int res=%ld errno=%ld (expected 0, EINTR)\n", res, call_errno());
+    if (res != -1 || call_errno() != EINTR || sigs == 0) {
+        tapf("# sig_int res=%ld errno=%ld pending=0x%lx (expected -1, EINTR, 0x%lx)\n",
+             res, call_errno(), sigs, sig_mask);
         FreeSignal(sig_bit);
-        TAP_NOTOK("tc_waitselect_eintr", "WaitSelect did not return 0/EINTR on sig_int");
+        TAP_NOTOK("tc_waitselect_eintr", "WaitSelect did not return -1/EINTR on sig_int");
         return;
     }
 
@@ -1910,8 +1914,9 @@ static void tc_waitselect_no_sigio(void)
     LONG res;
     int i;
 
-    /* Explicitly ensure SIGIO is disabled for this opener base */
-    call_setsocketsignals(0, 0, 0);
+    /* Explicitly ensure SIGIO is disabled for this opener base (the
+     * break mask stays CTRL_C: 0 would disable breaks, TN-bugtrack 2.4) */
+    call_setsocketsignals(SIGBREAKF_CTRL_C, 0, 0);
 
     s1 = call_socket(AF_INET, SOCK_DGRAM, 0);
     s2 = call_socket(AF_INET, SOCK_DGRAM, 0);
@@ -1984,8 +1989,8 @@ static void tc_sigio(void)
     }
     sig_mask = 1UL << sig_bit;
 
-    /* Set SIGIO mask for this SocketBase */
-    call_setsocketsignals(0, sig_mask, 0);
+    /* Set SIGIO mask for this SocketBase (break mask: the CTRL_C default) */
+    call_setsocketsignals(SIGBREAKF_CTRL_C, sig_mask, 0);
 
     s1 = call_socket(AF_INET, SOCK_DGRAM, 0);
     s2 = call_socket(AF_INET, SOCK_DGRAM, 0);
@@ -2024,8 +2029,8 @@ static void tc_sigio(void)
         TAP_NOTOK("tc_sigio", "SIGIO signal not delivered on packet arrival");
     }
 
-    /* Clear signal mask */
-    call_setsocketsignals(0, 0, 0);
+    /* Clear the SIGIO mask; keep the CTRL_C break default */
+    call_setsocketsignals(SIGBREAKF_CTRL_C, 0, 0);
     call_closesocket(s1);
     call_closesocket(s2);
     FreeSignal(sig_bit);
@@ -4686,8 +4691,9 @@ static void tc_reconfig_rc(void)
 }
 
 /* TNET-109: S2_ONEVENT link events. Drives the shared unit offline/online
- * via the S2Toggle helper and watches GETSTATUS link_up flip. When the bench
- * driver rejects S2_ONEVENT the row is an honest SKIP naming the driver. */
+ * via the S2Toggle helper and watches GETSTATUS link_up flip. Without the
+ * WORK:linktest-on opt-in the row is a SKIP; with it (9.7) events are
+ * expected and their absence is "not ok". */
 static BOOL tc_link_get_flags(TnStatusInfoV2 *v2)
 {
     TnIpcMsg msg;
@@ -4755,14 +4761,15 @@ static void tc_link_events(void)
     }
 
     if (!tc_link_wait(&v2, 0, 50)) {
-        /* The driver completed S2_OFFLINE but never delivered S2EVENT_OFFLINE:
-         * either it does not implement S2_ONEVENT or it flushed the request.
-         * Bring the link back and report an honest SKIP. */
+        /* The driver completed S2_OFFLINE but never delivered S2EVENT_OFFLINE.
+         * 9.7: the marker means events are EXPECTED here (ci/bench.sh arms
+         * it on TX_QUEUE=0 legs only) - a missing event is a failure, not a
+         * SKIP. Bring the link back first. */
         SystemTags((CONST_STRPTR)"C:S2Toggle ONLINE",
                    SYS_Asynch, TRUE, SYS_Input, Open((CONST_STRPTR)"NIL:", MODE_OLDFILE), SYS_Output, Open((CONST_STRPTR)"NIL:", MODE_NEWFILE),
                    TAG_END);
         tc_link_wait(&v2, 1, 50);
-        TAP_SKIP("tc_link_events", "driver delivered no S2EVENT_OFFLINE (S2_ONEVENT unsupported?)");
+        TAP_NOTOK("tc_link_events", "driver delivered no S2EVENT_OFFLINE (S2_ONEVENT off: TX_QUEUE>0, or unsupported)");
         return;
     }
 
@@ -5908,8 +5915,9 @@ static void tc_undo_sandbox(void)
             }
         }
     }
-    /* 7. usergroup.library is deliberately NOT undone (other
-     * software may be using it) - it must survive. */
+    /* 7. usergroup.library: the undo restores it only from a backup the
+     * installer made of a PRE-EXISTING copy; with none seeded here the
+     * sandbox copy must survive untouched. */
     lk = Lock((CONST_STRPTR)"T:tnsbx/LIBS/usergroup.library", ACCESS_READ);
     if (lk == (BPTR)0) {
         TAP_NOTOK(label, "undo deleted usergroup.library");
@@ -6597,6 +6605,19 @@ static int tn_count_occurrences(const char *hay, const char *needle)
     return n;
 }
 
+/* the block boot_block.c writes: guarded so it does nothing once an
+ * undo removed C:tolunnet (TN-bugtrack 1.3) */
+#define TN_BB_EXPECT "; BEGIN tolunnet\nIf EXISTS C:tolunnet\nStack 32768\n" \
+                     "Run <NIL: >NIL: C:tolunnet\nEndIf\n; END tolunnet\n"
+
+static BOOL tn_boot_block_apply_exists(const char *path)
+{
+    BPTR lk = Lock((CONST_STRPTR)path, ACCESS_READ);
+    if (lk == (BPTR)0) return FALSE;
+    UnLock(lk);
+    return TRUE;
+}
+
 static void tc_boot_block(void)
 {
     const char *label = "tc_boot_block";
@@ -6609,7 +6630,7 @@ static void tc_boot_block(void)
     LONG off = 0;
     char *body;
     LONG body_len;
-    int ok_a = 0, ok_b = 0, ok_c = 0, ok_d = 0, ok_e = 0;
+    int ok_a = 0, ok_b = 0, ok_c = 0, ok_d = 0, ok_e = 0, ok_f = 0, ok_g = 0;
 
     DeleteFile((CONST_STRPTR)path);
     DeleteFile((CONST_STRPTR)"RAM:tnbb-startup.tolunnet-new");
@@ -6648,6 +6669,7 @@ static void tc_boot_block(void)
            memcmp(after, body, body_len) == 0 &&
            tn_count_occurrences(after, "; BEGIN tolunnet") == 1 &&
            tn_count_occurrences(after, "; END tolunnet") == 1 &&
+           strstr(after, TN_BB_EXPECT) != NULL &&   /* guarded body */
            strstr(after, line400) != NULL;
 
     /* (b) enable twice: still one block */
@@ -6691,9 +6713,34 @@ static void tc_boot_block(void)
     /* (e) unwritable directory path returns FALSE */
     ok_e = !tn_boot_block_apply("RAM:tnbb-nodir/startup", TRUE);
 
-    tapf("# %s: (a)=%d (b)=%d (c)=%d (d)=%d (e)=%d orig_len=%ld\n",
-         label, ok_a, ok_b, ok_c, ok_d, ok_e, (long)body_len);
-    if (ok_a && ok_b && ok_c && ok_d && ok_e) {
+    /* (f) TN-bugtrack 1.9: a missing startup file is created holding
+     * exactly the guarded block; disable on a missing file is a no-op */
+    DeleteFile((CONST_STRPTR)path);
+    ok_f = tn_boot_block_apply(path, FALSE) &&
+           !tn_boot_block_apply_exists(path) &&
+           tn_boot_block_apply(path, TRUE);
+    FreeVec(after);
+    after = tn_file_read_all(path, &a1_len);
+    ok_f = ok_f && after != NULL &&
+           a1_len == (LONG)strlen(TN_BB_EXPECT) &&
+           memcmp(after, TN_BB_EXPECT, a1_len) == 0;
+
+    /* (g) the Installer's own ";BEGIN tolunnet" block (no blank) is the
+     * same block: enable replaces it instead of adding a second one */
+    tn_write_file(path, "keep me\n;BEGIN tolunnet\nStack 32768\n"
+                        "Run <NIL: >NIL: C:tolunnet\n;END tolunnet\n");
+    ok_g = tn_boot_block_apply(path, TRUE);
+    FreeVec(after);
+    after = tn_file_read_all(path, &a1_len);
+    ok_g = ok_g && after != NULL &&
+           tn_count_occurrences(after, "BEGIN tolunnet") == 1 &&
+           tn_count_occurrences(after, "END tolunnet") == 1 &&
+           strncmp(after, "keep me\n", 8) == 0 &&
+           strstr(after, TN_BB_EXPECT) != NULL;
+
+    tapf("# %s: (a)=%d (b)=%d (c)=%d (d)=%d (e)=%d (f)=%d (g)=%d orig_len=%ld\n",
+         label, ok_a, ok_b, ok_c, ok_d, ok_e, ok_f, ok_g, (long)body_len);
+    if (ok_a && ok_b && ok_c && ok_d && ok_e && ok_f && ok_g) {
         TAP_OK(label);
     } else {
         TAP_NOTOK(label, "boot block editor damaged the file or lied about it");
@@ -7178,12 +7225,39 @@ static void tc_cmd_stop_start(void)
     TAP_OK("tc_cmd_stop_start");
 }
 
+/* 9.12: drain conn into rbuf, checking the stream pattern: byte n of the
+ * stream is (UBYTE)(n * 11 + 5) - the sender sends blk from offset
+ * (tx % 4096), so the stream is periodic. Returns bytes drained. */
+static LONG tc_iperf_drain(LONG conn, UBYTE *rbuf, ULONG *rx_total, ULONG *bad)
+{
+    LONG got = 0;
+    LONG g;
+    LONG i;
+    UBYTE want;
+
+    for (;;) {
+        g = call_recv(conn, rbuf, 4096, 0);
+        if (g <= 0) break;
+        want = (UBYTE)(*rx_total * 11UL + 5UL);
+        for (i = 0; i < g; i++) {
+            if (rbuf[i] != want) (*bad)++;
+            want = (UBYTE)(want + 11);
+        }
+        *rx_total += (ULONG)g;
+        got += g;
+    }
+    return got;
+}
+
 static void tc_iperf_loopback(void)
 {
     LONG lst, cli, conn;
-    static char blk[4096];
+    static UBYTE blk[4096];
+    static UBYTE rbuf[4096];
     LONG nbio = 1;
-    LONG total = 0;
+    ULONG tx_total = 0;
+    ULONG rx_total = 0;
+    ULONG bad = 0;
     ULONG t0, t1;
     ULONG rate;
     struct DateStamp ds;
@@ -7193,7 +7267,7 @@ static void tc_iperf_loopback(void)
         TAP_NOTOK("tc_iperf_loopback", "no loopback pair");
         return;
     }
-    for (i = 0; i < 4096; i++) blk[i] = (char)(i * 11 + 5);
+    for (i = 0; i < 4096; i++) blk[i] = (UBYTE)(i * 11 + 5);
     if (call_ioctl(cli, FIONBIO, &nbio) != 0 ||
         call_ioctl(conn, FIONBIO, &nbio) != 0) {
         call_closesocket(conn); call_closesocket(cli); call_closesocket(lst);
@@ -7205,15 +7279,13 @@ static void tc_iperf_loopback(void)
     t0 = (ULONG)ds.ds_Days * 86400UL * 50UL + (ULONG)ds.ds_Minute * 60UL * 50UL +
          (ULONG)ds.ds_Tick;
     for (;;) {
-        LONG r = call_send(cli, blk, 4096, 0);
+        ULONG off = tx_total & 4095UL;
+        LONG r = call_send(cli, blk + off, (LONG)(4096UL - off), 0);
         if (r > 0) {
-            total += r;
+            tx_total += (ULONG)r;
         } else {
-            /* window full: drain the server side */
-            LONG g;
-            do {
-                g = call_recv(conn, blk, sizeof(blk), 0);
-            } while (g == (LONG)sizeof(blk));
+            /* window full: drain (and verify) the server side */
+            tc_iperf_drain(conn, rbuf, &rx_total, &bad);
         }
         DateStamp(&ds);
         t1 = (ULONG)ds.ds_Days * 86400UL * 50UL + (ULONG)ds.ds_Minute * 60UL * 50UL +
@@ -7221,21 +7293,24 @@ static void tc_iperf_loopback(void)
         if ((t1 - t0) >= 100UL) break; /* ~2 s */
     }
 
-    /* final drain so the connection is clean before close */
-    {
-        LONG g;
-        do {
-            g = call_recv(conn, blk, sizeof(blk), 0);
-        } while (g == (LONG)sizeof(blk));
+    /* final drain: everything sent must arrive (bounded, ~2 s) */
+    for (i = 0; i < 100 && rx_total < tx_total; i++) {
+        if (tc_iperf_drain(conn, rbuf, &rx_total, &bad) == 0) Delay(1);
     }
 
-    rate = (total / 100UL) + 1UL; /* ~KB/s: bytes / 2s / 1024, kept simple */
-    tapf("# iperf loopback: %lu bytes in ~2s = %lu KB/s%s\n", total, rate,
-         (total > 65536UL) ? "" : " (LOW)");
+    rate = rx_total / 2048UL; /* received bytes / ~2 s / 1024 = KiB/s */
+    tapf("# iperf loopback: %lu bytes received (%lu sent) in ~2s = %lu KB/s%s%s\n",
+         rx_total, tx_total, rate,
+         (rx_total > 65536UL) ? "" : " (LOW)", bad ? " (CORRUPT)" : "");
     call_closesocket(conn);
     call_closesocket(cli);
     call_closesocket(lst);
-    if (total > 65536UL) {
+    if (bad != 0) {
+        tapf("# tc_iperf_loopback: %lu byte(s) differ from the sent pattern\n", bad);
+        TAP_NOTOK("tc_iperf_loopback", "received data does not match what was sent");
+    } else if (rx_total != tx_total) {
+        TAP_NOTOK("tc_iperf_loopback", "received byte count != sent byte count");
+    } else if (rx_total > 65536UL) {
         TAP_OK("tc_iperf_loopback");
     } else {
         TAP_NOTOK("tc_iperf_loopback", "loopback moved too little data");
@@ -7889,8 +7964,11 @@ static void tc_install_script(void)
      * Asserts that:
      * 1. Install_Tolunnet.script declares backup of existing LIBS:bsdsocket.library and S:tolunnet-undo.
      * 2. Live test: fake LIBS:bsdsocket.library + fake stack in S:User-Startup -> tn_stack_apply_replacement()
-     *    backs up library as LIBS:bsdsocket.library.<stack>, comments out stack line, creates S:tolunnet-undo.
-     * 3. S:tolunnet-undo restores LIBS:bsdsocket.library (content verified intact) and cleans up backup.
+     *    backs up library as LIBS:bsdsocket.library.<stack>, comments out stack line, creates
+     *    S:tolunnet-undo-stacks (the wizard's own undo; S:tolunnet-undo belongs to the installer
+     *    and Executes it first - TN-bugtrack 1.1/1.8).
+     * 3. tn_stack_undo_replacement restores LIBS:bsdsocket.library (content verified intact)
+     *    and deletes S:tolunnet-undo-stacks on success.
      */
     if (strstr(buf, "S:tolunnet-undo") == NULL) {
         TAP_NOTOK(label, "S:tolunnet-undo creation missing from install script");
@@ -7923,6 +8001,10 @@ static void tc_install_script(void)
             Write(us_app, (CONST_APTR)fake_cmd, strlen(fake_cmd));
             Close(us_app);
         }
+
+        /* an earlier wizard row may have left one behind; "an existing
+         * one is kept" would then hide the file this row must write */
+        DeleteFile((CONST_STRPTR)"S:tolunnet-undo-stacks");
 
         /* Run stack detection & replacement */
         WizardState ws;
@@ -7967,10 +8049,10 @@ static void tc_install_script(void)
         return;
         }
 
-        /* 3. Assert S:tolunnet-undo exists and contains valid restore commands */
-        BPTR undo_fh = Open((CONST_STRPTR)"S:tolunnet-undo", MODE_OLDFILE);
+        /* 3. Assert S:tolunnet-undo-stacks exists and contains valid restore commands */
+        BPTR undo_fh = Open((CONST_STRPTR)"S:tolunnet-undo-stacks", MODE_OLDFILE);
         if (!undo_fh) {
-            TAP_NOTOK(label, "S:tolunnet-undo script not created");
+            TAP_NOTOK(label, "S:tolunnet-undo-stacks script not created");
             FreeVec(buf);
         return;
         }
@@ -7981,7 +8063,7 @@ static void tc_install_script(void)
         ubuf[ulen] = '\0';
         if (strstr(ubuf, "LIBS:bsdsocket.library") == NULL ||
             strstr(ubuf, "S:User-Startup") == NULL) {
-            TAP_NOTOK(label, "S:tolunnet-undo script missing restoration commands");
+            TAP_NOTOK(label, "S:tolunnet-undo-stacks script missing restoration commands");
             FreeVec(buf);
         return;
         }
@@ -7991,6 +8073,17 @@ static void tc_install_script(void)
             TAP_NOTOK(label, "tn_stack_undo_replacement returned FALSE");
             FreeVec(buf);
         return;
+        }
+        /* a successful undo deletes its own script */
+        {
+            BPTR us_lk = Lock((CONST_STRPTR)"S:tolunnet-undo-stacks", ACCESS_READ);
+            if (us_lk != (BPTR)0) {
+                UnLock(us_lk);
+                DeleteFile((CONST_STRPTR)"S:tolunnet-undo-stacks");
+                TAP_NOTOK(label, "S:tolunnet-undo-stacks left behind after a successful undo");
+                FreeVec(buf);
+                return;
+            }
         }
 
         /* 5. Assert LIBS:bsdsocket.library is restored with intact content */
@@ -8014,7 +8107,9 @@ static void tc_install_script(void)
         DeleteFile((CONST_STRPTR)"LIBS:bsdsocket.library");
         DeleteFile((CONST_STRPTR)"LIBS:bsdsocket.library.miami");
         DeleteFile((CONST_STRPTR)"LIBS:bsdsocket.library.pre-tolunnet");
-        DeleteFile((CONST_STRPTR)"S:tolunnet-undo");
+        DeleteFile((CONST_STRPTR)"LIBS:bsdsocket.library.tn-prev");
+        /* S:tolunnet-undo belongs to the installer - never delete it here */
+        DeleteFile((CONST_STRPTR)"S:tolunnet-undo-stacks");
         DeleteFile((CONST_STRPTR)"S:User-Startup.tolunnet-bak");
     }
 

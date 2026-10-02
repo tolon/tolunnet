@@ -269,6 +269,7 @@ When `tolunnet` is running and configured by `TolunnetSetup` (or `TolunnetPrefs`
      ; END tolunnet
      ```
    - Legacy stack lines (Miami, AmiTCP, Genesis, Roadshow) are safely backed up to `S:User-Startup.tolunnet-bak` and disabled with `; tolunnet-disabled: <line>`.
+   - Undo (`S:tolunnet-undo`, which runs the wizard's `S:tolunnet-undo-stacks` first) never copies the backup over a live `S:User-Startup`: the tolunnet block stays (the installer's block is guarded by `If EXISTS C:tolunnet` … `EndIf`, so it does nothing once tolunnet is removed; delete it by hand) and `S:User-Startup.tolunnet-bak` is renamed to `.tolunnet-old`. Only when no live `S:User-Startup` exists is the backup renamed back into place.
 
 4. **Optional `DEVS:Internet/*` and `DEVS:NetInterfaces/*` Mirror**:
    - If enabled in setup, `DEVS:NetInterfaces/Ethernet` (or `WiFiPi`) is written in Roadshow-compatible KEY=VALUE syntax for interoperability with third-party tools expecting Roadshow configuration files.

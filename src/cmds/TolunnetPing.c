@@ -90,7 +90,8 @@ int main(int argc, char *argv[])
     CONST_STRPTR target_str;
     char target_ip_str[24];
     in_addr_t target_ip;
-    LONG sock, count = 4, size = 56, interval = 1, timeout = 2, ttl = 0;
+    LONG sock = -1, count = 4, size = 56, interval = 1, timeout = 2, ttl = 0;
+    int rc = 20; /* 6.8: every exit goes through the cleanup label */
     BOOL quiet = FALSE, use_udp = FALSE;
     UWORD ping_id;
     char *tx_buf = NULL;  /* z.ai step 9b item 3: heap, not the 4 KB CLI stack */
@@ -111,7 +112,6 @@ int main(int argc, char *argv[])
     rdargs = ReadArgs((CONST_STRPTR)"HOST/A,COUNT/N,SIZE/N,INTERVAL/N,TTL/N,TIMEOUT/N,QUIET/S,UDP/S", opts, NULL);
     if (rdargs == NULL) {
         PrintFault(IoErr(), (CONST_STRPTR)"ping");
-        CloseLibrary(DOSBase);
         return 20;
     }
 
@@ -135,20 +135,13 @@ int main(int argc, char *argv[])
     if (opts[OPT_TTL] != 0 && (ttl < 1 || ttl > 255)) {
         tn_logf(TN_LOG_BASIC, "ping: TTL must be 1-255\n");
         FreeArgs(rdargs);
-        CloseLibrary(DOSBase);
         return 10;
     }
 
     /* z.ai step 9b item 3: 3.1 KB of ping buffers off the CLI stack */
     tx_buf = AllocVec(1500, MEMF_CLEAR | MEMF_PUBLIC);
     rx_buf = AllocVec(1600, MEMF_CLEAR | MEMF_PUBLIC);
-    if (tx_buf == NULL || rx_buf == NULL) {
-        if (tx_buf) FreeVec(tx_buf);
-        if (rx_buf) FreeVec(rx_buf);
-        FreeArgs(rdargs);
-        CloseLibrary(DOSBase);
-        return 20;
-    }
+    if (tx_buf == NULL || rx_buf == NULL) goto cleanup;
 
     /* 1. Open timer.device for microsecond RTT measurement */
     tm_port = CreateMsgPort();
@@ -166,11 +159,7 @@ int main(int argc, char *argv[])
     /* 2. Open bsdsocket.library via cmdlib */
     if (tn_cmd_init() != TN_CMD_OK) {
         PutStr((CONST_STRPTR)"ping: unable to open bsdsocket.library\n");
-        if (tm_io) { CloseDevice((struct IORequest *)tm_io); FreeVec(tm_io); }
-        if (tm_port) DeleteMsgPort(tm_port);
-        FreeArgs(rdargs);
-        CloseLibrary(DOSBase);
-        return 20;
+        goto cleanup;
     }
 
     /* 3. Resolve Target IP */
@@ -181,12 +170,7 @@ int main(int argc, char *argv[])
             memcpy(&target_ip, he->h_addr_list[0], sizeof(target_ip)); /* TNET-139 */
         } else {
             tn_logf(TN_LOG_BASIC, "ping: cannot resolve %s\n", target_str);
-            if (tm_io) { CloseDevice((struct IORequest *)tm_io); FreeVec(tm_io); }
-            if (tm_port) DeleteMsgPort(tm_port);
-            FreeArgs(rdargs);
-            tn_cmd_fini();
-            CloseLibrary(DOSBase);
-            return 20;
+            goto cleanup;
         }
     }
 
@@ -211,12 +195,7 @@ int main(int argc, char *argv[])
 
     if (sock < 0) {
         tn_logf(TN_LOG_BASIC, "ping: socket creation failed (rc=%ld)\n", sock);
-        if (tm_io) { CloseDevice((struct IORequest *)tm_io); FreeVec(tm_io); }
-        if (tm_port) DeleteMsgPort(tm_port);
-        FreeArgs(rdargs);
-        tn_cmd_fini();
-        CloseLibrary(DOSBase);
-        return 20;
+        goto cleanup;
     }
 
     /* z.ai step 9b item 3: apply the requested TTL before the first send */
@@ -224,14 +203,8 @@ int main(int argc, char *argv[])
         int ttl_val = (int)ttl;
         if (tn_call_setsockopt(sock, IPPROTO_IP, IP_TTL, &ttl_val, sizeof(ttl_val)) != 0) {
             tn_logf(TN_LOG_BASIC, "ping: IP_TTL setsockopt failed (errno=%ld)\n", tn_call_errno());
-            tn_call_closesocket(sock);
-            if (tm_io) { CloseDevice((struct IORequest *)tm_io); FreeVec(tm_io); }
-            if (tm_port) DeleteMsgPort(tm_port);
-            FreeVec(tx_buf); FreeVec(rx_buf);
-            FreeArgs(rdargs);
-            tn_cmd_fini();
-            CloseLibrary(DOSBase);
-            return 10;
+            rc = 10;
+            goto cleanup;
         }
     }
 
@@ -433,8 +406,11 @@ int main(int argc, char *argv[])
         }
     }
 
-    /* 7. Cleanup */
-    tn_call_closesocket(sock);
+    rc = (acknowledged > 0) ? 0 : 5;
+
+    /* 7. Cleanup (6.8: shared by the early error exits) */
+cleanup:
+    if (sock >= 0) tn_call_closesocket(sock);
 
     if (tm_io != NULL) {
         CloseDevice((struct IORequest *)tm_io);
@@ -446,8 +422,9 @@ int main(int argc, char *argv[])
 
     FreeArgs(rdargs);
     tn_cmd_fini();
-    CloseLibrary(DOSBase);
-    FreeVec(tx_buf);
-    FreeVec(rx_buf);
-    return (acknowledged > 0) ? 0 : 5;
+    /* 6.10: DOSBase belongs to the libnix startup, which closes it */
+    if (tx_buf != NULL) FreeVec(tx_buf);
+    if (rx_buf != NULL) FreeVec(rx_buf);
+    return rc;
+
 }

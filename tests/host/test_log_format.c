@@ -7,8 +7,17 @@
 #include "../../src/common/log_format.h"
 
 #include <stdarg.h>
+#include <stdlib.h>
 
 static char buf[256];
+
+static void fmt_into(char *dst, unsigned long cap, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    tn_logf_vformat(dst, cap, fmt, ap);
+    va_end(ap);
+}
 
 static const char *f(const char *fmt, ...)
 {
@@ -62,6 +71,26 @@ TN_TEST(basename_and_negative)
     TN_ASSERT_STREQ("100%", f("%lu%%", 100UL));
 }
 
+TN_TEST(width_char_stays_in_bounds)
+{
+    /* 5.9: "%5c" whose padding fills the buffer must not store the
+     * character at buf[cap-1] and the NUL at buf[cap]. Exact-size heap
+     * buffers let ASan flag the one-byte overrun. */
+    char *h5 = (char *)malloc(5);
+    char *h6 = (char *)malloc(6);
+    TN_ASSERT_TRUE(h5 != NULL && h6 != NULL);
+    if (h5 != NULL && h6 != NULL) {
+        fmt_into(h6, 6, "%5c", 'Z');
+        TN_ASSERT_STREQ(h6, "    Z");
+        fmt_into(h5, 5, "%5c", 'Z');
+        TN_ASSERT_STREQ(h5, "    ");
+        fmt_into(h5, 5, "%-3c|", 'Q');
+        TN_ASSERT_STREQ(h5, "Q  |");
+    }
+    free(h5);
+    free(h6);
+}
+
 int main(void)
 {
     TN_TEST_RUN(left_align_string);
@@ -70,6 +99,7 @@ int main(void)
     TN_TEST_RUN(plain_width_number);
     TN_TEST_RUN(trailing_percent_stops);
     TN_TEST_RUN(basename_and_negative);
+    TN_TEST_RUN(width_char_stays_in_bounds);
     TN_TEST_PLAN();
     return tn_test_failures();
 }

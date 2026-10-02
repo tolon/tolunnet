@@ -40,7 +40,10 @@ Several tests `#include` the daemon or library `.c` file under test directly (e.
 | `test_inet_addr` | `test_inet_addr.c` | `inet_addr` / `inet_aton` parser: decimal, octal, hex, multi-part input, and rejection of invalid formats. |
 | `test_ipc` | `test_ipc.c` | Client-side IPC message construction. |
 | `test_ipc_dispatch`| `test_ipc_dispatch.c`| Daemon IPC dispatch table, unknown command handling, argument unpacking. |
+| `test_log_format` | `test_log_format.c` | `tn_logf` formatter: `-`/`0` flags, multi-digit field width, trailing `%`. |
 | `test_lvo_table` | `test_lvo_table.c` | Generated LVO table checked against `sfd/bsdsocket_lib.sfd` (139 slots, 121 functions). |
+| `test_manifest_match` | `test_manifest_match.c` | Floppy-install manifest compare shared with the Amiga suite (`tn_manifest_match`). |
+| `test_nslookup_parse` | `test_nslookup_parse.c` | nslookup answer parser over real `C:nslookup` output shapes. |
 | `test_queues` | `test_queues.c` | Chained pbuf partial reads across buffer boundaries, the RX queue 32-packet limit, TCP aborts when the accept queue is drained, and event queue coalescing per `bsdsocket.doc`. |
 | `test_route` | `test_route.c` | Route table lookup, default gateway, mask matching. |
 | `test_sbtc` | `test_sbtc.c` | `SocketBaseTagList` tag parsing and tag list dispatch. |
@@ -50,6 +53,7 @@ Several tests `#include` the daemon or library `.c` file under test directly (e.
 | `test_stats` | `test_stats.c` | `TnStats` telemetry counters. |
 | `test_usergroup` | `test_usergroup.c` | `usergroup.library` database, credentials, crypt. |
 | `test_wizard_config` | `test_wizard_config.c` | `TolunnetSetup` config generation. |
+| `test_wrap` | `test_wrap.c` | Pixel-measured word wrap used by the GUI text. |
 
 ## Running Tests
 
@@ -61,4 +65,4 @@ The command runs in two steps:
 
 1. `python-checks`: `gen_lvo_table.py`, `gen_usergroup_table.py`, `verify_icons.py`, `check_md_links.py` and
    `check-forbid.sh`, followed by a `git diff` gate over the generated sources and `README.md`.
-2. All 20 host test binaries, run with AddressSanitizer and UndefinedBehaviorSanitizer enabled.
+2. Every `tests/host/test_*.c` binary (the Makefile globs them), run with AddressSanitizer and UndefinedBehaviorSanitizer enabled.

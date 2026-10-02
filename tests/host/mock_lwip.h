@@ -49,6 +49,9 @@ typedef int32_t  s32_t;
 #ifndef TCP_MSS
 #define TCP_MSS     1460
 #endif
+#ifndef TCP_SND_QUEUELEN
+#define TCP_SND_QUEUELEN 16
+#endif
 
 /* pbuf layers/flags used by the daemon code under test (TNET-115) */
 #define PBUF_TRANSPORT   4
@@ -157,7 +160,10 @@ typedef enum MockCallType {
     MOCK_CALL_UDP_SENDTO,
     MOCK_CALL_RAW_SENDTO,
     MOCK_CALL_REPLY_MSG,
-    MOCK_CALL_SIGNAL
+    MOCK_CALL_SIGNAL,
+    MOCK_CALL_TCP_SHUTDOWN,     /* arg1 = shut_rx, arg2 = shut_tx */
+    MOCK_CALL_TCP_SENT,
+    MOCK_CALL_TCP_POLL          /* arg1 = interval */
 } MockCallType;
 
 typedef struct MockCall {
@@ -177,6 +183,14 @@ const MockCall *mock_lwip_call_at(int idx);   /* raw ring index, oldest first */
 int mock_lwip_total_calls(void);
 void mock_lwip_record(MockCallType type, void *p1, void *p2, uint32_t a1, uint32_t a2);
 
+/* 9.14: fault injection - reset to the healthy defaults by mock_lwip_reset() */
+void mock_set_tcp_sndbuf(u16_t v);          /* default TCP_SND_BUF */
+void mock_set_tcp_sndqueuelen(u16_t v);     /* default 0 */
+void mock_set_tcp_write_err(err_t e);       /* default ERR_OK */
+void mock_set_tcp_close_err(err_t e);       /* default ERR_OK */
+void mock_set_tcp_connect_err(err_t e);     /* default ERR_OK */
+void mock_set_udp_sendto_err(err_t e);      /* default ERR_OK */
+
 /* Mock lwIP Functions */
 struct pbuf *mock_pbuf_alloc(uint16_t length);
 struct pbuf *pbuf_alloc(uint8_t layer, uint16_t length, uint8_t type);
@@ -194,6 +208,8 @@ void tcp_accept(struct tcp_pcb *pcb, void *func);
 err_t tcp_close(struct tcp_pcb *pcb);
 void tcp_abort(struct tcp_pcb *pcb);
 u16_t tcp_sndbuf(struct tcp_pcb *pcb);
+u16_t tcp_sndqueuelen(struct tcp_pcb *pcb);
+void tcp_poll(struct tcp_pcb *pcb, void *func, u8_t interval);
 err_t tcp_write(struct tcp_pcb *pcb, const void *arg, u16_t len, u8_t apiflags);
 err_t tcp_output(struct tcp_pcb *pcb);
 err_t udp_sendto(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_ip, u16_t dst_port);

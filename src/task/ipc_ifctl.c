@@ -140,6 +140,11 @@ int tn_ipc_cmd_ifctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         if ((uint32_t)imsg->args[2] != 0) ip.addr = (uint32_t)imsg->args[2];
         if ((uint32_t)imsg->args[3] != 0) nm.addr = (uint32_t)imsg->args[3];
         if ((uint32_t)imsg->args[4] != 0) gw.addr = (uint32_t)imsg->args[4];
+        /* bugtrack 4.10: stop a running DHCP client first, or its next
+         * renew/rebind overwrites the static address. dhcp_stop() zeroes
+         * the netif address when a lease was held, so the current values
+         * were captured above; it is a no-op without DHCP data. */
+        dhcp_stop(&n->lwip_if);
         netif_set_addr(&n->lwip_if, &ip, &nm, &gw);
         if (gw.addr != 0) {
             /* keep lwIP's default gateway in step with the interface */

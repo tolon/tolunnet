@@ -138,11 +138,82 @@ TN_TEST(stats_disabled_reports_zero)
     TN_ASSERT_EQ(stats.daemon.uptime_secs, 0);
 }
 
+/* bugtrack 4.8: a STATS reset moves the baseline instead of zeroing
+ * mainloop_ticks (the SO_RCVTIMEO deadline clock). */
+TN_TEST(stats_ticks_relative_to_reset_baseline)
+{
+    TnDaemon d;
+    TnIpcMsg msg;
+    TnStats stats;
+
+    memset(&d, 0, sizeof(d));
+    memset(&msg, 0, sizeof(msg));
+    d.stats_enabled = TRUE;
+    d.mainloop_ticks = 1000;
+    d.stats_tick_base = 400;
+
+    msg.cmd = TN_IPC_CMD_GETSTATS;
+    msg.args[0] = (LONG)sizeof(TnStats);
+    msg.ptrs[0] = &stats;
+    TN_ASSERT_EQ(tn_ipc_cmd_getstats(&d, &msg, NULL), 0);
+    TN_ASSERT_EQ(stats.daemon.mainloop_ticks, 600);
+    TN_ASSERT_EQ(stats.daemon.uptime_secs, 60);
+    TN_ASSERT_EQ(d.mainloop_ticks, 1000);
+}
+
+/* bugtrack 4.1 (Ek): a LISTEN slot's pcb is a tcp_pcb_listen - enumsockets
+ * must not read remote_port / tcp_sndbuf from it. */
+TN_TEST(enumsockets_listen_slot_skips_conn_fields)
+{
+    static TnDaemon d;
+    TnIpcMsg msg;
+    struct tcp_pcb pcb;
+    TnSocketInfoV2 v2[2];
+    TnSocketInfo v1[2];
+
+    memset(&d, 0, sizeof(d));
+    memset(&pcb, 0, sizeof(pcb));
+    pcb.local_port = 8080;
+    pcb.remote_port = 0xBEEF; /* stands in for out-of-bounds garbage */
+    mock_set_tcp_sndbuf(1234);
+    d.sockets[0].in_use = TRUE;
+    d.sockets[0].type = 1;
+    d.sockets[0].tcp_state = TN_TCP_STATE_LISTENING;
+    d.sockets[0].tcp_pcb = &pcb;
+
+    memset(&msg, 0, sizeof(msg));
+    msg.args[0] = 2;
+    msg.args[2] = (LONG)sizeof(TnSocketInfoV2);
+    msg.ptrs[0] = v2;
+    tn_ipc_cmd_enumsockets(&d, &msg, NULL);
+    TN_ASSERT_EQ(msg.result, 1);
+    TN_ASSERT_EQ(v2[0].local_port, 8080);
+    TN_ASSERT_EQ(v2[0].remote_port, 0);
+    TN_ASSERT_EQ(v2[0].send_q, 0);
+
+    memset(v1, 0xA5, sizeof(v1));
+    msg.args[2] = (LONG)sizeof(TnSocketInfo);
+    msg.ptrs[0] = v1;
+    tn_ipc_cmd_enumsockets(&d, &msg, NULL);
+    TN_ASSERT_EQ(msg.result, 1);
+    TN_ASSERT_EQ(v1[0].local_port, 8080);
+    TN_ASSERT_EQ(v1[0].remote_port, 0);
+    TN_ASSERT_EQ(v1[0].send_q, 0);
+
+    /* an established slot still reports both */
+    d.sockets[0].tcp_state = TN_TCP_STATE_ESTABLISHED;
+    tn_ipc_cmd_enumsockets(&d, &msg, NULL);
+    TN_ASSERT_EQ(v1[0].remote_port, 0xBEEF);
+    TN_ASSERT_EQ(v1[0].send_q, 1234);
+}
+
 int main(void)
 {
     TN_TEST_RUN(stats_struct_versioning_and_size);
     TN_TEST_RUN(stats_daemon_counter_copy);
     TN_TEST_RUN(stats_disabled_reports_zero);
+    TN_TEST_RUN(stats_ticks_relative_to_reset_baseline);
+    TN_TEST_RUN(enumsockets_listen_slot_skips_conn_fields);
     TN_TEST_PLAN();
     return tn_test_failures();
 }

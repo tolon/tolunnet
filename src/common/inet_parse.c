@@ -16,6 +16,7 @@ int tn_inet_addr_parse_ex(const char *cp, uint32_t *out_addr)
 
     while (*p && parts < 4) {
         uint32_t num = 0;
+        uint32_t lim, lim_rem;
         int base_radix = 10;
         int digits = 0;
 
@@ -30,6 +31,10 @@ int tn_inet_addr_parse_ex(const char *cp, uint32_t *out_addr)
             }
         }
 
+        /* 9.9: a part that does not fit 32 bits is rejected, never wrapped */
+        lim = 0xFFFFFFFFu / (uint32_t)base_radix;
+        lim_rem = 0xFFFFFFFFu % (uint32_t)base_radix;
+
         while (*p) {
             int d = -1;
             if (*p >= '0' && *p <= '9') d = *p - '0';
@@ -37,6 +42,7 @@ int tn_inet_addr_parse_ex(const char *cp, uint32_t *out_addr)
             else if (base_radix == 16 && *p >= 'A' && *p <= 'F') d = *p - 'A' + 10;
 
             if (d < 0 || d >= base_radix) break;
+            if (num > lim || (num == lim && (uint32_t)d > lim_rem)) return 0;
             num = num * (uint32_t)base_radix + (uint32_t)d;
             digits++;
             p++;

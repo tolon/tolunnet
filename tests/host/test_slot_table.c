@@ -303,7 +303,9 @@ TN_TEST(event_signaling)
     int slot_idx = -1;
 
     mock_lwip_reset();
+    memset(&d, 0, sizeof(d));
     tn_slot_table_init(&d);
+    d.open_bases[0] = &base; /* 3.7: events only reach registered bases */
     { static LONG _fm[TN_DEFAULT_DTABLESIZE]; static ULONG _ev[TN_DEFAULT_DTABLESIZE]; static ULONG _em[TN_DEFAULT_DTABLESIZE];
       base.fd_map = _fm; base.events = _ev; base.event_masks = _em; base.dtablesize = TN_DEFAULT_DTABLESIZE;
       { int i; for (i = 0; i < TN_DEFAULT_DTABLESIZE; i++) base.fd_map[i] = -1; } }
@@ -541,6 +543,218 @@ TN_TEST(slot_reuse_resets_shutdown_flags)
     tn_slot_free(&d, idx2);
 }
 
+/* 4.1: a LISTEN pcb is a tcp_pcb_listen - only arg/accept may be reset
+ * before tcp_close (tcp_recv/sent/err/poll write past its end). */
+TN_TEST(slot_free_listen_pcb_touches_only_arg_accept)
+{
+    TnDaemon d;
+    TnSocketBase base;
+    struct tcp_pcb lpcb;
+    int idx = -1;
+    TnSocketSlot *s;
+
+    memset(&base, 0, sizeof(base));
+    memset(&d, 0, sizeof(d));
+    memset(&lpcb, 0, sizeof(lpcb));
+    tn_slot_table_init(&d);
+    s = tn_slot_alloc(&d, &base, (struct Task *)0x1111, AF_INET, SOCK_STREAM, 0, &idx);
+    TN_ASSERT_TRUE(s != NULL);
+    s->tcp_pcb = &lpcb;
+    s->tcp_state = TN_TCP_STATE_LISTENING;
+
+    mock_lwip_reset();
+    tn_slot_free(&d, idx);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_RECV), 0);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_ERR), 0);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_SENT), 0);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_POLL), 0);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_ARG), 1);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_ACCEPT), 1);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_CLOSE), 1);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_ABORT), 0);
+}
+
+/* 3.9: tcp_close ERR_MEM leaves the pcb alive and unowned - abort it. */
+TN_TEST(slot_free_close_failure_aborts_pcb)
+{
+    TnDaemon d;
+    TnSocketBase base;
+    struct tcp_pcb pcb;
+    int idx = -1;
+    TnSocketSlot *s;
+
+    memset(&base, 0, sizeof(base));
+    memset(&d, 0, sizeof(d));
+    memset(&pcb, 0, sizeof(pcb));
+    tn_slot_table_init(&d);
+    s = tn_slot_alloc(&d, &base, (struct Task *)0x1111, AF_INET, SOCK_STREAM, 0, &idx);
+    TN_ASSERT_TRUE(s != NULL);
+    s->tcp_pcb = &pcb;
+    s->tcp_state = TN_TCP_STATE_ESTABLISHED;
+
+    mock_lwip_reset();
+    mock_set_tcp_close_err(ERR_MEM);
+    tn_slot_free(&d, idx);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_CLOSE), 1);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_ABORT), 1);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_SENT), 1); /* detached */
+    TN_ASSERT_EQ(pcb.callback_arg, NULL);
+    TN_ASSERT_EQ(pcb.err_cb, NULL);
+    mock_lwip_reset();
+}
+
+/* 3.7: an owner base that left the open-bases registry (client died
+ * without CloseLibrary) must not be dereferenced or signalled. */
+TN_TEST(record_event_skips_unregistered_base)
+{
+    TnDaemon d;
+    TnSocketBase base;
+    static LONG fm[TN_DEFAULT_DTABLESIZE];
+    static ULONG ev[TN_DEFAULT_DTABLESIZE], em[TN_DEFAULT_DTABLESIZE];
+    int idx = -1, i;
+    TnSocketSlot *s;
+
+    memset(&base, 0, sizeof(base));
+    base.fd_map = fm; base.events = ev; base.event_masks = em;
+    base.dtablesize = TN_DEFAULT_DTABLESIZE;
+    for (i = 0; i < TN_DEFAULT_DTABLESIZE; i++) { fm[i] = -1; ev[i] = 0; em[i] = 0; }
+    base.sig_event = 0x100;
+    memset(&d, 0, sizeof(d));
+    tn_slot_table_init(&d);   /* open_bases left empty */
+    s = tn_slot_alloc(&d, &base, (struct Task *)0x4444, AF_INET, SOCK_STREAM, 0, &idx);
+    TN_ASSERT_TRUE(s != NULL);
+    fm[5] = idx;
+    em[5] = 0xFFFFFFFF;
+
+    mock_lwip_reset();
+    tn_record_socket_event(&d, s, 0x08);
+    TN_ASSERT_EQ(ev[5], 0);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_SIGNAL), 0);
+    TN_ASSERT_TRUE(s->owner_base == NULL);
+    TN_ASSERT_TRUE(s->owner_task == NULL);
+
+    /* registered: delivered */
+    s->owner_base = &base;
+    s->owner_task = (struct Task *)0x4444;
+    d.open_bases[3] = &base;
+    tn_record_socket_event(&d, s, 0x08);
+    TN_ASSERT_EQ(ev[5], 0x08);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_SIGNAL), 1);
+    tn_slot_free(&d, idx);
+}
+
+/* 4.2: a parked blocking send is answered on every exit path - SO_SNDTIMEO
+ * expiry, CANCEL, base close/reap and slot free - with the partial count
+ * once bytes were queued (BSD sosend). */
+TN_TEST(parked_send_exit_paths)
+{
+    TnDaemon d;
+    TnSocketBase base;
+    TnIpcMsg m;
+    int idx = -1;
+    TnSocketSlot *s;
+
+    memset(&base, 0, sizeof(base));
+    memset(&d, 0, sizeof(d));
+    tn_slot_table_init(&d);
+    s = tn_slot_alloc(&d, &base, (struct Task *)0x1111, AF_INET, SOCK_STREAM, 0, &idx);
+    TN_ASSERT_TRUE(s != NULL);
+    TN_ASSERT_TRUE(s->pending_send_msg == NULL);
+    TN_ASSERT_EQ(s->listen_backlog, TN_ACCEPT_QUEUE_MAX);
+
+    /* SO_SNDTIMEO deadline, nothing sent yet -> EWOULDBLOCK */
+    memset(&m, 0, sizeof(m));
+    m.socket_base = (APTR)&base;
+    s->pending_send_msg = &m;
+    d.mainloop_ticks = 100;
+    s->send_deadline_tick = 105;
+    mock_lwip_reset();
+    tn_slot_check_recv_timeouts(&d);
+    TN_ASSERT_TRUE(s->pending_send_msg == &m);   /* not yet */
+    d.mainloop_ticks = 105;
+    tn_slot_check_recv_timeouts(&d);
+    TN_ASSERT_TRUE(s->pending_send_msg == NULL);
+    TN_ASSERT_EQ(m.result, -1);
+    TN_ASSERT_EQ(m.err_no, EWOULDBLOCK);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_REPLY_MSG), 1);
+
+    /* timeout after partial progress -> byte count */
+    memset(&m, 0, sizeof(m));
+    m.socket_base = (APTR)&base;
+    s->pending_send_msg = &m;
+    s->send_done = 1234;
+    s->send_deadline_tick = 106;
+    d.mainloop_ticks = 200;
+    tn_slot_check_recv_timeouts(&d);
+    TN_ASSERT_EQ(m.result, 1234);
+    TN_ASSERT_EQ(m.err_no, 0);
+    TN_ASSERT_EQ(s->send_done, 0);
+
+    /* CANCEL (client break) -> EINTR */
+    memset(&m, 0, sizeof(m));
+    m.socket_base = (APTR)&base;
+    s->pending_send_msg = &m;
+    s->send_deadline_tick = 0;
+    TN_ASSERT_TRUE(tn_slot_cancel_parked_send(&d, &m));
+    TN_ASSERT_EQ(m.err_no, EINTR);
+    TN_ASSERT_FALSE(tn_slot_cancel_parked_send(&d, &m));
+
+    /* CLOSE of the owning base -> ECONNABORTED + reply; reap -> silent */
+    memset(&m, 0, sizeof(m));
+    m.socket_base = (APTR)&base;
+    s->pending_send_msg = &m;
+    mock_lwip_reset();
+    tn_recv_cancel_for_base(&d, &base);
+    TN_ASSERT_TRUE(s->pending_send_msg == NULL);
+    TN_ASSERT_EQ(m.err_no, ECONNABORTED);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_REPLY_MSG), 1);
+    s->pending_send_msg = &m;
+    mock_lwip_reset();
+    tn_recv_cancel_for_base2(&d, &base, 0);
+    TN_ASSERT_TRUE(s->pending_send_msg == NULL);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_REPLY_MSG), 0);
+
+    /* slot free (CloseSocket / daemon shutdown) -> EBADF */
+    memset(&m, 0, sizeof(m));
+    s->pending_send_msg = &m;
+    mock_lwip_reset();
+    tn_slot_free(&d, idx);
+    TN_ASSERT_EQ(m.result, -1);
+    TN_ASSERT_EQ(m.err_no, EBADF);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_REPLY_MSG), 1);
+}
+
+/* bugtrack 4.10: tn_slot_free runs the daemon's slot-free hook (IGMP
+ * leave) exactly once with the freed index; init clears the hook. */
+static int s_hook_calls, s_hook_idx;
+static void test_slot_free_hook(TnDaemon *d, int slot_idx)
+{
+    (void)d;
+    s_hook_calls++;
+    s_hook_idx = slot_idx;
+}
+
+TN_TEST(slot_free_runs_hook)
+{
+    TnDaemon d;
+    TnSocketBase base;
+    int idx = -1;
+
+    memset(&base, 0, sizeof(base));
+    memset(&d, 0xA5, sizeof(d));          /* garbage, as a stack local */
+    d.selectors = NULL;
+    tn_slot_table_init(&d);
+    TN_ASSERT_TRUE(d.slot_free_hook == NULL);
+    d.slot_free_hook = test_slot_free_hook;
+    TN_ASSERT_TRUE(tn_slot_alloc(&d, &base, NULL, AF_INET, SOCK_DGRAM, 0, &idx) != NULL);
+    s_hook_calls = 0;
+    tn_slot_free(&d, idx);
+    TN_ASSERT_EQ(s_hook_calls, 1);
+    TN_ASSERT_EQ(s_hook_idx, idx);
+    tn_slot_free(&d, idx);                /* already free: no second call */
+    TN_ASSERT_EQ(s_hook_calls, 1);
+}
+
 int main(void)
 {
     TN_TEST_RUN(selector_table_grow);
@@ -555,6 +769,11 @@ int main(void)
     TN_TEST_RUN(event_signaling);
     TN_TEST_RUN(recv_parking_and_rcvtimeo_lifecycle);
     TN_TEST_RUN(dead_base_clear_on_close);
+    TN_TEST_RUN(slot_free_listen_pcb_touches_only_arg_accept);
+    TN_TEST_RUN(slot_free_close_failure_aborts_pcb);
+    TN_TEST_RUN(record_event_skips_unregistered_base);
+    TN_TEST_RUN(parked_send_exit_paths);
+    TN_TEST_RUN(slot_free_runs_hook);
 
     TN_TEST_PLAN();
     return tn_test_failures();

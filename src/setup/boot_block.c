@@ -22,12 +22,33 @@
 #include <dos/dos.h>
 #include <string.h>
 
-#define TN_BB_BEGIN "; BEGIN tolunnet"
-#define TN_BB_END   "; END tolunnet"
+/* Markers are matched as ';' + optional blanks + word, so the
+ * Installer's own (startup "tolunnet") block (";BEGIN tolunnet",
+ * no space) is the same block as ours. The body is guarded like the
+ * installer's: after an undo removed C:tolunnet it does nothing. */
+#define TN_BB_BEGIN "BEGIN tolunnet"
+#define TN_BB_END   "END tolunnet"
 #define TN_BB_BLOCK "; BEGIN tolunnet\n" \
+                    "If EXISTS C:tolunnet\n" \
                     "Stack 32768\n" \
                     "Run <NIL: >NIL: C:tolunnet\n" \
+                    "EndIf\n" \
                     "; END tolunnet\n"
+
+/* ";BEGIN tolunnet" / "; BEGIN tolunnet" (word must end the token) */
+static BOOL bb_is_marker(const char *line, LONG len, const char *word)
+{
+    LONG i = 0;
+    LONG wlen = (LONG)strlen(word);
+
+    if (len < 1 || line[0] != ';') return FALSE;
+    i = 1;
+    while (i < len && (line[i] == ' ' || line[i] == '\t')) i++;
+    if (len - i < wlen || memcmp(line + i, word, wlen) != 0) return FALSE;
+    i += wlen;
+    return (i == len || line[i] == ' ' || line[i] == '\t' || line[i] == '\r')
+           ? TRUE : FALSE;
+}
 
 static BOOL bb_file_exists(const char *path)
 {
@@ -54,14 +75,16 @@ static BOOL bb_copy_once(const char *src, const char *dst)
         return FALSE;
     }
     while ((n = Read(in, chunk, sizeof(chunk))) > 0) {
-        if (Write(out, chunk, n) != n) {
-            Close(in);
-            Close(out);
-            return FALSE;
-        }
+        if (Write(out, chunk, n) != n) break;
     }
     Close(in);
     Close(out);
+    if (n != 0) {
+        /* 1.13: a partial backup would be kept forever ("once") and
+         * later copied over the real file - drop it */
+        DeleteFile((CONST_STRPTR)dst);
+        return FALSE;
+    }
     return TRUE;
 }
 
@@ -90,6 +113,7 @@ BOOL tn_boot_block_apply(const char *path, BOOL enable)
     BPTR fh, of;
     LONG w;
     BOOL ok = FALSE;
+    BOOL in_existed = TRUE;
 
     if (!bb_suffix_path(new_path, sizeof(new_path), path, ".tolunnet-new") ||
         !bb_suffix_path(prev_path, sizeof(prev_path), path, ".tolunnet-prev") ||
@@ -98,34 +122,43 @@ BOOL tn_boot_block_apply(const char *path, BOOL enable)
     }
 
     fh = Open((CONST_STRPTR)path, MODE_OLDFILE);
-    if (fh == (BPTR)0) return FALSE;
-
-    memset(&fib, 0, sizeof(fib));
-    if (!ExamineFH(fh, &fib)) {
-        Close(fh);
-        return FALSE;
+    if (fh == (BPTR)0) {
+        /* 1.9: no startup file yet is not an error - there is nothing
+         * to remove, and enabling creates it with just the block. An
+         * existing but unreadable file (or a missing directory: the
+         * create below fails) still reports FALSE. */
+        if (bb_file_exists(path)) return FALSE;
+        if (!enable) return TRUE;
+        size = 0;
+        in_existed = FALSE;
+    } else {
+        memset(&fib, 0, sizeof(fib));
+        if (!ExamineFH(fh, &fib)) {
+            Close(fh);
+            return FALSE;
+        }
+        size = fib.fib_Size;
     }
-    size = fib.fib_Size;
 
     in_buf = (char *)AllocVec(size + 1, MEMF_PUBLIC | MEMF_CLEAR);
     out_buf = (char *)AllocVec(size + 384, MEMF_PUBLIC | MEMF_CLEAR);
     if (in_buf == NULL || out_buf == NULL) {
-        Close(fh);
         goto cleanup;
     }
 
     total = 0;
-    while (total < size) {
+    while (fh != (BPTR)0 && total < size) {
         LONG got = Read(fh, in_buf + total, size - total);
         if (got <= 0) break;
         total += got;
     }
-    Close(fh);
+    if (fh != (BPTR)0) Close(fh);
     fh = (BPTR)0;
     if (total != size) goto cleanup;
 
-    /* Seed <path>.tolunnet-bak once, before anything is replaced. */
-    if (!bb_file_exists(bak_path)) {
+    /* Seed <path>.tolunnet-bak once, before anything is replaced
+     * (nothing to seed when the file is only being created). */
+    if (in_existed && !bb_file_exists(bak_path)) {
         bb_copy_once(path, bak_path);
     }
 
@@ -143,14 +176,12 @@ BOOL tn_boot_block_apply(const char *path, BOOL enable)
         has_nl = (p < end);
         if (has_nl) p++;
 
-        if (linelen >= (LONG)(sizeof(TN_BB_BEGIN) - 1) &&
-            memcmp(line, TN_BB_BEGIN, sizeof(TN_BB_BEGIN) - 1) == 0) {
+        if (bb_is_marker(line, linelen, TN_BB_BEGIN)) {
             inside = TRUE;
             continue;
         }
         if (inside) {
-            if (linelen >= (LONG)(sizeof(TN_BB_END) - 1) &&
-                memcmp(line, TN_BB_END, sizeof(TN_BB_END) - 1) == 0) {
+            if (bb_is_marker(line, linelen, TN_BB_END)) {
                 inside = FALSE;
             }
             continue;

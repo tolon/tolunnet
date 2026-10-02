@@ -45,7 +45,10 @@ void tn_record_socket_event(TnDaemon *d, TnSocketSlot *slot, ULONG event_mask);
 int tn_slot_live_count(const TnDaemon *d);
 
 int tn_slot_park_recv(TnDaemon *d, TnSocketSlot *slot, TnIpcMsg *imsg);
-void tn_slot_check_recv_timeouts(TnDaemon *d);
+void tn_slot_check_recv_timeouts(TnDaemon *d); /* also SO_SNDTIMEO of parked sends */
+void tn_slot_reply_send(TnSocketSlot *slot, LONG err_no, int reply); /* 4.2 */
+BOOL tn_slot_cancel_parked_send(TnDaemon *d, TnIpcMsg *target);     /* 4.2: CANCEL hook */
+BOOL tn_slot_owner_alive(const TnDaemon *d, const TnSocketBase *base); /* 3.7 */
 err_t tn_tcp_queued_recv_cb_test(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err); /* z.ai step 7 item 3 host entry */
 void tn_recv_cancel_for_base(TnDaemon *d, TnSocketBase *base);
 void tn_recv_cancel_for_base2(TnDaemon *d, TnSocketBase *base, int reply); /* z.ai step 5 item 2 */

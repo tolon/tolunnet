@@ -17,6 +17,7 @@
 #include <net/if_arp.h>
 #endif
 #include <string.h>
+#include <stddef.h>
 
 int tn_ipc_cmd_open(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
@@ -45,12 +46,32 @@ int tn_ipc_cmd_open(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             if (d->open_bases[b] == base) { known = TRUE; break; }
         }
         if (!known) {
-            for (b = 0; b < TN_CLIENT_BASES_MAX; b++) {
-                if (d->open_bases[b] == NULL) {
-                    d->open_bases[b] = base;
-                    if (d->open_base_count < TN_CLIENT_BASES_MAX) d->open_base_count++;
-                    break;
+            int pass;
+            /* bugtrack 3.1: an unregistered base is treated as dead by the
+             * selector path (WaitSelect would never wake) - when the registry
+             * is full, reap crashed holders once, else refuse the OPEN so
+             * OpenLibrary() fails instead. */
+            for (pass = 0; pass < 2 && !known; pass++) {
+                for (b = 0; b < TN_CLIENT_BASES_MAX; b++) {
+                    if (d->open_bases[b] == NULL) {
+                        d->open_bases[b] = base;
+                        if (d->open_base_count < TN_CLIENT_BASES_MAX) d->open_base_count++;
+                        known = TRUE;
+                        break;
+                    }
                 }
+                if (!known && pass == 0) {
+                    extern int tn_reap_dead_clients_public(TnDaemon *d); /* daemon_main.c */
+                    tn_reap_dead_clients_public(d);
+                }
+            }
+            if (!known) {
+                tn_logf(TN_LOG_BASIC,
+                        "tolunnet: OPEN refused - %d clients already registered\n",
+                        TN_CLIENT_BASES_MAX);
+                imsg->result = -1;
+                imsg->err_no = ENFILE;
+                return 0;
             }
         }
     }
@@ -243,6 +264,11 @@ int tn_ipc_cmd_closesocket(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         rmsg->err_no = EBADF;
         ReplyMsg((struct Message *)rmsg);
     }
+    /* 4.2: same for a blocking send parked by this base */
+    if (slot->pending_send_msg != NULL &&
+        slot->pending_send_msg->socket_base == (struct Library *)base) {
+        tn_slot_reply_send(slot, EBADF, 1);
+    }
     base->fd_map[client_fd] = -1;
     tn_slot_unref(d, slot_idx);
 
@@ -302,6 +328,14 @@ int tn_ipc_cmd_releasesocket(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     if (slot == NULL || base == NULL) {
         imsg->result = -1;
         imsg->err_no = EBADF;
+        return 0;
+    }
+
+    /* bugtrack 3.3: a slot holds one park_id - a second release would
+     * orphan the first id and leak its reference. */
+    if (slot->is_parked) {
+        imsg->result = -1;
+        imsg->err_no = EBUSY;
         return 0;
     }
 
@@ -429,6 +463,20 @@ int tn_ipc_cmd_obtainsocket(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
 
 
+/* bugtrack 4.9: argp (and everything reached through it) is client memory
+ * with no alignment guarantee - a typed word/long access at an odd address
+ * is an address error on the 68000. Copy through aligned locals; the base
+ * is a plain void* so the compiler cannot assume alignment for memcpy. */
+static void tn_put_at(void *base, size_t off, const void *src, size_t n)
+{
+    memcpy((UBYTE *)base + off, src, n);
+}
+
+static void tn_get_at(void *dst, const void *base, size_t off, size_t n)
+{
+    memcpy(dst, (const UBYTE *)base + off, n);
+}
+
 int tn_ipc_cmd_ioctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
     ULONG req = (ULONG)imsg->args[1];
@@ -442,7 +490,9 @@ int tn_ipc_cmd_ioctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     }
 
     if (req == FIONBIO) {
-        slot->is_nonblocking = (*(ULONG *)argp != 0);
+        ULONG nb;
+        tn_get_at(&nb, argp, 0, sizeof(nb));
+        slot->is_nonblocking = (nb != 0);
         imsg->result = 0;
         imsg->err_no = 0;
     } else if (req == FIONREAD) {
@@ -454,11 +504,12 @@ int tn_ipc_cmd_ioctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             }
             pkt = pkt->next;
         }
-        *(ULONG *)argp = total;
+        tn_put_at(argp, 0, &total, sizeof(total));
         imsg->result = 0;
         imsg->err_no = 0;
     } else if (req == SIOCATMARK) {
-        *(int *)argp = 0;
+        int mark = 0;
+        tn_put_at(argp, 0, &mark, sizeof(mark));
         imsg->result = 0;
         imsg->err_no = 0;
 #if defined(__AMIGA__) || defined(__amigaos__) || defined(TN_AMIGA_BUILD)
@@ -491,7 +542,10 @@ int tn_ipc_cmd_ioctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                 }
                 ar->arp_ha.sa_family = AF_UNSPEC;
                 for (b = 0; b < 6; b++) ar->arp_ha.sa_data[b] = mac->addr[b];
-                ar->arp_flags = ATF_COM;
+                {
+                    __LONG fl = ATF_COM;
+                    tn_put_at(argp, offsetof(struct arpreq, arp_flags), &fl, sizeof(fl));
+                }
                 imsg->result = 0;
                 imsg->err_no = 0;
             } else {
@@ -503,11 +557,13 @@ int tn_ipc_cmd_ioctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         imsg->result = -1;
         imsg->err_no = ENOSYS;
     } else if (req == SIOCGIFCONF || req == OSIOCGIFCONF) {
-        struct ifconf *ifc = (struct ifconf *)argp;
-        struct ifreq *ifr = ifc->ifc_req;
-        LONG space = ifc->ifc_len;
-        LONG written = 0;
+        struct ifreq *ifr;
+        __LONG space;
+        __LONG written = 0;
         struct netif *netif;
+
+        tn_get_at(&ifr, argp, offsetof(struct ifconf, ifc_req), sizeof(ifr));
+        tn_get_at(&space, argp, offsetof(struct ifconf, ifc_len), sizeof(space));
 
         NETIF_FOREACH(netif) {
             if (ifr != NULL && space >= (LONG)sizeof(struct ifreq)) {
@@ -540,10 +596,11 @@ int tn_ipc_cmd_ioctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                 }
                 ifr++;
                 space -= sizeof(struct ifreq);
+                /* bugtrack 3.2: count only entries actually written */
+                written += sizeof(struct ifreq);
             }
-            written += sizeof(struct ifreq);
         }
-        ifc->ifc_len = written;
+        tn_put_at(argp, offsetof(struct ifconf, ifc_len), &written, sizeof(written));
         imsg->result = 0;
         imsg->err_no = 0;
     } else if (req == SIOCGIFFLAGS || req == SIOCGIFADDR || req == OSIOCGIFADDR ||
@@ -611,7 +668,7 @@ int tn_ipc_cmd_ioctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             if (netif_is_link_up(netif) || netif_is_up(netif)) flags |= IFF_RUNNING;
             if (netif->flags & NETIF_FLAG_BROADCAST) flags |= IFF_BROADCAST;
             if (netif->flags & NETIF_FLAG_IGMP) flags |= IFF_MULTICAST;
-            ifr->ifr_flags = flags;
+            tn_put_at(ifr, offsetof(struct ifreq, ifr_flags), &flags, sizeof(flags));
             imsg->result = 0;
             imsg->err_no = 0;
         } else if (req == SIOCGIFADDR || req == OSIOCGIFADDR) {
@@ -631,7 +688,10 @@ int tn_ipc_cmd_ioctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             imsg->result = 0;
             imsg->err_no = 0;
         } else if (req == SIOCGIFMTU) {
-            ifr->ifr_mtu = (LONG)netif->mtu;
+            {
+                __LONG mtu = (__LONG)netif->mtu;
+                tn_put_at(ifr, offsetof(struct ifreq, ifr_mtu), &mtu, sizeof(mtu));
+            }
             imsg->result = 0;
             imsg->err_no = 0;
         }
@@ -646,7 +706,8 @@ int tn_ipc_cmd_ioctl(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 int tn_ipc_cmd_getsockname(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
     void *sin_ptr = (void *)imsg->ptrs[0];
-    socklen_t *namelen = (socklen_t *)imsg->ptrs[1];
+    void *namelen = imsg->ptrs[1];
+    socklen_t nlen;
     u16_t port_host = 0;
     uint32_t addr_be = 0;
     (void)d;
@@ -657,7 +718,8 @@ int tn_ipc_cmd_getsockname(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         return 0;
     }
 
-    if (*namelen < (socklen_t)sizeof(struct sockaddr_in)) {
+    tn_get_at(&nlen, namelen, 0, sizeof(nlen)); /* 4.9: client pointer */
+    if (nlen < (socklen_t)sizeof(struct sockaddr_in)) {
         imsg->result = -1;
         imsg->err_no = EINVAL;
         return 0;
@@ -679,7 +741,8 @@ int tn_ipc_cmd_getsockname(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
     /* TNET-139: byte-wise store into client buffer */
     tn_sockin_store_bytes(sin_ptr, AF_INET, port_host, addr_be);
-    *namelen = sizeof(struct sockaddr_in);
+    nlen = sizeof(struct sockaddr_in);
+    tn_put_at(namelen, 0, &nlen, sizeof(nlen));
     imsg->result = 0;
     imsg->err_no = 0;
     return 0;
@@ -688,7 +751,8 @@ int tn_ipc_cmd_getsockname(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 int tn_ipc_cmd_getpeername(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
     void *sin_ptr = (void *)imsg->ptrs[0];
-    socklen_t *namelen = (socklen_t *)imsg->ptrs[1];
+    void *namelen = imsg->ptrs[1];
+    socklen_t nlen;
     u16_t port_host = 0;
     uint32_t addr_be = 0;
     (void)d;
@@ -699,7 +763,8 @@ int tn_ipc_cmd_getpeername(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         return 0;
     }
 
-    if (*namelen < (socklen_t)sizeof(struct sockaddr_in)) {
+    tn_get_at(&nlen, namelen, 0, sizeof(nlen)); /* 4.9: client pointer */
+    if (nlen < (socklen_t)sizeof(struct sockaddr_in)) {
         imsg->result = -1;
         imsg->err_no = EINVAL;
         return 0;
@@ -733,7 +798,8 @@ int tn_ipc_cmd_getpeername(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
     /* TNET-139: byte-wise store into client buffer */
     tn_sockin_store_bytes(sin_ptr, AF_INET, port_host, addr_be);
-    *namelen = sizeof(struct sockaddr_in);
+    nlen = sizeof(struct sockaddr_in);
+    tn_put_at(namelen, 0, &nlen, sizeof(nlen));
     imsg->result = 0;
     imsg->err_no = 0;
     return 0;

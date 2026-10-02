@@ -52,6 +52,12 @@ The script automatically executes:
 
 ## 3. Dual-Cycle Conformance & MuForce Verification
 
+Since 9.4 every profile runs as two legs, `TX_QUEUE=4` and `TX_QUEUE=0`
+(`<profile>-txq<N>` in the log directory), and bsdsocktest gates the
+run (9.13: passed >= 126, failed <= 2, a missing result fails). MuForce
+is NOT run (no tool image; every run records SKIP) - the "0 hits" rows
+below predate that note and are not evidence.
+
 The conformance test harness runs **two consecutive cycles** on each boot:
 - **Cycle 1:** Daemon startup, SANA-II online, DHCP lease (`10.0.2.15`), socket operations, descriptor cloning, loopback sockets, ICMP ping, WaitSelect SIGIO, 139 SFD vector exercise, and graceful shutdown.
 - **Cycle 2:** Immediate daemon restart without rebooting AmigaOS, verifying driver re-open (`S2ERR_BAD_STATE` / `S2WERR_IS_CONFIGURED` tolerance), re-lease, socket recreation, and clean shutdown.
@@ -80,10 +86,19 @@ nonblocking 4 KB blast between both ends of a TCP loopback pair for ~2 s
 (send path + RX-freelist drain end to end). The per-profile number is
 printed in the TAP stream and collected into the bench `SUMMARY.txt`.
 
-| Profile | Loopback throughput | Evidence |
+9.12 (2026-10-02): the old row printed `bytes / 100` as "KB/s" (about
+20x too high; the right divisor for bytes over ~2 s in KiB/s is 2048)
+and counted the bytes `send()` accepted, never checking what arrived.
+The row now counts RECEIVED bytes, verifies the byte pattern, requires
+received == sent after a final drain, and prints `rx / 2048` KiB/s.
+The numbers below are the old sent-byte totals re-divided by 2048 -
+**they need a re-measure** with the fixed row (TX_QUEUE does not matter
+here: loopback never reaches SANA-II).
+
+| Profile | Loopback throughput (old run, re-derived) | Evidence |
 |---------|--------------------|----------|
-| a1200 (68EC020) | 5426 KB/s (542552 B / ~2 s) | `docs/bench-logs/20260920-043824-8f81fd2/` |
-| 68000 (A600-class) | 1134 KB/s (113312 B / ~2 s) | `docs/bench-logs/20260920-043824-8f81fd2/` |
+| a1200 (68EC020), TX_QUEUE=4 | ~265 KiB/s (542552 B sent / ~2 s) - re-measure | `docs/bench-logs/20260920-043824-8f81fd2/` |
+| 68000 (A600-class), TX_QUEUE=4 | ~55 KiB/s (113312 B sent / ~2 s) - re-measure | `docs/bench-logs/20260920-043824-8f81fd2/` |
 
 The RX-freelist (TNET-107, commit 639c903) predates this measurement
 tool, so no "before freelist" baseline exists; these numbers are the
@@ -102,15 +117,29 @@ writes before `S2_OFFLINE` at shutdown. While the pool is active,
 interleaves spurious ONLINE/OFFLINE completions with async TX
 completions (556ea30-class storm; flap evidence `20260920-140509-9ab5609`).
 
-- Functional proof with the pool LIVE (bench config stages TX_QUEUE=4):
+- Functional proof with the pool LIVE (TX_QUEUE=4 on every leg):
   `docs/bench-logs/20260920-143224-c97e38c/` ALL-GREEN, 53/53 both
   profiles both cycles, zero link flaps; loopback throughput unchanged
-  (a1200 5397 / 68000 1134 KB/s — loopback bypasses SANA-II, so no
-  regression and no gain there by construction).
-- Session-profile soak (B.7 / TN-note-AG2): 3h 20m (12,000 s) on a1200 / 68EC020
-  with TX_QUEUE=4 live. 12 consecutive sessions (ping bursts + HTTP downloads +
-  telemetry), 12 STOP/START cycles. Result: PASS (`docs/bench-logs/20260922-144257-soak-842cc1f/`),
-  0 Gurus, 0 not ok, 0 B Chip RAM drift, -1200 B net Fast RAM reclaimed across cycles 1..11.
+  (old formula: 5397 / 1134 "KB/s", really ~264 / ~55 KiB/s sent - see
+  section 4; loopback bypasses SANA-II, so no regression and no gain
+  there by construction).
+- 9.4 (2026-10-02): every ALL-GREEN run cited up to rc5 (STATUS.md, this
+  file) ran with **TX_QUEUE=4** only - the release default `TX_QUEUE=0`
+  (synchronous `DoIO` + `S2_ONEVENT`) had no traffic leg. `ci/bench.sh`
+  now runs each profile with `TX_QUEUES="4 0"` and names the leg
+  (`a1200-txq0`, ...); quote the TX_QUEUE with every result.
+- Session-profile soak (B.7 / TN-note-AG2), TX_QUEUE=4: 3h 20m (12,000 s)
+  on a1200 / 68EC020. Reported PASS (`docs/bench-logs/20260922-144257-soak-842cc1f/`):
+  0 Gurus, 0 not ok, 0 B Chip RAM drift, -1200 B net Fast RAM across
+  cycles 1..11. **9.5/9.6 caveat:** that soak proved far less than it
+  said - the pings went to 127.0.0.1 (never SANA-II), every HTTP GET went
+  to port 1 (connection refused, netsvc was not running), `QUIET` and
+  `FailAt 21` hid every failure, no command printed `not ok`, and the
+  RAM reference was taken after the first session. The soak now pings
+  10.0.2.2, GETs from netsvc, logs `ok`/`not ok` per command, gates on
+  the planned `ok` count, 13 lwIP inits, Chip drift and Fast drift from
+  the pre-session baseline. It must be re-run before the result is
+  quoted again.
 
 ## 6. Manual Verification Commands (Workbench CLI)
 

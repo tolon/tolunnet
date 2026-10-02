@@ -161,6 +161,66 @@ TN_TEST(chunked_decoding)
     TN_ASSERT_STREQ(decoded, "Wikipedia");
 }
 
+/* 5.3: feed a chunked stream in pieces of at most `step` bytes; returns the
+ * final state and the decoded body. Stops on DONE/ERROR or a stalled feed. */
+static enum TnChunkStateEnum chunk_run(const char *stream, int step,
+                                       char *decoded, int cap)
+{
+    struct TnChunkState st;
+    enum TnChunkStateEnum s = TN_CHUNK_STATE_SIZE;
+    int pos = 0, dec_len = 0, guard = 0;
+    int stream_len = (int)strlen(stream);
+
+    tn_chunk_init(&st);
+    while (pos < stream_len && guard++ < 1000) {
+        int consumed = 0, len = 0, n = stream_len - pos;
+        const char *data = NULL;
+        if (n > step) n = step;
+        s = tn_chunk_feed(&st, stream + pos, n, &consumed, &data, &len);
+        if (consumed < 0 || consumed > n || len < 0) return TN_CHUNK_STATE_ERROR;
+        pos += consumed;
+        if (len > 0 && dec_len + len < cap) {
+            memcpy(decoded + dec_len, data, len);
+            dec_len += len;
+        }
+        if (s == TN_CHUNK_STATE_DONE || s == TN_CHUNK_STATE_ERROR) break;
+    }
+    decoded[dec_len] = '\0';
+    return s;
+}
+
+TN_TEST(chunk_size_overflow_rejected)
+{
+    char out[64];
+    /* int32 overflow: 0x80000000 went negative, 0xffffffff became -1 */
+    TN_ASSERT_EQ((int)chunk_run("80000000\r\nabc", 64, out, sizeof(out)),
+                 (int)TN_CHUNK_STATE_ERROR);
+    TN_ASSERT_EQ((int)chunk_run("ffffffff\r\nabc", 64, out, sizeof(out)),
+                 (int)TN_CHUNK_STATE_ERROR);
+    TN_ASSERT_EQ((int)chunk_run("123456789\r\nabc", 64, out, sizeof(out)),
+                 (int)TN_CHUNK_STATE_ERROR);
+    TN_ASSERT_EQ((int)chunk_run("8000000\r\nabc", 64, out, sizeof(out)),
+                 (int)TN_CHUNK_STATE_ERROR);
+    /* the largest accepted size still decodes what arrives */
+    TN_ASSERT_EQ((int)chunk_run("7ffffff\r\nabc", 64, out, sizeof(out)),
+                 (int)TN_CHUNK_STATE_DATA);
+    TN_ASSERT_STREQ(out, "abc");
+}
+
+TN_TEST(chunk_extension_ignored)
+{
+    char out[64];
+    /* ";name=value" extensions must not feed hex letters into the size */
+    TN_ASSERT_EQ((int)chunk_run("5;ext=abc\r\nhello\r\n0;last\r\n\r\n", 64,
+                                out, sizeof(out)), (int)TN_CHUNK_STATE_DONE);
+    TN_ASSERT_STREQ(out, "hello");
+    /* same stream, one byte per feed: state survives every boundary */
+    TN_ASSERT_EQ((int)chunk_run("5;ext=abc\r\nhello\r\n1a\r\n"
+                                "abcdefghijklmnopqrstuvwxyz\r\n0\r\n\r\n", 1,
+                                out, sizeof(out)), (int)TN_CHUNK_STATE_DONE);
+    TN_ASSERT_STREQ(out, "helloabcdefghijklmnopqrstuvwxyz");
+}
+
 int main(void)
 {
     TN_TEST_RUN(url_basic_http);
@@ -172,6 +232,8 @@ int main(void)
     TN_TEST_RUN(headers_302_redirect);
     TN_TEST_RUN(headers_chunked);
     TN_TEST_RUN(chunked_decoding);
+    TN_TEST_RUN(chunk_size_overflow_rejected);
+    TN_TEST_RUN(chunk_extension_ignored);
     TN_TEST_PLAN();
     return tn_test_failures();
 }

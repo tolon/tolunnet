@@ -104,7 +104,6 @@ int main(int argc, char *argv[])
     SocketBase = OpenLibrary((CONST_STRPTR)"bsdsocket.library", 4);
     if (SocketBase == NULL) {
         PutStr((CONST_STRPTR)"tolunnet daemon is not running (bsdsocket.library not found).\n");
-        CloseLibrary(DOSBase);
         return 5;
     }
 
@@ -167,6 +166,11 @@ int main(int argc, char *argv[])
         ip_to_str(live_ip, ip_str);
         ip_to_str(live_nm, nm_str);
         ip_to_str(live_gw, gw_str);
+    } else {
+        /* 6.6: no address yet (DHCP pending) - never print stale stack */
+        strcpy(ip_str, "0.0.0.0");
+        strcpy(nm_str, "0.0.0.0");
+        strcpy(gw_str, "0.0.0.0");
     }
 
     if (is_netstat) {
@@ -251,7 +255,8 @@ int main(int argc, char *argv[])
     }
 
     CloseLibrary(SocketBase);
-    CloseLibrary(DOSBase);
+    /* 6.10: DOSBase belongs to the libnix startup, which closes it */
     return 0;
+
 }
 }

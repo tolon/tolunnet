@@ -68,6 +68,29 @@ static BOOL tn_prefs_read_file(TnPrefs *prefs, BPTR fh)
     return parsed_any;
 }
 
+/* 5.9: a power cut between tn_safe_replace's two Renames leaves no file at
+ * path. tmp is only renamed after it was written and Closed, so <path>_tmp
+ * is the complete new copy; <path>.bak is the previous generation. */
+static BPTR tn_prefs_open_recover(const char *path)
+{
+    static const char *const sfx[] = { "_tmp", ".bak" };
+    char name[260];
+    BPTR fh;
+    LONG r;
+    int i;
+
+    fh = Open((CONST_STRPTR)path, MODE_OLDFILE);
+    if (fh != (BPTR)0 || IoErr() != ERROR_OBJECT_NOT_FOUND) return fh;
+    for (i = 0; i < 2; i++) {
+        for (r = 0; path[r] != 0 && r + 5 < (LONG)sizeof(name); r++) name[r] = path[r];
+        name[r] = 0;
+        strcat(name, sfx[i]);
+        fh = Open((CONST_STRPTR)name, MODE_OLDFILE);
+        if (fh != (BPTR)0) return fh;
+    }
+    return (BPTR)0;
+}
+
 BOOL tn_prefs_load(TnPrefs *prefs)
 {
     BPTR fh_devs = (BPTR)0;
@@ -82,7 +105,7 @@ BOOL tn_prefs_load(TnPrefs *prefs)
     tn_prefs_default(prefs);
 
     /* Examine DEVS:tolunnet.config (canonical source of truth, TNET-083) */
-    fh_devs = Open((CONST_STRPTR)TN_CONFIG_FILE_DEVS, MODE_OLDFILE);
+    fh_devs = tn_prefs_open_recover(TN_CONFIG_FILE_DEVS);
     if (fh_devs != (BPTR)0) {
         if (ExamineFH(fh_devs, &fib_devs)) {
             have_devs = TRUE;
@@ -116,7 +139,7 @@ BOOL tn_prefs_load(TnPrefs *prefs)
     if (loaded) return TRUE;
 
     /* Fallback: ENVARC: text/blob config (last Save) */
-    fh_env = Open((CONST_STRPTR)TN_PREFS_FILE_ENVARC, MODE_OLDFILE);
+    fh_env = tn_prefs_open_recover(TN_PREFS_FILE_ENVARC);
     if (fh_env != (BPTR)0) {
         loaded = tn_prefs_read_file(prefs, fh_env);
         Close(fh_env);

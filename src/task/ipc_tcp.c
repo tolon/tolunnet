@@ -9,7 +9,81 @@
 #include "slot_table.h"
 #include "netif_mgr.h"
 #include "ipc_dispatch.h"
+#include "ipc_dgram.h"
 #include "../common/sockaddr_util.h"
+
+/* 4.2: queue as much of buf[*done..len) as lwIP takes right now. ERR_OK =
+ * everything queued; ERR_MEM = send buffer or segment queue full (wait or
+ * EWOULDBLOCK); anything else is a hard tcp_write error. */
+static err_t tn_tcp_write_some(struct tcp_pcb *pcb, const char *buf, LONG len, LONG *done)
+{
+    while (*done < len) {
+        u16_t snd_buf = tcp_sndbuf(pcb);
+        LONG left = len - *done;
+        u16_t chunk;
+        err_t werr;
+        if (snd_buf == 0) return ERR_MEM;
+        chunk = (left > 0xFFFF) ? 0xFFFF : (u16_t)left;
+        if (chunk > snd_buf) chunk = snd_buf;
+        werr = tcp_write(pcb, buf + *done, chunk, TCP_WRITE_FLAG_COPY);
+        if (werr != ERR_OK) return werr;
+        *done += chunk;
+    }
+    return ERR_OK;
+}
+
+static LONG tn_tcp_write_errno(err_t werr)
+{
+    switch (werr) {
+    case ERR_CONN:
+    case ERR_CLSD: return ENOTCONN;
+    case ERR_ARG:
+    case ERR_VAL:  return EINVAL;
+    default:       return ENOBUFS;
+    }
+}
+
+/* 4.2: continue a parked blocking send from lwIP callback context (sent /
+ * poll). Never drains loopback here - that would re-enter tcp_input; the
+ * main loop flushes after the callback returns. */
+static void tn_tcp_resume_send(TnSocketSlot *slot)
+{
+    TnIpcMsg *imsg = slot->pending_send_msg;
+    LONG done;
+    err_t werr;
+
+    if (imsg == NULL) return;
+    if (slot->shut_wr) {
+        tn_slot_reply_send(slot, EPIPE, 1);
+        return;
+    }
+    if (slot->tcp_pcb == NULL) {
+        tn_slot_reply_send(slot, ECONNRESET, 1);
+        return;
+    }
+    done = slot->send_done;
+    werr = tn_tcp_write_some(slot->tcp_pcb, (const char *)imsg->ptrs[0], imsg->args[1], &done);
+    if (done != slot->send_done) {
+        tcp_output(slot->tcp_pcb);
+    }
+    slot->send_done = done;
+    if (werr == ERR_MEM) return;            /* still no room: stay parked */
+    tn_slot_reply_send(slot, tn_tcp_write_errno(werr), 1); /* ERR_OK -> done */
+}
+
+/* 4.2: retry hook for ERR_MEM with nothing in flight (no sent_cb would
+ * ever come) - lwIP's api_msg uses tcp_poll the same way. */
+static err_t tn_tcp_poll_cb(void *arg, struct tcp_pcb *pcb)
+{
+    int slot_idx = (int)(intptr_t)arg;
+    if (slot_idx >= 0 && slot_idx < TN_MAX_GLOBAL_SOCKETS) {
+        TnSocketSlot *slot = &g_daemon.sockets[slot_idx];
+        if (slot->in_use && slot->tcp_pcb == pcb && slot->pending_send_msg != NULL) {
+            tn_tcp_resume_send(slot);
+        }
+    }
+    return ERR_OK;
+}
 
 err_t tn_tcp_sent_cb(void *arg, struct tcp_pcb *pcb, u16_t len)
 {
@@ -18,6 +92,11 @@ err_t tn_tcp_sent_cb(void *arg, struct tcp_pcb *pcb, u16_t len)
     if (slot_idx >= 0 && slot_idx < TN_MAX_GLOBAL_SOCKETS) {
         TnSocketSlot *slot = &g_daemon.sockets[slot_idx];
         if (slot->in_use && slot->tcp_pcb == pcb) {
+            if (slot->pending_send_msg != NULL) {
+                tn_tcp_resume_send(slot);
+            }
+            /* 4.6: space freed - wake WaitSelect write sets too */
+            tn_signal_socket(&g_daemon, slot);
             tn_record_socket_event(&g_daemon, slot, FD_WRITE);
         }
     }
@@ -49,6 +128,14 @@ err_t tn_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
         if (slot->pending_recv_msg != NULL) {
             tn_service_pending_recv(&g_daemon, slot);
         }
+        return ERR_OK;
+    }
+
+    /* 4.7: after shutdown(SHUT_RD) BSD silently drops new data; keep the
+     * window open instead of letting lwIP RST the connection. */
+    if (slot->shut_rd) {
+        tcp_recved(pcb, p->tot_len);
+        pbuf_free(p);
         return ERR_OK;
     }
 
@@ -100,26 +187,49 @@ void tn_tcp_err_cb(void *arg, err_t err)
 {
     int slot_idx = (int)(intptr_t)arg;
     TnSocketSlot *slot;
-    (void)err;
+    LONG eno;
 
     if (slot_idx < 0 || slot_idx >= TN_MAX_GLOBAL_SOCKETS) return;
 
     slot = &g_daemon.sockets[slot_idx];
     if (!slot->in_use) return;
 
-    slot->tcp_state  = TN_TCP_STATE_ERROR;
-    slot->tcp_pcb    = NULL; /* lwIP frees PCB before calling err_cb */
-    slot->last_error = ECONNREFUSED;
+    slot->tcp_pcb = NULL; /* lwIP frees PCB before calling err_cb */
     tn_logf(TN_LOG_VERBOSE, "tolunnet: tcp_err_cb slot=%d err=%d\n", slot_idx, (int)err);
+
+    /* 4.3: map the lwIP reason. ERR_CLSD is lwIP's normal end of a passive
+     * close (LAST_ACK acked, TF_RXCLOSED unset) - not an error: the peer's
+     * FIN was already seen, so recv() keeps returning EOF. */
+    if (err == ERR_CLSD && slot->tcp_state != TN_TCP_STATE_CONNECTING) {
+        slot->tcp_state  = TN_TCP_STATE_PEER_CLOSED;
+        slot->last_error = 0;
+        tn_signal_socket(&g_daemon, slot);
+        tn_record_socket_event(&g_daemon, slot, FD_CLOSE);
+        tn_slot_reply_send(slot, EPIPE, 1);
+        if (slot->pending_recv_msg != NULL) {
+            tn_service_pending_recv(&g_daemon, slot);
+        }
+        return;
+    }
+    if (slot->tcp_state == TN_TCP_STATE_CONNECTING) {
+        eno = (err == ERR_ABRT) ? ETIMEDOUT : ECONNREFUSED;
+    } else {
+        eno = (err == ERR_ABRT) ? ECONNABORTED : ECONNRESET;
+    }
+
+    slot->tcp_state  = TN_TCP_STATE_ERROR;
+    slot->last_error = eno;
     tn_signal_socket(&g_daemon, slot);
     tn_record_socket_event(&g_daemon, slot, FD_ERROR);
 
     if (slot->pending_connect_msg != NULL) {
         slot->pending_connect_msg->result = -1;
-        slot->pending_connect_msg->err_no = ECONNREFUSED;
+        slot->pending_connect_msg->err_no = eno;
         ReplyMsg((struct Message *)slot->pending_connect_msg);
         slot->pending_connect_msg = NULL;
+        slot->last_error = 0; /* reported through connect() */
     }
+    tn_slot_reply_send(slot, eno, 1);
     if (slot->pending_recv_msg != NULL) {
         tn_service_pending_recv(&g_daemon, slot);
     }
@@ -207,12 +317,9 @@ err_t tn_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
         tcp_sent(newpcb, tn_tcp_sent_cb);
         tcp_err(newpcb, tn_tcp_err_cb);
 
-        if (addr != NULL && addrlen != NULL && *addrlen >= sizeof(struct sockaddr_in)) {
-            /* TNET-139: byte-wise store into client buffer */
-            tn_sockin_store_bytes(addr, AF_INET, newpcb->remote_port,
-                                  ip_2_ip4(&newpcb->remote_ip)->addr);
-            *addrlen = sizeof(struct sockaddr_in);
-        }
+        /* TNET-139/4.5: byte-wise, truncating store into client memory */
+        tn_store_client_sockaddr(addr, addrlen, newpcb->remote_port,
+                                 ip_2_ip4(&newpcb->remote_ip)->addr);
 
         imsg->result = client_fd;
         imsg->err_no = 0;
@@ -221,8 +328,9 @@ err_t tn_tcp_accept_cb(void *arg, struct tcp_pcb *newpcb, err_t err)
         return ERR_OK;
     }
 
-    /* Queue incoming connection into accept queue (bounded to 8) */
-    if (slot->accept_count >= 8 || tn_accept_queue_push(slot, newpcb) != 0) {
+    /* Queue incoming connection into accept queue (bounded by listen()
+     * backlog, at most TN_ACCEPT_QUEUE_MAX) */
+    if (slot->accept_count >= slot->listen_backlog || tn_accept_queue_push(slot, newpcb) != 0) {
         tcp_abort(newpcb);
         return ERR_ABRT;
     }
@@ -246,13 +354,15 @@ int tn_ipc_cmd_listen(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         return 0;
     }
 
+    bl = (backlog <= 0) ? 1 : ((backlog > TN_ACCEPT_QUEUE_MAX) ? TN_ACCEPT_QUEUE_MAX : (u8_t)backlog);
+
     if (slot->tcp_state == TN_TCP_STATE_LISTENING) {
+        slot->listen_backlog = bl; /* BSD: re-listen updates the backlog */
         imsg->result = 0;
         imsg->err_no = 0;
         return 0;
     }
 
-    bl = (backlog <= 0) ? 1 : ((backlog > 8) ? 8 : (u8_t)backlog);
     lpcb = tcp_listen_with_backlog(slot->tcp_pcb, bl);
     if (lpcb == NULL) {
         imsg->result = -1;
@@ -263,6 +373,7 @@ int tn_ipc_cmd_listen(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     slot_idx = (int)(slot - d->sockets);
     slot->tcp_pcb   = lpcb;
     slot->tcp_state = TN_TCP_STATE_LISTENING;
+    slot->listen_backlog = bl;
     tcp_arg(lpcb, (void *)(intptr_t)slot_idx);
     tcp_accept(lpcb, tn_tcp_accept_cb);
 
@@ -368,12 +479,9 @@ int tn_ipc_cmd_accept(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         tcp_sent(new_pcb, tn_tcp_sent_cb);
         tcp_err(new_pcb, tn_tcp_err_cb);
 
-        if (addr != NULL && addrlen != NULL && *addrlen >= sizeof(struct sockaddr_in)) {
-            /* TNET-139: byte-wise store into client buffer */
-            tn_sockin_store_bytes(addr, AF_INET, new_pcb->remote_port,
-                                  ip_2_ip4(&new_pcb->remote_ip)->addr);
-            *addrlen = sizeof(struct sockaddr_in);
-        }
+        /* TNET-139/4.5: byte-wise, truncating store into client memory */
+        tn_store_client_sockaddr(addr, addrlen, new_pcb->remote_port,
+                                 ip_2_ip4(&new_pcb->remote_ip)->addr);
 
         tn_record_socket_event(d, new_slot, FD_WRITE);
         if (new_slot->rx_count > 0 || new_slot->tcp_state == TN_TCP_STATE_PEER_CLOSED) {
@@ -404,8 +512,10 @@ int tn_ipc_cmd_accept(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 int tn_ipc_cmd_connect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
     const void *sin_ptr = (const void *)imsg->ptrs[0];
+    LONG namelen = imsg->args[1];
     uint32_t sin_addr = 0;
     u16_t sin_port = 0;
+    u16_t sin_family = 0;
     (void)d;
 
     if (slot == NULL || sin_ptr == NULL) {
@@ -413,23 +523,44 @@ int tn_ipc_cmd_connect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         imsg->err_no = EBADF;
         return 0;
     }
+    /* 4.4: 4.4BSD sockargs/in_pcbconnect - short name is EINVAL */
+    if (namelen < (LONG)sizeof(struct sockaddr_in)) {
+        imsg->result = -1;
+        imsg->err_no = EINVAL;
+        return 0;
+    }
 
     /* TNET-139: client buffer — byte-wise load */
-    tn_sockin_load_bytes(sin_ptr, NULL, &sin_port, &sin_addr);
+    tn_sockin_load_bytes(sin_ptr, &sin_family, &sin_port, &sin_addr);
 
-    if (slot->type == SOCK_STREAM && slot->tcp_pcb != NULL) {
+    if (slot->type == SOCK_STREAM) {
         ip_addr_t dst_ip;
         u16_t dst_port = sin_port;
         err_t cerr;
+        LONG eno = 0;
 
-        if (slot->tcp_state == TN_TCP_STATE_CONNECTING) {
-            imsg->result = -1;
-            imsg->err_no = EALREADY;
-            return 0;
+        /* 4.4/4.1: every state without a fresh pcb answers here - the old
+         * fall-through returned 0 ("connected") for a dead pcb. LISTENING:
+         * 4.4BSD soconnect() refuses SO_ACCEPTCONN sockets with EOPNOTSUPP
+         * (and the listen pcb must not see tcp_recv/tcp_sent). */
+        switch (slot->tcp_state) {
+        case TN_TCP_STATE_LISTENING:   eno = EOPNOTSUPP; break;
+        case TN_TCP_STATE_CONNECTING:  eno = EALREADY;   break;
+        case TN_TCP_STATE_ESTABLISHED:
+        case TN_TCP_STATE_PEER_CLOSED: eno = EISCONN;    break;
+        case TN_TCP_STATE_ERROR:
+            /* report the async failure (non-blocking connect poll) once */
+            eno = (slot->last_error != 0) ? slot->last_error : EINVAL;
+            slot->last_error = 0;
+            break;
+        default:
+            if (slot->tcp_pcb == NULL) eno = EINVAL; /* after SHUT_RDWR */
+            else if (sin_family != AF_INET) eno = EAFNOSUPPORT;
+            break;
         }
-        if (slot->tcp_state == TN_TCP_STATE_ESTABLISHED) {
+        if (eno != 0) {
             imsg->result = -1;
-            imsg->err_no = EISCONN;
+            imsg->err_no = eno;
             return 0;
         }
 
@@ -454,7 +585,15 @@ int tn_ipc_cmd_connect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             slot->pending_connect_msg = NULL;
             slot->tcp_state           = TN_TCP_STATE_CLOSED;
             imsg->result = -1;
-            imsg->err_no = ECONNREFUSED;
+            switch (cerr) {
+            case ERR_RTE: imsg->err_no = ENETUNREACH;  break;
+            case ERR_USE: imsg->err_no = EADDRINUSE;   break;
+            case ERR_BUF:
+            case ERR_MEM: imsg->err_no = ENOBUFS;      break;
+            case ERR_ARG:
+            case ERR_VAL: imsg->err_no = EINVAL;       break;
+            default:      imsg->err_no = ECONNREFUSED; break;
+            }
             return 0;
         }
 
@@ -482,8 +621,9 @@ int tn_ipc_cmd_connect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         return 0;
     }
 
-    imsg->result = 0;
-    imsg->err_no = 0;
+    /* 4.4: no pcb behind the slot - never report success */
+    imsg->result = -1;
+    imsg->err_no = EINVAL;
     return 0;
 }
 
@@ -491,7 +631,7 @@ int tn_ipc_cmd_send(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
     const void *buf = (const void *)imsg->ptrs[0];
     LONG len = imsg->args[1];
-    (void)d;
+    LONG flags = imsg->args[2];
 
     if (slot == NULL || buf == NULL || len < 0) {
         imsg->result = -1;
@@ -501,19 +641,14 @@ int tn_ipc_cmd_send(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
     if (slot->type == SOCK_STREAM) {
         err_t werr;
-        u16_t send_len;
-        u16_t snd_buf;
-
-        if (slot->tcp_pcb == NULL) {
-            imsg->result = -1;
-            imsg->err_no = ENOTCONN;
-            return 0;
-        }
+        LONG done = 0;
+        BOOL nonblock = slot->is_nonblocking || (flags & MSG_DONTWAIT) != 0;
 
         /* 4.4BSD: send() in CLOSE_WAIT (peer sent FIN, ours not sent yet)
          * still works - a server that reads the request to EOF and then
          * replies depends on it. EPIPE only after OUR shutdown(SHUT_WR)
-         * or a hard error; ENOTCONN for states without a live circuit. */
+         * or a hard error; ENOTCONN for states without a live circuit.
+         * (shut_wr first: after a clean close the pcb is gone too.) */
         if (slot->shut_wr) {
             imsg->result = -1;
             imsg->err_no = EPIPE;
@@ -538,45 +673,73 @@ int tn_ipc_cmd_send(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             imsg->err_no = ENOTCONN;
             return 0;
         }
+        /* 4.2: one parked send per socket; nothing may overtake it */
+        if (slot->pending_send_msg != NULL) {
+            imsg->result = -1;
+            imsg->err_no = nonblock ? EWOULDBLOCK : EALREADY;
+            return 0;
+        }
 
-        snd_buf = tcp_sndbuf(slot->tcp_pcb);
-        if (snd_buf == 0) {
+        /* 4.2: BSD sosend - a blocking send queues ALL of buf (waiting for
+         * space), a non-blocking one queues what fits (EWOULDBLOCK if
+         * nothing). The drains below can free space (loopback ACKs), so
+         * keep writing while that makes progress. */
+        for (;;) {
+            LONG before = done;
+            werr = tn_tcp_write_some(slot->tcp_pcb, (const char *)buf, len, &done);
+            if (done > before) {
+                tcp_output(slot->tcp_pcb);
+                tn_drain_loopback();
+                /* z.ai step 7 item 4: the drain can RST the pcb (slot->tcp_pcb
+                 * becomes NULL via the error callback) — re-check before the
+                 * second output. */
+                if (slot->tcp_pcb == NULL) break;
+                /* TNET-115: second output after drain clears Nagle blocks */
+                tcp_output(slot->tcp_pcb);
+                tn_drain_loopback();
+                if (slot->tcp_pcb == NULL) break;
+            }
+            if (werr != ERR_MEM || done == before) break;
+        }
+
+        if (slot->tcp_pcb == NULL) {
+            imsg->result = (done > 0) ? done : -1;
+            imsg->err_no = (done > 0) ? 0 : ECONNRESET;
+            return 0;
+        }
+        if (werr == ERR_OK || (werr == ERR_MEM && nonblock && done > 0)) {
+            imsg->result = done;
+            imsg->err_no = 0;
+            return 0;
+        }
+        if (werr != ERR_MEM) {
+            imsg->result = (done > 0) ? done : -1;
+            imsg->err_no = (done > 0) ? 0 : tn_tcp_write_errno(werr);
+            return 0;
+        }
+        if (nonblock) {
             imsg->result = -1;
             imsg->err_no = EWOULDBLOCK;
             return 0;
         }
 
-        send_len = (len > 0xFFFF) ? 0xFFFF : (u16_t)len;
-        if (send_len > snd_buf) send_len = snd_buf;
-
-        werr = tcp_write(slot->tcp_pcb, buf, send_len, TCP_WRITE_FLAG_COPY);
-        if (werr != ERR_OK) {
-            imsg->result = -1;
-            imsg->err_no = ENOBUFS;
-            return 0;
+        /* 4.2: blocking and no room - park until tn_tcp_sent_cb / the poll
+         * retry frees space; SO_SNDTIMEO bounds the wait like the recv
+         * deadline (tn_slot_check_recv_timeouts). */
+        slot->pending_send_msg = imsg;
+        slot->send_done = done;
+        if (slot->opt_sndtimeo.tv_secs > 0 || slot->opt_sndtimeo.tv_micro > 0) {
+            uint32_t ms = (uint32_t)slot->opt_sndtimeo.tv_secs * 1000 +
+                          (uint32_t)(slot->opt_sndtimeo.tv_micro + 999) / 1000;
+            uint32_t ticks = (ms + 99) / 100;
+            if (ticks == 0) ticks = 1;
+            slot->send_deadline_tick = (d != NULL) ? (d->mainloop_ticks + ticks) : 0;
+            if (slot->send_deadline_tick == 0) slot->send_deadline_tick = 1;
+        } else {
+            slot->send_deadline_tick = 0;
         }
-
-        tcp_output(slot->tcp_pcb);
-        tn_drain_loopback();
-        /* z.ai step 7 item 4: the drain can RST the pcb (slot->tcp_pcb
-         * becomes NULL via the error callback) — re-check before the
-         * second output. */
-        if (slot->tcp_pcb == NULL) {
-            imsg->result = -1;
-            imsg->err_no = ECONNRESET;
-            return 0;
-        }
-        /* TNET-115: second output after drain clears Nagle blocks */
-        tcp_output(slot->tcp_pcb);
-        tn_drain_loopback();
-        if (slot->tcp_pcb == NULL) {
-            imsg->result = -1;
-            imsg->err_no = ECONNRESET;
-            return 0;
-        }
-        imsg->result = (LONG)send_len;
-        imsg->err_no = 0;
-        return 0;
+        tcp_poll(slot->tcp_pcb, tn_tcp_poll_cb, 1);
+        return 1; /* TN_IPC_DEFER */
     } else if (slot->type == SOCK_DGRAM && slot->udp_pcb != NULL) {
         struct pbuf *p;
         u16_t send_len;
@@ -605,8 +768,17 @@ int tn_ipc_cmd_send(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         }
 
         pbuf_take(p, buf, send_len);
-        udp_sendto(slot->udp_pcb, p, &slot->udp_pcb->remote_ip, slot->udp_pcb->remote_port);
-        pbuf_free(p);
+        {
+            err_t serr = udp_sendto(slot->udp_pcb, p, &slot->udp_pcb->remote_ip,
+                                    slot->udp_pcb->remote_port);
+            pbuf_free(p);
+            /* 4.10: same err_t -> errno map as sendto (ipc_dgram.c) */
+            if (serr != ERR_OK) {
+                imsg->result = -1;
+                imsg->err_no = (serr == ERR_MEM) ? ENOBUFS : EHOSTUNREACH;
+                return 0;
+            }
+        }
         tn_drain_loopback();
 
         imsg->result = (LONG)send_len;
@@ -725,8 +897,10 @@ int tn_ipc_cmd_recv(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             imsg->err_no = 0;
             return 0;
         } else if (slot->tcp_state == TN_TCP_STATE_ERROR) {
+            /* 4.3: the mapped lwIP reason (once), else ECONNRESET */
             imsg->result = -1;
-            imsg->err_no = ECONNRESET;
+            imsg->err_no = (slot->last_error != 0) ? slot->last_error : ECONNRESET;
+            slot->last_error = 0;
             return 0;
         } else if (slot->tcp_state != TN_TCP_STATE_CONNECTING &&
                    slot->tcp_state != TN_TCP_STATE_ESTABLISHED) {
@@ -799,6 +973,13 @@ int tn_ipc_cmd_shutdown(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         imsg->err_no = EINVAL;
         return 0;
     }
+    /* 4.1: a listener has no connection to shut down - and its pcb is a
+     * tcp_pcb_listen that tcp_recv/sent/err/tcp_shutdown must not touch */
+    if (slot->tcp_state == TN_TCP_STATE_LISTENING) {
+        imsg->result = -1;
+        imsg->err_no = ENOTCONN;
+        return 0;
+    }
 
     shut_rx = (how == 0 || how == 2) ? 1 : 0;
     shut_tx = (how == 1 || how == 2) ? 1 : 0;
@@ -826,26 +1007,37 @@ int tn_ipc_cmd_shutdown(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         tcp_recv(slot->tcp_pcb, NULL);
         tcp_sent(slot->tcp_pcb, NULL);
         tcp_err(slot->tcp_pcb, NULL);
+        tcp_poll(slot->tcp_pcb, NULL, 0);
         /* capture before close: tcp_close may free the pcb */
         {
             struct tcp_pcb *closing = slot->tcp_pcb;
             slot->tcp_pcb = NULL;
             slot->tcp_state = TN_TCP_STATE_CLOSED;
             serr = tcp_close(closing);
+            if (serr != ERR_OK) {
+                /* 3.9: ERR_MEM leaves the pcb alive with no owner - abort
+                 * (RST) instead of orphaning it; callbacks are detached */
+                tcp_abort(closing);
+            }
         }
-        if (serr != ERR_OK) {
-            /* ERR_MEM: pcb not freed (backlog pbufs) - it stays referenced
-             * by lwIP's pcb lists; report the failure, slot stays detached */
-            imsg->result = -1;
-            imsg->err_no = ENOBUFS;
-            return 0;
-        }
+        /* 4.2: a parked send of this socket can never complete now */
+        tn_slot_reply_send(slot, EPIPE, 1);
         imsg->result = 0;
         imsg->err_no = 0;
         return 0;
     }
 
-    serr = tcp_shutdown(slot->tcp_pcb, shut_rx, shut_tx);
+    if (!shut_tx) {
+        /* 4.7: SHUT_RD alone stays local (BSD sorflush): drop what is
+         * queued, return the window, and discard later data in recv_cb.
+         * tcp_shutdown(rx) would make lwIP RST on the next segment. */
+        tn_rx_queue_drain_with_recved(slot);
+        imsg->result = 0;
+        imsg->err_no = 0;
+        return 0;
+    }
+
+    serr = tcp_shutdown(slot->tcp_pcb, 0, 1);
     if (serr != ERR_OK) {
         imsg->result = -1;
         imsg->err_no = ECONNRESET;

@@ -31,8 +31,12 @@ Photograph every screen asked about; report pass/fail per line.
 - [ ] Files land in `SYS:C/`, `SYS:Libs/usergroup.library`,
       `SYS:Prefs/TolunnetSetup` + `TolunnetPrefs` (with icons).
 - [ ] Run `S:tolunnet-undo`: replaced C: tools come back, the two Prefs
-      tools and their icons are removed, `usergroup.library` stays.
-- [ ] Reboot: no stale startup line remains.
+      tools and their icons are removed, a pre-existing
+      `usergroup.library` is restored (ours stays when there was none).
+- [ ] `S:User-Startup` is left in place; its tolunnet block is guarded by
+      `If EXISTS C:tolunnet` and the undo says it can be removed by hand.
+      `S:User-Startup.tolunnet-bak` is now `S:User-Startup.tolunnet-old`.
+- [ ] Reboot: the leftover block does nothing (no `C:tolunnet`).
 
 ## 4. Manual mode in the wizard
 

@@ -134,7 +134,12 @@ int main(int argc, char **argv)
             FreeArgs(rdargs); tn_cmd_fini();
             return TN_CMD_USAGE;
         }
-        if (mask_s != NULL) tn_parse_ipv4(mask_s, &mask);
+        /* 6.10: a bad NETMASK must not silently become /32 */
+        if (mask_s != NULL && !tn_parse_ipv4(mask_s, &mask)) {
+            tn_cmd_printf("route: bad NETMASK\n");
+            FreeArgs(rdargs); tn_cmd_fini();
+            return TN_CMD_USAGE;
+        }
         {
             LONG r = route_ctl(TN_ROUTECTL_DELETE, dest, mask, 0, NULL, 0);
             if (r != 0) {

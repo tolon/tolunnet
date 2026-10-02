@@ -59,7 +59,7 @@ int tn_sbtc_dispatch_tag(uint32_t raw_tag, uint32_t data,
         break;
 
     case TN_SBTC_DTABLESIZE:
-        if (is_set) { res->op = TN_SBTC_OP_SET_DTABLESIZE; res->value = data; }
+        if (is_set) { res->op = TN_SBTC_OP_SET_DTABLESIZE; res->is_ref = is_ref; res->value = data; }
         else get_plain(res, is_ref, state->dtablesize);
         break;
 

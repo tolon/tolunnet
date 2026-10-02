@@ -8,6 +8,9 @@
  */
 #include "syslog.h"
 #include "../common/config_text.h"
+#include "../common/log.h"
+
+#include <proto/exec.h>
 
 #define TN_SYSLOG_PORT     514
 #define TN_SYSLOG_MAX_FRAME    512
@@ -17,6 +20,7 @@ static ip_addr_t       s_dst;
 static BOOL            s_armed;
 static BOOL            s_in_sink;   /* reentrancy latch: we run inside tn_log */
 static char            s_host[48];
+static struct Task    *s_owner;     /* 5.1: the daemon task that armed us */
 
 static void tn_syslog_dns_cb(const char *name, const ip_addr_t *ipaddr, void *arg)
 {
@@ -44,6 +48,11 @@ void tn_syslog_shutdown(void)
 BOOL tn_syslog_apply(const char *host)
 {
     err_t derr;
+
+    /* 5.1: tn_syslog_apply always runs on the daemon task (startup and
+     * RECONFIG); from now on tn_log feeds the sink only from this task */
+    s_owner = FindTask(NULL);
+    tn_log_set_owner();
 
     if (host == NULL || host[0] == '\0') {
         if (s_armed || s_pcb != NULL) {
@@ -98,6 +107,7 @@ void tn_syslog_sink(const char *msg)
     char *dst;
 
     if (!s_armed || s_pcb == NULL || msg == NULL || s_in_sink) return;
+    if (FindTask(NULL) != s_owner) return;          /* 5.1: lwIP is daemon-only */
 
     /* RFC3164 frame: "<PRI>tag: message" without trailing newline. */
     dst = frame;

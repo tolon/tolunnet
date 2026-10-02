@@ -289,6 +289,72 @@ TN_TEST(dynamic_user_addition)
     teardown_test_base();
 }
 
+/* 5.7: traditional DES crypt(3). Vectors produced by glibc/libxcrypt
+ * crypt(); salts ".." and "zz" exercise all-clear / all-set E swaps. */
+TN_TEST(crypt_des_vectors)
+{
+    static const struct { const char *key, *salt, *want; } v[] = {
+        { "password", "ab", "abJnggxhB/yWI" },
+        { "test", "aa", "aaqPiZY5xR5l." },
+        { "", "..", "..X8NBuQ4l6uQ" },
+        { "", "ab", "abmF1QH4PEr.E" },
+        { "zzzzzzzz", "zz", "zzQ4PRDdoNSjw" },
+        { "abcdefghijkl", "..", "..dCr2UJOULd6" },  /* > 8 chars truncated */
+        { "abcdefgh", "..", "..dCr2UJOULd6" },
+        { "Amiga1200", "Q7", "Q7QqLP67XG8Cc" },
+        { "tolunnet", "/.", "/.LGGgxoHgRRI" },
+        { "x", "99", "99dBJPVxmaMG2" },
+        { "S3cr3t!", "z9", "z9474qWADtLsg" },
+        { "Abc", "Az", "AzR5LqR1O811A" },
+        { "\xc1" "bc", "Az", "AzR5LqR1O811A" },    /* bit 7 ignored */
+    };
+    size_t i;
+    setup_test_base();
+    for (i = 0; i < sizeof(v) / sizeof(v[0]); i++) {
+        UBYTE *res = ug_lvo_crypt((UBYTE *)v[i].key, (UBYTE *)v[i].salt, &g_test_base);
+        TN_ASSERT_TRUE(res != NULL);
+        if (res != NULL) TN_ASSERT_STREQ((char *)res, v[i].want);
+    }
+    /* full hash as the salt argument (the usual verify idiom) */
+    TN_ASSERT_STREQ((char *)ug_lvo_crypt((UBYTE *)"password", (UBYTE *)"abJnggxhB/yWI",
+                                         &g_test_base), "abJnggxhB/yWI");
+    teardown_test_base();
+}
+
+TN_TEST(getutent_terminates)
+{
+    /* 5.6: who/finger loop "while ((u = getutent()) != NULL)" */
+    setup_test_base();
+    ug_lvo_setutent(&g_test_base);
+    TN_ASSERT_TRUE(ug_lvo_getutent(&g_test_base) != NULL);
+    TN_ASSERT_TRUE(ug_lvo_getutent(&g_test_base) == NULL);
+    TN_ASSERT_TRUE(ug_lvo_getutent(&g_test_base) == NULL);
+    ug_lvo_setutent(&g_test_base);
+    TN_ASSERT_TRUE(ug_lvo_getutent(&g_test_base) != NULL);
+    ug_lvo_endutent(&g_test_base);
+    TN_ASSERT_TRUE(ug_lvo_getutent(&g_test_base) != NULL);
+    TN_ASSERT_TRUE(ug_lvo_getutent(&g_test_base) == NULL);
+    teardown_test_base();
+}
+
+TN_TEST(getent_without_setent)
+{
+    /* 5.9: getpwent/getgrent before any set*ent start at the head */
+    int count = 0;
+    setup_test_base();
+    while (ug_lvo_getpwent(&g_test_base) != NULL && count < 100) count++;
+    TN_ASSERT_EQ(count, 3);
+    TN_ASSERT_TRUE(ug_lvo_getpwent(&g_test_base) == NULL);   /* stays at end */
+    count = 0;
+    while (ug_lvo_getgrent(&g_test_base) != NULL && count < 100) count++;
+    TN_ASSERT_EQ(count, 3);
+    TN_ASSERT_TRUE(ug_lvo_getgrent(&g_test_base) == NULL);
+    /* after end*ent a fresh walk starts from the head again */
+    ug_lvo_endpwent(&g_test_base);
+    TN_ASSERT_TRUE(ug_lvo_getpwent(&g_test_base) != NULL);
+    teardown_test_base();
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -304,6 +370,9 @@ int main(void)
     TN_TEST_RUN(setup_context_tags_and_errno);
     TN_TEST_RUN(crypt_and_salt_generation);
     TN_TEST_RUN(dynamic_user_addition);
+    TN_TEST_RUN(crypt_des_vectors);
+    TN_TEST_RUN(getutent_terminates);
+    TN_TEST_RUN(getent_without_setent);
 
     TN_TEST_PLAN();
     return tn_test_failures();

@@ -9,6 +9,12 @@ If EXISTS WORK:
 
   Run >WORK:soak-daemon.log C:tolunnet
   Wait 15
+  ; 9.5: FailAt 21 keeps the driver going; every RC is checked and
+  ; logged as "not ok" (ci/bench.sh gates on it)
+  C:TolunnetControl STATUS >>WORK:soak.log
+  If WARN
+    Echo >>WORK:soak.log "not ok soak daemon not running after boot start"
+  EndIf
 
   Avail >WORK:soak-avail-base.txt
   Echo >>WORK:soak.log "=== SOAK START (BASE AVAIL) ==="

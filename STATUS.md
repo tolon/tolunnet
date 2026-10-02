@@ -8,7 +8,6 @@ _Last updated: 2026-10-01 · version string `1.2.0-rc5` (`include/version.h`)_
 |---|---|
 | Latest release candidate | **1.2.0-rc5** |
 | Changes in rc5 | CANCEL/break-signal correctness, WaitSelect per 4.4BSD, errno truth (EDESTADDRREQ family), the 68000 shutdown/freeze class closed, command output number fixes, ftp/nc/TolunnetGet rework, nslookup answer-vs-server + PTR default, honest wizard Test page (stack-reported values, SKIPPED states), installer parity between bench and archive (see CHANGELOG) |
-| Package LHA | `build/tolunnet-1.2.0-rc5.lha` (`d6cd572af853f5d690b801661f76dbc1a37df9d54c5b26fd6dc4651f3c1e4308`) |
 | Package ADF | `build/tolunnet-1.2.0-rc5-disk1.adf` + `-disk2.adf` — the Gotek two-disk set (FFS DD 880 KB each, explicit manifest `scripts/adf_manifest.txt`); merging both disks into one drawer reproduces the package tree byte for byte; `Install_From_Floppies` on disk 1 bootstraps the install |
 | TX pipelining | `TX_QUEUE=0` (synchronous `DoIO`) is the release default. The TX pool is proven in the bench with `TX_QUEUE=4`; the real-hardware default is still to be decided. |
 
@@ -23,14 +22,14 @@ _Last updated: 2026-10-01 · version string `1.2.0-rc5` (`include/version.h`)_
 
 | Layer | Result | Evidence |
 |---|---|---|
-| Host unit tests (`make test-host`) | 20 programs, ASan/UBSan | run locally before every commit |
+| Host unit tests (`make test-host`) | every `tests/host/test_*.c` (24 programs, 229 ok after the 2026-10-02 bug-track fixes), ASan/UBSan | run locally before every commit |
 | Emulated conformance bench, rc3 tree | **ALL-GREEN**: 58/58 in both cycles on both profiles (a1200 + 68000); bsdsocktest **126/142** | bench `20260921-135938-51196ec` (in git history up to `7f87caf`) |
 | Emulated conformance bench, post-rc3 work | **ALL-GREEN**: 60/60 in both cycles on both profiles (a1200 + 68000); bsdsocktest **126/142** | bench `20260923-082158-v1.2.0-rc3-25-gdb29de8` |
-| Emulated conformance bench, rc5 tree | **ALL-GREEN**: `112 ok / 0 not ok`, plan `1..112`, four legs (a1200 + 68000, two cycles); `tc_floppy_install` ok (51/51 manifest lines), `tc_installer_pretend` SKIP (real Installer is GUI-bound headlessly); the `112` counts the pretend row's `ok … # SKIP` line, `skip=3` = tc_dns_a (external), tc_link_events, tc_installer_pretend; bsdsocktest **126/142** | bench `20261002-121439-v1.2.0-rc4-511-g80c7455` |
-| Release asset checksums | lha `705b3bedb6b0335ed70e513ef539f8bf3ca8bf301b84c0010e361c29c437a209`, disk1 `d041ea89c034a5904c3fc293ca3a49c628db35eca352b3965d41852e69bc986b`, disk2 `d4b792a468b0e558de6b64ff813a74c254add1596047ae42212d589e3459fa17` | `build/release-assets/` (+`SHA256SUMS.txt`) |
+| Emulated conformance bench, rc5 tree (`TX_QUEUE=4` only; the default `TX_QUEUE=0` leg is new in `ci/bench.sh` and not yet run) | **ALL-GREEN**: `112 ok / 0 not ok`, plan `1..112`, four legs (a1200 + 68000, two cycles); `tc_floppy_install` ok (51/51 manifest lines), `tc_installer_pretend` SKIP (real Installer is GUI-bound headlessly); the `112` counts the pretend row's `ok … # SKIP` line, `skip=3` = tc_dns_a (external), tc_link_events, tc_installer_pretend; bsdsocktest **126/142** | bench `20261002-121439-v1.2.0-rc4-511-g80c7455` |
+| Release asset checksums | lha `17d2d561e4e3cbbb9b8c4c6d858151113bf157e06aa2343a53b208b6954cd024`, disk1 `d08627ac1df60b1874205446afa56c19a4f2370b22311c21f52a5d61e246c34c`, disk2 `5622e1bdcae7122b2577b450f03a299f9c6892462ee55c5a94bd64a292b8d527` | `build/release-assets/` (+`SHA256SUMS.txt`) |
 | Phase 1b Red Baseline (`c598d6d`) | **ALL-GREEN (7 TODO)**: 60/60 + 9 net tests (7 TODO); bsdsocktest **126/142** | bench `20260923-125745-v1.2.0-rc4-1-gc598d6d-netbaseline` |
 | Phase 1b Item 2 | `net_tcp_blocking_recv` active; blocking recv parking + `SO_RCVTIMEO` | host test `test_slot_table` ok 10 |
-| Session-profile soak | **PASS**: 12 cycles (3 h 20 m, a1200, `TX_QUEUE=4`), 0 Gurus, 0 `not ok`, Chip RAM drift 0 B, Fast RAM −1200 B (cycle 1 → 11) | bench `20260922-144257-soak-842cc1f` (in git history up to `7f87caf`) |
+| Session-profile soak (pre-9.5 harness: its `not ok` gate could not fire, HTTP went to port 1 - re-run needed) | **PASS**: 12 cycles (3 h 20 m, a1200, `TX_QUEUE=4`), 0 Gurus, 0 `not ok`, Chip RAM drift 0 B, Fast RAM −1200 B (cycle 1 → 11) | bench `20260922-144257-soak-842cc1f` (in git history up to `7f87caf`) |
 | MuForce / Enforcer | **SKIP**: the tool image is not part of the bench | `muforce.txt` in each bench run |
 | RTG (Picasso96) wizard layout | **SKIP**: no RTG drivers in the bench image. PAL 640×256 and NTSC 640×200 are verified; RTG is retested by the owner on PiStorm. | — |
 | Real hardware (A500 + PiStorm + `wifipi.device`) | owner retest, manual | — |

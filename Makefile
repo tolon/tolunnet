@@ -18,6 +18,9 @@ CFLAGS      = -O2 -fomit-frame-pointer -m68000 -msoft-float -noixemul -Wall -Wex
               -Ilwipopts -Iinclude -Iinclude/netinclude -Ivendor/lwip/src/include -Isrc \
               $(NDK_INC) -std=c11 -MMD -MP
 LDFLAGS     = -noixemul -msoft-float
+# TNET-157: libnix only honours `unsigned long __stack` when swapstack.o is
+# linked; force it in for the tools that declare __stack (GUI tools + ftp).
+STKSWAP_LDFLAGS = -Wl,-u,___stkinit
 
 DEBUG      ?= 0
 ifeq ($(DEBUG),1)
@@ -193,6 +196,7 @@ python-checks:
 	python3 scripts/undo_sim.py --selftest
 	python3 scripts/gen_installer.py --check
 	python3 scripts/libnix_bases_lint.py --selftest
+	python3 scripts/libnix_bases_lint.py
 	python3 scripts/gen_lvo_table.py
 	python3 scripts/gen_usergroup_table.py
 	python3 scripts/gen_pkg_docs.py
@@ -211,6 +215,7 @@ python-checks:
 	  echo "[check_package_parity] no build/tolunnet-*.lha - skipped"; \
 	fi
 	sh scripts/check-forbid.sh
+	sh scripts/check_cast_align.sh --lint-only
 	@git --no-pager diff --exit-code -- src/lib/lib_table.gen.c src/lib/lib_stubs.gen.s \
 		src/lib/lib_unimpl.c src/lib/lib_compat_table.gen.md \
 		src/usergroup/ug_table.gen.c src/usergroup/ug_stubs.gen.s \
@@ -219,10 +224,13 @@ python-checks:
 		    echo "       run generators and commit the result"; \
 		    exit 1)
 
-# TNET-139: host-gcc strict cast-alignment gate over src/ (zero-warning).
+# TNET-139 / 9.1: host-gcc strict cast-alignment gate over src/; files the
+# host cannot parse are re-checked with $(CC) + NDK; an unchecked file
+# fails unless ALIGN_CHECK_NO_NDK=1. The cast-hop lint also runs in
+# python-checks (--lint-only).
 .PHONY: align-check
 align-check:
-	@sh scripts/check_cast_align.sh
+	@CROSS=$(CROSS) sh scripts/check_cast_align.sh
 
 .PHONY: screenshots
 screenshots:
@@ -302,7 +310,7 @@ $(GETNETSTATUS_BIN): $(BUILD)/src/cmds/GetNetStatus.o $(CMDLIB_OBJ) $(BUILD)/src
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(FTP_BIN): $(BUILD)/src/cmds/ftp.o $(CMDLIB_OBJ)
-	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS) $(STKSWAP_LDFLAGS)
 
 $(ROUTE_BIN): $(BUILD)/src/cmds/route.o $(CMDLIB_OBJ) $(BUILD)/src/common/ipc_client.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
@@ -344,8 +352,8 @@ $(GET_BIN): $(BUILD)/src/cmds/TolunnetGet.o $(CMDLIB_OBJ) $(BUILD)/src/common/lo
 
 # Target: TolunnetPrefs Native Workbench GadTools GUI Panel
 $(PREFS_BIN): $(BUILD)/src/cmds/TolunnetPrefs.o $(BUILD)/src/setup/net_checks.o $(BUILD)/src/common/nslookup_parse.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/safe_replace.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD)/src/common/config_text.o $(BUILD)/src/common/inet_parse.o $(BUILD)/src/common/sbtc_dispatch.o $(BUILD)/src/common/fdset_util.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/setup/stack_detect.o $(BUILD)/src/task/crash_log.o $(BUILD)/src/task/crash_trap.o
-	$(CC) $(CFLAGS) -Wl,-Map,build/TolunnetPrefs.map $(BUILD)/src/cmds/TolunnetPrefs.o $(BUILD)/src/setup/net_checks.o $(BUILD)/src/common/nslookup_parse.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/safe_replace.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD)/src/common/config_text.o $(BUILD)/src/common/inet_parse.o $(BUILD)/src/common/sbtc_dispatch.o $(BUILD)/src/common/fdset_util.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/setup/stack_detect.o $(BUILD)/src/task/crash_log.o $(BUILD)/src/task/crash_trap.o $(LDFLAGS) -o $@
-	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) -Wl,-Map,build/TolunnetPrefs.map $(BUILD)/src/cmds/TolunnetPrefs.o $(BUILD)/src/setup/net_checks.o $(BUILD)/src/common/nslookup_parse.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/safe_replace.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD)/src/common/config_text.o $(BUILD)/src/common/inet_parse.o $(BUILD)/src/common/sbtc_dispatch.o $(BUILD)/src/common/fdset_util.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/setup/stack_detect.o $(BUILD)/src/task/crash_log.o $(BUILD)/src/task/crash_trap.o $(LDFLAGS) $(STKSWAP_LDFLAGS) -o $@
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS) $(STKSWAP_LDFLAGS)
 
 # Target: TolunnetSetup First-Run Network Wizard
 SETUP_OBJS = $(BUILD)/src/cmds/TolunnetSetup.o \
@@ -359,7 +367,7 @@ SETUP_OBJS = $(BUILD)/src/cmds/TolunnetSetup.o \
              $(BUILD)/src/common/inet_parse.o \
              $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o
 $(SETUP_BIN): $(SETUP_OBJS)
-	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS) $(STKSWAP_LDFLAGS)
 
 # Target: SocketConformance Amiga-side TAP binary (Round 3 §B.2)
 $(CONF_BIN): $(BUILD)/tests/amiga/SocketConformance.o $(BUILD)/src/setup/boot_block.o $(BUILD)/src/setup/net_checks.o $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD)/src/common/ipc_client.o $(BUILD)/src/setup/wifi_mgr.o $(BUILD)/src/setup/stack_detect.o $(BUILD)/src/common/prefs.o $(BUILD)/src/common/safe_replace.o $(BUILD)/src/common/config_text.o $(BUILD)/src/common/nslookup_parse.o

@@ -20,17 +20,28 @@ untouched). If a future toolchain ships stdint.h, this becomes a no-op.
 ## bench.sh
 
 `ci/bench.sh` is the main WinUAE bench driver. It runs from Windows and builds in WSL `Ubuntu-24.04`.
-- `ci/bench.sh` runs the dual-cycle conformance bench on both profiles.
+- `ci/bench.sh` runs the dual-cycle conformance bench on both profiles, once per `TX_QUEUES`
+  value (default `4 0`; leg directories are `<profile>-txq<N>`). bsdsocktest gates the run
+  (`BSDTEST_MIN_PASS`/`BSDTEST_MAX_FAIL`, default 126/2; NO-RESULT fails).
 - `ci/bench.sh soak` runs the 2 h session-profile soak: 12 cycles of 10 minutes on the a1200 profile
-  with `TX_QUEUE=4`, driven by `User-Startup-Soak` and `Soak-Cycle`.
+  with `SOAK_TX_QUEUE` (default `4`), driven by `User-Startup-Soak` and `Soak-Cycle`. The soak
+  starts `ci/netsvc.py`, pings the slirp gateway, GETs from the netsvc HTTP port
+  (`__HTTP_PORT__` in `Soak-Cycle` is filled from `netsvc.ports`) and gates on `ok`/`not ok` lines,
+  13 lwIP initialisations, Chip drift and Fast drift from the pre-session baseline
+  (`SOAK_FAST_BUDGET_PER_CYCLE`, default 256 B; `SOAK_CHIP_BUDGET`, default 0).
 
 Logs go to `docs/bench-logs/<date>-<time>-<sha>[-dirty|-soak-...]/`, which is local and not tracked.
 
 Environment variables:
 - Build and run: `CONFIGS`, `CROSS`, `SKIP_BUILD`, `ALLOW_DIRTY`, `LOG_ROOT`, `TIMEOUT_SECS`, `GRACE_SECS`, `TN_DIAG`.
 - Bench network: `BENCH_CFG`, `BENCH_DNS_PORT`, `BENCH_EXTERNAL`.
-- MuForce: `MUFORCE_ADF` points to the MuForce ADF. If it is unset, the MuForce check reports SKIP.
-- Soak: `SOAK_HOURS`, `SOAK_LIMIT_SECS`.
+- MuForce: not implemented - every run records SKIP; setting `MUFORCE_ADF` aborts the run.
+- Link flip: `BENCH_LINKTEST=1` creates `WORK:linktest-on` on `TX_QUEUE=0` legs, so `tc_link_events`
+  toggles the link with `S2Toggle` and an undelivered event is `not ok` (off by default: uaenet
+  froze on `S2_OFFLINE` from a second opener before).
+- Floppy leg: the Gotek set of the `include/version.h` version is attached; an ADF set of another
+  version or a manifest member missing on disk aborts the run.
+- Soak: `SOAK_HOURS`, `SOAK_LIMIT_SECS`, `SOAK_TX_QUEUE`, `SOAK_FAST_BUDGET_PER_CYCLE`, `SOAK_CHIP_BUDGET`.
 
 The paths to the WSL toolchain and the repo are hard-coded near the top of the script.
 

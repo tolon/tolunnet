@@ -41,6 +41,10 @@ void tn_wifi_scan(WizardState *ws);
 BOOL tn_wifi_write_prefs(const char *ssid, const char *passphrase);
 BOOL tn_wifi_write_prefs_multi(const WizardState *ws);
 
+/* Pure: Wireless.prefs text for the chosen network (wifi_ssid_str,
+ * else the highlighted scan entry). 0 = nothing valid to write. */
+int tn_build_wireless_prefs(const WizardState *ws, char *out_buf, int out_max);
+
 /* Launch or restart WirelessManager for the given device */
 BOOL tn_wifi_start_manager(const char *device_name, ULONG unit);
 

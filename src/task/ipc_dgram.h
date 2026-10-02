@@ -15,5 +15,7 @@ u8_t tn_raw_recv_cb(void *arg, struct raw_pcb *pcb, struct pbuf *p, const ip_add
 int tn_ipc_cmd_bind(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot);
 int tn_ipc_cmd_sendto(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot);
 int tn_ipc_cmd_recvfrom(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot);
+/* 4.5: BSD-truncating sockaddr_in store into client addr/addrlen (memcpy only) */
+void tn_store_client_sockaddr(void *addr, socklen_t *addrlen, u16_t port_host, u32_t addr_net);
 
 #endif /* TOLUNNET_IPC_DGRAM_H */

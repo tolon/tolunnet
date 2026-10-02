@@ -194,11 +194,25 @@ def check_adf_set(adfs, release_dir):
 
     xdf = os.environ.get(
         "XDFTOOL", os.path.expanduser("~/.local/bin/xdftool"))
-    if not (os.access(xdf, os.X_OK) or shutil.which(xdf)
-            or shutil.which(os.path.basename(xdf))):
+    # 9.15: execute the path that was found (a PATH install is found by
+    # name only), and never skip under CI
+    found = None
+    for cand in (xdf, os.path.basename(xdf)):
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            found = cand
+            break
+        found = shutil.which(cand)
+        if found:
+            break
+    if not found:
+        if os.environ.get("CI", "").lower() in ("1", "true", "yes"):
+            print("[check_package_parity] FAIL: xdftool not found and "
+                  "CI is set - ADF set parity cannot be skipped")
+            return 1
         print("[check_package_parity] WARNING: xdftool not found - "
               "ADF set parity skipped")
         return 0
+    xdf = found
 
     # the union must equal the 52 package members (+ Disk.info chrome)
     want = {}
