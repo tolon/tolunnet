@@ -82,6 +82,12 @@
   disk 1 and disk 2 into one drawer (two-argument `Copy` with a
   per-disk `If WARN`/`Quit` check) and hands over to the tested
   `Install_Tolunnet` (unattended `DEST` + `NORUN` form included).
+- **No invented network values**: the Manual-mode wizard fields start
+  empty and the first empty/invalid field names itself on Next; the
+  Prefs "Live Ping" uses the configured gateway (or the stack's
+  current default gateway) and never silently pings a third party.
+- **Three distinct tool icons**: TolunnetSetup, TolunnetPrefs and the
+  tolunnet drawer each carry their own generated Workbench icon.
 - **`$VER:` tags**: every shipped binary (daemon, all C/ commands,
   TolunnetSetup, TolunnetPrefs, usergroup.library idstring,
   bsdsocket.library idstring) now answers `Version` and Workbench

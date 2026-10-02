@@ -41,16 +41,7 @@ bsdsocktest (142 tests): 126 passed, 2 failed, 14 skipped.
 
 ## Known limitations
 
-**Setup wizard / Prefs**
-- Manual-mode wizard fields come prefilled with placeholder values
-  `192.168.1.100 / 192.168.1.1 / 1.1.1.1` — the user must edit them
-  (DHCP mode is unaffected: it asks the stack what it really has).
-- `TolunnetPrefs` "Live Ping" falls back to `1.1.1.1` when no gateway
-  is configured (only runs when the user presses the Ping button).
-
 **Package**
-- `TolunnetSetup.info`, `TolunnetPrefs.info` and `C/tolunnet.info` are
-  three copies of the same icon (md5 `6a6678bc`).
 - The two-disk ADF set has not been tested on real Gotek/floppy
   hardware (emulator-tested pieces only; see docs/OWNER-RETEST.md for
   the owner walk-through).
