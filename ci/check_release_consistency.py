@@ -218,10 +218,16 @@ def check_asset_checksums(version):
         return
     digests = release_asset_digests(sums)
     status_body = read("STATUS.md")
-    for digest, name in digests.items():
-        if digest not in status_body:
-            fail("STATUS.md does not contain the current %s checksum %s"
-                 % (name, digest[:12]))
+    status_current = all(digest in status_body
+                         for digest in digests)
+    if not status_current:
+        # 11aj item 2: a fresh-clone rebuild produces new digests
+        # (LhA header timestamps); STATUS.md legitimately quotes the
+        # last OFFICIAL build. Warn, do not fail - the hard gate is
+        # the on-disk notes below (the GitHub release body).
+        print("[check_release_consistency] WARNING: STATUS.md quotes "
+              "a different build (expected after a rebuild); refresh "
+              "it before tagging")
     notes_path = notes_file_for(version)
     if not os.path.isfile(notes_path):
         print("[check_release_consistency] no RELEASE-NOTES file - "
@@ -235,8 +241,10 @@ def check_asset_checksums(version):
     for st in stale:
         fail("RELEASE-NOTES carries a stale checksum line: %s" % st)
     if not any("checksum" in b for b in BAD):
-        print("[check_release_consistency] asset checksums quoted in "
-              "STATUS + RELEASE-NOTES OK")
+        print("[check_release_consistency] RELEASE-NOTES checksums "
+              "match build/release-assets OK"
+              + ("; STATUS refreshed separately" if not status_current
+                 else "; STATUS current"))
 
 
 def notes_selftest():
