@@ -204,6 +204,21 @@ def write_notes(version):
     if os.path.isfile(sums):
         notes += "\n## Release asset checksums\n```\n" + \
             open(sums, encoding="utf-8").read() + "```\n"
+        # 11ah item 1: STATUS and the notes must carry the SAME
+        # checksums as the files on disk - a stale line cannot ship.
+        status_body = read("STATUS.md")
+        for line in open(sums, encoding="utf-8"):
+            digest, name = line.split(maxsplit=1)
+            name = name.strip()
+            if digest not in status_body:
+                fail("STATUS.md does not contain the current %s "
+                     "checksum %s" % (name, digest[:12]))
+            if digest not in notes:
+                fail("RELEASE-NOTES does not contain the current %s "
+                     "checksum %s" % (name, digest[:12]))
+        if not any("checksum" in b for b in BAD):
+            print("[check_release_consistency] asset checksums quoted "
+                  "in STATUS + RELEASE-NOTES OK")
     out = os.path.join(ROOT, "build", "RELEASE-NOTES-%s.md"
                        % version.split("-")[-1])
     open(out, "w", encoding="utf-8").write(notes + "\n")
