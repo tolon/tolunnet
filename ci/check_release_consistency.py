@@ -90,6 +90,25 @@ def main(argv):
     if not BAD:
         print("[check_release_consistency] installer row skip guard OK")
 
+    # 11ag item 2: no invented third-party ping target may come back
+    # in the commands (net_test.c is the documented exemption).
+    cmds_dir = os.path.join(ROOT, "src", "cmds")
+    hits = []
+    for fn in sorted(os.listdir(cmds_dir)):
+        if not fn.endswith(".c"):
+            continue
+        rel = "src/cmds/" + fn
+        if rel == "src/cmds/net_checks.c" or rel == "src/cmds/net_test.c":
+            continue
+        body = open(os.path.join(cmds_dir, fn), encoding="utf-8",
+                    errors="replace").read()
+        if "1.1.1.1" in body:
+            hits.append(rel)
+    if hits:
+        fail("hard-coded 1.1.1.1 back in: %s" % hits)
+    else:
+        print("[check_release_consistency] no 1.1.1.1 literal in src/cmds OK")
+
     # 11ab item 2c: the installer welcome names the same version
     script = read("Install_Tolunnet.script")
     if "Welcome to the tolunnet %s Installation" % version not in script:

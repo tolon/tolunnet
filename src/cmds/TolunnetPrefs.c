@@ -21,6 +21,7 @@
 #include "../common/log.h"
 #include "../common/ipc_client.h"
 #include "../setup/stack_detect.h"
+#include "../setup/net_checks.h"  /* 11ag item 2: tn_stack_value */
 #include "../../include/ipc.h"
 
 #include <proto/exec.h>
@@ -935,25 +936,55 @@ int main(int argc, char *argv[])
 
                     case GID_PING:
                         {
+                            /* 11ag item 2: never ping a third party
+                             * the user did not name (the old fallback
+                             * pinged a hard-coded public resolver). Target = the configured
+                             * gateway, else the stack's current
+                             * default gateway (same source as
+                             * net_test.c); unknown -> EasyRequest,
+                             * no ping. */
+                            char target[40];
+                            uint32_t addr;
+                            struct EasyStruct no_gw = {
+                                sizeof(struct EasyStruct), 0,
+                                (STRPTR)"tolunnet Live Ping",
+                                (STRPTR)"No gateway known - bring the "
+                                        "interface up or enter a gateway "
+                                        "first.",
+                                (STRPTR)"OK" };
+                        {
                             char ping_cmd[256];
-                            CONST_STRPTR target = (prefs.gateway[0] != '\0') ? (CONST_STRPTR)prefs.gateway : (CONST_STRPTR)"1.1.1.1";
-                            BOOL target_valid = TRUE;
-                            size_t tlen = strlen((const char *)target);
-                            if (tlen == 0 || tlen > 63) target_valid = FALSE;
-                            for (size_t i = 0; i < tlen; i++) {
-                                char c = target[i];
-                                if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                                      (c >= '0' && c <= '9') || c == '.' || c == ':' || c == '-')) {
-                                    target_valid = FALSE;
+                            int ret;
+                            if (prefs.gateway[0] != '\0') {
+                                snprintf(target, sizeof(target), "%s",
+                                         prefs.gateway);
+                            } else if (!tn_stack_value("GATEWAY", target,
+                                                       sizeof(target))) {
+                                target[0] = '\0';
+                            }
+                            {
+                                size_t tlen = strlen(target);
+                                size_t i;
+                                for (i = 0; i < tlen; i++) {
+                                    char c = target[i];
+                                    if (!((c >= 'a' && c <= 'z') ||
+                                          (c >= 'A' && c <= 'Z') ||
+                                          (c >= '0' && c <= '9') ||
+                                          c == '.' || c == ':' || c == '-')) {
+                                        break;
+                                    }
+                                }
+                                if (tlen == 0 || i < tlen ||
+                                    tn_inet_addr_parse_ex(target,
+                                                          &addr) != 1) {
+                                    EasyRequestArgs(win, &no_gw, NULL,
+                                                    NULL);
                                     break;
                                 }
                             }
-                            if (!target_valid) {
-                                target = (CONST_STRPTR)"1.1.1.1";
-                            }
-                            int ret = snprintf(ping_cmd, sizeof(ping_cmd),
-                                               "ping %s 4 >\"CON:60/60/460/160/tolunnet Live Ping Probe/AUTO/CLOSE/WAIT\"",
-                                               target);
+                            ret = snprintf(ping_cmd, sizeof(ping_cmd),
+                                           "ping %s 4 >\"CON:60/60/460/160/tolunnet Live Ping Probe/AUTO/CLOSE/WAIT\"",
+                                           target);
                             if (ret > 0 && (size_t)ret < sizeof(ping_cmd)) {
                                 Execute((CONST_STRPTR)ping_cmd, (BPTR)0, (BPTR)0);
                             }
