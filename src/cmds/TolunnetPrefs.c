@@ -22,6 +22,7 @@
 #include "../common/ipc_client.h"
 #include "../setup/stack_detect.h"
 #include "../setup/net_checks.h"  /* 11ag item 2: tn_stack_value */
+#include "../common/inet_parse.h"  /* tn_inet_addr_parse_ex */
 #include "../../include/ipc.h"
 
 #include <proto/exec.h>
@@ -988,6 +989,7 @@ int main(int argc, char *argv[])
                             if (ret > 0 && (size_t)ret < sizeof(ping_cmd)) {
                                 Execute((CONST_STRPTR)ping_cmd, (BPTR)0, (BPTR)0);
                             }
+                        }
                         }
                         break;
 
