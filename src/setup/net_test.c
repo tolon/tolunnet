@@ -290,9 +290,10 @@ void tn_run_network_tests(WizardState *ws)
         ws->test_advice[1][0] = '\0';
     }
 
-    /* 11x item 3 T2: in DHCP mode the wizard's gateway/DNS fields
-     * hold the invented Manual-mode defaults (192.168.1.1/1.1.1.1),
-     * not what this network actually handed out - ask the stack.
+    /* 11x item 3 T2 / 11ag item 1: in DHCP mode the wizard's gateway
+     * and DNS fields are no longer prefilled with invented values -
+     * the wizard validates them in Manual mode and DHCP asks the
+     * stack, so these checks always see what the stack reports.
      * Manual mode keeps the user's own fields. Empty -> the skip
      * texts below. */
     {

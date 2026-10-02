@@ -660,8 +660,9 @@ static void update_nav_buttons(void)
                       TAG_END);
 }
 
-/* TNET-110: validate the Address page on Next — bad field names itself in
- * an EasyRequest and gets the focus afterwards. */
+/* TNET-110: validate the Address page on Next. 11ag item 1: the
+ * FIRST empty/invalid field names itself in the one-line status
+ * text (no invented defaults, no silent fallbacks). */
 static BOOL validate_address_page(void)
 {
     static const char *labels[4] = { "IP address", "Netmask", "Gateway", "DNS server" };
@@ -675,16 +676,18 @@ static BOOL validate_address_page(void)
         int i;
         for (i = 0; i < 4; i++) {
             uint32_t addr;
+            char msg[96];
+            if (vals[i][0] == '\0') {
+                snprintf(msg, sizeof(msg), "Fill in the %s first",
+                         labels[i]);
+                set_status(msg);
+                return FALSE;
+            }
             if (tn_inet_addr_parse_ex(vals[i], &addr) != 1) {
-                char msg[96];
-                struct EasyStruct es = {
-                    sizeof(struct EasyStruct), 0,
-                    (STRPTR)"Network Setup", (STRPTR)"", (STRPTR)"OK" };
                 snprintf(msg, sizeof(msg),
-                         "The %s is not a valid dotted-quad\naddress: \"%s\"",
+                         "The %s is not a valid address: %s",
                          labels[i], vals[i]);
-                es.es_TextFormat = (STRPTR)msg;
-                EasyRequestArgs(g_win, &es, NULL, NULL);
+                set_status(msg);
                 return FALSE;
             }
         }
@@ -1967,10 +1970,9 @@ int main(int argc, char **argv)
     g_ws.test_ping_ok   = -1;
     g_ws.test_dns_ok    = -1;
     g_ws.test_http_ok   = -1;
-    strncpy(g_ws.ip_str, "192.168.1.100", sizeof(g_ws.ip_str) - 1);
-    strncpy(g_ws.nm_str, "255.255.255.0", sizeof(g_ws.nm_str) - 1);
-    strncpy(g_ws.gw_str, "192.168.1.1", sizeof(g_ws.gw_str) - 1);
-    strncpy(g_ws.dns1_str, "1.1.1.1", sizeof(g_ws.dns1_str) - 1);
+    /* 11ag item 1: no invented network values - the Manual-mode
+     * fields start empty and validate_address_page() names the
+     * first empty/invalid one. Values the user typed are kept. */
     strncpy(g_ws.host_str, "amiga", sizeof(g_ws.host_str) - 1);
 
     /* Preserve existing log file setting if present */
