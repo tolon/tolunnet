@@ -242,8 +242,7 @@ Requirements: AmigaOS 3.0+, 68000 or higher, about 1.2 MB free for the unpacked 
    `Execute tolunnet1:Install_From_Floppies Work:tolunnet`
    The script prints `tolunnet two-disk install: copying disk 1 ...`, then `Disk 1 copied. Insert disk 2 (tolunnet2) now` - select disk 2 on the Gotek; DOS asks for the `tolunnet2` volume itself if it is not mounted. After disk 2 it prints `Both disks copied`.
 3. The full package is now in `Work:tolunnet`; start the Installer from there:
-   `CD Work:tolunnet` then `Installer Install_Tolunnet`. Add the `NORUN` switch (e.g. `Execute tolunnet1:Install_From_Floppies T:tninst NORUN`) to skip the automatic Installer start.
-   This script is shell-only: double-clicking it does not work.
+   `CD Work:tolunnet` then `Installer Install_Tolunnet`. Add the `NORUN` switch to skip the automatic Installer start. This script is shell-only: double-clicking it does not work. Full walkthrough: [docs/MANUAL-TEST-rc5.md](docs/MANUAL-TEST-rc5.md).
    **Emulator-test status: UNTESTED** - the REAL Installer opens
    requesters (script error / welcome) that a headless bench cannot
    answer, so the pretend row has never completed (see
