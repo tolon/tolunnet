@@ -501,14 +501,15 @@ package: release-stage
 	python3 ci/check_package_parity.py $(LHA_ARCHIVE) $(PACKAGE_DIR)
 	# 11aa item 1: every shipped binary carries its $VER tag.
 	python3 ci/check_version_tags.py $(PACKAGE_DIR)
-	# 11aa item 5: release surfaces consistent + RELEASE-NOTES
-	python3 ci/check_release_consistency.py --write-notes
 	# 11aa item 2: the two-disk Gotek set; build_adf.py also
 	# assembles build/release-assets/ (lha + disks + SHA256SUMS.txt).
 	@$(MAKE) adf LHA_DONE=$(LHA_ARCHIVE)
 	# read the archive AND both disks back before calling it done
 	python3 ci/check_package_parity.py $(LHA_ARCHIVE) $(PACKAGE_DIR) \
 		--adfs $(BUILD)/tolunnet-$(VERSION)-disk1.adf $(BUILD)/tolunnet-$(VERSION)-disk2.adf
+	# 11ai item 2: LAST step - the notes are rewritten from the fresh
+	# SHA256SUMS.txt, then checked against the on-disk file and STATUS.
+	python3 ci/check_release_consistency.py --write-notes
 	@echo "Package successfully created: $(LHA_ARCHIVE) + disk1/disk2 ADFs"
 
 .PHONY: adf
