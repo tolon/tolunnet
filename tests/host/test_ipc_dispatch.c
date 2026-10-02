@@ -57,6 +57,7 @@ DEFINE_MOCK_HANDLER(tn_ipc_cmd_routectl, TN_IPC_CMD_ROUTECTL)
 DEFINE_MOCK_HANDLER(tn_ipc_cmd_ifctl, TN_IPC_CMD_IFCTL)
 DEFINE_MOCK_HANDLER(tn_ipc_cmd_stop, TN_IPC_CMD_STOP)
 DEFINE_MOCK_HANDLER(tn_ipc_cmd_cancel, TN_IPC_CMD_CANCEL)
+DEFINE_MOCK_HANDLER(tn_ipc_cmd_syslog, TN_IPC_CMD_SYSLOG)
 
 #include "../../src/task/ipc_dispatch.c"
 
@@ -74,6 +75,7 @@ TN_TEST(cmd_name_resolution)
     TN_ASSERT_STREQ(tn_ipc_cmd_name(TN_IPC_CMD_IFCTL), "IFCTL");
     TN_ASSERT_STREQ(tn_ipc_cmd_name(TN_IPC_CMD_STOP), "STOP");
     TN_ASSERT_STREQ(tn_ipc_cmd_name(TN_IPC_CMD_CANCEL), "CANCEL");
+    TN_ASSERT_STREQ(tn_ipc_cmd_name(TN_IPC_CMD_SYSLOG), "SYSLOG");
 
     /* Out of bounds */
     TN_ASSERT_STREQ(tn_ipc_cmd_name((TnIpcCmd)-1), "UNKNOWN");
@@ -198,6 +200,38 @@ TN_TEST(dispatch_routing_success)
     tn_slot_free(&d, slot_idx);
 }
 
+/* TN-bugtrack 5.1: SYSLOG needs a base but no fd - args[0] is the syslog
+ * priority, never looked up as a descriptor. */
+TN_TEST(syslog_routing)
+{
+    TnDaemon d;
+    TnSocketBase base;
+    TnIpcMsg msg;
+
+    tn_slot_table_init(&d);
+    memset(&base, 0, sizeof(base));
+
+    s_last_handled_cmd = (TnIpcCmd)-1;
+    memset(&msg, 0, sizeof(msg));
+    msg.cmd = TN_IPC_CMD_SYSLOG;
+    msg.socket_base = NULL;
+    TN_ASSERT_EQ(tn_handle_ipc(&d, &msg), TRUE);
+    TN_ASSERT_EQ(msg.result, -1);
+    TN_ASSERT_EQ(msg.err_no, EINVAL);
+    TN_ASSERT_EQ(s_last_handled_cmd, (TnIpcCmd)-1);
+
+    s_last_handled_slot = (TnSocketSlot *)&d;
+    msg.socket_base = &base;
+    msg.args[0] = 3;          /* LOG_ERR, unmapped as an fd */
+    msg.args[1] = 5;
+    msg.args[2] = 1;
+    msg.ptrs[0] = (APTR)"hello";
+    TN_ASSERT_EQ(tn_handle_ipc(&d, &msg), TRUE);
+    TN_ASSERT_EQ(s_last_handled_cmd, TN_IPC_CMD_SYSLOG);
+    TN_ASSERT_EQ(s_last_handled_slot, NULL);
+    TN_ASSERT_EQ(msg.err_no, 0);
+}
+
 int main(void)
 {
     TN_TEST_RUN(cmd_name_resolution);
@@ -206,6 +240,7 @@ int main(void)
     TN_TEST_RUN(needs_base_validation);
     TN_TEST_RUN(needs_fd_validation);
     TN_TEST_RUN(dispatch_routing_success);
+    TN_TEST_RUN(syslog_routing);
 
     TN_TEST_PLAN();
     return tn_test_failures();

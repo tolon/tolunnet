@@ -123,6 +123,7 @@ struct Library *ug_lib_open(struct UserGroupBase *base, ULONG version)
 
     base->libNode.lib_OpenCnt++;
     base->libNode.lib_Flags &= ~LIBF_DELEXP;
+    ug_ctx_opened(base);    /* 5.8: per-task context follows the opener */
     return (struct Library *)base;
 }
 
@@ -130,6 +131,7 @@ BPTR ug_lib_close(struct UserGroupBase *base)
 {
     if (!base) return 0;
 
+    ug_ctx_closed(base);    /* 5.8: last Close of this task resets its context */
     base->libNode.lib_OpenCnt--;
     if (base->libNode.lib_OpenCnt == 0 && (base->libNode.lib_Flags & LIBF_DELEXP)) {
         return (BPTR)ug_lib_expunge(base);
@@ -177,13 +179,19 @@ LONG ug_lib_reserved(struct UserGroupBase *base)
 struct Library *ug_lib_open(struct UserGroupBase *base, ULONG version)
 {
     (void)version;
-    if (base) base->libNode.lib_OpenCnt++;
+    if (base) {
+        base->libNode.lib_OpenCnt++;
+        ug_ctx_opened(base);
+    }
     return (struct Library *)base;
 }
 
 BPTR ug_lib_close(struct UserGroupBase *base)
 {
-    if (base && base->libNode.lib_OpenCnt > 0) base->libNode.lib_OpenCnt--;
+    if (base && base->libNode.lib_OpenCnt > 0) {
+        ug_ctx_closed(base);
+        base->libNode.lib_OpenCnt--;
+    }
     return 0;
 }
 

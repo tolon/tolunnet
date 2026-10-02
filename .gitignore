@@ -73,3 +73,5 @@ STOP-REPORT*.md
 # bench-generated per-leg config and soak cycle
 ci/.bench-tolunnet*.config
 ci/.soak-cycle
+ci/.adf-expected.txt
+ci/.bench-floppy.uae

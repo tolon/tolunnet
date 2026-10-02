@@ -15,5 +15,6 @@ int tn_ipc_cmd_enumsockets(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot);
 int tn_ipc_cmd_getstats(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot);
 int tn_ipc_cmd_stop(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot); /* TNET-152 */
 int tn_ipc_cmd_cancel(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot); /* z.ai step 5 item 1 */
+int tn_ipc_cmd_syslog(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot); /* TN-bugtrack 5.1 */
 
 #endif /* TOLUNNET_IPC_STATUS_H */

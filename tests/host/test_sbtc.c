@@ -79,14 +79,15 @@ TN_TEST(return_counts_unknown_only)
     TnSbtcState st = base_state();
     TnSbtcResult r;
 
-    /* Known tags are handled (contribute 0 to the count)... */
+    /* Known tags are handled (the LVO continues past them)... */
     TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_ERRNO, 0, 0), 0, &st, &r), 1);
     TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_HAVE_DNS_API, 0, 0), 0, &st, &r), 1);
     TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_UDP_CHECKSUM, 0, 0), 0, &st, &r), 1);
     TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_IP_DEFAULT_TTL, 0, 0), 0, &st, &r), 1);
     TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(TN_SBTC_FDCALLBACK, 0, 0), 0, &st, &r), 1);
 
-    /* ...unknown codes report unhandled (the LVO counts them) */
+    /* ...unknown codes report unhandled (the LVO stops and returns the
+     * tag's 1-based index - TN-bugtrack 2.5) */
     TN_ASSERT_EQ(tn_sbtc_dispatch_tag(TAG(0x3FF0, 0, 0), 0, &st, &r), 0);
     TN_ASSERT_EQ(r.handled, 0);
 }

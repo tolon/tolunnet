@@ -11,6 +11,9 @@
 #    typed `*(T *)` dereference of imsg->ptrs / optval / argp (client
 #    memory, any alignment) are banned unless listed, by exact source
 #    line, in scripts/check-cast-known.txt. Byte-typed derefs are exempt.
+#    YENI-8: so is `v = (T *)imsg->ptrs[N]` / `(T *)argp` / `(T *)optval`
+#    (a client pointer parked in a typed variable and dereferenced later)
+#    unless T is void or a byte type.
 #
 # Usage: sh scripts/check_cast_align.sh [--lint-only]
 #   --lint-only   run pass 3 only (no compiler needed; used by CI)
@@ -27,19 +30,28 @@ KNOWN=scripts/check-cast-known.txt
 HOP_RE=')[[:space:]]*\([[:space:]]*(const[[:space:]]+)?void[[:space:]]*\*[[:space:]]*\)'
 DEREF_RE='\*[[:space:]]*\([[:space:]]*(const[[:space:]]+)?[A-Za-z_][A-Za-z0-9_ ]*\*+[[:space:]]*\)[[:space:]]*\(?[[:space:]]*(imsg->ptrs|optval|argp)'
 BYTE_RE='\([[:space:]]*(const[[:space:]]+)?(u8_t|uint8_t|UBYTE|BYTE|char|unsigned char|signed char)[[:space:]]*\*[[:space:]]*\)'
+ASSIGN_RE='=[[:space:]]*\([[:space:]]*(const[[:space:]]+)?[A-Za-z_][A-Za-z0-9_ ]*\*+[[:space:]]*\)[[:space:]]*(\([[:space:]]*(const[[:space:]]+)?void[[:space:]]*\*[[:space:]]*\)[[:space:]]*)?\(?[[:space:]]*(imsg->ptrs|optval|argp)([^A-Za-z0-9_]|$)'
+ASSIGN_OK_RE='=[[:space:]]*\([[:space:]]*(const[[:space:]]+)?(void|u8_t|uint8_t|UBYTE|BYTE|char|unsigned char|signed char)[[:space:]]*\*[[:space:]]*\)'
 
 lint_hits() {
-    grep -rnE -e "$HOP_RE" -e "$DEREF_RE" --include='*.c' --include='*.h' src |
+    grep -rnE -e "$HOP_RE" -e "$DEREF_RE" -e "$ASSIGN_RE" --include='*.c' --include='*.h' src |
     while IFS= read -r hit; do
         file=${hit%%:*}
         rest=${hit#*:}
         text=${rest#*:}
+        flag=0
+        printf '%s' "$text" | grep -qE "$HOP_RE" && flag=1
         # byte-typed deref of client memory is alignment-safe
         if printf '%s' "$text" | grep -qE "$DEREF_RE" &&
-           ! printf '%s' "$text" | grep -qE "$HOP_RE" &&
-           printf '%s' "$text" | grep -qE "$BYTE_RE"; then
-            continue
+           ! printf '%s' "$text" | grep -qE "$BYTE_RE"; then
+            flag=1
         fi
+        # YENI-8: client pointer assigned to a void/byte-typed variable is fine
+        if printf '%s' "$text" | grep -qE "$ASSIGN_RE" &&
+           ! printf '%s' "$text" | grep -qE "$ASSIGN_OK_RE"; then
+            flag=1
+        fi
+        [ "$flag" -eq 1 ] || continue
         key="$file|$(printf '%s' "$text" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
         printf '%s\t%s\n' "$key" "$hit"
     done

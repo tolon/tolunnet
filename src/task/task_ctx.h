@@ -175,6 +175,8 @@ typedef struct TnSocketSlot {
     TnIpcMsg       *pending_send_msg;
     uint32_t        send_deadline_tick; /* 0 = no SO_SNDTIMEO */
     LONG            send_done;          /* bytes of pending send already queued */
+    const struct iovec *send_iov;       /* TNET-159: parked sendmsg (client), NULL = send() */
+    ULONG           send_iovcnt;
     LONG            park_id;
     BOOL            is_parked;
 } TnSocketSlot;

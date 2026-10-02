@@ -153,7 +153,7 @@ all: lvo-check $(TOLUNNET_BIN) $(USERGROUP_LIB) $(STATUS_BIN) $(TEST_BIN) $(PING
 # Every tests/host/test_*.c runs under native gcc with sanitizers + Werror;
 # exit code is the number of failed tests (TAP output on stdout).
 HOSTCC      ?= cc
-HOST_CFLAGS  = -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -g \
+HOST_CFLAGS  = -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-sanitize-recover=all -g \
                -Iinclude/netinclude -Iinclude -Itests/host -Isrc/common -Isrc/task -Isrc
 HOST_UNITS   = src/common/inet_parse.c src/common/config_text.c \
                src/common/sbtc_dispatch.c src/common/fdset_util.c \
@@ -183,7 +183,8 @@ test-host: $(HOST_BINS) python-checks
 	echo "host tests: $$total binaries, $$fails failed (TAP above; TODO rows do not fail)"; \
 	test $$fails -eq 0
 
-$(BUILD)/host/%: tests/host/%.c $(HOST_UNITS) tests/host/tn_test.h
+# test_queues & co. #include daemon sources textually - depend on them all
+$(BUILD)/host/%: tests/host/%.c $(HOST_UNITS) tests/host/tn_test.h $(wildcard src/task/*.c src/task/*.h)
 	@mkdir -p $(BUILD)/host
 	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_UNITS) -o $@
 

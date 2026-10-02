@@ -127,7 +127,7 @@
 | `-726` | `ChangeRoadshowData` | `BOOL ChangeRoadshowData(struct List *list,STRPTR name,ULONG length,APTR data)` | **STUB** | honest stub — exact Roadshow error semantics (ENOSYS / ENXIO / NULL / NO_RECOVERY / FALSE) | — |
 | `-732` | `RemoveInterface` | `LONG RemoveInterface(STRPTR interface_name, LONG force)` | **STUB** | honest stub — exact Roadshow error semantics (ENOSYS / ENXIO / NULL / NO_RECOVERY / FALSE) | — |
 | `-738` | `gethostbyname_r` | `struct hostent * gethostbyname_r(STRPTR name, struct hostent * hp, APTR buf, ULONG buflen, LONG * he)` | **BUILT** | handled entirely in-library (per-task socket base) | — |
-| `-744` | `gethostbyaddr_r` | `struct hostent * gethostbyaddr_r(STRPTR addr, LONG len, LONG type, struct hostent * hp, APTR buf, ULONG buflen, LONG * he)` | **BUILT** | handled entirely in-library (per-task socket base) | — |
+| `-744` | `gethostbyaddr_r` | `struct hostent * gethostbyaddr_r(STRPTR addr, LONG len, LONG type, struct hostent * hp, APTR buf, ULONG buflen, LONG * he)` | **BUILT** | vector → IPC → daemon handler | — |
 | `-750` | *(reserved)* | — | Reserved | Exec reserved slot | — |
 | `-756` | *(reserved)* | — | Reserved | Exec reserved slot | — |
 | `-762` | `ipf_open` | `LONG ipf_open(LONG channel)` | **STUB** | honest stub — exact Roadshow error semantics (ENOSYS / ENXIO / NULL / NO_RECOVERY / FALSE) | — |

@@ -32,6 +32,11 @@ struct TagItem {
     ULONG ti_Tag;
     uintptr_t ti_Data;
 };
+#ifndef TAG_IGNORE
+#define TAG_IGNORE (1UL)
+#define TAG_MORE   (2UL)
+#define TAG_SKIP   (3UL)
+#endif
 #endif
 
 /* Scan available wireless networks on the selected hardware device */

@@ -45,14 +45,37 @@ static LONG tn_select_clamp_nfds(const TnSocketBase *base, LONG nfds)
  * bits - they would read back as "ready". The caller's fd_set has at least
  * (req_nfds + 31) / 32 words. */
 #define TN_SELECT_FDSET_WORDS (256 / 32) /* netinclude default FD_SETSIZE */
-static void tn_select_clear_tail(ULONG *set, LONG clamped, LONG req_nfds)
+
+/* YENI-8: the app's fd_set may sit at an odd address - its words are
+ * copied byte-wise, never loaded/stored through a ULONG pointer. */
+static ULONG tn_fdset_word_get(const void *set, LONG w)
+{
+    ULONG v;
+    memcpy(&v, (const UBYTE *)set + w * (LONG)sizeof(ULONG), sizeof(v));
+    return v;
+}
+
+static void tn_fdset_word_put(void *set, LONG w, ULONG v)
+{
+    memcpy((UBYTE *)set + w * (LONG)sizeof(ULONG), &v, sizeof(v));
+}
+
+/* result words: lo always, hi only when it was evaluated (nfds > 32) */
+static void tn_fdset_put_result(void *set, LONG nfds, ULONG lo, ULONG hi)
+{
+    if (set == NULL) return;
+    tn_fdset_word_put(set, 0, lo);
+    if (nfds > 32) tn_fdset_word_put(set, 1, hi);
+}
+
+static void tn_select_clear_tail(void *set, LONG clamped, LONG req_nfds)
 {
     LONG w = (clamped > 32) ? 2 : 1;
     LONG nw = (req_nfds + 31) / 32;
     /* never past a default-size fd_set: nfds itself is client-controlled */
     if (nw > TN_SELECT_FDSET_WORDS) nw = TN_SELECT_FDSET_WORDS;
     if (set == NULL) return;
-    for (; w < nw; w++) set[w] = 0;
+    for (; w < nw; w++) tn_fdset_word_put(set, w, 0);
 }
 
 /* TNET-151: keep selector_count true - recompute from the table instead
@@ -178,9 +201,9 @@ int tn_ipc_cmd_select_arm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     ULONG in_r, in_w, in_e;
     ULONG out_r = 0, out_w = 0, out_e = 0;
     ULONG arm_hi_r = 0, arm_hi_w = 0, arm_hi_e = 0;
-    ULONG *rfds;
-    ULONG *wfds;
-    ULONG *efds;
+    void *rfds;                 /* client fd_sets: tn_fdset_word_get/put */
+    void *wfds;
+    void *efds;
     LONG ready_cnt = 0;
     int chk;
     int i;
@@ -205,9 +228,9 @@ int tn_ipc_cmd_select_arm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     in_r = (ULONG)imsg->args[1];
     in_w = (ULONG)imsg->args[2];
     in_e = (ULONG)imsg->args[3];
-    rfds = (ULONG *)imsg->ptrs[0];
-    wfds = (ULONG *)imsg->ptrs[1];
-    efds = (ULONG *)imsg->ptrs[2];
+    rfds = imsg->ptrs[0];
+    wfds = imsg->ptrs[1];
+    efds = imsg->ptrs[2];
 
     chk = tn_fdset_check_nfds((int)nfds);
     if (chk != 0) {
@@ -225,9 +248,9 @@ int tn_ipc_cmd_select_arm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         ULONG hi_r = 0, hi_w = 0, hi_e = 0;      /* input (client request) */
         ULONG hi_out_r = 0, hi_out_w = 0, hi_out_e = 0; /* readiness output */
         if (nfds > 32) {
-            if (rfds) hi_r = rfds[1];
-            if (wfds) hi_w = wfds[1];
-            if (efds) hi_e = efds[1];
+            if (rfds) hi_r = tn_fdset_word_get(rfds, 1);
+            if (wfds) hi_w = tn_fdset_word_get(wfds, 1);
+            if (efds) hi_e = tn_fdset_word_get(efds, 1);
         }
 
         /* Validate descriptors and evaluate immediate readiness */
@@ -267,9 +290,9 @@ int tn_ipc_cmd_select_arm(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
         /* If descriptors are already ready, return count and sets immediately */
         if (ready_cnt > 0) {
-            if (rfds) { rfds[0] = out_r; if (nfds > 32) rfds[1] = hi_out_r; }
-            if (wfds) { wfds[0] = out_w; if (nfds > 32) wfds[1] = hi_out_w; }
-            if (efds) { efds[0] = out_e; if (nfds > 32) efds[1] = hi_out_e; }
+            tn_fdset_put_result(rfds, nfds, out_r, hi_out_r);
+            tn_fdset_put_result(wfds, nfds, out_w, hi_out_w);
+            tn_fdset_put_result(efds, nfds, out_e, hi_out_e);
             tn_select_clear_tail(rfds, nfds, req_nfds);
             tn_select_clear_tail(wfds, nfds, req_nfds);
             tn_select_clear_tail(efds, nfds, req_nfds);
@@ -378,9 +401,9 @@ int tn_ipc_cmd_waitselect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
     TnSocketBase *base;
     LONG nfds;
-    ULONG *rfds;
-    ULONG *wfds;
-    ULONG *efds;
+    void *rfds;                 /* client fd_sets: tn_fdset_word_get/put */
+    void *wfds;
+    void *efds;
     ULONG in_r, in_w, in_e;
     ULONG out_r = 0, out_w = 0, out_e = 0;
     LONG ready_cnt = 0;
@@ -397,12 +420,12 @@ int tn_ipc_cmd_waitselect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     }
 
     nfds = imsg->args[0];
-    rfds = (ULONG *)imsg->ptrs[0];
-    wfds = (ULONG *)imsg->ptrs[1];
-    efds = (ULONG *)imsg->ptrs[2];
-    in_r = rfds ? *rfds : 0;
-    in_w = wfds ? *wfds : 0;
-    in_e = efds ? *efds : 0;
+    rfds = imsg->ptrs[0];
+    wfds = imsg->ptrs[1];
+    efds = imsg->ptrs[2];
+    in_r = rfds ? tn_fdset_word_get(rfds, 0) : 0;
+    in_w = wfds ? tn_fdset_word_get(wfds, 0) : 0;
+    in_e = efds ? tn_fdset_word_get(efds, 0) : 0;
 
     chk = tn_fdset_check_nfds((int)nfds);
     if (chk != 0) {
@@ -417,9 +440,9 @@ int tn_ipc_cmd_waitselect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     ULONG hi_r = 0, hi_w = 0, hi_e = 0;      /* input (client request) */
     ULONG hi_out_r = 0, hi_out_w = 0, hi_out_e = 0; /* readiness output */
     if (nfds > 32) {
-        if (rfds) hi_r = rfds[1];
-        if (wfds) hi_w = wfds[1];
-        if (efds) hi_e = efds[1];
+        if (rfds) hi_r = tn_fdset_word_get(rfds, 1);
+        if (wfds) hi_w = tn_fdset_word_get(wfds, 1);
+        if (efds) hi_e = tn_fdset_word_get(efds, 1);
     }
 
     for (i = 0; i < nfds; i++) {
@@ -460,9 +483,9 @@ int tn_ipc_cmd_waitselect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         }
     }
 
-    if (rfds) { rfds[0] = out_r; if (nfds > 32) rfds[1] = hi_out_r; }
-    if (wfds) { wfds[0] = out_w; if (nfds > 32) wfds[1] = hi_out_w; }
-    if (efds) { efds[0] = out_e; if (nfds > 32) efds[1] = hi_out_e; }
+    tn_fdset_put_result(rfds, nfds, out_r, hi_out_r);
+    tn_fdset_put_result(wfds, nfds, out_w, hi_out_w);
+    tn_fdset_put_result(efds, nfds, out_e, hi_out_e);
     tn_select_clear_tail(rfds, nfds, req_nfds);
     tn_select_clear_tail(wfds, nfds, req_nfds);
     tn_select_clear_tail(efds, nfds, req_nfds);

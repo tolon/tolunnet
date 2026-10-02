@@ -9,6 +9,7 @@
  * SERVER still uses gethostbyname.
  */
 #include "cmdlib.h"
+#include <exec/execbase.h>
 #include <string.h>
 TN_VERSTAG_DEF("nslookup");
 
@@ -207,6 +208,28 @@ static int dns_parse_reply(const UBYTE *pkt, LONG plen, UWORD want_type,
     return -1;
 }
 
+/* 6.4: the query id was the Task address >> 4 - the same for every query
+ * from a shell, so an off-path spoofer only had to guess the port. Mix
+ * the DOS clock (1/50 s ticks), exec's dispatch/idle counters, the Task
+ * address and a per-run sequence; 32-bit shifts/xors only (68000). */
+static UWORD dns_make_txid(void)
+{
+    static UWORD seq;
+    struct DateStamp ds;
+    ULONG h;
+
+    DateStamp(&ds);
+    h = (ULONG)ds.ds_Tick ^ ((ULONG)ds.ds_Minute << 11) ^ ((ULONG)ds.ds_Days << 21);
+    h ^= (ULONG)FindTask(NULL) >> 4;
+    h ^= SysBase->DispCount ^ (SysBase->IdleCount << 9);
+    h ^= (ULONG)(++seq) << 3;
+    h ^= h << 7;
+    h ^= h >> 9;
+    h ^= h << 13;
+    h ^= h >> 16;
+    return (UWORD)((h & 0xFFFF) ? (h & 0xFFFF) : 0x4242);
+}
+
 int main(int argc, char **argv)
 {
     LONG opts[3] = { 0, 0, 0 };
@@ -309,8 +332,7 @@ int main(int argc, char **argv)
         dst.sin_port = htons((UWORD)port);
         dst.sin_addr.s_addr = server_addr;
 
-        txid = (UWORD)(((ULONG)FindTask(NULL) >> 4) & 0xFFFF);
-        if (txid == 0) txid = 0x4242;
+        txid = dns_make_txid();
 
         memset(tx, 0, sizeof(tx));
         tx[0] = (UBYTE)(txid >> 8); tx[1] = (UBYTE)(txid & 0xFF);

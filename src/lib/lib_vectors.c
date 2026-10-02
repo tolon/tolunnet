@@ -29,6 +29,7 @@
 #include <string.h>
 #include "../common/fdset_util.h"
 #include "../common/rawfmt.h"
+#include "lib_init.h"
 
 /* Helper to set errno respecting width */
 static inline void tn_set_errno_val(TnSocketBase *base, LONG err)
@@ -1137,8 +1138,11 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
      * the data is in fact there (bench 20260921-010932: wait failed after
      * 0 ticks). Clearing before the authoritative ARM poll cannot lose a
      * wake: ARM reads the real readiness state at this instant. */
-    if (base->sig_select != 0) SetSignal(0, base->sig_select);
-    if (base->sig_io != 0)     SetSignal(0, base->sig_io);
+    /* TN-bugtrack 2.11: the daemon wakes selectors with sig_select only
+     * (ipc_select.c); the app's SIGIO bits are its own FIOASYNC signal and
+     * are touched only in the no-private-signal fallback below. */
+    if (base->sig_select != 0)   SetSignal(0, base->sig_select);
+    else if (base->sig_io != 0)  SetSignal(0, base->sig_io);
 
     if (nfds > 0) {
         base->ipc_msg.args[0] = nfds;
@@ -1205,7 +1209,9 @@ LONG tn_lvo_waitselect(LONG nfds, fd_set *read_fds, fd_set *write_fds,
      * when the budget actually elapsed, otherwise the wait retries with the
      * remaining budget. */
     {
-        ULONG wait_sig = base->sig_select | base->sig_io;
+        /* 2.11: SIGIO only as the fallback wake (AllocSignal failed at
+         * open); that mode consumes the app's SIGIO bits by design */
+        ULONG wait_sig = (base->sig_select != 0) ? base->sig_select : base->sig_io;
         ULONG tm_sig = 0;
         struct timerequest *tm = NULL;
         ULONG wait_mask2 = sig_mask;
@@ -1873,6 +1879,11 @@ LONG tn_lvo_gethostname(STRPTR name, LONG namelen, TnSocketBase *base)
 in_addr_t tn_lvo_gethostid(TnSocketBase *base)
 {
     if (base == NULL) return INADDR_NONE;
+    /* legacy args[0..3] reply only: clear the V2 buffer fields a previous
+     * call (recv ptrs[0], ObtainSocket args[4]) left in the embedded msg,
+     * or the daemon writes a TnStatusInfoV2 into a stale client buffer */
+    base->ipc_msg.ptrs[0] = NULL;
+    base->ipc_msg.args[4] = 0;
     if (tn_ipc_call(base, TN_IPC_CMD_GETSTATUS) == 0) {
         return (in_addr_t)base->ipc_msg.args[0];
     }
@@ -1894,12 +1905,15 @@ static void tn_sbtc_ref_store(ULONG addr, ULONG v)
 }
 
 /* -294: SocketBaseTagList(tags) (COMPAT-1 / TNET-036; per-tag logic in
- * src/common/sbtc_dispatch.c — host-tested by test_sbtc.c) */
+ * src/common/sbtc_dispatch.c — host-tested by test_sbtc.c).
+ * AmiTCP/Roadshow autodoc (TN-bugtrack 2.5): 0 on success, else the
+ * 1-based index of the first failing tag; processing stops there. The
+ * index counts tags as NextTagItem() yields them (control tags excluded). */
 LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
 {
     struct TagItem *tstate = tags;
     struct TagItem *tag;
-    LONG count = 0;
+    LONG idx = 0;
 
     /* The portable dispatcher's code values must match the SDK header */
     _Static_assert(TN_SBTC_BREAKMASK == SBTC_BREAKMASK, "SBTC code drift");
@@ -1932,6 +1946,8 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
         TnSbtcState st;
         TnSbtcResult r;
 
+        idx++;
+
         st.sig_int      = base->sig_int;
         st.sig_io       = base->sig_io;
         st.sig_urg      = base->sig_urg;
@@ -1955,9 +1971,7 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
         st.release_str  = (uint32_t)(uintptr_t)"tolunnet " TOLUNNET_VERSION " (bsdsocket 4.1)";
 
         if (!tn_sbtc_dispatch_tag((uint32_t)tag->ti_Tag, (uint32_t)tag->ti_Data, &st, &r)) {
-            count++; /* unknown tags (TNET-036) + failed DTABLESIZE sets; the
-                      * AmiTCP 1-based-index semantics are deferred (TN-bugtrack 2.5) */
-            continue;
+            return idx; /* unknown tag: stop here (TNET-036, 2.5) */
         }
 
         /* The dispatcher is pure; apply its op (pointer accesses happen here,
@@ -2035,8 +2049,7 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
                     if (newsize < highest_open + 1) {
                         /* EINVAL per spec — a failed tag (TN-bugtrack 2.5) */
                         tn_set_errno_val(base, EINVAL);
-                        count++;
-                        break;
+                        return idx;
                     }
                 }
                 if (newsize != base->dtablesize) {
@@ -2076,7 +2089,7 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
                         if (ne) FreeVec(ne);
                         if (nk) FreeVec(nk);
                         tn_set_errno_val(base, ENOMEM);
-                        count++; /* allocation failure is a failed tag */
+                        return idx; /* allocation failure is a failed tag */
                     }
                 }
             }
@@ -2140,7 +2153,7 @@ LONG tn_lvo_socketbasetaglist(struct TagItem *tags, TnSocketBase *base)
             break; /* handled no-ops (e.g. SET on GET-only tags) */
         }
     }
-    return count;
+    return 0;
 }
 
 /* -300: GetSocketEvents(event_ptr) (C4, TNET-125..127 Roadshow semantics)
@@ -2476,14 +2489,127 @@ struct hostent *tn_lvo_gethostbyaddr_r(CONST_STRPTR addr, LONG len, LONG type, s
     return hp;
 }
 
-/* -258: vsyslog(pri, msg, args) */
+/* TN-bugtrack 5.1: client log lines go to the daemon over IPC; the client
+ * task never touches the log file, Output() or the lwIP syslog sink. */
+
+/* Bounded RawDoFmt PutChProc: a3 -> TnFmtSink, stores while left != 0,
+ * a0 preserved (hand-encoded like rawfmt.c, verified with objdump):
+ *   tst.l 4(a3) ; beq.s 1f ; subq.l #1,4(a3) ; move.l a0,-(sp)
+ *   movea.l (a3),a0 ; move.b d0,(a0)+ ; move.l a0,(a3) ; movea.l (sp)+,a0
+ *   1: rts */
+typedef struct TnFmtSink { char *p; ULONG left; } TnFmtSink;
+static const unsigned short tn_syslog_putch[11] = {
+    0x4AAB, 0x0004, 0x670E, 0x53AB, 0x0004, 0x2F08,
+    0x2053, 0x10C0, 0x2688, 0x205F, 0x4E75
+};
+
+/* Send base->syslog_buf to the daemon. No daemon port -> ENETDOWN and the
+ * line is dropped (never blocks on a missing daemon); errno is preserved. */
+static void tn_syslog_send(TnSocketBase *base, int tier, LONG pri)
+{
+    LONG saved = base->task_errno;
+    LONG n = 0;
+
+    base->syslog_buf[TN_SYSLOG_MSG_MAX - 1] = '\0';
+    while (base->syslog_buf[n] != '\0') n++;
+    base->ipc_msg.args[0] = pri;
+    base->ipc_msg.args[1] = n;
+    base->ipc_msg.args[2] = tier;
+    base->ipc_msg.ptrs[0] = (APTR)base->syslog_buf;
+    (void)tn_ipc_call(base, TN_IPC_CMD_SYSLOG);
+    if (base->task_errno != saved) tn_set_errno_val(base, saved);
+}
+
+/* Preformatted library-internal line (e.g. lib_unimpl.c VERBOSE notes) */
+void tn_lib_log(TnSocketBase *base, int tier, const char *line)
+{
+    LONG n = 0;
+
+    if (base == NULL || line == NULL || tier > g_log_level) return;
+    while (line[n] != '\0' && n < TN_SYSLOG_MSG_MAX - 1) {
+        base->syslog_buf[n] = line[n];
+        n++;
+    }
+    base->syslog_buf[n] = '\0';
+    tn_syslog_send(base, tier, -1);
+}
+
+/* Copy fmt to dst expanding %m (syslog: strerror(errno)) with '%' doubled.
+ * Conversion specs are copied whole or not at all, so a truncated result
+ * is still a valid RawDoFmt format. */
+static void tn_syslog_expand_m(char *dst, LONG cap, const char *fmt, LONG err)
+{
+    LONG o = 0;
+
+    while (*fmt != '\0') {
+        LONG n = 1, k;
+
+        if (fmt[0] == '%' && fmt[1] == 'm') {
+            const char *e = tn_strerror((int)err);
+            LONG need = 0;
+            for (k = 0; e[k] != '\0'; k++) need += (e[k] == '%') ? 2 : 1;
+            if (o + need >= cap) break;
+            for (k = 0; e[k] != '\0'; k++) {
+                if (e[k] == '%') dst[o++] = '%';
+                dst[o++] = e[k];
+            }
+            fmt += 2;
+            continue;
+        }
+        if (fmt[0] == '%') {
+            if (fmt[1] == '%') {
+                n = 2;
+            } else {
+                while (fmt[n] == '-' || fmt[n] == '.' || fmt[n] == 'l' ||
+                       (fmt[n] >= '0' && fmt[n] <= '9')) n++;
+                if (fmt[n] != '\0') n++;
+            }
+        }
+        if (o + n >= cap) break;
+        for (k = 0; k < n; k++) dst[o++] = fmt[k];
+        fmt += n;
+    }
+    dst[o] = '\0';
+}
+
+/* -258: vsyslog(pri, msg, args) - args is a RawDoFmt data stream
+ * (%ld LONG, %d WORD, %s pointer), so exec's RawDoFmt formats it; the
+ * va_list-based log_format.c cannot walk an APTR array. */
 VOID tn_lvo_vsyslog(LONG pri, CONST_STRPTR msg, APTR args, TnSocketBase *base)
 {
-    (void)base;
-    (void)args;
-    if (msg != NULL) {
-        tn_logf(TN_LOG_BASIC, "[syslog:%ld] %s\n", pri, (const char *)msg);
+    char fmtx[128];
+    const char *fmt = (const char *)msg;
+    const char *tag;
+    TnFmtSink sink;
+    LONG n = 0;
+    LONG i;
+
+    if (base == NULL || msg == NULL) return;
+    if (TN_LOG_BASIC > g_log_level) return;                 /* daemon log tier */
+    if ((base->log_mask & (1L << (pri & 7))) == 0) return;  /* setlogmask() */
+
+    for (i = 0; fmt[i] != '\0'; i++) {
+        if (fmt[i] == '%' && fmt[i + 1] == 'm') {
+            tn_syslog_expand_m(fmtx, (LONG)sizeof(fmtx), fmt, base->task_errno);
+            fmt = fmtx;
+            break;
+        }
     }
+
+    tag = (const char *)base->log_tag_ptr;                  /* openlog() ident */
+    if (tag != NULL) {
+        while (tag[n] != '\0' && n < 32) {
+            base->syslog_buf[n] = tag[n];
+            n++;
+        }
+        base->syslog_buf[n++] = ':';
+        base->syslog_buf[n++] = ' ';
+    }
+    sink.p    = base->syslog_buf + n;
+    sink.left = (ULONG)(TN_SYSLOG_MSG_MAX - 1 - n);         /* last byte: NUL */
+    *sink.p   = '\0';
+    RawDoFmt((CONST_STRPTR)fmt, args, (VOID (*)())tn_syslog_putch, &sink);
+    tn_syslog_send(base, TN_LOG_BASIC, pri);
 }
 
 /* -690: ProcessIsServer(pr) */

@@ -7836,17 +7836,26 @@ static void tc_install_script(void)
         return;
     }
 
-    /* 10b item 1: the generated script outgrew a 16 KB stack buffer -
-     * read the whole file into an AllocVec pool buffer instead. */
-    char *buf = AllocVec(65536, MEMF_CLEAR);
+    /* 10b item 1: the generated script outgrew a 16 KB stack buffer,
+     * and the bug-track rewrite outgrew a fixed 64 KB one - size the
+     * buffer from the file itself. */
+    __attribute__((aligned(4))) struct FileInfoBlock sfib;
+    LONG want = 0;
+    memset(&sfib, 0, sizeof(sfib));
+    if (ExamineFH(fh, &sfib)) want = sfib.fib_Size;
+    if (want <= 0) want = 65536 - 1;
+    char *buf = AllocVec(want + 1, MEMF_CLEAR);
     LONG bytes = 0;
     if (buf == NULL) {
         Close(fh);
         TAP_NOTOK(label, "cannot allocate script buffer");
-        FreeVec(buf);
         return;
     }
-    bytes = Read(fh, buf, 65536 - 1);
+    while (bytes < want) {
+        LONG got = Read(fh, buf + bytes, want - bytes);
+        if (got <= 0) break;
+        bytes += got;
+    }
     Close(fh);
     if (bytes <= 0) {
         TAP_NOTOK(label, "Cannot read Install_Tolunnet.script");

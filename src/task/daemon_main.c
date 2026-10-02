@@ -472,9 +472,14 @@ static int tn_task_real_main(int argc, char *argv[])
 
     if (use_dhcp) {
         tn_log(TN_LOG_BASIC, "tolunnet: starting DHCP client...\n");
-        dhcp_start(&prim->lwip_if);
+        /* TNET-158: IFCTL LIST / ShowNetStatus report this flag */
+        prim->is_dhcp = (dhcp_start(&prim->lwip_if) == ERR_OK) ? TRUE : FALSE;
+        if (!prim->is_dhcp) {
+            tn_log(TN_LOG_BASIC, "tolunnet: DHCP client failed to start\n");
+        }
     } else {
         char str_ip[16], str_nm[16], str_gw[16];
+        prim->is_dhcp = FALSE;
         ip_to_str(str_ip, netif_ip4_addr(&prim->lwip_if));
         ip_to_str(str_nm, netif_ip4_netmask(&prim->lwip_if));
         ip_to_str(str_gw, netif_ip4_gw(&prim->lwip_if));
@@ -729,6 +734,7 @@ tn_main_loop:
     if (use_dhcp) {
         tn_log(TN_LOG_BASIC, "tolunnet: stopping DHCP client...\n");
         dhcp_stop(&prim->lwip_if);
+        prim->is_dhcp = FALSE;
     }
     tn_log(TN_LOG_BASIC, "tolunnet: bringing netif down...\n");
     netif_set_down(&prim->lwip_if);
@@ -781,6 +787,7 @@ tn_fail_netif:
     tn_autoip_cleanup(prim);
     if (use_dhcp) {
         dhcp_stop(&prim->lwip_if);
+        prim->is_dhcp = FALSE;
     }
     netif_set_down(&prim->lwip_if);
     netif_remove(&prim->lwip_if);

@@ -1,0 +1,2 @@
+a1200-txq4: bsdsocktest: 125/142 (failed 3) FAIL (need >= 126 passed, <= 2 failed) — docs/bench-logs/20261002-211438-v1.2.0-rc4-520-g6978be0/a1200-txq4/bsdsocktest.log
+a1200-txq4: # iperf loopback: 526600 bytes received (526600 sent) in ~2s = 257 KB/s — docs/bench-logs/20261002-211438-v1.2.0-rc4-520-g6978be0/a1200-txq4/conformance.log

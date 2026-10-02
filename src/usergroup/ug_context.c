@@ -16,53 +16,64 @@
 /* Forward declaration from common error table */
 extern const char * const g_sys_errlist[];
 
-struct UgTaskContext *ug_get_task_context(struct UserGroupBase *base, APTR task)
+#ifndef __AMIGA__
+APTR g_ug_host_task = (APTR)1;
+#endif
+
+static APTR ug_self(void)
+{
+#ifdef __AMIGA__
+    return (APTR)FindTask(NULL);
+#else
+    return g_ug_host_task;
+#endif
+}
+
+/* (Re)initialise a slot: default root credentials, no errno pointers,
+ * no getpwent/getgrent cursors. task == NULL marks the slot free. */
+static void ug_ctx_init(struct UgTaskContext *ctx, APTR task)
+{
+    struct MinNode node = ctx->node;
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->node = node;
+    ctx->task = task;
+    ctx->creds.cr_umask = 022;
+    ctx->creds.cr_ngroups = 1;
+    ctx->creds.cr_session = 1;
+    strncpy(ctx->creds.cr_login, "root", sizeof(ctx->creds.cr_login) - 1);
+}
+
+/* 5.8: find the task's context, else claim a slot freed by a closed
+ * task, else (make) allocate one. The scan, claim and link run under
+ * Forbid so the Open/Close vectors can call this without base->lock;
+ * AllocMem stays outside the explicit Forbid region. */
+static struct UgTaskContext *ug_ctx_lookup(struct UserGroupBase *base, APTR task, BOOL make)
 {
     struct MinNode *node;
-    struct UgTaskContext *ctx;
-    if (!base) return NULL;
+    struct UgTaskContext *ctx, *found = NULL, *spare = NULL;
 
-    if (!task) {
-#ifdef __AMIGA__
-        task = (APTR)FindTask(NULL);
-#else
-        task = (APTR)1;
-#endif
-    }
-
-    /* 5.8: lookup and insert form one critical section, so two first
-     * callers cannot both miss and both link a node */
-    UG_LOCK(base);
+    UG_FORBID();
     for (node = base->contexts.mlh_Head; node->mln_Succ != NULL; node = node->mln_Succ) {
         ctx = (struct UgTaskContext *)node;
-        if (ctx->task == task) {
-            UG_UNLOCK(base);
-            return ctx;
-        }
+        if (ctx->task == task) { found = ctx; break; }
+        if (ctx->task == NULL && spare == NULL) spare = ctx;
     }
+    if (found == NULL && spare != NULL && make) {
+        ug_ctx_init(spare, task);
+        found = spare;
+    }
+    UG_PERMIT();
+    if (found != NULL || !make) return found;
 
-    /* Allocate new context for task */
 #ifdef __AMIGA__
     ctx = (struct UgTaskContext *)AllocMem(sizeof(struct UgTaskContext), MEMF_PUBLIC | MEMF_CLEAR);
 #else
     ctx = (struct UgTaskContext *)calloc(1, sizeof(struct UgTaskContext));
 #endif
-    if (!ctx) {
-        UG_UNLOCK(base);
-        return NULL;
-    }
+    if (!ctx) return NULL;
+    ug_ctx_init(ctx, task);
 
-    ctx->task = task;
-    ctx->creds.cr_ruid = 0;
-    ctx->creds.cr_euid = 0;
-    ctx->creds.cr_rgid = 0;
-    ctx->creds.cr_umask = 022;
-    ctx->creds.cr_ngroups = 1;
-    ctx->creds.cr_groups[0] = 0;
-    ctx->creds.cr_session = 1;
-    strncpy(ctx->creds.cr_login, "root", sizeof(ctx->creds.cr_login) - 1);
-
-    /* Add to contexts list */
+    UG_FORBID();
     {
         struct MinNode *tailpred = base->contexts.mlh_TailPred;
         ctx->node.mln_Succ = (struct MinNode *)&base->contexts.mlh_Tail;
@@ -70,9 +81,47 @@ struct UgTaskContext *ug_get_task_context(struct UserGroupBase *base, APTR task)
         tailpred->mln_Succ = &ctx->node;
         base->contexts.mlh_TailPred = &ctx->node;
     }
-    UG_UNLOCK(base);
-
+    UG_PERMIT();
     return ctx;
+}
+
+struct UgTaskContext *ug_get_task_context(struct UserGroupBase *base, APTR task)
+{
+    struct UgTaskContext *ctx;
+    if (!base) return NULL;
+    if (!task) task = ug_self();
+
+    /* 5.8: lookup and insert form one critical section, so two first
+     * callers cannot both miss and both link a node */
+    UG_LOCK(base);
+    ctx = ug_ctx_lookup(base, task, TRUE);
+    UG_UNLOCK(base);
+    return ctx;
+}
+
+/* 5.8: usergroup.library is opened per task. The Open vector counts the
+ * caller's opens; the last Close returns its context to the free pool
+ * with default credentials and no errno pointers, so the next program on
+ * the same Process (every CLI command of a shell) or a new task at a
+ * reused Task address starts clean. Both run under exec's Forbid. */
+void ug_ctx_opened(struct UserGroupBase *base)
+{
+    struct UgTaskContext *ctx;
+    if (!base) return;
+    ctx = ug_ctx_lookup(base, ug_self(), TRUE);
+    if (ctx) ctx->opens++;
+}
+
+void ug_ctx_closed(struct UserGroupBase *base)
+{
+    struct UgTaskContext *ctx;
+    if (!base) return;
+    ctx = ug_ctx_lookup(base, ug_self(), FALSE);
+    if (!ctx) return;
+    if (--ctx->opens > 0) return;
+    UG_FORBID();
+    ug_ctx_init(ctx, NULL);
+    UG_PERMIT();
 }
 
 void ug_set_task_error(struct UserGroupBase *base, LONG err)

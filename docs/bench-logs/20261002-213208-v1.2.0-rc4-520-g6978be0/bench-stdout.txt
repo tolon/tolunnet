@@ -1,0 +1,46 @@
+[bench] bench config: resolver 127.0.0.1:15353 (loopback), external=0, TX_QUEUES="4"
+[bench] verifying netsvc ports are free
+OK: all netsvc ports are free.
+OK: all netsvc ports are free.
+[bench] starting hermetic slirp host services (ci/netsvc.py)
+[bench] probing netsvc readiness (5s limit)...
+[2026-10-02 21:32:17] [main] starting hermetic slirp host services
+[2026-10-02 21:32:17] [udp_echo] listening on UDP 15007
+[2026-10-02 21:32:17] [tcp_echo] listening on TCP 15007
+[2026-10-02 21:32:17] [tcp_delay] listening on TCP 15009
+[2026-10-02 21:32:17] [tcp_silent] listening on TCP 15011
+[2026-10-02 21:32:17] [sntp] listening on UDP 15123
+[2026-10-02 21:32:17] [dns] listening on UDP 15353
+[2026-10-02 21:32:17] [tftp] listening on UDP 15069
+[2026-10-02 21:32:17] [ftp] listening on TCP 15021 (PASV port: 15020)
+[2026-10-02 21:32:17] [main] all 7 service threads started, ready for traffic
+[2026-10-02 21:32:17] [whois] listening on TCP 15043
+[2026-10-02 21:32:17] [http] listening on TCP 15880
+[2026-10-02 21:32:17] [tcp_delay] accepted from ('127.0.0.1', 43833), sleeping 1.0 s before reply
+[2026-10-02 21:32:17] [ftp] connected from ('127.0.0.1', 43834)
+[2026-10-02 21:32:17] [ftp] session error: [WinError 10053] Kurulan bir baðlantý, ana makinenizdeki yazýlým tarafýndan iptal edildi
+[2026-10-02 21:32:17] [whois] query '' from ('127.0.0.1', 43835)
+[2026-10-02 21:32:17] [http] request '' from ('127.0.0.1', 43836)
+[2026-10-02 21:32:17] [tcp_silent] accepted from ('127.0.0.1', 43838), staying silent
+OK: netsvc readiness verified.
+[bench] netsvc ready (PID 1765215)
+[bench] ===== leg: a1200-txq4 (config a1200, TX_QUEUE=4) =====
+[bench] staging HDF copy for a1200
+gen_installer: build/tolunnet-undo-sandbox written (root T:tnsbx/)
+[bench] hdf free: 1976 KB
+[bench] staged: tolunnet + SocketConformance + bsdsocktest + cmds + usergroup.library + TolunnetSetup + TolunnetPrefs + Conformance-Script + User-Startup + tolunnet.config -> E:\amiga\Amigatolon\bench\tolunnet\wb30-a1200.hdf
+[bench] floppies attached: tolunnet-1.2.0-rc5-disk1.adf DF0, tolunnet-1.2.0-rc5-disk2.adf DF1
+[bench] launching WinUAE headless (D:\Projeler\tolunnet\ci\.bench-floppy.uae), timeout 1500s
+[bench] TIMEOUT waiting for bench-done after 1500s
+[bench] quitting stuck emulator
+[bench] a1200-txq4: bsdsocktest: 126/142 failed 2 -> ok
+[bench] conformance.log: core: 38 ok / 0 not ok; external: 1 skipped (skip=1 todo=0)
+[bench] conformance2.log: core: 0 ok / 0 not ok; external: 0 skipped (skip=0 todo=0)
+[bench] net TODO remaining: 0
+0
+[bench] logs: docs/bench-logs/20261002-213208-v1.2.0-rc4-520-g6978be0
+[bench] RESULT: HAS-FAILURES
+[bench] stopping hermetic slirp host services (PID 1765215)
+HOLDER port=15007 pid=38108 cmd=C:\Users\ismoz\AppData\Local\Programs\Python\Python313\python.exe ci/netsvc.py --log docs/bench-logs/20261002-223156-v1.2.0-rc4-519-gfe33177/netsvc.log
+[bench] warning: netsvc ports not free after shutdown
+[bench] run had failures; keeping log directory for analysis: docs/bench-logs/20261002-213208-v1.2.0-rc4-520-g6978be0

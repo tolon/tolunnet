@@ -106,7 +106,9 @@ typedef enum TnIpcCmd {
     TN_IPC_CMD_ROUTECTL,        /* CLOSE §B.5: static route SHOW/ADD/DELETE (route) */
     TN_IPC_CMD_IFCTL,           /* CLOSE §B.7: interface LIST/UP/DOWN/SET (AddNetInterface/Online/Offline) */
     TN_IPC_CMD_STOP,            /* RC3/TNET-152: robust daemon stop (signal path is unreliable in exec) */
-    TN_IPC_CMD_CANCEL           /* z.ai step 5 item 1: cancel an in-flight parked/pending msg (args[0]=msg ptr) */
+    TN_IPC_CMD_CANCEL,          /* z.ai step 5 item 1: cancel an in-flight parked/pending msg (args[0]=msg ptr) */
+    TN_IPC_CMD_SYSLOG           /* TN-bugtrack 5.1: client log line -> daemon log
+                                 * (args[0]=pri or -1 raw, [1]=len, [2]=tier, ptrs[0]=text) */
 } TnIpcCmd;
 
 /* Interface row for TN_IPC_CMD_IFCTL LIST replies (CLOSE §B.7).
@@ -299,6 +301,9 @@ typedef struct TnReconfigResponse {
     uint32_t failed;
 } TnReconfigResponse;
 
+/* TN_IPC_CMD_SYSLOG text bound incl. NUL (TnSocketBase.syslog_buf) */
+#define TN_SYSLOG_MSG_MAX 200
+
 /* IPC Message passed via Exec PutMsg/GetMsg/ReplyMsg */
 typedef struct TnIpcMsg {
     struct Message msg;         /* Standard Exec Message node */
@@ -397,6 +402,11 @@ typedef struct TnSocketBase {
     /* TN-bugtrack 2.11: GetSocketEvents round-robin cursor (was a static
      * shared by every opener). Appended last: earlier offsets unchanged. */
     LONG            gse_last_fd;
+
+    /* TN-bugtrack 5.1: formatted syslog()/VERBOSE line handed to the daemon
+     * (TN_IPC_CMD_SYSLOG ptrs[0]). Per-base, not the client stack: a
+     * watchdog-orphaned request may be read after the call returns. */
+    char            syslog_buf[TN_SYSLOG_MSG_MAX];
 } TnSocketBase;
 
 #endif /* TOLUNNET_IPC_H */

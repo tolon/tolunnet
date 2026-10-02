@@ -344,6 +344,42 @@ done:
     return TN_IPC_REPLY_NOW;
 }
 
+/* TN-bugtrack 5.1: a client syslog()/VERBOSE line, logged here on the
+ * daemon task, which owns the log file, the console and the UDP syslog
+ * sink. args[0] = syslog priority (-1: preformatted raw line), args[1] =
+ * length, args[2] = log tier; ptrs[0] = client text, read before reply. */
+int tn_ipc_cmd_syslog(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
+{
+    char line[TN_SYSLOG_MSG_MAX];
+    const char *src;
+    LONG len, tier, i;
+
+    (void)d;
+    (void)slot;
+    if (imsg == NULL) return TN_IPC_REPLY_NOW;
+    src  = (const char *)imsg->ptrs[0];
+    len  = imsg->args[1];
+    tier = imsg->args[2];
+    if (src == NULL || len < 0 || tier < TN_LOG_BASIC || tier > TN_LOG_VERBOSE) {
+        imsg->result = -1;
+        imsg->err_no = EINVAL;
+        return TN_IPC_REPLY_NOW;
+    }
+    if (len > TN_SYSLOG_MSG_MAX - 1) len = TN_SYSLOG_MSG_MAX - 1;
+    for (i = 0; i < len && src[i] != '\0'; i++) line[i] = src[i];
+    if (imsg->args[0] >= 0 && i > 0 && line[i - 1] == '\n') i--;
+    line[i] = '\0';
+    (void)line;
+    if (imsg->args[0] < 0) {
+        tn_logf((int)tier, "%s", line);
+    } else {
+        tn_logf((int)tier, "[syslog:%ld] %s\n", (long)imsg->args[0], line);
+    }
+    imsg->result = i;
+    imsg->err_no = 0;
+    return TN_IPC_REPLY_NOW;
+}
+
 int tn_ipc_cmd_enumsockets(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
     LONG max_entries = imsg->args[0];

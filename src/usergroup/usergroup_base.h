@@ -156,6 +156,9 @@ struct UgTaskContext {
     ULONG                       break_mask;
     LONG                        last_err;
     struct UserGroupCredentials creds;
+    LONG                        opens;     /* 5.8: OpenLibrary count of task */
+    struct MinNode             *cur_user_node; /* 5.9: per-task getpwent */
+    struct MinNode             *cur_grp_node;  /* 5.9: per-task getgrent */
 };
 
 /* In-memory user record */
@@ -191,8 +194,6 @@ struct UserGroupBase {
     struct MinList      contexts;
     struct MinList      users;
     struct MinList      groups;
-    struct MinNode     *cur_user_node;
-    struct MinNode     *cur_grp_node;
     BOOL                initialized;
     struct utmp         cur_utmp;
     struct lastlog      cur_lastlog;
@@ -208,6 +209,19 @@ struct UserGroupBase {
 #else
 #define UG_LOCK(b)   ((void)(b))
 #define UG_UNLOCK(b) ((void)(b))
+#endif
+
+/* 5.8: the Open/Close vectors run under exec's Forbid and must not
+ * ObtainSemaphore, so every contexts-list insert and slot claim/release
+ * is also done under Forbid; a lockless scan from the vectors is then
+ * always consistent. Nodes are only unlinked by expunge. */
+#ifdef __AMIGA__
+#define UG_FORBID()  Forbid()
+#define UG_PERMIT()  Permit()
+#else
+#define UG_FORBID()  ((void)0)
+#define UG_PERMIT()  ((void)0)
+extern APTR g_ug_host_task;   /* host tests: FindTask(NULL) stand-in */
 #endif
 
 /* Internal function prototypes */
@@ -233,5 +247,7 @@ void ug_db_load_files(struct UserGroupBase *base);
 
 struct UgTaskContext *ug_get_task_context(struct UserGroupBase *base, APTR task);
 void ug_set_task_error(struct UserGroupBase *base, LONG err);
+void ug_ctx_opened(struct UserGroupBase *base);
+void ug_ctx_closed(struct UserGroupBase *base);
 
 #endif /* USERGROUP_BASE_H */

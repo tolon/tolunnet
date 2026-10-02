@@ -24,6 +24,7 @@ static err_t s_tcp_write_err   = ERR_OK;
 static err_t s_tcp_close_err   = ERR_OK;
 static err_t s_tcp_connect_err = ERR_OK;
 static err_t s_udp_sendto_err  = ERR_OK;
+static int   s_tcp_write_consumes = 0;
 
 void mock_set_tcp_sndbuf(u16_t v)      { s_tcp_sndbuf = v; }
 void mock_set_tcp_sndqueuelen(u16_t v) { s_tcp_sndqueuelen = v; }
@@ -31,6 +32,7 @@ void mock_set_tcp_write_err(err_t e)   { s_tcp_write_err = e; }
 void mock_set_tcp_close_err(err_t e)   { s_tcp_close_err = e; }
 void mock_set_tcp_connect_err(err_t e) { s_tcp_connect_err = e; }
 void mock_set_udp_sendto_err(err_t e)  { s_udp_sendto_err = e; }
+void mock_set_tcp_write_consumes(int on) { s_tcp_write_consumes = on; }
 
 void mock_lwip_reset(void)
 {
@@ -42,6 +44,7 @@ void mock_lwip_reset(void)
     s_tcp_close_err   = ERR_OK;
     s_tcp_connect_err = ERR_OK;
     s_udp_sendto_err  = ERR_OK;
+    s_tcp_write_consumes = 0;
 }
 
 void mock_lwip_record(MockCallType type, void *p1, void *p2, uint32_t a1, uint32_t a2)
@@ -226,6 +229,9 @@ void tcp_poll(struct tcp_pcb *pcb, void *func, u8_t interval)
 err_t tcp_write(struct tcp_pcb *pcb, const void *arg, u16_t len, u8_t apiflags)
 {
     mock_lwip_record(MOCK_CALL_TCP_WRITE, pcb, (void *)arg, len, apiflags);
+    if (s_tcp_write_err == ERR_OK && s_tcp_write_consumes) {
+        s_tcp_sndbuf = (len >= s_tcp_sndbuf) ? 0 : (u16_t)(s_tcp_sndbuf - len);
+    }
     return s_tcp_write_err;
 }
 

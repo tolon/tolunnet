@@ -85,6 +85,13 @@ struct pbuf {
     uint16_t     ref;
 };
 
+/* lwIP enum tcp_state (tcpbase.h) - same names and values (TNET-156) */
+enum tcp_state {
+    CLOSED = 0, LISTEN = 1, SYN_SENT = 2, SYN_RCVD = 3, ESTABLISHED = 4,
+    FIN_WAIT_1 = 5, FIN_WAIT_2 = 6, CLOSE_WAIT = 7, CLOSING = 8,
+    LAST_ACK = 9, TIME_WAIT = 10
+};
+
 struct tcp_pcb {
     ip_addr_t local_ip;
     ip_addr_t remote_ip;
@@ -190,6 +197,7 @@ void mock_set_tcp_write_err(err_t e);       /* default ERR_OK */
 void mock_set_tcp_close_err(err_t e);       /* default ERR_OK */
 void mock_set_tcp_connect_err(err_t e);     /* default ERR_OK */
 void mock_set_udp_sendto_err(err_t e);      /* default ERR_OK */
+void mock_set_tcp_write_consumes(int on);   /* TNET-159: tcp_write lowers sndbuf; default off */
 
 /* Mock lwIP Functions */
 struct pbuf *mock_pbuf_alloc(uint16_t length);

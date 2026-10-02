@@ -30,6 +30,7 @@ void tn_rxpkt_put(TnRxPacket *pkt);
 void tn_rxpkt_fini(void);
 
 int tn_rx_queue_push(TnSocketSlot *slot, struct pbuf *p, const ip_addr_t *src_ip, u16_t src_port);
+int tn_rx_queue_push_nocap(TnSocketSlot *slot, struct pbuf *p, const ip_addr_t *src_ip, u16_t src_port); /* TNET-156 */
 TnRxPacket *tn_rx_queue_pop(TnSocketSlot *slot);
 void tn_rx_queue_drain(TnSocketSlot *slot);
 void tn_rx_queue_drain_with_recved(TnSocketSlot *slot); /* z.ai step 4 item 2 */

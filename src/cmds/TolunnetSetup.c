@@ -2482,10 +2482,17 @@ int main(int argc, char **argv)
                              * wifi_ssid_str */
                             sync_page_gadgets_to_state();
                             g_ws.selected_wifi_idx = im_code;
-                            strncpy(g_ws.wifi_ssid_str,
-                                    g_ws.wifi[im_code].ssid,
-                                    sizeof(g_ws.wifi_ssid_str) - 1);
-                            g_ws.wifi_ssid_str[sizeof(g_ws.wifi_ssid_str) - 1] = '\0';
+                            /* a hidden network shows the parser's
+                             * "Unknown AP" placeholder: leave the field
+                             * empty so the user types the real SSID */
+                            if (strcmp(g_ws.wifi[im_code].ssid, "Unknown AP") == 0) {
+                                g_ws.wifi_ssid_str[0] = '\0';
+                            } else {
+                                strncpy(g_ws.wifi_ssid_str,
+                                        g_ws.wifi[im_code].ssid,
+                                        sizeof(g_ws.wifi_ssid_str) - 1);
+                                g_ws.wifi_ssid_str[sizeof(g_ws.wifi_ssid_str) - 1] = '\0';
+                            }
                             rebuild_page_gadgets();
                         }
                         break;

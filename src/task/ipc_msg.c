@@ -10,9 +10,27 @@
 #include "netif_mgr.h"
 #include "../common/sockaddr_util.h"
 
+/* YENI-8: the app's msghdr and iovec array may sit at odd addresses on
+ * the 68000 - copy them byte-wise into locals, never deref them typed. */
+static void tn_msg_iov_get(const void *iov, ULONG i, struct iovec *out)
+{
+    memcpy(out, (const UBYTE *)iov + i * sizeof(struct iovec), sizeof(struct iovec));
+}
+
+/* write one field of the local msghdr copy back into the app's msghdr */
+static void tn_msg_store(void *umsg, const struct msghdr *mh, size_t off, size_t len)
+{
+    memcpy((UBYTE *)umsg + off, (const UBYTE *)mh + off, len);
+}
+#define TN_MSG_STORE(umsg, mh, field) \
+    tn_msg_store((umsg), (mh), offsetof(struct msghdr, field), sizeof((mh)->field))
+
 int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
-    const struct msghdr *msg = (const struct msghdr *)imsg->ptrs[0];
+    const void *umsg = imsg->ptrs[0];
+    struct msghdr mh;
+    const struct msghdr *msg = &mh;
+    struct iovec v;
     LONG flags = imsg->args[1];
     uint32_t to_addr_be = 0;
     u16_t to_port_host = 0;
@@ -21,11 +39,12 @@ int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     ULONG i;
     (void)d;
 
-    if (slot == NULL || msg == NULL) {
+    if (slot == NULL || umsg == NULL) {
         imsg->result = -1;
-        imsg->err_no = (msg == NULL) ? EINVAL : EBADF;
+        imsg->err_no = (umsg == NULL) ? EINVAL : EBADF;
         return 0;
     }
+    memcpy(&mh, umsg, sizeof(mh));
 
     if (flags & MSG_OOB) {
         imsg->result = -1;
@@ -40,12 +59,19 @@ int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     }
 
     for (i = 0; i < msg->msg_iovlen; i++) {
-        if (msg->msg_iov[i].iov_len > 0 && msg->msg_iov[i].iov_base == NULL) {
+        tn_msg_iov_get(msg->msg_iov, i, &v);
+        if (v.iov_len > 0 && v.iov_base == NULL) {
             imsg->result = -1;
             imsg->err_no = EFAULT;
             return 0;
         }
-        total_len += msg->msg_iov[i].iov_len;
+        /* TNET-159: the total must fit the LONG result (POSIX EINVAL) */
+        if (v.iov_len > (ULONG)0x7FFFFFFFUL - total_len) {
+            imsg->result = -1;
+            imsg->err_no = EINVAL;
+            return 0;
+        }
+        total_len += v.iov_len;
     }
 
     if (msg->msg_name != NULL) {
@@ -63,93 +89,17 @@ int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         /* 4.2: one iovec is a plain send() - reuse its blocking/park path.
          * The message is re-shaped in place to send()'s layout; the client
          * only reads result/err_no back. */
-        imsg->ptrs[0] = msg->msg_iov[0].iov_base;
-        imsg->args[1] = (LONG)msg->msg_iov[0].iov_len;
+        tn_msg_iov_get(msg->msg_iov, 0, &v);
+        imsg->ptrs[0] = v.iov_base;
+        imsg->args[1] = (LONG)v.iov_len;
         imsg->args[2] = flags;
         return tn_ipc_cmd_send(d, imsg, slot);
     } else if (slot->type == SOCK_STREAM) {
-        /* multi-iovec: non-blocking semantics kept (EWOULDBLOCK when the
-         * send buffer is full, short count otherwise) */
-        u16_t snd_buf;
-        u16_t to_send;
-        u16_t remaining;
-        u16_t sent_bytes = 0;
-
-        /* 4.4BSD CLOSE_WAIT: send() after the peer's FIN still works (the
-         * mirror of the send() gate in ipc_tcp.c; shut_wr/EPIPE only after
-         * OUR shutdown(SHUT_WR) or a hard error). */
-        if (slot->shut_wr) {
-            imsg->result = -1;
-            imsg->err_no = EPIPE;
-            return 0;
-        }
-        if (slot->tcp_state == TN_TCP_STATE_ERROR) {
-            imsg->result = -1;
-            if (slot->last_error != 0) {
-                imsg->err_no = slot->last_error;
-                slot->last_error = 0;
-            } else {
-                imsg->err_no = EPIPE;
-            }
-            return 0;
-        }
-        if (slot->tcp_pcb == NULL ||
-            (slot->tcp_state != TN_TCP_STATE_ESTABLISHED &&
-             slot->tcp_state != TN_TCP_STATE_PEER_CLOSED)) {
-            imsg->result = -1;
-            imsg->err_no = ENOTCONN;
-            return 0;
-        }
-
-        snd_buf = tcp_sndbuf(slot->tcp_pcb);
-        if (snd_buf == 0 && total_len > 0) {
-            imsg->result = -1;
-            imsg->err_no = EWOULDBLOCK;
-            return 0;
-        }
-
-        to_send = (total_len > (ULONG)snd_buf) ? snd_buf : (u16_t)total_len;
-        remaining = to_send;
-
-        for (i = 0; i < msg->msg_iovlen && remaining > 0; i++) {
-            u16_t chunk = (msg->msg_iov[i].iov_len > (size_t)remaining) ? remaining : (u16_t)msg->msg_iov[i].iov_len;
-            if (chunk > 0) {
-                err_t werr = tcp_write(slot->tcp_pcb, msg->msg_iov[i].iov_base, chunk, TCP_WRITE_FLAG_COPY);
-                if (werr != ERR_OK) {
-                    if (sent_bytes == 0) {
-                        imsg->result = -1;
-                        imsg->err_no = ENOBUFS;
-                        return 0;
-                    }
-                    break;
-                }
-                sent_bytes += chunk;
-                remaining -= chunk;
-            }
-        }
-
-        /* TNET-115 data half: a fresh connection has pending handshake
-         * packets in the loopback queue that must be processed before the
-         * data can flow. Multiple output+drain rounds ensure the full
-         * exchange (data → server recv → ACK → client) completes. */
-        {
-            /* z.ai step 7 item 4: re-check the pcb each round — the drain
-             * can RST the connection and NULL slot->tcp_pcb. */
-            int flush_i;
-            for (flush_i = 0; flush_i < 4; flush_i++) {
-                if (slot->tcp_pcb == NULL) break;
-                tcp_output(slot->tcp_pcb);
-                tn_drain_loopback();
-            }
-            if (slot->tcp_pcb == NULL) {
-                imsg->result = -1;
-                imsg->err_no = ECONNRESET;
-                return 0;
-            }
-        }
-        imsg->result = (LONG)sent_bytes;
-        imsg->err_no = 0;
-        return 0;
+        /* TNET-159: multi-iovec takes send()'s path too - blocking parks
+         * with the iovec array as cursor (BSD sosend), non-blocking /
+         * MSG_DONTWAIT queues what fits. */
+        return tn_tcp_send_stream(d, imsg, slot, NULL, msg->msg_iov,
+                                  (ULONG)msg->msg_iovlen, (LONG)total_len, flags);
     } else if (slot->type == SOCK_DGRAM && slot->udp_pcb != NULL) {
         struct pbuf *p;
         ip_addr_t dst_ip;
@@ -193,9 +143,11 @@ int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         }
 
         for (i = 0; i < msg->msg_iovlen && offset < send_len; i++) {
-            u16_t chunk = (msg->msg_iov[i].iov_len > (size_t)(send_len - offset)) ? (u16_t)(send_len - offset) : (u16_t)msg->msg_iov[i].iov_len;
+            u16_t chunk;
+            tn_msg_iov_get(msg->msg_iov, i, &v);
+            chunk = (v.iov_len > (size_t)(send_len - offset)) ? (u16_t)(send_len - offset) : (u16_t)v.iov_len;
             if (chunk > 0) {
-                pbuf_take_at(p, msg->msg_iov[i].iov_base, chunk, offset);
+                pbuf_take_at(p, v.iov_base, chunk, offset);
                 offset += chunk;
             }
         }
@@ -227,9 +179,11 @@ int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
         }
 
         for (i = 0; i < msg->msg_iovlen && offset < send_len; i++) {
-            u16_t chunk = (msg->msg_iov[i].iov_len > (size_t)(send_len - offset)) ? (u16_t)(send_len - offset) : (u16_t)msg->msg_iov[i].iov_len;
+            u16_t chunk;
+            tn_msg_iov_get(msg->msg_iov, i, &v);
+            chunk = (v.iov_len > (size_t)(send_len - offset)) ? (u16_t)(send_len - offset) : (u16_t)v.iov_len;
             if (chunk > 0) {
-                pbuf_take_at(p, msg->msg_iov[i].iov_base, chunk, offset);
+                pbuf_take_at(p, v.iov_base, chunk, offset);
                 offset += chunk;
             }
         }
@@ -261,17 +215,21 @@ int tn_ipc_cmd_sendmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
 int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
-    struct msghdr *msg = (struct msghdr *)imsg->ptrs[0];
+    void *umsg = imsg->ptrs[0];
+    struct msghdr mh;           /* changed fields go back via TN_MSG_STORE */
+    struct msghdr *msg = &mh;
+    struct iovec v;
     LONG flags = imsg->args[1];
     ULONG total_space = 0;
     ULONG i;
     (void)d;
 
-    if (slot == NULL || msg == NULL) {
+    if (slot == NULL || umsg == NULL) {
         imsg->result = -1;
-        imsg->err_no = (msg == NULL) ? EINVAL : EBADF;
+        imsg->err_no = (umsg == NULL) ? EINVAL : EBADF;
         return 0;
     }
+    memcpy(&mh, umsg, sizeof(mh));
 
     if (flags & MSG_OOB) {
         imsg->result = -1;
@@ -286,17 +244,20 @@ int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     }
 
     for (i = 0; i < msg->msg_iovlen; i++) {
-        if (msg->msg_iov[i].iov_len > 0 && msg->msg_iov[i].iov_base == NULL) {
+        tn_msg_iov_get(msg->msg_iov, i, &v);
+        if (v.iov_len > 0 && v.iov_base == NULL) {
             imsg->result = -1;
             imsg->err_no = EFAULT;
             return 0;
         }
-        total_space += msg->msg_iov[i].iov_len;
+        total_space += v.iov_len;
     }
 
     msg->msg_flags = 0;
+    TN_MSG_STORE(umsg, msg, msg_flags);
     if (msg->msg_control != NULL) {
         msg->msg_controllen = 0;
+        TN_MSG_STORE(umsg, msg, msg_controllen);
     }
 
     if (slot->type == SOCK_STREAM) {
@@ -311,15 +272,18 @@ int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                     u16_t off = (cur == slot->rx_head) ? cur->offset : 0;
                     u16_t avail = cur->p->tot_len - off;
                     while (avail > 0 && cur_iov < msg->msg_iovlen) {
-                        ULONG rem_space = msg->msg_iov[cur_iov].iov_len - iov_offset;
-                        u16_t space = (rem_space > 0xFFFF) ? 0xFFFF : (u16_t)rem_space;
+                        ULONG rem_space;
+                        u16_t space;
+                        tn_msg_iov_get(msg->msg_iov, cur_iov, &v);
+                        rem_space = v.iov_len - iov_offset;
+                        space = (rem_space > 0xFFFF) ? 0xFFFF : (u16_t)rem_space;
                         if (space == 0) {
                             cur_iov++;
                             iov_offset = 0;
                             continue;
                         }
                         u16_t chunk = (avail < space) ? avail : space;
-                        pbuf_copy_partial(cur->p, (char *)msg->msg_iov[cur_iov].iov_base + iov_offset, chunk, off);
+                        pbuf_copy_partial(cur->p, (char *)v.iov_base + iov_offset, chunk, off);
                         off += chunk;
                         avail -= chunk;
                         iov_offset += chunk;
@@ -333,15 +297,18 @@ int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                     u16_t avail = pkt->p->tot_len - pkt->offset;
                     u16_t pkt_copied = 0;
                     while (avail > 0 && cur_iov < msg->msg_iovlen) {
-                        ULONG rem_space = msg->msg_iov[cur_iov].iov_len - iov_offset;
-                        u16_t space = (rem_space > 0xFFFF) ? 0xFFFF : (u16_t)rem_space;
+                        ULONG rem_space;
+                        u16_t space;
+                        tn_msg_iov_get(msg->msg_iov, cur_iov, &v);
+                        rem_space = v.iov_len - iov_offset;
+                        space = (rem_space > 0xFFFF) ? 0xFFFF : (u16_t)rem_space;
                         if (space == 0) {
                             cur_iov++;
                             iov_offset = 0;
                             continue;
                         }
                         u16_t chunk = (avail < space) ? avail : space;
-                        pbuf_copy_partial(pkt->p, (char *)msg->msg_iov[cur_iov].iov_base + iov_offset, chunk, pkt->offset);
+                        pbuf_copy_partial(pkt->p, (char *)v.iov_base + iov_offset, chunk, pkt->offset);
                         pkt->offset += chunk;
                         avail -= chunk;
                         iov_offset += chunk;
@@ -365,12 +332,18 @@ int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                 }
             }
 
-            if (msg->msg_name != NULL) msg->msg_namelen = 0;
+            if (msg->msg_name != NULL) {
+                msg->msg_namelen = 0;
+                TN_MSG_STORE(umsg, msg, msg_namelen);
+            }
             imsg->result = (LONG)total_copied;
             imsg->err_no = 0;
             return 0;
         } else if (slot->shut_rd || slot->tcp_state == TN_TCP_STATE_PEER_CLOSED) {
-            if (msg->msg_name != NULL) msg->msg_namelen = 0;
+            if (msg->msg_name != NULL) {
+                msg->msg_namelen = 0;
+                TN_MSG_STORE(umsg, msg, msg_namelen);
+            }
             imsg->result = 0; /* EOF */
             imsg->err_no = 0;
             return 0;
@@ -404,8 +377,11 @@ int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
             ULONG total_copied = 0;
 
             while (cur_iov < msg->msg_iovlen && pkt_offset < avail) {
-                ULONG rem_space = msg->msg_iov[cur_iov].iov_len - iov_offset;
-                u16_t space = (rem_space > 0xFFFF) ? 0xFFFF : (u16_t)rem_space;
+                ULONG rem_space;
+                u16_t space;
+                tn_msg_iov_get(msg->msg_iov, cur_iov, &v);
+                rem_space = v.iov_len - iov_offset;
+                space = (rem_space > 0xFFFF) ? 0xFFFF : (u16_t)rem_space;
                 if (space == 0) {
                     cur_iov++;
                     iov_offset = 0;
@@ -413,7 +389,7 @@ int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                 }
                 u16_t remaining = avail - pkt_offset;
                 u16_t chunk = (remaining < space) ? remaining : space;
-                pbuf_copy_partial(pkt->p, (char *)msg->msg_iov[cur_iov].iov_base + iov_offset, chunk, pkt_offset);
+                pbuf_copy_partial(pkt->p, (char *)v.iov_base + iov_offset, chunk, pkt_offset);
                 pkt_offset += chunk;
                 iov_offset += chunk;
                 total_copied += chunk;
@@ -421,6 +397,7 @@ int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 
             if (avail > total_copied) {
                 msg->msg_flags |= MSG_TRUNC;
+                TN_MSG_STORE(umsg, msg, msg_flags);
             }
 
             if (msg->msg_name != NULL && msg->msg_namelen >= sizeof(struct sockaddr_in)) {
@@ -429,6 +406,7 @@ int tn_ipc_cmd_recvmsg(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
                                       (slot->type == SOCK_DGRAM) ? pkt->src_port : 0,
                                       ip_addr_get_ip4_u32(&pkt->src_ip));
                 msg->msg_namelen = sizeof(struct sockaddr_in);
+                TN_MSG_STORE(umsg, msg, msg_namelen);
             }
 
             if (!(flags & MSG_PEEK)) {

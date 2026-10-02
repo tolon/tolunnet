@@ -12,20 +12,50 @@
 #include "ipc_dgram.h"
 #include "../common/sockaddr_util.h"
 
-/* 4.2: queue as much of buf[*done..len) as lwIP takes right now. ERR_OK =
- * everything queued; ERR_MEM = send buffer or segment queue full (wait or
- * EWOULDBLOCK); anything else is a hard tcp_write error. */
-static err_t tn_tcp_write_some(struct tcp_pcb *pcb, const char *buf, LONG len, LONG *done)
+/* TNET-159: one entry of a client iovec array, copied byte-wise (68000:
+ * no typed load through a client pointer). */
+static void tn_tcp_iov_get(const void *iov, ULONG i, struct iovec *out)
 {
+    memcpy(out, (const char *)iov + i * sizeof(struct iovec), sizeof(struct iovec));
+}
+
+/* 4.2: queue as much of the stream [*done..len) as lwIP takes right now -
+ * from buf, or (TNET-159, sendmsg) from the client iovec array, *done
+ * being the cursor across its entries. ERR_OK = everything queued;
+ * ERR_MEM = send buffer or segment queue full (wait or EWOULDBLOCK);
+ * anything else is a hard tcp_write error. */
+static err_t tn_tcp_write_some(struct tcp_pcb *pcb, const char *buf,
+                               const struct iovec *iov, ULONG iovcnt,
+                               LONG len, LONG *done)
+{
+    ULONG vi = 0;
+    LONG vbase = 0;             /* stream offset of iov[vi] */
+    struct iovec v;
+
     while (*done < len) {
         u16_t snd_buf = tcp_sndbuf(pcb);
-        LONG left = len - *done;
+        const char *src;
+        LONG left;
         u16_t chunk;
         err_t werr;
         if (snd_buf == 0) return ERR_MEM;
+        if (iov == NULL) {
+            src  = buf + *done;
+            left = len - *done;
+        } else {
+            for (;;) {          /* entry holding byte *done (skips empty ones) */
+                if (vi >= iovcnt) return ERR_VAL;
+                tn_tcp_iov_get(iov, vi, &v);
+                if (*done - vbase < (LONG)v.iov_len) break;
+                vbase += (LONG)v.iov_len;
+                vi++;
+            }
+            src  = (const char *)v.iov_base + (*done - vbase);
+            left = (LONG)v.iov_len - (*done - vbase);
+        }
         chunk = (left > 0xFFFF) ? 0xFFFF : (u16_t)left;
         if (chunk > snd_buf) chunk = snd_buf;
-        werr = tcp_write(pcb, buf + *done, chunk, TCP_WRITE_FLAG_COPY);
+        werr = tcp_write(pcb, src, chunk, TCP_WRITE_FLAG_COPY);
         if (werr != ERR_OK) return werr;
         *done += chunk;
     }
@@ -62,7 +92,8 @@ static void tn_tcp_resume_send(TnSocketSlot *slot)
         return;
     }
     done = slot->send_done;
-    werr = tn_tcp_write_some(slot->tcp_pcb, (const char *)imsg->ptrs[0], imsg->args[1], &done);
+    werr = tn_tcp_write_some(slot->tcp_pcb, (const char *)imsg->ptrs[0],
+                             slot->send_iov, slot->send_iovcnt, imsg->args[1], &done);
     if (done != slot->send_done) {
         tcp_output(slot->tcp_pcb);
     }
@@ -103,6 +134,28 @@ err_t tn_tcp_sent_cb(void *arg, struct tcp_pcb *pcb, u16_t len)
     return ERR_OK;
 }
 
+/* TNET-156: CLOSING / TIME_WAIT (both FINs seen, ours sent by
+ * shutdown(SHUT_WR)) are finished by lwIP alone: tcp_slowtmr frees a
+ * TIME_WAIT pcb, tcp_kill_timewait aborts one - neither calls errf. Hand
+ * the pcb over now (no callback can follow the EOF one) so CloseSocket,
+ * select and enumsockets never touch it; never tcp_close it. */
+static BOOL tn_tcp_pcb_finished(const struct tcp_pcb *pcb)
+{
+    return (pcb->state == CLOSING || pcb->state == TIME_WAIT) ? TRUE : FALSE;
+}
+
+static void tn_tcp_detach_finished(TnSocketSlot *slot, struct tcp_pcb *pcb)
+{
+    tcp_arg(pcb, NULL);
+    tcp_recv(pcb, NULL);
+    tcp_sent(pcb, NULL);
+    tcp_err(pcb, NULL);
+    tcp_poll(pcb, NULL, 0);
+    slot->tcp_pcb = NULL;
+    slot->shut_wr = TRUE;           /* send -> EPIPE, select writable */
+    tn_slot_reply_send(slot, EPIPE, 1);
+}
+
 err_t tn_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 {
     int slot_idx = (int)(intptr_t)arg;
@@ -123,6 +176,11 @@ err_t tn_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
     /* Peer closed connection (FIN received) */
     if (p == NULL) {
         slot->tcp_state = TN_TCP_STATE_PEER_CLOSED;
+        if (tn_tcp_pcb_finished(pcb)) {
+            tn_logf(TN_LOG_VERBOSE, "tolunnet: tcp slot=%d finished (state %d), pcb detached\n",
+                    slot_idx, (int)pcb->state);
+            tn_tcp_detach_finished(slot, pcb);
+        }
         tn_signal_socket(&g_daemon, slot);
         tn_record_socket_event(&g_daemon, slot, FD_CLOSE | FD_READ);
         if (slot->pending_recv_msg != NULL) {
@@ -140,8 +198,21 @@ err_t tn_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
     }
 
     if (tn_rx_queue_push(slot, p, NULL, 0) != 0) {
-        /* Queue full or alloc fail: return ERR_MEM without freeing pbuf so lwIP holds it */
-        return ERR_MEM;
+        /* TNET-156: in CLOSING/TIME_WAIT lwIP never redelivers refused
+         * data (tcp_fasttmr walks active pcbs only) and would park the
+         * FIN on it, so the EOF callback never came. Take it past the
+         * cap; drop only when even that fails. */
+        if (tn_tcp_pcb_finished(pcb)) {
+            if (tn_rx_queue_push_nocap(slot, p, NULL, 0) != 0) {
+                tn_logf(TN_LOG_BASIC, "tolunnet: tcp slot=%d: %u final bytes dropped (no memory)\n",
+                        slot_idx, (unsigned)p->tot_len);
+                pbuf_free(p);
+                return ERR_OK;
+            }
+        } else {
+            /* Queue full or alloc fail: return ERR_MEM without freeing pbuf so lwIP holds it */
+            return ERR_MEM;
+        }
     }
 
     tn_signal_socket(&g_daemon, slot);
@@ -627,6 +698,119 @@ int tn_ipc_cmd_connect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     return 0;
 }
 
+/* 4.2 / TNET-159: TCP stream send shared by send() and sendmsg(). Data is
+ * buf, or the client iovec array iov[iovcnt] when iov != NULL (client
+ * memory stays valid while the caller is blocked, parked included); len
+ * is the total. Returns 1 (TN_IPC_DEFER) when a blocking send parks. */
+int tn_tcp_send_stream(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot,
+                       const char *buf, const struct iovec *iov, ULONG iovcnt,
+                       LONG len, LONG flags)
+{
+    err_t werr;
+    LONG done = 0;
+    BOOL nonblock = slot->is_nonblocking || (flags & MSG_DONTWAIT) != 0;
+
+    /* 4.4BSD: send() in CLOSE_WAIT (peer sent FIN, ours not sent yet)
+     * still works - a server that reads the request to EOF and then
+     * replies depends on it. EPIPE only after OUR shutdown(SHUT_WR)
+     * or a hard error; ENOTCONN for states without a live circuit.
+     * (shut_wr first: after a clean close the pcb is gone too.) */
+    if (slot->shut_wr) {
+        imsg->result = -1;
+        imsg->err_no = EPIPE;
+        return 0;
+    }
+    if (slot->tcp_state == TN_TCP_STATE_ERROR) {
+        /* z.ai step 4 item 2: report the captured lwIP error (usually
+         * ECONNRESET/RST) once, then plain EPIPE afterwards. */
+        imsg->result = -1;
+        if (slot->last_error != 0) {
+            imsg->err_no = slot->last_error;
+            slot->last_error = 0;
+        } else {
+            imsg->err_no = EPIPE;
+        }
+        return 0;
+    }
+    if (slot->tcp_pcb == NULL ||
+        (slot->tcp_state != TN_TCP_STATE_ESTABLISHED &&
+         slot->tcp_state != TN_TCP_STATE_PEER_CLOSED)) {
+        imsg->result = -1;
+        imsg->err_no = ENOTCONN;
+        return 0;
+    }
+    /* 4.2: one parked send per socket; nothing may overtake it */
+    if (slot->pending_send_msg != NULL) {
+        imsg->result = -1;
+        imsg->err_no = nonblock ? EWOULDBLOCK : EALREADY;
+        return 0;
+    }
+
+    /* 4.2: BSD sosend - a blocking send queues ALL of buf (waiting for
+     * space), a non-blocking one queues what fits (EWOULDBLOCK if
+     * nothing). The drains below can free space (loopback ACKs), so
+     * keep writing while that makes progress. */
+    for (;;) {
+        LONG before = done;
+        werr = tn_tcp_write_some(slot->tcp_pcb, buf, iov, iovcnt, len, &done);
+        if (done > before) {
+            tcp_output(slot->tcp_pcb);
+            tn_drain_loopback();
+            /* z.ai step 7 item 4: the drain can RST the pcb (slot->tcp_pcb
+             * becomes NULL via the error callback) — re-check before the
+             * second output. */
+            if (slot->tcp_pcb == NULL) break;
+            /* TNET-115: second output after drain clears Nagle blocks */
+            tcp_output(slot->tcp_pcb);
+            tn_drain_loopback();
+            if (slot->tcp_pcb == NULL) break;
+        }
+        if (werr != ERR_MEM || done == before) break;
+    }
+
+    if (slot->tcp_pcb == NULL) {
+        imsg->result = (done > 0) ? done : -1;
+        imsg->err_no = (done > 0) ? 0 : ECONNRESET;
+        return 0;
+    }
+    if (werr == ERR_OK || (werr == ERR_MEM && nonblock && done > 0)) {
+        imsg->result = done;
+        imsg->err_no = 0;
+        return 0;
+    }
+    if (werr != ERR_MEM) {
+        imsg->result = (done > 0) ? done : -1;
+        imsg->err_no = (done > 0) ? 0 : tn_tcp_write_errno(werr);
+        return 0;
+    }
+    if (nonblock) {
+        imsg->result = -1;
+        imsg->err_no = EWOULDBLOCK;
+        return 0;
+    }
+
+    /* 4.2: blocking and no room - park until tn_tcp_sent_cb / the poll
+     * retry frees space; SO_SNDTIMEO bounds the wait like the recv
+     * deadline (tn_slot_check_recv_timeouts). */
+    slot->pending_send_msg = imsg;
+    slot->send_done = done;
+    slot->send_iov = iov;       /* TNET-159: cursor source for the resume */
+    slot->send_iovcnt = iovcnt;
+    imsg->args[1] = len;        /* tn_tcp_resume_send reads the total here */
+    if (slot->opt_sndtimeo.tv_secs > 0 || slot->opt_sndtimeo.tv_micro > 0) {
+        uint32_t ms = (uint32_t)slot->opt_sndtimeo.tv_secs * 1000 +
+                      (uint32_t)(slot->opt_sndtimeo.tv_micro + 999) / 1000;
+        uint32_t ticks = (ms + 99) / 100;
+        if (ticks == 0) ticks = 1;
+        slot->send_deadline_tick = (d != NULL) ? (d->mainloop_ticks + ticks) : 0;
+        if (slot->send_deadline_tick == 0) slot->send_deadline_tick = 1;
+    } else {
+        slot->send_deadline_tick = 0;
+    }
+    tcp_poll(slot->tcp_pcb, tn_tcp_poll_cb, 1);
+    return 1; /* TN_IPC_DEFER */
+}
+
 int tn_ipc_cmd_send(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
 {
     const void *buf = (const void *)imsg->ptrs[0];
@@ -640,106 +824,7 @@ int tn_ipc_cmd_send(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot)
     }
 
     if (slot->type == SOCK_STREAM) {
-        err_t werr;
-        LONG done = 0;
-        BOOL nonblock = slot->is_nonblocking || (flags & MSG_DONTWAIT) != 0;
-
-        /* 4.4BSD: send() in CLOSE_WAIT (peer sent FIN, ours not sent yet)
-         * still works - a server that reads the request to EOF and then
-         * replies depends on it. EPIPE only after OUR shutdown(SHUT_WR)
-         * or a hard error; ENOTCONN for states without a live circuit.
-         * (shut_wr first: after a clean close the pcb is gone too.) */
-        if (slot->shut_wr) {
-            imsg->result = -1;
-            imsg->err_no = EPIPE;
-            return 0;
-        }
-        if (slot->tcp_state == TN_TCP_STATE_ERROR) {
-            /* z.ai step 4 item 2: report the captured lwIP error (usually
-             * ECONNRESET/RST) once, then plain EPIPE afterwards. */
-            imsg->result = -1;
-            if (slot->last_error != 0) {
-                imsg->err_no = slot->last_error;
-                slot->last_error = 0;
-            } else {
-                imsg->err_no = EPIPE;
-            }
-            return 0;
-        }
-        if (slot->tcp_pcb == NULL ||
-            (slot->tcp_state != TN_TCP_STATE_ESTABLISHED &&
-             slot->tcp_state != TN_TCP_STATE_PEER_CLOSED)) {
-            imsg->result = -1;
-            imsg->err_no = ENOTCONN;
-            return 0;
-        }
-        /* 4.2: one parked send per socket; nothing may overtake it */
-        if (slot->pending_send_msg != NULL) {
-            imsg->result = -1;
-            imsg->err_no = nonblock ? EWOULDBLOCK : EALREADY;
-            return 0;
-        }
-
-        /* 4.2: BSD sosend - a blocking send queues ALL of buf (waiting for
-         * space), a non-blocking one queues what fits (EWOULDBLOCK if
-         * nothing). The drains below can free space (loopback ACKs), so
-         * keep writing while that makes progress. */
-        for (;;) {
-            LONG before = done;
-            werr = tn_tcp_write_some(slot->tcp_pcb, (const char *)buf, len, &done);
-            if (done > before) {
-                tcp_output(slot->tcp_pcb);
-                tn_drain_loopback();
-                /* z.ai step 7 item 4: the drain can RST the pcb (slot->tcp_pcb
-                 * becomes NULL via the error callback) — re-check before the
-                 * second output. */
-                if (slot->tcp_pcb == NULL) break;
-                /* TNET-115: second output after drain clears Nagle blocks */
-                tcp_output(slot->tcp_pcb);
-                tn_drain_loopback();
-                if (slot->tcp_pcb == NULL) break;
-            }
-            if (werr != ERR_MEM || done == before) break;
-        }
-
-        if (slot->tcp_pcb == NULL) {
-            imsg->result = (done > 0) ? done : -1;
-            imsg->err_no = (done > 0) ? 0 : ECONNRESET;
-            return 0;
-        }
-        if (werr == ERR_OK || (werr == ERR_MEM && nonblock && done > 0)) {
-            imsg->result = done;
-            imsg->err_no = 0;
-            return 0;
-        }
-        if (werr != ERR_MEM) {
-            imsg->result = (done > 0) ? done : -1;
-            imsg->err_no = (done > 0) ? 0 : tn_tcp_write_errno(werr);
-            return 0;
-        }
-        if (nonblock) {
-            imsg->result = -1;
-            imsg->err_no = EWOULDBLOCK;
-            return 0;
-        }
-
-        /* 4.2: blocking and no room - park until tn_tcp_sent_cb / the poll
-         * retry frees space; SO_SNDTIMEO bounds the wait like the recv
-         * deadline (tn_slot_check_recv_timeouts). */
-        slot->pending_send_msg = imsg;
-        slot->send_done = done;
-        if (slot->opt_sndtimeo.tv_secs > 0 || slot->opt_sndtimeo.tv_micro > 0) {
-            uint32_t ms = (uint32_t)slot->opt_sndtimeo.tv_secs * 1000 +
-                          (uint32_t)(slot->opt_sndtimeo.tv_micro + 999) / 1000;
-            uint32_t ticks = (ms + 99) / 100;
-            if (ticks == 0) ticks = 1;
-            slot->send_deadline_tick = (d != NULL) ? (d->mainloop_ticks + ticks) : 0;
-            if (slot->send_deadline_tick == 0) slot->send_deadline_tick = 1;
-        } else {
-            slot->send_deadline_tick = 0;
-        }
-        tcp_poll(slot->tcp_pcb, tn_tcp_poll_cb, 1);
-        return 1; /* TN_IPC_DEFER */
+        return tn_tcp_send_stream(d, imsg, slot, (const char *)buf, NULL, 0, len, flags);
     } else if (slot->type == SOCK_DGRAM && slot->udp_pcb != NULL) {
         struct pbuf *p;
         u16_t send_len;

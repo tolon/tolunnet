@@ -21,6 +21,7 @@
 #include "lwip/pbuf.h"
 #include "netif/etharp.h"
 #include "lwip/dhcp.h"
+#include "lwip/prot/dhcp.h" /* DHCP_STATE_OFF */
 
 /* config_text.h mirrors the S2EVENT_* bits for the host-built parser;
  * keep the two definitions honest against each other (TNET-109). */
@@ -703,8 +704,12 @@ static void tn_s2_handle_event_bits(TnSana2If *nif, struct netif *netif, ULONG b
              * override clears only the daemon's local use_dhcp, so prefs
              * can say DHCP while the interface runs static. The daemon
              * starts the DHCP client iff the effective mode is DHCP, so
-             * attached client data is the effective flag. */
-            if (netif_dhcp_data(netif) != NULL) {
+             * attached client data is the effective flag. TNET-158:
+             * dhcp_stop() (IFCTL SET) keeps the data but sets OFF, and
+             * dhcp_renew() would restart the client over the static
+             * address - a stopped client counts as static. */
+            if (netif_dhcp_data(netif) != NULL &&
+                netif_dhcp_data(netif)->state != DHCP_STATE_OFF) {
                 dhcp_renew(netif);
                 tn_log(TN_LOG_BASIC, "tolunnet: link up: DHCP renew requested\n");
             } else

@@ -132,8 +132,6 @@ void ug_db_init(struct UserGroupBase *base)
     minlist_init(&base->users);
     minlist_init(&base->groups);
     minlist_init(&base->contexts);
-    base->cur_user_node = NULL;
-    base->cur_grp_node = NULL;
 
     /* Built-in default user entries */
     ug_db_add_user(base, "root", "*", 0, 0, "System Administrator", "SYS:", "");
@@ -226,10 +224,12 @@ struct passwd *ug_db_getpwuid(struct UserGroupBase *base, LONG uid)
 
 void ug_db_setpwent(struct UserGroupBase *base)
 {
+    struct UgTaskContext *ctx;
     if (base) {
         UG_LOCK(base);
         ug_db_ensure_loaded(base);
-        base->cur_user_node = base->users.mlh_Head;
+        ctx = ug_get_task_context(base, NULL);  /* 5.9: per-task cursor */
+        if (ctx) ctx->cur_user_node = base->users.mlh_Head;
         UG_UNLOCK(base);
     }
 }
@@ -237,15 +237,19 @@ void ug_db_setpwent(struct UserGroupBase *base)
 struct passwd *ug_db_getpwent(struct UserGroupBase *base)
 {
     struct UgUser *u = NULL;
+    struct UgTaskContext *ctx;
     if (!base) return NULL;
 
     UG_LOCK(base);
     ug_db_ensure_loaded(base);
-    /* 5.9: no setpwent yet (or after endpwent): start at the head */
-    if (base->cur_user_node == NULL) base->cur_user_node = base->users.mlh_Head;
-    if (base->cur_user_node->mln_Succ != NULL) {
-        u = (struct UgUser *)base->cur_user_node;
-        base->cur_user_node = base->cur_user_node->mln_Succ;
+    ctx = ug_get_task_context(base, NULL);  /* 5.9: per-task cursor */
+    if (ctx) {
+        /* 5.9: no setpwent yet (or after endpwent): start at the head */
+        if (ctx->cur_user_node == NULL) ctx->cur_user_node = base->users.mlh_Head;
+        if (ctx->cur_user_node->mln_Succ != NULL) {
+            u = (struct UgUser *)ctx->cur_user_node;
+            ctx->cur_user_node = ctx->cur_user_node->mln_Succ;
+        }
     }
     UG_UNLOCK(base);
     return u ? &u->pwd : NULL;
@@ -253,9 +257,11 @@ struct passwd *ug_db_getpwent(struct UserGroupBase *base)
 
 void ug_db_endpwent(struct UserGroupBase *base)
 {
+    struct UgTaskContext *ctx;
     if (base) {
         UG_LOCK(base);
-        base->cur_user_node = NULL;
+        ctx = ug_get_task_context(base, NULL);
+        if (ctx) ctx->cur_user_node = NULL;
         UG_UNLOCK(base);
     }
 }
@@ -300,10 +306,12 @@ struct group *ug_db_getgrgid(struct UserGroupBase *base, LONG gid)
 
 void ug_db_setgrent(struct UserGroupBase *base)
 {
+    struct UgTaskContext *ctx;
     if (base) {
         UG_LOCK(base);
         ug_db_ensure_loaded(base);
-        base->cur_grp_node = base->groups.mlh_Head;
+        ctx = ug_get_task_context(base, NULL);  /* 5.9: per-task cursor */
+        if (ctx) ctx->cur_grp_node = base->groups.mlh_Head;
         UG_UNLOCK(base);
     }
 }
@@ -311,15 +319,19 @@ void ug_db_setgrent(struct UserGroupBase *base)
 struct group *ug_db_getgrent(struct UserGroupBase *base)
 {
     struct UgGroup *g = NULL;
+    struct UgTaskContext *ctx;
     if (!base) return NULL;
 
     UG_LOCK(base);
     ug_db_ensure_loaded(base);
-    /* 5.9: no setgrent yet (or after endgrent): start at the head */
-    if (base->cur_grp_node == NULL) base->cur_grp_node = base->groups.mlh_Head;
-    if (base->cur_grp_node->mln_Succ != NULL) {
-        g = (struct UgGroup *)base->cur_grp_node;
-        base->cur_grp_node = base->cur_grp_node->mln_Succ;
+    ctx = ug_get_task_context(base, NULL);  /* 5.9: per-task cursor */
+    if (ctx) {
+        /* 5.9: no setgrent yet (or after endgrent): start at the head */
+        if (ctx->cur_grp_node == NULL) ctx->cur_grp_node = base->groups.mlh_Head;
+        if (ctx->cur_grp_node->mln_Succ != NULL) {
+            g = (struct UgGroup *)ctx->cur_grp_node;
+            ctx->cur_grp_node = ctx->cur_grp_node->mln_Succ;
+        }
     }
     UG_UNLOCK(base);
     return g ? &g->grp : NULL;
@@ -327,9 +339,11 @@ struct group *ug_db_getgrent(struct UserGroupBase *base)
 
 void ug_db_endgrent(struct UserGroupBase *base)
 {
+    struct UgTaskContext *ctx;
     if (base) {
         UG_LOCK(base);
-        base->cur_grp_node = NULL;
+        ctx = ug_get_task_context(base, NULL);
+        if (ctx) ctx->cur_grp_node = NULL;
         UG_UNLOCK(base);
     }
 }

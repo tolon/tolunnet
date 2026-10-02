@@ -355,6 +355,95 @@ TN_TEST(getent_without_setent)
     teardown_test_base();
 }
 
+TN_TEST(context_reset_on_last_close)
+{
+    /* 5.8: the next program on the same Process must not inherit the
+     * previous one's credentials or errno pointer */
+    LONG old_errno = 0;
+    struct TagItem tags[2];
+    setup_test_base();
+    g_ug_host_task = (APTR)1;
+
+    ug_lib_open(&g_test_base, 4);
+    TN_ASSERT_EQ(ug_lvo_setuid(100, &g_test_base), 0);
+    tags[0].ti_Tag = UGT_ERRNOLPTR;
+    tags[0].ti_Data = (uintptr_t)&old_errno;
+    tags[1].ti_Tag = TAG_DONE;
+    tags[1].ti_Data = 0;
+    TN_ASSERT_EQ(ug_lvo_ug_setupcontexttaglist("a", tags, &g_test_base), 0);
+    ug_lib_close(&g_test_base);
+
+    ug_lib_open(&g_test_base, 4);
+    TN_ASSERT_EQ(ug_lvo_getuid(&g_test_base), 0);
+    TN_ASSERT_EQ(ug_lvo_geteuid(&g_test_base), 0);
+    ug_set_task_error(&g_test_base, 13);
+    TN_ASSERT_EQ(old_errno, 0);                 /* stale pointer not used */
+    TN_ASSERT_EQ(ug_lvo_ug_geterr(&g_test_base), 13);
+    ug_lib_close(&g_test_base);
+    teardown_test_base();
+}
+
+TN_TEST(context_survives_inner_close)
+{
+    /* 5.8: a nested open/close (program + link lib) must not snap a
+     * setuid-dropped task back to root */
+    setup_test_base();
+    g_ug_host_task = (APTR)1;
+    ug_lib_open(&g_test_base, 4);
+    ug_lib_open(&g_test_base, 4);
+    TN_ASSERT_EQ(ug_lvo_setuid(100, &g_test_base), 0);
+    ug_lib_close(&g_test_base);
+    TN_ASSERT_EQ(ug_lvo_getuid(&g_test_base), 100);
+    ug_lib_close(&g_test_base);
+    ug_lib_open(&g_test_base, 4);
+    TN_ASSERT_EQ(ug_lvo_getuid(&g_test_base), 0);
+    ug_lib_close(&g_test_base);
+    teardown_test_base();
+}
+
+TN_TEST(context_slot_reused_by_other_task)
+{
+    /* 5.8: a closed task's slot is recycled clean, the list does not grow */
+    int n = 0;
+    struct MinNode *node;
+    setup_test_base();
+    g_ug_host_task = (APTR)0x1000;
+    ug_lib_open(&g_test_base, 4);
+    ug_lvo_setuid(100, &g_test_base);
+    ug_lib_close(&g_test_base);
+    g_ug_host_task = (APTR)0x2000;
+    ug_lib_open(&g_test_base, 4);
+    TN_ASSERT_EQ(ug_lvo_getuid(&g_test_base), 0);
+    ug_lib_close(&g_test_base);
+    for (node = g_test_base.contexts.mlh_Head; node->mln_Succ != NULL; node = node->mln_Succ) n++;
+    TN_ASSERT_EQ(n, 1);
+    g_ug_host_task = (APTR)1;
+    teardown_test_base();
+}
+
+TN_TEST(getent_cursor_per_task)
+{
+    /* 5.9: two tasks walking passwd do not advance each other's cursor */
+    struct passwd *a, *b;
+    setup_test_base();
+    g_ug_host_task = (APTR)0x1000;
+    ug_lvo_setpwent(&g_test_base);
+    a = ug_lvo_getpwent(&g_test_base);
+    TN_ASSERT_TRUE(a != NULL && strcmp(a->pw_name, "root") == 0);
+    g_ug_host_task = (APTR)0x2000;
+    ug_lvo_setpwent(&g_test_base);
+    b = ug_lvo_getpwent(&g_test_base);
+    TN_ASSERT_TRUE(b != NULL && strcmp(b->pw_name, "root") == 0);
+    b = ug_lvo_getgrent(&g_test_base) ? ug_lvo_getpwent(&g_test_base) : NULL;
+    TN_ASSERT_TRUE(b != NULL && strcmp(b->pw_name, "amiga") == 0);
+    g_ug_host_task = (APTR)0x1000;
+    a = ug_lvo_getpwent(&g_test_base);
+    TN_ASSERT_TRUE(a != NULL && strcmp(a->pw_name, "amiga") == 0);
+    TN_ASSERT_TRUE(ug_lvo_getgrent(&g_test_base) != NULL);   /* own grp cursor at head */
+    g_ug_host_task = (APTR)1;
+    teardown_test_base();
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -373,6 +462,10 @@ int main(void)
     TN_TEST_RUN(crypt_des_vectors);
     TN_TEST_RUN(getutent_terminates);
     TN_TEST_RUN(getent_without_setent);
+    TN_TEST_RUN(context_reset_on_last_close);
+    TN_TEST_RUN(context_survives_inner_close);
+    TN_TEST_RUN(context_slot_reused_by_other_task);
+    TN_TEST_RUN(getent_cursor_per_task);
 
     TN_TEST_PLAN();
     return tn_test_failures();

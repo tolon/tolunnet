@@ -304,17 +304,46 @@ TN_TEST(test_wifi_tagitem_parsing)
     TN_ASSERT_TRUE(ok);
     TN_ASSERT_TRUE(strstr(net.display_str, "  0%") != NULL);
 
-    /* Test fallback to BSSID[8] when S2INFO_SSID is absent */
-    char bssid_buf[64];
-    memset(bssid_buf, 0, sizeof(bssid_buf));
-    strcpy(&bssid_buf[8], "LegacyAP");
-    struct TagItem tags_legacy[] = {
-        {S2INFO_BSSID, (uintptr_t)bssid_buf},
+    /* 7.8: S2INFO_BSSID is a bare 6-byte address - no SSID is read
+     * past it (the old +8 read was a pool-adjacency accident). The
+     * buffer is exactly 6 bytes so an over-read trips ASan. */
+    static const UBYTE bssid_only[6] = {0x02, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE};
+    struct TagItem tags_bssid_only[] = {
+        {S2INFO_BSSID, (uintptr_t)bssid_only},
         {TAG_END, 0}
     };
-    ok = tn_parse_wifi_tagitem(tags_legacy, &net);
+    ok = tn_parse_wifi_tagitem(tags_bssid_only, &net);
     TN_ASSERT_TRUE(ok);
-    TN_ASSERT_STREQ(net.ssid, "LegacyAP");
+    TN_ASSERT_STREQ(net.ssid, "Unknown AP");
+    TN_ASSERT_EQ(memcmp(net.bssid, bssid_only, 6), 0);
+
+    /* Hidden network: empty SSID + BSSID -> "Unknown AP", no over-read */
+    struct TagItem tags_hidden[] = {
+        {S2INFO_SSID, (uintptr_t)""},
+        {S2INFO_BSSID, (uintptr_t)bssid_only},
+        {TAG_END, 0}
+    };
+    ok = tn_parse_wifi_tagitem(tags_hidden, &net);
+    TN_ASSERT_TRUE(ok);
+    TN_ASSERT_STREQ(net.ssid, "Unknown AP");
+
+    /* Utility control tags: TAG_IGNORE skipped, TAG_SKIP skips the
+     * next N items, TAG_MORE chains to a second list. */
+    struct TagItem tags_tail[] = {
+        {S2INFO_Channel, 9},
+        {TAG_END, 0}
+    };
+    struct TagItem tags_ctrl[] = {
+        {TAG_IGNORE, 0},
+        {S2INFO_SSID, (uintptr_t)"ChainedAP"},
+        {TAG_SKIP, 1},
+        {S2INFO_Channel, 3},             /* skipped */
+        {TAG_MORE, (uintptr_t)tags_tail}
+    };
+    ok = tn_parse_wifi_tagitem(tags_ctrl, &net);
+    TN_ASSERT_TRUE(ok);
+    TN_ASSERT_STREQ(net.ssid, "ChainedAP");
+    TN_ASSERT_EQ(net.channel, 9);
 
     /* Test empty tags fallback to "Unknown AP" */
     struct TagItem tags_empty[] = {

@@ -8,6 +8,7 @@
 
 #include "../../include/ipc.h"
 #include "../common/log.h"
+#include "lib_init.h"
 #include <proto/exec.h>
 #include <exec/lists.h>
 #include <devices/timer.h>
@@ -50,7 +51,7 @@ static inline void tn_unimpl_set_herrno(TnSocketBase *base, LONG herr)
 LONG tn_unimpl_bpf_open(LONG channel, TnSocketBase *base)
 {
     static int logged = 0; (void)channel; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "bpf_open"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: bpf_open not implemented\n"); }
     tn_unimpl_set_errno(base, ENXIO);
     return -1;
 }
@@ -59,7 +60,7 @@ LONG tn_unimpl_bpf_open(LONG channel, TnSocketBase *base)
 LONG tn_unimpl_bpf_close(LONG channel, TnSocketBase *base)
 {
     static int logged = 0; (void)channel; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "bpf_close"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: bpf_close not implemented\n"); }
     tn_unimpl_set_errno(base, ENXIO);
     return -1;
 }
@@ -68,7 +69,7 @@ LONG tn_unimpl_bpf_close(LONG channel, TnSocketBase *base)
 LONG tn_unimpl_bpf_read(LONG channel, APTR buffer, LONG len, TnSocketBase *base)
 {
     static int logged = 0; (void)channel; (void)buffer; (void)len; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "bpf_read"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: bpf_read not implemented\n"); }
     tn_unimpl_set_errno(base, ENXIO);
     return -1;
 }
@@ -77,7 +78,7 @@ LONG tn_unimpl_bpf_read(LONG channel, APTR buffer, LONG len, TnSocketBase *base)
 LONG tn_unimpl_bpf_write(LONG channel, APTR buffer, LONG len, TnSocketBase *base)
 {
     static int logged = 0; (void)channel; (void)buffer; (void)len; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "bpf_write"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: bpf_write not implemented\n"); }
     tn_unimpl_set_errno(base, ENXIO);
     return -1;
 }
@@ -86,7 +87,7 @@ LONG tn_unimpl_bpf_write(LONG channel, APTR buffer, LONG len, TnSocketBase *base
 LONG tn_unimpl_bpf_set_notify_mask(LONG channel, ULONG signal_mask, TnSocketBase *base)
 {
     static int logged = 0; (void)channel; (void)signal_mask; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "bpf_set_notify_mask"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: bpf_set_notify_mask not implemented\n"); }
     tn_unimpl_set_errno(base, ENXIO);
     return -1;
 }
@@ -95,7 +96,7 @@ LONG tn_unimpl_bpf_set_notify_mask(LONG channel, ULONG signal_mask, TnSocketBase
 LONG tn_unimpl_bpf_set_interrupt_mask(LONG channel, ULONG signal_mask, TnSocketBase *base)
 {
     static int logged = 0; (void)channel; (void)signal_mask; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "bpf_set_interrupt_mask"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: bpf_set_interrupt_mask not implemented\n"); }
     tn_unimpl_set_errno(base, ENXIO);
     return -1;
 }
@@ -104,7 +105,7 @@ LONG tn_unimpl_bpf_set_interrupt_mask(LONG channel, ULONG signal_mask, TnSocketB
 LONG tn_unimpl_bpf_ioctl(LONG channel, ULONG command, APTR buffer, TnSocketBase *base)
 {
     static int logged = 0; (void)channel; (void)command; (void)buffer; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "bpf_ioctl"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: bpf_ioctl not implemented\n"); }
     tn_unimpl_set_errno(base, ENXIO);
     return -1;
 }
@@ -113,7 +114,7 @@ LONG tn_unimpl_bpf_ioctl(LONG channel, ULONG command, APTR buffer, TnSocketBase 
 LONG tn_unimpl_bpf_data_waiting(LONG channel, TnSocketBase *base)
 {
     static int logged = 0; (void)channel; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "bpf_data_waiting"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: bpf_data_waiting not implemented\n"); }
     tn_unimpl_set_errno(base, ENXIO);
     return -1;
 }
@@ -122,7 +123,7 @@ LONG tn_unimpl_bpf_data_waiting(LONG channel, TnSocketBase *base)
 LONG tn_unimpl_addroutetaglist(struct TagItem *tags, TnSocketBase *base)
 {
     static int logged = 0; (void)tags; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "AddRouteTagList"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: AddRouteTagList not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return -1;
 }
@@ -131,7 +132,7 @@ LONG tn_unimpl_addroutetaglist(struct TagItem *tags, TnSocketBase *base)
 LONG tn_unimpl_deleteroutetaglist(struct TagItem *tags, TnSocketBase *base)
 {
     static int logged = 0; (void)tags; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "DeleteRouteTagList"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: DeleteRouteTagList not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return -1;
 }
@@ -140,7 +141,7 @@ LONG tn_unimpl_deleteroutetaglist(struct TagItem *tags, TnSocketBase *base)
 LONG tn_unimpl_changeroutetaglist(struct TagItem *tags, TnSocketBase *base)
 {
     static int logged = 0; (void)tags; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "ChangeRouteTagList"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: ChangeRouteTagList not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return -1;
 }
@@ -149,7 +150,7 @@ LONG tn_unimpl_changeroutetaglist(struct TagItem *tags, TnSocketBase *base)
 VOID tn_unimpl_freerouteinfo(struct rt_msghdr *buf, TnSocketBase *base)
 {
     static int logged = 0; (void)buf; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "FreeRouteInfo"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: FreeRouteInfo not implemented\n"); }
     return;
 }
 
@@ -157,7 +158,7 @@ VOID tn_unimpl_freerouteinfo(struct rt_msghdr *buf, TnSocketBase *base)
 struct rt_msghdr * tn_unimpl_getrouteinfo(LONG address_family, LONG flags, TnSocketBase *base)
 {
     static int logged = 0; (void)address_family; (void)flags; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "GetRouteInfo"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: GetRouteInfo not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return NULL;
 }
@@ -166,7 +167,7 @@ struct rt_msghdr * tn_unimpl_getrouteinfo(LONG address_family, LONG flags, TnSoc
 LONG tn_unimpl_addinterfacetaglist(STRPTR interface_name, STRPTR device_name, LONG unit, struct TagItem *tags, TnSocketBase *base)
 {
     static int logged = 0; (void)interface_name; (void)device_name; (void)unit; (void)tags; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "AddInterfaceTagList"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: AddInterfaceTagList not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return -1;
 }
@@ -175,7 +176,7 @@ LONG tn_unimpl_addinterfacetaglist(STRPTR interface_name, STRPTR device_name, LO
 LONG tn_unimpl_configureinterfacetaglist(STRPTR interface_name, struct TagItem *tags, TnSocketBase *base)
 {
     static int logged = 0; (void)interface_name; (void)tags; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "ConfigureInterfaceTagList"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: ConfigureInterfaceTagList not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return -1;
 }
@@ -184,7 +185,7 @@ LONG tn_unimpl_configureinterfacetaglist(STRPTR interface_name, struct TagItem *
 VOID tn_unimpl_releaseinterfacelist(struct List *list, TnSocketBase *base)
 {
     static int logged = 0; (void)list; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "ReleaseInterfaceList"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: ReleaseInterfaceList not implemented\n"); }
     return;
 }
 
@@ -192,7 +193,7 @@ VOID tn_unimpl_releaseinterfacelist(struct List *list, TnSocketBase *base)
 struct List * tn_unimpl_obtaininterfacelist(TnSocketBase *base)
 {
     static int logged = 0; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "ObtainInterfaceList"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: ObtainInterfaceList not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return NULL;
 }
@@ -201,7 +202,7 @@ struct List * tn_unimpl_obtaininterfacelist(TnSocketBase *base)
 LONG tn_unimpl_queryinterfacetaglist(STRPTR interface_name, struct TagItem *tags, TnSocketBase *base)
 {
     static int logged = 0; (void)interface_name; (void)tags; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "QueryInterfaceTagList"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: QueryInterfaceTagList not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return -1;
 }
@@ -210,7 +211,7 @@ LONG tn_unimpl_queryinterfacetaglist(STRPTR interface_name, struct TagItem *tags
 LONG tn_unimpl_createaddrallocmessagea(LONG version, LONG protocol, STRPTR interface_name, struct AddressAllocationMessage **result_ptr, struct TagItem *tags, TnSocketBase *base)
 {
     static int logged = 0; (void)version; (void)protocol; (void)interface_name; (void)result_ptr; (void)tags; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "CreateAddrAllocMessageA"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: CreateAddrAllocMessageA not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return -1;
 }
@@ -219,7 +220,7 @@ LONG tn_unimpl_createaddrallocmessagea(LONG version, LONG protocol, STRPTR inter
 VOID tn_unimpl_deleteaddrallocmessage(struct AddressAllocationMessage *aam, TnSocketBase *base)
 {
     static int logged = 0; (void)aam; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "DeleteAddrAllocMessage"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: DeleteAddrAllocMessage not implemented\n"); }
     return;
 }
 
@@ -227,7 +228,7 @@ VOID tn_unimpl_deleteaddrallocmessage(struct AddressAllocationMessage *aam, TnSo
 VOID tn_unimpl_begininterfaceconfig(struct AddressAllocationMessage * message, TnSocketBase *base)
 {
     static int logged = 0; (void)message; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "BeginInterfaceConfig"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: BeginInterfaceConfig not implemented\n"); }
     return;
 }
 
@@ -235,7 +236,7 @@ VOID tn_unimpl_begininterfaceconfig(struct AddressAllocationMessage * message, T
 VOID tn_unimpl_abortinterfaceconfig(struct AddressAllocationMessage * message, TnSocketBase *base)
 {
     static int logged = 0; (void)message; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "AbortInterfaceConfig"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: AbortInterfaceConfig not implemented\n"); }
     return;
 }
 
@@ -243,7 +244,7 @@ VOID tn_unimpl_abortinterfaceconfig(struct AddressAllocationMessage * message, T
 LONG tn_unimpl_addnetmonitorhooktaglist(LONG type, struct Hook *hook, struct TagItem *tags, TnSocketBase *base)
 {
     static int logged = 0; (void)type; (void)hook; (void)tags; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "AddNetMonitorHookTagList"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: AddNetMonitorHookTagList not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return -1;
 }
@@ -252,7 +253,7 @@ LONG tn_unimpl_addnetmonitorhooktaglist(LONG type, struct Hook *hook, struct Tag
 VOID tn_unimpl_removenetmonitorhook(struct Hook *hook, TnSocketBase *base)
 {
     static int logged = 0; (void)hook; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "RemoveNetMonitorHook"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: RemoveNetMonitorHook not implemented\n"); }
     return;
 }
 
@@ -260,7 +261,7 @@ VOID tn_unimpl_removenetmonitorhook(struct Hook *hook, TnSocketBase *base)
 LONG tn_unimpl_getnetworkstatistics(LONG type, LONG version, APTR destination, LONG size, TnSocketBase *base)
 {
     static int logged = 0; (void)type; (void)version; (void)destination; (void)size; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "GetNetworkStatistics"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: GetNetworkStatistics not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return -1;
 }
@@ -269,7 +270,7 @@ LONG tn_unimpl_getnetworkstatistics(LONG type, LONG version, APTR destination, L
 LONG tn_unimpl_adddomainnameserver(STRPTR address, TnSocketBase *base)
 {
     static int logged = 0; (void)address; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "AddDomainNameServer"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: AddDomainNameServer not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return -1;
 }
@@ -278,7 +279,7 @@ LONG tn_unimpl_adddomainnameserver(STRPTR address, TnSocketBase *base)
 LONG tn_unimpl_removedomainnameserver(STRPTR address, TnSocketBase *base)
 {
     static int logged = 0; (void)address; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "RemoveDomainNameServer"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: RemoveDomainNameServer not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return -1;
 }
@@ -287,7 +288,7 @@ LONG tn_unimpl_removedomainnameserver(STRPTR address, TnSocketBase *base)
 VOID tn_unimpl_releasedomainnameserverlist(struct List *list, TnSocketBase *base)
 {
     static int logged = 0; (void)list; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "ReleaseDomainNameServerList"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: ReleaseDomainNameServerList not implemented\n"); }
     return;
 }
 
@@ -295,7 +296,7 @@ VOID tn_unimpl_releasedomainnameserverlist(struct List *list, TnSocketBase *base
 struct List * tn_unimpl_obtaindomainnameserverlist(TnSocketBase *base)
 {
     static int logged = 0; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "ObtainDomainNameServerList"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: ObtainDomainNameServerList not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return NULL;
 }
@@ -304,7 +305,7 @@ struct List * tn_unimpl_obtaindomainnameserverlist(TnSocketBase *base)
 struct mbuf * tn_unimpl_mbuf_copym(struct mbuf *m, LONG off, LONG len, TnSocketBase *base)
 {
     static int logged = 0; (void)m; (void)off; (void)len; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "mbuf_copym"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: mbuf_copym not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return NULL;
 }
@@ -313,7 +314,7 @@ struct mbuf * tn_unimpl_mbuf_copym(struct mbuf *m, LONG off, LONG len, TnSocketB
 LONG tn_unimpl_mbuf_copyback(struct mbuf *m, LONG off, LONG len, APTR cp, TnSocketBase *base)
 {
     static int logged = 0; (void)m; (void)off; (void)len; (void)cp; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "mbuf_copyback"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: mbuf_copyback not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return -1;
 }
@@ -322,7 +323,7 @@ LONG tn_unimpl_mbuf_copyback(struct mbuf *m, LONG off, LONG len, APTR cp, TnSock
 LONG tn_unimpl_mbuf_copydata(struct mbuf *m, LONG off, LONG len, APTR cp, TnSocketBase *base)
 {
     static int logged = 0; (void)m; (void)off; (void)len; (void)cp; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "mbuf_copydata"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: mbuf_copydata not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return -1;
 }
@@ -331,7 +332,7 @@ LONG tn_unimpl_mbuf_copydata(struct mbuf *m, LONG off, LONG len, APTR cp, TnSock
 struct mbuf * tn_unimpl_mbuf_free(struct mbuf *m, TnSocketBase *base)
 {
     static int logged = 0; (void)m; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "mbuf_free"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: mbuf_free not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return NULL;
 }
@@ -340,7 +341,7 @@ struct mbuf * tn_unimpl_mbuf_free(struct mbuf *m, TnSocketBase *base)
 VOID tn_unimpl_mbuf_freem(struct mbuf *m, TnSocketBase *base)
 {
     static int logged = 0; (void)m; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "mbuf_freem"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: mbuf_freem not implemented\n"); }
     return;
 }
 
@@ -348,7 +349,7 @@ VOID tn_unimpl_mbuf_freem(struct mbuf *m, TnSocketBase *base)
 struct mbuf * tn_unimpl_mbuf_get(TnSocketBase *base)
 {
     static int logged = 0; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "mbuf_get"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: mbuf_get not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return NULL;
 }
@@ -357,7 +358,7 @@ struct mbuf * tn_unimpl_mbuf_get(TnSocketBase *base)
 struct mbuf * tn_unimpl_mbuf_gethdr(TnSocketBase *base)
 {
     static int logged = 0; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "mbuf_gethdr"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: mbuf_gethdr not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return NULL;
 }
@@ -366,7 +367,7 @@ struct mbuf * tn_unimpl_mbuf_gethdr(TnSocketBase *base)
 struct mbuf * tn_unimpl_mbuf_prepend(struct mbuf *m, LONG len, TnSocketBase *base)
 {
     static int logged = 0; (void)m; (void)len; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "mbuf_prepend"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: mbuf_prepend not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return NULL;
 }
@@ -375,7 +376,7 @@ struct mbuf * tn_unimpl_mbuf_prepend(struct mbuf *m, LONG len, TnSocketBase *bas
 LONG tn_unimpl_mbuf_cat(struct mbuf *m, struct mbuf *n, TnSocketBase *base)
 {
     static int logged = 0; (void)m; (void)n; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "mbuf_cat"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: mbuf_cat not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return -1;
 }
@@ -384,7 +385,7 @@ LONG tn_unimpl_mbuf_cat(struct mbuf *m, struct mbuf *n, TnSocketBase *base)
 LONG tn_unimpl_mbuf_adj(struct mbuf *mp, LONG req_len, TnSocketBase *base)
 {
     static int logged = 0; (void)mp; (void)req_len; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "mbuf_adj"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: mbuf_adj not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return -1;
 }
@@ -393,7 +394,7 @@ LONG tn_unimpl_mbuf_adj(struct mbuf *mp, LONG req_len, TnSocketBase *base)
 struct mbuf * tn_unimpl_mbuf_pullup(struct mbuf *m, LONG len, TnSocketBase *base)
 {
     static int logged = 0; (void)m; (void)len; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "mbuf_pullup"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: mbuf_pullup not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return NULL;
 }
@@ -402,7 +403,7 @@ struct mbuf * tn_unimpl_mbuf_pullup(struct mbuf *m, LONG len, TnSocketBase *base
 struct List * tn_unimpl_obtainroadshowdata(LONG access, TnSocketBase *base)
 {
     static int logged = 0; (void)access; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "ObtainRoadshowData"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: ObtainRoadshowData not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return NULL;
 }
@@ -411,7 +412,7 @@ struct List * tn_unimpl_obtainroadshowdata(LONG access, TnSocketBase *base)
 VOID tn_unimpl_releaseroadshowdata(struct List *list, TnSocketBase *base)
 {
     static int logged = 0; (void)list; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "ReleaseRoadshowData"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: ReleaseRoadshowData not implemented\n"); }
     return;
 }
 
@@ -419,7 +420,7 @@ VOID tn_unimpl_releaseroadshowdata(struct List *list, TnSocketBase *base)
 BOOL tn_unimpl_changeroadshowdata(struct List *list, STRPTR name, ULONG length, APTR data, TnSocketBase *base)
 {
     static int logged = 0; (void)list; (void)name; (void)length; (void)data; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "ChangeRoadshowData"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: ChangeRoadshowData not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return FALSE;
 }
@@ -428,7 +429,7 @@ BOOL tn_unimpl_changeroadshowdata(struct List *list, STRPTR name, ULONG length, 
 LONG tn_unimpl_removeinterface(STRPTR interface_name, LONG force, TnSocketBase *base)
 {
     static int logged = 0; (void)interface_name; (void)force; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "RemoveInterface"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: RemoveInterface not implemented\n"); }
     tn_unimpl_set_errno(base, ENOSYS);
     return -1;
 }
@@ -437,7 +438,7 @@ LONG tn_unimpl_removeinterface(STRPTR interface_name, LONG force, TnSocketBase *
 LONG tn_unimpl_ipf_open(LONG channel, TnSocketBase *base)
 {
     static int logged = 0; (void)channel; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "ipf_open"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: ipf_open not implemented\n"); }
     tn_unimpl_set_errno(base, ENXIO);
     return -1;
 }
@@ -446,7 +447,7 @@ LONG tn_unimpl_ipf_open(LONG channel, TnSocketBase *base)
 LONG tn_unimpl_ipf_close(LONG channel, TnSocketBase *base)
 {
     static int logged = 0; (void)channel; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "ipf_close"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: ipf_close not implemented\n"); }
     tn_unimpl_set_errno(base, ENXIO);
     return -1;
 }
@@ -455,7 +456,7 @@ LONG tn_unimpl_ipf_close(LONG channel, TnSocketBase *base)
 LONG tn_unimpl_ipf_ioctl(LONG channel, ULONG command, APTR buffer, TnSocketBase *base)
 {
     static int logged = 0; (void)channel; (void)command; (void)buffer; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "ipf_ioctl"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: ipf_ioctl not implemented\n"); }
     tn_unimpl_set_errno(base, ENXIO);
     return -1;
 }
@@ -464,7 +465,7 @@ LONG tn_unimpl_ipf_ioctl(LONG channel, ULONG command, APTR buffer, TnSocketBase 
 LONG tn_unimpl_ipf_log_read(LONG channel, APTR buffer, LONG len, TnSocketBase *base)
 {
     static int logged = 0; (void)channel; (void)buffer; (void)len; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "ipf_log_read"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: ipf_log_read not implemented\n"); }
     tn_unimpl_set_errno(base, ENXIO);
     return -1;
 }
@@ -473,7 +474,7 @@ LONG tn_unimpl_ipf_log_read(LONG channel, APTR buffer, LONG len, TnSocketBase *b
 LONG tn_unimpl_ipf_log_data_waiting(LONG channel, TnSocketBase *base)
 {
     static int logged = 0; (void)channel; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "ipf_log_data_waiting"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: ipf_log_data_waiting not implemented\n"); }
     tn_unimpl_set_errno(base, ENXIO);
     return -1;
 }
@@ -482,7 +483,7 @@ LONG tn_unimpl_ipf_log_data_waiting(LONG channel, TnSocketBase *base)
 LONG tn_unimpl_ipf_set_notify_mask(LONG channel, ULONG mask, TnSocketBase *base)
 {
     static int logged = 0; (void)channel; (void)mask; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "ipf_set_notify_mask"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: ipf_set_notify_mask not implemented\n"); }
     tn_unimpl_set_errno(base, ENXIO);
     return -1;
 }
@@ -491,7 +492,7 @@ LONG tn_unimpl_ipf_set_notify_mask(LONG channel, ULONG mask, TnSocketBase *base)
 LONG tn_unimpl_ipf_set_interrupt_mask(LONG channel, ULONG mask, TnSocketBase *base)
 {
     static int logged = 0; (void)channel; (void)mask; (void)base;
-    if (!logged) { logged = 1; tn_logf(TN_LOG_VERBOSE, "tolunnet: %s not implemented\n", "ipf_set_interrupt_mask"); }
+    if (!logged) { logged = 1; tn_lib_log(base, TN_LOG_VERBOSE, "tolunnet: ipf_set_interrupt_mask not implemented\n"); }
     tn_unimpl_set_errno(base, ENXIO);
     return -1;
 }

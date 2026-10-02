@@ -177,6 +177,8 @@ static void tn_init_socket_slot(TnSocketSlot *s, TnSocketBase *base, struct Task
     s->pending_send_msg    = NULL;
     s->send_deadline_tick  = 0;
     s->send_done           = 0;
+    s->send_iov            = NULL;
+    s->send_iovcnt         = 0;
     s->park_id             = 0;
     s->is_parked           = FALSE;
 }
@@ -343,11 +345,12 @@ void tn_slot_unref(TnDaemon *d, int slot_idx)
     }
 }
 
-int tn_rx_queue_push(TnSocketSlot *slot, struct pbuf *p, const ip_addr_t *src_ip, u16_t src_port)
+static int tn_rx_queue_push_ex(TnSocketSlot *slot, struct pbuf *p, const ip_addr_t *src_ip,
+                               u16_t src_port, BOOL capped)
 {
     TnRxPacket *pkt;
     if (slot == NULL || !slot->in_use || p == NULL) return -1;
-    if (slot->rx_count >= TN_MAX_RX_QUEUE_PER_SOCKET) {
+    if (capped && slot->rx_count >= TN_MAX_RX_QUEUE_PER_SOCKET) {
         return -1;
     }
 
@@ -373,6 +376,18 @@ int tn_rx_queue_push(TnSocketSlot *slot, struct pbuf *p, const ip_addr_t *src_ip
         g_daemon.rx_high_water = slot->rx_count;
     }
     return 0;
+}
+
+int tn_rx_queue_push(TnSocketSlot *slot, struct pbuf *p, const ip_addr_t *src_ip, u16_t src_port)
+{
+    return tn_rx_queue_push_ex(slot, p, src_ip, src_port, TRUE);
+}
+
+/* TNET-156: past the per-socket cap - only for the last data of a TCP
+ * connection lwIP has finished (it can never be redelivered). */
+int tn_rx_queue_push_nocap(TnSocketSlot *slot, struct pbuf *p, const ip_addr_t *src_ip, u16_t src_port)
+{
+    return tn_rx_queue_push_ex(slot, p, src_ip, src_port, FALSE);
 }
 
 TnRxPacket *tn_rx_queue_pop(TnSocketSlot *slot)
@@ -732,6 +747,8 @@ void tn_slot_reply_send(TnSocketSlot *slot, LONG err_no, int reply)
         smsg->err_no = err_no;
     }
     slot->send_done = 0;
+    slot->send_iov = NULL;
+    slot->send_iovcnt = 0;
     if (reply) {
         ReplyMsg((struct Message *)smsg);
     }

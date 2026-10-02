@@ -125,7 +125,8 @@ int tn_build_wireless_prefs(const WizardState *ws, char *out_buf, int out_max)
         ws->selected_wifi_idx >= 0 && ws->selected_wifi_idx < ws->wifi_count) {
         ssid = ws->wifi[ws->selected_wifi_idx].ssid;
     }
-    if (ssid[0] == '\0') return 0;
+    /* a hidden network's list placeholder is not a real SSID */
+    if (ssid[0] == '\0' || strcmp(ssid, "Unknown AP") == 0) return 0;
 
     len = tn_format_wireless_block_priority(ssid, ws->wifi_pass, 4, out_buf, out_max);
     if (len <= 0 || len >= out_max) {
@@ -169,7 +170,18 @@ BOOL tn_parse_wifi_tagitem(const void *tags_ptr, WifiNetwork *out_net)
     const char *ssid_ptr = NULL;
     const UBYTE *bssid_ptr = NULL;
 
-    for (const struct TagItem *t = tags; t->ti_Tag != TAG_DONE; t++) {
+    /* NextTagItem() semantics without utility.library (host-testable);
+     * the step cap stops a malformed TAG_MORE/TAG_SKIP chain. */
+    const struct TagItem *t = tags;
+    for (int steps = 0; t && t->ti_Tag != TAG_DONE && steps < 64; steps++) {
+        if (t->ti_Tag == TAG_MORE) {
+            t = (const struct TagItem *)(uintptr_t)t->ti_Data;
+            continue;
+        }
+        if (t->ti_Tag == TAG_SKIP) {
+            t += 1 + t->ti_Data;
+            continue;
+        }
         switch (t->ti_Tag) {
         case S2INFO_SSID:
             ssid_ptr = (const char *)(uintptr_t)t->ti_Data;
@@ -189,9 +201,10 @@ BOOL tn_parse_wifi_tagitem(const void *tags_ptr, WifiNetwork *out_net)
         case S2INFO_Encryption:
             out_net->encryption = (WORD)t->ti_Data;
             break;
-        default:
+        default:            /* incl. TAG_IGNORE */
             break;
         }
+        t++;
     }
 
     if (bssid_ptr) {
@@ -205,11 +218,11 @@ BOOL tn_parse_wifi_tagitem(const void *tags_ptr, WifiNetwork *out_net)
             slen++;
         }
         out_net->ssid[slen] = '\0';
-    } else if (bssid_ptr && bssid_ptr[8] != '\0') {
-        /* Fallback for drivers where SSID was packed into BSSID buffer +8 */
-        strncpy(out_net->ssid, (const char *)&bssid_ptr[8], sizeof(out_net->ssid) - 1);
-        out_net->ssid[sizeof(out_net->ssid) - 1] = '\0';
     } else {
+        /* 7.8: S2INFO_BSSID is a bare 6-byte address. The old
+         * "SSID at BSSID+8" read (from zenPrismWifi) only saw the next
+         * AllocPooled chunk - the driver's S2INFO_SSID copy - after the
+         * 6-byte BSSID rounded up to 8; it is not part of the API. */
         strncpy(out_net->ssid, "Unknown AP", sizeof(out_net->ssid) - 1);
         out_net->ssid[sizeof(out_net->ssid) - 1] = '\0';
     }
@@ -283,26 +296,26 @@ void tn_wifi_scan(WizardState *ws)
 
     BYTE err = OpenDevice((CONST_STRPTR)hw->device_name, hw->unit, (struct IORequest *)req, 0);
     if (err == 0) {
-        static const struct TagItem apParams[] = {
-            {S2INFO_SSID, 0},
-            {S2INFO_BSSID, 0},
-            {S2INFO_Channel, 0},
-            {S2INFO_Capabilities, 0},
-            {S2INFO_Signal, 0},
-            {S2INFO_Noise, 0},
-            {S2INFO_Encryption, 0},
-            {TAG_END, 0}
-        };
+        /* 7.3 (SANA-II rev 7 S2_GETNETWORKS autodoc): ios2_StatData IN
+         * is a scan-parameter tag list - an S2INFO_SSID there limits the
+         * scan to that one network, so pass none for a full scan.
+         * ios2_Data is an Exec pool the driver AllocPooled()s the
+         * results from; OUT: ios2_StatData = struct TagItem *[n],
+         * ios2_DataLength = n. DeletePool frees all of it. */
+        static const struct TagItem scanParams[] = { {TAG_END, 0} };
 
-        char *mem_pool = (char *)AllocMem(8192, MEMF_PUBLIC | MEMF_CLEAR);
-        if (mem_pool) {
+        APTR pool = CreatePool(MEMF_PUBLIC | MEMF_CLEAR, 4096, 4096);
+        if (pool) {
             req->ios2_Req.io_Command = S2_GETNETWORKS;
-            req->ios2_StatData = (APTR)apParams;
-            req->ios2_Data = mem_pool;
-            req->ios2_DataLength = 8192;
+            req->ios2_StatData = (APTR)scanParams;
+            req->ios2_Data = pool;
+            req->ios2_DataLength = 0;
             req->ios2_WireError = 0;
 
-            if (DoIO((struct IORequest *)req) == 0 && req->ios2_DataLength > 0) {
+            /* A driver that returns 0 without filling the results leaves
+             * our input list in ios2_StatData - never index that. */
+            if (DoIO((struct IORequest *)req) == 0 && req->ios2_DataLength > 0 &&
+                req->ios2_StatData != (APTR)scanParams) {
                 ULONG count = req->ios2_DataLength;
                 if (count > MAX_WIFI_NETWORKS) count = MAX_WIFI_NETWORKS;
 
@@ -319,7 +332,7 @@ void tn_wifi_scan(WizardState *ws)
                     }
                 }
             }
-            FreeMem(mem_pool, 8192);
+            DeletePool(pool);
         }
         CloseDevice((struct IORequest *)req);
     }

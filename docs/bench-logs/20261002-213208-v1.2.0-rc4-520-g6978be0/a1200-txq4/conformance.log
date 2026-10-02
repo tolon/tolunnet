@@ -1,0 +1,108 @@
+# tolunnet SocketConformance (Round 3 §B.2)
+# enter tc_lib_open_close
+ok 1 - tc_lib_open_close
+# enter tc_lib_expunge_survives
+ok 2 - tc_lib_expunge_survives
+# enter tc_waitselect_fd40
+ok 3 - tc_waitselect_fd40
+# enter tc_listen_setsockopt
+ok 4 - tc_listen_setsockopt
+# enter tc_net_recv_ctrlc
+# net_recv_ctrlc: signals BEFORE recv = 0x100
+# net_recv_ctrlc: signals AFTER recv = 0x80001100
+# net_recv_ctrlc: CTRL_C still set after EINTR (correct)
+# net_recv_ctrlc: recv rc=-1 errno=4 after 50 ticks
+ok 5 - net_recv_ctrlc
+# net_recv_ctrlc: post-CANCEL socket OK
+# enter tc_socket_types
+ok 6 - tc_socket_types
+# enter tc_bind_udp
+ok 7 - tc_bind_udp
+# enter tc_bind_reuse
+ok 8 - tc_bind_reuse
+# enter tc_sockopt_matrix
+ok 9 - tc_sockopt_matrix
+# enter tc_multicast_join
+ok 10 - tc_multicast_join
+# enter tc_ioctl_ifconf
+ok 11 - tc_ioctl_ifconf
+# enter tc_ioctl_fionread
+ok 12 - tc_ioctl_fionread
+# enter tc_listen_accept_loopback
+ok 13 - tc_listen_accept_loopback
+# enter tc_connect_refused
+ok 14 - tc_connect_refused
+# enter tc_connect_refused_nb
+ok 15 - tc_connect_refused_nb
+# enter tc_nonblock_connect
+# tc_nonblock_connect: rc=-1 errno=36 EINPROGRESS=36
+# tc_nonblock_connect: calling waitselect s=1
+# tc_nonblock_connect: waitselect returned 1 errno=36
+ok 16 - tc_nonblock_connect
+# enter tc_shutdown_wr
+ok 17 - tc_shutdown_wr
+# enter tc_getpeername
+ok 18 - tc_getpeername
+# enter tc_dns_a
+ok 19 - tc_dns_a # SKIP external
+# enter tc_dns_local
+ok 20 - tc_dns_local
+# enter tc_dns_fail
+ok 21 - tc_dns_fail
+# enter tc_errno_ptr
+ok 22 - tc_errno_ptr
+# enter tc_dup2
+ok 23 - tc_dup2
+# enter tc_waitselect_timeout
+ok 24 - tc_waitselect_timeout
+# enter tc_waitselect_eintr
+ok 25 - tc_waitselect_eintr
+# enter tc_waitselect_badf
+ok 26 - tc_waitselect_badf
+# enter tc_waitselect_no_sigio
+ok 27 - tc_waitselect_no_sigio
+# enter tc_sigio
+ok 28 - tc_sigio
+# enter tc_icmp_raw
+ok 29 - tc_icmp_raw
+# enter tc_sendmsg_iov
+ok 30 - tc_sendmsg_iov
+# enter tc_tcp_scatter_tnet115
+# control: send=100 waitselect=1 recv=100
+# waitselect_rc=1 recv_rc=100 errno=45 retries=1
+ok 31 - tc_tcp_scatter_tnet115
+# enter tc_recv_peek
+ok 32 - tc_recv_peek
+# enter tc_socket_events
+ok 33 - tc_socket_events
+# enter tc_sbtc_full
+ok 34 - tc_sbtc_full
+# enter tc_release_obtain
+ok 35 - tc_release_obtain
+# enter tc_every_vector_callable
+ok 36 - tc_every_vector_callable
+# enter tc_stats_counters
+ok 37 - tc_stats_counters
+# enter tc_wizard_layout
+# tc_wizard_layout: stage: launching wizard
+# tc_wizard_layout: stage: waiting for TOLUNNETSETUP port
+# tc_wizard_layout: stage: page 0
+# tc_wizard_layout: stage: scanning gadgets (page 0)
+# tc_wizard_layout: stage: page 1
+# tc_wizard_layout: stage: scanning gadgets (page 1)
+# tc_wizard_layout: stage: page 2
+# tc_wizard_layout: stage: scanning gadgets (page 2)
+# tc_wizard_layout: stage: page 3
+# tc_wizard_layout: stage: scanning gadgets (page 3)
+# tc_wizard_layout: stage: page 4
+# tc_wizard_layout: stage: scanning gadgets (page 4)
+# tc_wizard_layout: stage: cancelling wizard
+# tc_wizard_layout: violations=0 (borders 4/4/11/2)
+ok 38 - tc_wizard_layout
+# enter tc_wizard_checklist
+# tc_wizard_checklist: geom checknodes=13
+# tc_wizard_checklist: listview interior 267x125 at (178,54): 4208 of 33375 pixels non-background
+# tc_wizard_checklist: result: nodes=13 nonbg=4208 threshold=200 maxtext=240 interior=268
+ok 39 - tc_wizard_checklist
+# enter tc_floppy_install
+# tc_floppy_install: Work: blocks used=43953767 total=61047199 free~8546716 KB

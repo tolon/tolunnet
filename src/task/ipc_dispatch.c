@@ -67,7 +67,8 @@ static const char * const g_ipc_cmd_names[] = {
     [TN_IPC_CMD_ROUTECTL]      = "ROUTECTL",
     [TN_IPC_CMD_IFCTL]         = "IFCTL",
     [TN_IPC_CMD_STOP]          = "STOP",
-    [TN_IPC_CMD_CANCEL]        = "CANCEL"
+    [TN_IPC_CMD_CANCEL]        = "CANCEL",
+    [TN_IPC_CMD_SYSLOG]        = "SYSLOG"
 };
 
 const char *tn_ipc_cmd_name(TnIpcCmd cmd)
@@ -114,7 +115,8 @@ static const TnIpcHandler g_ipc_table[] = {
     [TN_IPC_CMD_ROUTECTL]      = { TN_IPC_CMD_ROUTECTL,      tn_ipc_cmd_routectl,      FALSE, FALSE, 0 },
     [TN_IPC_CMD_IFCTL]         = { TN_IPC_CMD_IFCTL,         tn_ipc_cmd_ifctl,         FALSE, FALSE, 0 },
     [TN_IPC_CMD_STOP]          = { TN_IPC_CMD_STOP,          tn_ipc_cmd_stop,          FALSE, FALSE, 0 },
-    [TN_IPC_CMD_CANCEL]        = { TN_IPC_CMD_CANCEL,        tn_ipc_cmd_cancel,        FALSE, FALSE, 0 }
+    [TN_IPC_CMD_CANCEL]        = { TN_IPC_CMD_CANCEL,        tn_ipc_cmd_cancel,        FALSE, FALSE, 0 },
+    [TN_IPC_CMD_SYSLOG]        = { TN_IPC_CMD_SYSLOG,        tn_ipc_cmd_syslog,        TRUE,  FALSE, 0 }
 };
 
 BOOL tn_handle_ipc(TnDaemon *d, TnIpcMsg *imsg)

@@ -2,7 +2,8 @@
 /*
  * tolunnet — portable SocketBaseTagList tag classifier (host-testable).
  * Semantics mirror the SocketBaseTagList LVO (COMPAT-1, TNET-036): the LVO
- * returns the number of UNHANDLED tags; GET writes the current value back
+ * stops at the first tag this reports unhandled and returns its 1-based
+ * index (AmiTCP autodoc, TN-bugtrack 2.5), 0 on success; GET writes the current value back
  * into ti_Data (VAL) or *(ULONG *)ti_Data (REF); SET updates the base.
  * Pure: no pointer dereferences — the caller performs them on Amiga.
  */

@@ -19,6 +19,11 @@ int tn_ipc_cmd_listen(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot);
 int tn_ipc_cmd_accept(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot);
 int tn_ipc_cmd_connect(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot);
 int tn_ipc_cmd_send(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot);
+/* 4.2 / TNET-159: TCP send body shared with sendmsg (iov != NULL) */
+struct iovec;
+int tn_tcp_send_stream(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot,
+                       const char *buf, const struct iovec *iov, ULONG iovcnt,
+                       LONG len, LONG flags);
 int tn_ipc_cmd_recv(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot);
 int tn_ipc_cmd_shutdown(TnDaemon *d, TnIpcMsg *imsg, TnSocketSlot *slot);
 

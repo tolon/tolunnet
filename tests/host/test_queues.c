@@ -2167,6 +2167,299 @@ TN_TEST(net_waitselect_nfds_clamped)
     tn_slot_free(&g_daemon, idx);
 }
 
+/* TNET-156: after shutdown(SHUT_WR) the FIN exchange ends in CLOSING or
+ * TIME_WAIT, where lwIP frees the pcb itself (tcp_slowtmr /
+ * tcp_kill_timewait) without errf. The EOF callback must hand the pcb
+ * back (callbacks cleared, slot->tcp_pcb NULL) and CloseSocket must
+ * never tcp_close it; recv -> 0, send -> EPIPE afterwards. */
+TN_TEST(net_tcp_shut_wr_fin_detaches_pcb)
+{
+    static const uint8_t states[2] = { TIME_WAIT, CLOSING };
+    static const char data[16] = "z";
+    TnSocketBase base;
+    struct tcp_pcb pcb;
+    TnIpcMsg m, sm;
+    int idx = -1;
+    int k;
+    char rb[8];
+    TN_TEST_BASE_INIT(base);
+
+    for (k = 0; k < 2; k++) {
+        TnSocketSlot *slot = tq_g_tcp_slot(&base, &pcb, &idx);
+        TN_ASSERT_TRUE(slot != NULL);
+        mock_lwip_reset();
+
+        /* a blocking send parked for space */
+        mock_set_tcp_sndbuf(0);
+        tq_send_msg(&sm, &base, data, 16, 0);
+        TN_ASSERT_EQ(tn_ipc_cmd_send(&g_daemon, &sm, slot), 1);
+
+        memset(&m, 0, sizeof(m));
+        m.args[1] = 1; /* SHUT_WR */
+        TN_ASSERT_EQ(tn_ipc_cmd_shutdown(&g_daemon, &m, slot), 0);
+        TN_ASSERT_EQ(m.result, 0);
+        TN_ASSERT_TRUE(slot->tcp_pcb == &pcb);
+
+        /* last data arrives with the FIN while the rx queue is full: in
+         * CLOSING/TIME_WAIT a refused pbuf would never be redelivered */
+        while (slot->rx_count < TN_MAX_RX_QUEUE_PER_SOCKET) {
+            TN_ASSERT_EQ(tn_rx_queue_push(slot, mock_pbuf_alloc(1), NULL, 0), 0);
+        }
+        pcb.state = states[k];
+        TN_ASSERT_EQ(tn_tcp_recv_cb((void *)(intptr_t)idx, &pcb, mock_pbuf_alloc(5), ERR_OK), ERR_OK);
+        TN_ASSERT_EQ(slot->rx_count, TN_MAX_RX_QUEUE_PER_SOCKET + 1);
+        TN_ASSERT_TRUE(slot->tcp_pcb == &pcb);
+
+        /* EOF: detach */
+        TN_ASSERT_EQ(tn_tcp_recv_cb((void *)(intptr_t)idx, &pcb, NULL, ERR_OK), ERR_OK);
+        TN_ASSERT_TRUE(slot->tcp_pcb == NULL);
+        TN_ASSERT_EQ(slot->tcp_state, TN_TCP_STATE_PEER_CLOSED);
+        TN_ASSERT_TRUE(pcb.callback_arg == NULL);
+        TN_ASSERT_TRUE(pcb.recv_cb == NULL);
+        TN_ASSERT_TRUE(pcb.err_cb == NULL);
+        TN_ASSERT_TRUE(slot->pending_send_msg == NULL);
+        TN_ASSERT_EQ(sm.result, -1);
+        TN_ASSERT_EQ(sm.err_no, EPIPE);
+
+        /* queued data dropped here; then EOF, no tcp_recved on the pcb */
+        tn_rx_queue_drain(slot);
+        mock_lwip_reset();
+        memset(&m, 0, sizeof(m));
+        m.ptrs[0] = rb;
+        m.args[1] = sizeof(rb);
+        TN_ASSERT_EQ(tn_ipc_cmd_recv(&g_daemon, &m, slot), 0);
+        TN_ASSERT_EQ(m.result, 0);
+        tq_send_msg(&m, &base, data, 4, 0);
+        TN_ASSERT_EQ(tn_ipc_cmd_send(&g_daemon, &m, slot), 0);
+        TN_ASSERT_EQ(m.err_no, EPIPE);
+        TN_ASSERT_TRUE(tn_select_can_write(slot));
+        TN_ASSERT_TRUE(tn_select_can_read(slot));
+
+        /* CloseSocket: lwIP owns the pcb now */
+        tn_slot_free(&g_daemon, idx);
+        TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_CLOSE), 0);
+        TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_ABORT), 0);
+        TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_RECVED), 0);
+        tn_selector_table_free(&g_daemon);
+    }
+    mock_lwip_reset();
+}
+
+/* TNET-156 negative: a FIN that does not finish our side (CLOSE_WAIT,
+ * also with our FIN still pending after SHUT_WR) keeps the pcb - lwIP
+ * reports that end through errf (ERR_CLSD). */
+TN_TEST(net_tcp_fin_close_wait_keeps_pcb)
+{
+    TnSocketBase base;
+    struct tcp_pcb pcb;
+    int idx = -1;
+    int k;
+    TN_TEST_BASE_INIT(base);
+
+    for (k = 0; k < 2; k++) {
+        TnSocketSlot *slot = tq_g_tcp_slot(&base, &pcb, &idx);
+        TN_ASSERT_TRUE(slot != NULL);
+        mock_lwip_reset();
+        slot->shut_wr = (k == 1) ? TRUE : FALSE;
+        pcb.state = CLOSE_WAIT;
+        TN_ASSERT_EQ(tn_tcp_recv_cb((void *)(intptr_t)idx, &pcb, NULL, ERR_OK), ERR_OK);
+        TN_ASSERT_TRUE(slot->tcp_pcb == &pcb);
+        TN_ASSERT_EQ(slot->tcp_state, TN_TCP_STATE_PEER_CLOSED);
+        /* not finished: a full rx queue still pushes back (ERR_MEM) */
+        pcb.state = FIN_WAIT_2;
+        while (slot->rx_count < TN_MAX_RX_QUEUE_PER_SOCKET) {
+            TN_ASSERT_EQ(tn_rx_queue_push(slot, mock_pbuf_alloc(1), NULL, 0), 0);
+        }
+        {
+            struct pbuf *p = mock_pbuf_alloc(3);
+            TN_ASSERT_EQ(tn_tcp_recv_cb((void *)(intptr_t)idx, &pcb, p, ERR_OK), ERR_MEM);
+            pbuf_free(p);
+        }
+        tn_slot_free(&g_daemon, idx);
+        TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_CLOSE), 1);
+        tn_selector_table_free(&g_daemon);
+    }
+    mock_lwip_reset();
+}
+
+/* TNET-159 (4.2 remainder): a multi-iovec TCP sendmsg on a blocking
+ * socket parks like send() and resumes mid-iovec from the sent callback;
+ * non-blocking keeps the short count / EWOULDBLOCK. */
+TN_TEST(net_tcp_sendmsg_multi_iovec_blocks)
+{
+    static unsigned char sbuf[128];
+    const int odd = 1;
+    TnSocketBase base;
+    struct tcp_pcb pcb;
+    TnIpcMsg m;
+    struct iovec iov[3];
+    struct msghdr msg;
+    int idx = -1;
+    int i;
+    TN_TEST_BASE_INIT(base);
+    TnSocketSlot *slot = tq_g_tcp_slot(&base, &pcb, &idx);
+    TN_ASSERT_TRUE(slot != NULL);
+
+    memset(&msg, 0, sizeof(msg));
+    iov[0].iov_base = sbuf + odd;       iov[0].iov_len = 50;
+    iov[1].iov_base = sbuf + odd + 50;  iov[1].iov_len = 30;
+    iov[2].iov_base = sbuf + odd + 80;  iov[2].iov_len = 20;
+    msg.msg_iov = iov;
+    msg.msg_iovlen = 3;
+
+    /* room for 60: 50 + 10 queued, then park */
+    mock_lwip_reset();
+    mock_set_tcp_write_consumes(1);
+    mock_set_tcp_sndbuf(60);
+    memset(&m, 0, sizeof(m));
+    m.socket_base = &base;
+    m.ptrs[0] = &msg;
+    TN_ASSERT_EQ(tn_ipc_cmd_sendmsg(&g_daemon, &m, slot), 1); /* TN_IPC_DEFER */
+    TN_ASSERT_TRUE(slot->pending_send_msg == &m);
+    TN_ASSERT_EQ(slot->send_done, 60);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_WRITE), 2);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_REPLY_MSG), 0);
+
+    /* space freed: resume at iov[1]+10, then iov[2]; reply 100 */
+    mock_lwip_reset();
+    mock_set_tcp_write_consumes(1);
+    tn_tcp_sent_cb((void *)(intptr_t)idx, &pcb, 60);
+    TN_ASSERT_TRUE(slot->pending_send_msg == NULL);
+    TN_ASSERT_EQ(m.result, 100);
+    TN_ASSERT_EQ(m.err_no, 0);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_REPLY_MSG), 1);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_WRITE), 2);
+    {
+        int wi = 0;
+        for (i = 0; i < mock_lwip_total_calls(); i++) {
+            const MockCall *w = mock_lwip_call_at(i);
+            if (w->type != MOCK_CALL_TCP_WRITE) continue;
+            TN_ASSERT_EQ((int)w->arg1, 20);
+            TN_ASSERT_TRUE(w->ptr2 == (void *)(sbuf + odd + (wi == 0 ? 60 : 80)));
+            wi++;
+        }
+        TN_ASSERT_EQ(wi, 2);
+    }
+
+    /* MSG_DONTWAIT: short count, never parked */
+    mock_lwip_reset();
+    mock_set_tcp_write_consumes(1);
+    mock_set_tcp_sndbuf(60);
+    memset(&m, 0, sizeof(m));
+    m.ptrs[0] = &msg;
+    m.args[1] = MSG_DONTWAIT;
+    TN_ASSERT_EQ(tn_ipc_cmd_sendmsg(&g_daemon, &m, slot), 0);
+    TN_ASSERT_EQ(m.result, 60);
+    TN_ASSERT_TRUE(slot->pending_send_msg == NULL);
+
+    /* non-blocking with no room: EWOULDBLOCK */
+    slot->is_nonblocking = TRUE;
+    mock_set_tcp_sndbuf(0);
+    memset(&m, 0, sizeof(m));
+    m.ptrs[0] = &msg;
+    TN_ASSERT_EQ(tn_ipc_cmd_sendmsg(&g_daemon, &m, slot), 0);
+    TN_ASSERT_EQ(m.result, -1);
+    TN_ASSERT_EQ(m.err_no, EWOULDBLOCK);
+    slot->is_nonblocking = FALSE;
+
+    /* blocking with no room: park, then the poll retry finishes it */
+    mock_lwip_reset();
+    mock_set_tcp_sndbuf(0);
+    memset(&m, 0, sizeof(m));
+    m.ptrs[0] = &msg;
+    TN_ASSERT_EQ(tn_ipc_cmd_sendmsg(&g_daemon, &m, slot), 1);
+    TN_ASSERT_EQ(slot->send_done, 0);
+    mock_set_tcp_sndbuf(TCP_SND_BUF);
+    TN_ASSERT_EQ(tn_tcp_poll_cb((void *)(intptr_t)idx, &pcb), ERR_OK);
+    TN_ASSERT_TRUE(slot->pending_send_msg == NULL);
+    TN_ASSERT_EQ(m.result, 100);
+
+    mock_lwip_reset();
+    tn_slot_free(&g_daemon, idx);
+}
+
+/* YENI-8: the app's fd_set, msghdr and iovec array may sit at odd
+ * addresses on the 68000; the daemon copies them byte-wise (UBSan's
+ * alignment check catches any typed access here). */
+TN_TEST(net_client_structs_at_odd_addresses)
+{
+    static unsigned char raw[512];
+    static unsigned char sb[64];
+    unsigned char rb[16];
+    unsigned char *rset = raw + 1;
+    unsigned char *uiov = raw + 65;
+    unsigned char *umh = raw + 129;
+    TnSocketBase base;
+    struct tcp_pcb pcb;
+    TnIpcMsg m;
+    struct msghdr mh;
+    struct iovec iv[2];
+    ULONG w;
+    int idx = -1;
+    TN_TEST_BASE_INIT(base);
+    TnSocketSlot *slot = tq_g_tcp_slot(&base, &pcb, &idx);
+    TN_ASSERT_TRUE(slot != NULL);
+    base.fd_map[1] = idx;
+    TN_ASSERT_EQ(tn_rx_queue_push(slot, mock_pbuf_alloc(3), NULL, 0), 0);
+
+    /* WaitSelect: two-word fd_set at an odd address */
+    w = 0x2;  memcpy(rset, &w, sizeof(w));
+    w = 0x1;  memcpy(rset + 4, &w, sizeof(w));
+    memset(&m, 0, sizeof(m));
+    m.socket_base = &base;
+    m.args[0] = 33;
+    m.ptrs[0] = rset;
+    base.fd_map[32] = -1;
+    TN_ASSERT_EQ(tn_ipc_cmd_waitselect(&g_daemon, &m, NULL), 0);
+    TN_ASSERT_EQ(m.result, -1);        /* fd 32 is not open */
+    TN_ASSERT_EQ(m.err_no, EBADF);
+    w = 0;    memcpy(rset + 4, &w, sizeof(w));
+    memset(&m, 0, sizeof(m));
+    m.socket_base = &base;
+    m.args[0] = 33;
+    m.ptrs[0] = rset;
+    TN_ASSERT_EQ(tn_ipc_cmd_waitselect(&g_daemon, &m, NULL), 0);
+    TN_ASSERT_EQ(m.result, 1);
+    memcpy(&w, rset, sizeof(w));
+    TN_ASSERT_EQ_U(w, 0x2);
+    memcpy(&w, rset + 4, sizeof(w));
+    TN_ASSERT_EQ_U(w, 0);
+
+    /* sendmsg: msghdr and iovec array at odd addresses */
+    iv[0].iov_base = sb;      iv[0].iov_len = 10;
+    iv[1].iov_base = sb + 10; iv[1].iov_len = 5;
+    memcpy(uiov, iv, sizeof(iv));
+    memset(&mh, 0, sizeof(mh));
+    mh.msg_iov = (struct iovec *)(void *)uiov;
+    mh.msg_iovlen = 2;
+    memcpy(umh, &mh, sizeof(mh));
+    mock_lwip_reset();
+    memset(&m, 0, sizeof(m));
+    m.socket_base = &base;
+    m.ptrs[0] = umh;
+    TN_ASSERT_EQ(tn_ipc_cmd_sendmsg(&g_daemon, &m, slot), 0);
+    TN_ASSERT_EQ(m.result, 15);
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_TCP_WRITE), 2);
+
+    /* recvmsg: msg_flags is written back into the odd msghdr */
+    iv[0].iov_base = rb;     iv[0].iov_len = 2;
+    iv[1].iov_base = rb + 2; iv[1].iov_len = 8;
+    memcpy(uiov, iv, sizeof(iv));
+    mh.msg_flags = 0x55;
+    memcpy(umh, &mh, sizeof(mh));
+    memset(&m, 0, sizeof(m));
+    m.socket_base = &base;
+    m.ptrs[0] = umh;
+    TN_ASSERT_EQ(tn_ipc_cmd_recvmsg(&g_daemon, &m, slot), 0);
+    TN_ASSERT_EQ(m.result, 3);
+    memcpy(&mh, umh, sizeof(mh));
+    TN_ASSERT_EQ(mh.msg_flags, 0);
+    TN_ASSERT_TRUE(slot->rx_head == NULL);
+
+    mock_lwip_reset();
+    tn_slot_free(&g_daemon, idx);
+}
+
 int main(void)
 {
     TN_TEST_RUN(rx_pbuf_chain_partial_reads);
@@ -2203,6 +2496,10 @@ int main(void)
     TN_TEST_RUN(net_listen_backlog_caps_accept_queue);
     TN_TEST_RUN(net_select_can_write_tcp);
     TN_TEST_RUN(net_waitselect_nfds_clamped);
+    TN_TEST_RUN(net_tcp_shut_wr_fin_detaches_pcb);
+    TN_TEST_RUN(net_tcp_fin_close_wait_keeps_pcb);
+    TN_TEST_RUN(net_tcp_sendmsg_multi_iovec_blocks);
+    TN_TEST_RUN(net_client_structs_at_odd_addresses);
 
     TN_TEST_PLAN();
     return tn_test_failures();
