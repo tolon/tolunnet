@@ -64,3 +64,8 @@ TN-*.md
 AGENTS.md
 graft/
 /archive/
+
+# 11aj item 1: agent/prompt/design working material stays off GitHub
+/docs/history/
+/docs/prompts/
+STOP-REPORT*.md

@@ -45,7 +45,7 @@ yapmadığından Address Error sınıfı (#80000003) kapalıdır (TNET-139).
 - `TolunnetStatus` ile soket/arayüz durumuna bakın.
 - Daemon logu (`LOG=` ile) ve varsa MuForce/enforcer kaydını saklayın.
 - Guru alırsanız (beklenmiyor): Guru'daki görev adını ve hex kodu
-  bildirin — `docs/history/TOLUNNET-FIX-guru-80000003.md` yöntemiyle
+  bildirin — notlarda anlatılan `write` yöntemiyle
   teşhis için kullanılacak.
 
 ## 5. AmigaOS 3.9 / hazır dağıtım (AmiKit vb.) üzerinde

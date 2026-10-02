@@ -268,7 +268,7 @@ Requirements: AmigaOS 3.0+, 68000 or higher, about 1.2 MB free for the unpacked 
    **Emulator-test status: UNTESTED** - the real Installer opens
    requesters (script error / welcome) that a headless bench cannot
    answer, so its pretend run has never completed in the emulator
-   (see [docs/history/STOP-REPORT-11ad.md](docs/history/STOP-REPORT-11ad.md)). Please try it on real hardware and report.
+   (see the notes in STATUS.md). Please try it on real hardware and report.
 
 ### PiStorm / CF / hard disk
 1. Extract `tolunnet-<version>.lha` to `RAM:` or any drawer.
