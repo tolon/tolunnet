@@ -45,6 +45,9 @@ def main(argv):
     print("[check_release_consistency] version.h: %s (%s)" % (version,
                                                               ver_date))
 
+    if "--selftest-notes" in argv[1:]:
+        return 0 if notes_selftest() else 1
+
     # CHANGELOG top section (ISO date; version.h stores dd.mm.yyyy)
     chlog = read("CHANGELOG.md")
     m = re.search(r"^## (1\.2\.0-\S+) \((\d{4}-\d\d-\d\d)\)", chlog,
@@ -165,8 +168,12 @@ def main(argv):
     if not BAD:
         print("[check_release_consistency] relative links OK")
 
+    # 11ai item 1: --write-notes rewrites the file FIRST; the
+    # checksum checks below then read the ON-DISK notes, so the
+    # notes can never lag behind build/release-assets/ again.
     if len(argv) > 1 and argv[1] == "--write-notes":
         write_notes(version)
+    check_asset_checksums(version)
 
     if BAD:
         print("[check_release_consistency] FAIL: %d problem(s)"
@@ -174,6 +181,97 @@ def main(argv):
         return 1
     print("[check_release_consistency] OK: release surfaces consistent")
     return 0
+
+
+def release_asset_digests(sums_path):
+    """digest -> asset name, from a SHA256SUMS-format file."""
+    digests = {}
+    for line in open(sums_path, encoding="utf-8"):
+        parts = line.split(maxsplit=1)
+        if len(parts) == 2:
+            digests[parts[0]] = parts[1].strip()
+    return digests
+
+
+def notes_digest_findings(body, digests):
+    """11ai item 3: pure helper. Returns (missing, stale) - the
+    SHA256SUMS digests absent from the notes body, and 64-hex digest
+    lines in the body naming a tolunnet archive that SHA256SUMS does
+    not list (stale lines from an older package)."""
+    import re
+    missing = [d for d in digests if d not in body]
+    stale = []
+    for m in re.finditer(r"^([0-9a-f]{64})\s+(tolunnet-\S+\.(?:lha|adf))\s*$",
+                         body, re.M):
+        if digests.get(m.group(1)) != m.group(2):
+            stale.append("%s (%s)" % (m.group(2), m.group(1)[:12]))
+    return missing, stale
+
+
+def check_asset_checksums(version):
+    """11ai item 1: the ON-DISK release notes (and STATUS) must quote
+    the checksums of the files actually in build/release-assets/."""
+    sums = os.path.join(ROOT, "build", "release-assets", "SHA256SUMS.txt")
+    if not os.path.isfile(sums):
+        print("[check_release_consistency] no build/release-assets - "
+              "checksum check skipped")
+        return
+    digests = release_asset_digests(sums)
+    status_body = read("STATUS.md")
+    for digest, name in digests.items():
+        if digest not in status_body:
+            fail("STATUS.md does not contain the current %s checksum %s"
+                 % (name, digest[:12]))
+    notes_path = notes_file_for(version)
+    if not os.path.isfile(notes_path):
+        print("[check_release_consistency] no RELEASE-NOTES file - "
+              "notes checksum check skipped")
+        return
+    body = open(notes_path, encoding="utf-8", errors="replace").read()
+    missing, stale = notes_digest_findings(body, digests)
+    for d in missing:
+        fail("RELEASE-NOTES is missing the current %s checksum %s"
+             % (digests[d], d[:12]))
+    for st in stale:
+        fail("RELEASE-NOTES carries a stale checksum line: %s" % st)
+    if not any("checksum" in b for b in BAD):
+        print("[check_release_consistency] asset checksums quoted in "
+              "STATUS + RELEASE-NOTES OK")
+
+
+def notes_selftest():
+    """11ai item 3: a wrong digest must FAIL, the right one must PASS."""
+    import tempfile
+    da = "a" * 64
+    db = "b" * 64
+    d = tempfile.mkdtemp(prefix="crc-notes-selftest-")
+    sums = os.path.join(d, "SHA256SUMS.txt")
+    open(sums, "w", encoding="utf-8").write(
+        "%s  tolunnet-1.2.0-rc5.lha\n"
+        "%s  tolunnet-1.2.0-rc5-disk1.adf\n" % (da, db))
+    digests = release_asset_digests(sums)
+
+    bad_body = ("%s  tolunnet-1.2.0-rc5.lha\n"
+                "%s  tolunnet-1.2.0-rc5-disk1.adf\n"
+                % ("c" * 64, db))
+    missing, stale = notes_digest_findings(bad_body, digests)
+    bad_ok = bool(missing or stale)
+
+    good_body = ("%s  tolunnet-1.2.0-rc5.lha\n"
+                 "%s  tolunnet-1.2.0-rc5-disk1.adf\n" % (da, db))
+    missing, stale = notes_digest_findings(good_body, digests)
+    good_ok = (not missing and not stale)
+
+    print("check_release_consistency notes selftest: wrong digest FAIL=%s"
+          % bad_ok)
+    print("check_release_consistency notes selftest: right digest PASS=%s"
+          % good_ok)
+    return bad_ok and good_ok
+
+
+def notes_file_for(version):
+    return os.path.join(ROOT, "build", "RELEASE-NOTES-%s.md"
+                        % version.split("-")[-1])
 
 
 def write_notes(version):
@@ -204,23 +302,7 @@ def write_notes(version):
     if os.path.isfile(sums):
         notes += "\n## Release asset checksums\n```\n" + \
             open(sums, encoding="utf-8").read() + "```\n"
-        # 11ah item 1: STATUS and the notes must carry the SAME
-        # checksums as the files on disk - a stale line cannot ship.
-        status_body = read("STATUS.md")
-        for line in open(sums, encoding="utf-8"):
-            digest, name = line.split(maxsplit=1)
-            name = name.strip()
-            if digest not in status_body:
-                fail("STATUS.md does not contain the current %s "
-                     "checksum %s" % (name, digest[:12]))
-            if digest not in notes:
-                fail("RELEASE-NOTES does not contain the current %s "
-                     "checksum %s" % (name, digest[:12]))
-        if not any("checksum" in b for b in BAD):
-            print("[check_release_consistency] asset checksums quoted "
-                  "in STATUS + RELEASE-NOTES OK")
-    out = os.path.join(ROOT, "build", "RELEASE-NOTES-%s.md"
-                       % version.split("-")[-1])
+    out = notes_file_for(version)
     open(out, "w", encoding="utf-8").write(notes + "\n")
     print("[check_release_consistency] wrote %s" % out)
 

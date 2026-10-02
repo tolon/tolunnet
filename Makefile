@@ -202,6 +202,7 @@ python-checks:
 	python3 ci/lint_amigados_script.py Install_From_Floppies
 	python3 ci/check_version_tags.py
 	python3 ci/check_release_consistency.py
+	python3 ci/check_release_consistency.py --selftest-notes
 	@if ls build/tolunnet-*.lha >/dev/null 2>&1; then \
 	  newest=$$(ls -t build/tolunnet-*.lha | head -1); \
 	  python3 ci/check_package_parity.py $$newest $(PACKAGE_DIR) || \
