@@ -21,6 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # installer_lint --selftest runs the lint against historic
+          # installer scripts via `git show <rev>:...` - needs the history
+          fetch-depth: 0
 
       - name: Host toolchain
         run: |
