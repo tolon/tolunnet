@@ -17,8 +17,7 @@ Checks:
   - README.md lists exactly the tests/host/test_*.c programs.
 
 With --write-notes <path>: writes a release-notes file = the CHANGELOG
-rc5 section + a "which file do I download" block + known limitations +
-the installer redistribution note.
+rc5 section + a "which file do I download" block + known limitations.
 Run by `make python-checks`; exit 1 on any inconsistency.
 """
 
@@ -384,10 +383,6 @@ def write_notes(version):
         "- Requirements: AmigaOS 3.0+, 68000+, ~1.2 MB free for the\n"
         "  unpacked tree.",
         lim.strip(),
-        "## Installer redistribution note\n"
-        "The archive bundles the Commodore `Installer` binary (1999).\n"
-        "Its redistribution terms are NOT yet verified — the owner has\n"
-        "to confirm the licence before publishing this release.\n",
     ])
     # 11af item 3: quote the release-asset checksums in the notes
     sums = os.path.join(ROOT, "build", "release-assets",

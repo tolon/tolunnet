@@ -43,11 +43,7 @@ bsdsocktest (142 tests): 126 passed, 2 failed, 14 skipped.
 
 **Package**
 - The two-disk ADF set has not been tested on real Gotek/floppy
-  hardware (emulator-tested pieces only; see docs/OWNER-RETEST.md for
-  the owner walk-through).
-- The bundled Commodore `Installer` binary (154,804 bytes, 1999)
-  ships without verified redistribution terms — the owner still has to
-  confirm its licence before publishing.
+  hardware (emulator-tested pieces only).
 
 **Stack / commands**
 - `ftp`: passive mode only (no `PORT`/`EPRT`).

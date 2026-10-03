@@ -1,8 +1,46 @@
 # Changelog
 
-## 1.2.0-rc5 (2026-09-30)
+## 1.2.0-rc5 (2026-10-03)
 
 ### Fixed
+
+- **Compiler miscompile in 1.2.0-rc3 and rc4**: the Amiga GCC 6.5
+  back end merged a 16-bit and a 32-bit zero store into one 32-bit
+  clear, leaving half of the second variable uninitialised. In the
+  published rc3/rc4 daemon this hits lwIP `tcp_write()`, where a
+  garbage `concat_p` can be chained into an outgoing TCP segment
+  (wrong data or memory corruption on small, back-to-back sends).
+  Everything is now built with `-fno-peephole2`, a python-check fails
+  if the flag is dropped, and `make toolchain-scan` lists every site
+  the bad rule would touch. Reported upstream
+  (AmigaPorts/m68k-amigaos-gcc#118); fix and reproducer in
+  `toolchain/amiga-gcc-combine-clr/`.
+- **Socket defaults**: the daemon saw the BSD header's `TCP_MSS` (512)
+  instead of lwIP's 1460, so `SO_SNDBUF`, `SO_RCVBUF` and `TCP_MAXSEG`
+  defaults were 512-based.
+- **SANA-II station address**: an unconfigured card now uses its
+  factory address (current, then factory, then a random locally
+  administered one), and the address the driver actually configured is
+  read back.
+- **Bug sweep 2026-10-02**: TIME_WAIT pcbs are no longer touched after
+  lwIP frees them; listen-socket close out-of-bounds write; blocking
+  `send` parks with `SO_SNDTIMEO`; WaitSelect high word, break mask and
+  app SIGIO bits; `SocketBaseTagList` returns the failing tag index;
+  multi-iovec TCP `sendmsg` blocks like `send`; byte-wise client
+  structure access on the 68000; frames over 1500 bytes no longer
+  overrun the RX buffer; client `syslog()` reaches the daemon log.
+- **Installer and undo**: the generated script's backup block really
+  runs (an `(if)` takes one statement), the undo script is written
+  before any copy, the old `bsdsocket.library` is parked by rename,
+  copies are verified before deletes, `usergroup.library` is backed up,
+  and the undo never copies a backup over a live `S:User-Startup`.
+- **Commands**: tftp PUT resend, nslookup PTR bounds and transaction id,
+  TolunnetGet return code on truncation, ftp Ctrl-C, telnet options,
+  traceroute reply matching; Setup Wi-Fi SSID selection and safe
+  `Wireless.prefs` replace.
+- **usergroup.library**: DES `crypt(3)` (existing AmiTCP/Roadshow
+  passwd hashes validate), per-task contexts released on last close,
+  per-task `getpwent` cursor.
 
 - **Ctrl-C interrupts blocking calls**: the CANCEL path in the library
   preserves the break signal after an aborted blocking call, wakes the

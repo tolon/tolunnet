@@ -75,3 +75,23 @@ ci/.bench-tolunnet*.config
 ci/.soak-cycle
 ci/.adf-expected.txt
 ci/.bench-floppy.uae
+
+# Public repo carries only README/STATUS/THIRD_PARTY_LICENSES, the
+# README-linked tester checklist, the build inputs (CHANGELOG.md,
+# docs/commands.md) and toolchain/*/README.md. Everything else stays local.
+/ISSUES.md
+/QUESTIONS.md
+/TOLUNNET-COMPAT.md
+/ci/README.md
+/ci/debugger/README.md
+/docs/FORBID.md
+/docs/OWNER-RETEST.md
+/docs/PISTORM-INSTALL.md
+/docs/architecture.md
+/docs/bench-logs/INDEX.md
+/docs/bench.md
+/src/lib/lib_compat_table.gen.md
+/src/usergroup/ug_compat_table.gen.md
+/tests/host/README.md
+/vendor/README.md
+/vendor/bsdsocktest/README.md
