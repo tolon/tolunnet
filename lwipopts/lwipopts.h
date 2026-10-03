@@ -85,7 +85,12 @@
 #define ETH_PAD_SIZE         2
 
 /* --- TCP tuning --- */
-#define TCP_MSS              1460
+/* TN_LWIP_TCP_MSS: single source - the BSD <netinet/tcp.h> that task_ctx.h
+ * includes redefines TCP_MSS to 512, and task_ctx.h restores it from here.
+ * Every derived macro (PBUF_POOL_BUFSIZE, TCP_WND, TCP_SND_BUF) expands
+ * lazily, so a stale TCP_MSS silently changes them in daemon TUs. */
+#define TN_LWIP_TCP_MSS      1460
+#define TCP_MSS              TN_LWIP_TCP_MSS
 #define TCP_WND              (8 * TCP_MSS)
 #define TCP_SND_BUF          (8 * TCP_MSS)
 #define TCP_SND_QUEUELEN     (2 * (TCP_SND_BUF) / (TCP_MSS))

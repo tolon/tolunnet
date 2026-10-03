@@ -56,6 +56,11 @@
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+/* BSD tcp.h defines TCP_MSS 512; restore lwIP's value or every TU that
+ * includes this header sees PBUF_POOL_BUFSIZE/TCP_WND/TCP_SND_BUF built on
+ * 512 (the 5.2 RX bound then dropped every frame over 552 bytes). */
+#undef TCP_MSS
+#define TCP_MSS TN_LWIP_TCP_MSS
 #else
 /* Host test environment */
 #include "mock_lwip.h"

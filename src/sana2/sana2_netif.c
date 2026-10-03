@@ -34,6 +34,12 @@ _Static_assert(TN_S2EV_BUFF     == S2EVENT_BUFF,     "S2EVENT drift");
 _Static_assert(TN_S2EV_HARDWARE == S2EVENT_HARDWARE, "S2EVENT drift");
 _Static_assert(TN_S2EV_SOFTWARE == S2EVENT_SOFTWARE, "S2EVENT drift");
 
+/* The RX path copies a whole frame into ONE pool element. The value seen
+ * here must be lwIP's own (BSD <netinet/tcp.h> redefines TCP_MSS to 512). */
+_Static_assert(TCP_MSS == TN_LWIP_TCP_MSS, "TCP_MSS shadowed by BSD headers");
+_Static_assert(PBUF_POOL_BUFSIZE >= 1500 + 14 + ETH_PAD_SIZE,
+               "pool element cannot hold a full Ethernet frame");
+
 static struct IORequest *tn_create_extio(struct MsgPort *port, ULONG size)
 {
     struct IORequest *io = (struct IORequest *)AllocVec(size, MEMF_CLEAR | MEMF_PUBLIC);
