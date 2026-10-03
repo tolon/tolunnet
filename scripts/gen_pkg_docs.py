@@ -84,7 +84,7 @@ def update_readme_guide(version, date_str):
     # date makes the files identical.
     import re as _re
     norm = lambda t: _re.sub(
-        r"(@\$VER: tolunnet\.guide )\d\d\.\d\d\.\d{4}", r"\1 DATE", t)
+        r"(@\$VER: tolunnet\.guide \S+ \()\d\d\.\d\d\.\d{4}\)", r"\1DATE)", t)
     new_text = "".join(out)
     old_text = "".join(lines)
     if norm(new_text) == norm(old_text):
