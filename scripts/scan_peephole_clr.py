@@ -29,7 +29,8 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CC = os.environ.get("CC", "m68k-amigaos-gcc")
 SOURCES = ["src/**/*.c", "tests/amiga/*.c",
-           "vendor/lwip/src/core/**/*.c", "vendor/lwip/src/netif/*.c"]
+           "vendor/lwip/src/core/**/*.c", "vendor/lwip/src/netif/*.c",
+           "vendor/lwip/src/apps/mdns/*.c", "vendor/bsdsocktest/src/*.c"]
 INSN_RE = re.compile(r"^\((?:insn|jump_insn|call_insn)(?:/\w+)? (\d+) ")
 
 
