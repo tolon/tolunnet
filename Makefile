@@ -13,7 +13,13 @@ NDK_INC    ?= $(shell if [ -d "$$(dirname $$(which $(CC) 2>/dev/null))/../m68k-a
 # TNET-139: -Werror=cast-align keeps the 68000 Address Error class out of
 # the tree (a word/long access through a cast from a byte-typed pointer is
 # exactly the #80000003 Guru). Vendored code builds with its own flags.
-CFLAGS      = -O2 -fomit-frame-pointer -m68000 -msoft-float -noixemul -Wall -Wextra -Wshadow \
+# -fno-peephole2: amiga-gcc 6.5.0b's "combine clr" peephole2 (m68k.md, the
+# rule merging #0 stores at x / x+2) checks only the FIRST store's mode, so a
+# word clear followed by a long clear at x+2 becomes one clr.l at x and the
+# long's low half is never zeroed. Hit tn_boot_block_apply's out_len (Guru
+# 8100000C in tc_boot_block) and lwIP tcp_write's concat_p. +188 bytes.
+# scripts/scan_peephole_clr.py lists the sites if the flag is ever dropped.
+CFLAGS      = -O2 -fno-peephole2 -fomit-frame-pointer -m68000 -msoft-float -noixemul -Wall -Wextra -Wshadow \
               -Wcast-align -Werror=cast-align \
               -Ilwipopts -Iinclude -Iinclude/netinclude -Ivendor/lwip/src/include -Isrc \
               $(NDK_INC) -std=c11 -MMD -MP
@@ -188,6 +194,12 @@ $(BUILD)/host/%: tests/host/%.c $(HOST_UNITS) tests/host/tn_test.h $(wildcard sr
 	@mkdir -p $(BUILD)/host
 	$(HOSTCC) $(HOST_CFLAGS) $< $(HOST_UNITS) -o $@
 
+# Lists the word+long clear pairs amiga-gcc's combine-clr peephole2 would
+# miscompile (CFLAGS minus -fno-peephole2). Needs the cross compiler.
+.PHONY: toolchain-scan
+toolchain-scan:
+	python3 scripts/scan_peephole_clr.py -- $(filter-out -fno-peephole2,$(CFLAGS))
+
 .PHONY: python-checks installer
 python-checks:
 	python3 scripts/lvo_check.py
@@ -204,6 +216,7 @@ python-checks:
 	python3 scripts/verify_icons.py
 	python3 scripts/check_md_links.py
 	python3 scripts/check_no_nul.py
+	python3 scripts/scan_peephole_clr.py --check-makefile
 	python3 ci/lint_amigados_script.py Install_From_Floppies
 	python3 ci/check_version_tags.py
 	python3 ci/check_release_consistency.py

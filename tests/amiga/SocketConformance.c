@@ -277,7 +277,21 @@ static ULONG tc_cfg_ip(const char *key, ULONG def)
                      g_count, #tc); \
     } \
     tn_crash_guard(#tc); \
+    TN_MEMCHECK(tc); \
 } while (0)
+/* -DTN_CONF_MEMCHECK (bench diagnosis): AvailMem(MEMF_LARGEST) walks the
+ * free lists and raises AN_MemoryInsane (8100000C) on a corrupt one, so
+ * the Guru lands right after the test that damaged the heap instead of
+ * wherever the next large allocation happens to run. */
+#ifdef TN_CONF_MEMCHECK
+#define TN_MEMCHECK(tc) do { \
+    tapf("# memcheck after %s\n", #tc); \
+    (void)AvailMem(MEMF_LARGEST); \
+    tapf("# memcheck ok\n"); \
+} while (0)
+#else
+#define TN_MEMCHECK(tc) do { } while (0)
+#endif
 #define TAP_TODO(name, why)  do { g_count++; tapf("not ok %d - %s # TODO %s\n", g_count, name, why); } while (0)
 #define TAP_SKIP(name, why)  do { g_count++; tapf("ok %d - %s # SKIP %s\n", g_count, name, why); } while (0)
 
