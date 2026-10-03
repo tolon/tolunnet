@@ -1,6 +1,6 @@
 # tolunnet — Status
 
-_Last updated: 2026-10-01 · version string `1.2.0-rc5` (`include/version.h`)_
+_Last updated: 2026-10-03 · version string `1.2.0-rc5` (`include/version.h`)_
 
 ## Release state
 
@@ -26,6 +26,7 @@ _Last updated: 2026-10-01 · version string `1.2.0-rc5` (`include/version.h`)_
 | Emulated conformance bench, rc3 tree | **ALL-GREEN**: 58/58 in both cycles on both profiles (a1200 + 68000); bsdsocktest **126/142** | bench `20260921-135938-51196ec` (in git history up to `7f87caf`) |
 | Emulated conformance bench, post-rc3 work | **ALL-GREEN**: 60/60 in both cycles on both profiles (a1200 + 68000); bsdsocktest **126/142** | bench `20260923-082158-v1.2.0-rc3-25-gdb29de8` |
 | Emulated conformance bench, rc5 tree (`TX_QUEUE=4` only; the default `TX_QUEUE=0` leg is new in `ci/bench.sh` and not yet run) | **ALL-GREEN**: `112 ok / 0 not ok`, plan `1..112`, four legs (a1200 + 68000, two cycles); `tc_floppy_install` ok (51/51 manifest lines), `tc_installer_pretend` SKIP (real Installer is GUI-bound headlessly); the `112` counts the pretend row's `ok … # SKIP` line, `skip=3` = tc_dns_a (external), tc_link_events, tc_installer_pretend; bsdsocktest **126/142** | bench `20261002-121439-v1.2.0-rc4-511-g80c7455` |
+| Emulated conformance bench, rc5 + 2026-10-02/03 bug-track fixes | **ALL-GREEN**: `112 ok / 0 not ok` in both cycles on a1200 (`TX_QUEUE=4`) and 68000 (`TX_QUEUE=0`, the release default - first run of that leg); DHCP lease restored, all `net_*` green; `tc_boot_block` no longer Gurus; bsdsocktest **126/142** | bench `20261003-054803-v1.2.0-rc4-526-gbb812a0`, `20261003-055902-v1.2.0-rc4-526-gbb812a0` |
 | Release asset checksums | lha `17d2d561e4e3cbbb9b8c4c6d858151113bf157e06aa2343a53b208b6954cd024`, disk1 `d08627ac1df60b1874205446afa56c19a4f2370b22311c21f52a5d61e246c34c`, disk2 `5622e1bdcae7122b2577b450f03a299f9c6892462ee55c5a94bd64a292b8d527` | `build/release-assets/` (+`SHA256SUMS.txt`) |
 | Phase 1b Red Baseline (`c598d6d`) | **ALL-GREEN (7 TODO)**: 60/60 + 9 net tests (7 TODO); bsdsocktest **126/142** | bench `20260923-125745-v1.2.0-rc4-1-gc598d6d-netbaseline` |
 | Phase 1b Item 2 | `net_tcp_blocking_recv` active; blocking recv parking + `SO_RCVTIMEO` | host test `test_slot_table` ok 10 |
@@ -56,7 +57,7 @@ bsdsocktest (142 tests): 126 passed, 2 failed, 14 skipped.
 - `CheckNetConfig`: checks config syntax only, not whether the SANA-II device is present.
 
 **`usergroup.library`**
-- `crypt()` is an FNV-style hash and not DES-compatible with Unix password files; existing AmiTCP passwd files are not compatible.
+- `crypt()` is traditional DES crypt(3), so hashes from existing AmiTCP/Roadshow passwd files validate; tolunnet itself never writes password hashes.
 - `getpass()` returns an empty string without prompting.
 - `setutent`/`endutent` do nothing, and `getutent` returns a fixed `root`/`console` record.
 - `getlastlog`/`setlastlog` keep their data in memory only.

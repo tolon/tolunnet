@@ -1,0 +1,3 @@
+68000-txq0: bsdsocktest: 126/142 (failed 2) ok — docs/bench-logs/20261003-055902-v1.2.0-rc4-526-gbb812a0/68000-txq0/bsdsocktest.log
+68000-txq0: # iperf loopback: 88328 bytes received (88328 sent) in ~2s = 43 KB/s — docs/bench-logs/20261003-055902-v1.2.0-rc4-526-gbb812a0/68000-txq0/conformance.log
+net TODO remaining: 0
