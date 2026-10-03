@@ -191,12 +191,30 @@ static TnS2Result tn_s2_query(TnSana2If *nif)
     return TN_S2_OK;
 }
 
+/* usable unicast station address: not all-0, not all-FF, not group */
+static BOOL tn_s2_addr_usable(const UBYTE *a, ULONG n)
+{
+    ULONG i;
+    BOOL zero = TRUE, ones = TRUE;
+
+    if (n == 0) return FALSE;
+    for (i = 0; i < n; i++) {
+        if (a[i] != 0x00) zero = FALSE;
+        if (a[i] != 0xFF) ones = FALSE;
+    }
+    if (zero || ones) return FALSE;
+    if (n == 6 && (a[0] & 1) != 0) return FALSE;
+    return TRUE;
+}
+
 TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac)
 {
     struct IOSana2Req *io;
     TnS2Result r;
     ULONG i;
     BOOL mac_valid = FALSE;
+    UBYTE fac[SANA2_MAX_ADDR_BYTES];
+    BOOL fac_valid = FALSE;
 
     if (nif == NULL || nif->io == NULL) return TN_S2_INTERNAL;
 
@@ -213,7 +231,18 @@ TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac)
     if (io->ios2_Req.io_Error != 0) {
         tn_log_s2err("S2_GETSTATIONADDRESS", io->ios2_Req.io_Error, io->ios2_WireError);
     } else {
+        /* SANA-II: SrcAddr = current address, DstAddr = factory default
+         * (if any). Some drivers answer an unconfigured unit with SrcAddr
+         * all-FF and only the factory address in DstAddr. */
         BOOL src_is_bcast = TRUE;
+        tn_logf(TN_LOG_VERBOSE, "s2: station cur=%02x:%02x:%02x:%02x:%02x:%02x "
+                "factory=%02x:%02x:%02x:%02x:%02x:%02x\n",
+                (int)io->ios2_SrcAddr[0], (int)io->ios2_SrcAddr[1],
+                (int)io->ios2_SrcAddr[2], (int)io->ios2_SrcAddr[3],
+                (int)io->ios2_SrcAddr[4], (int)io->ios2_SrcAddr[5],
+                (int)io->ios2_DstAddr[0], (int)io->ios2_DstAddr[1],
+                (int)io->ios2_DstAddr[2], (int)io->ios2_DstAddr[3],
+                (int)io->ios2_DstAddr[4], (int)io->ios2_DstAddr[5]);
         for (i = 0; i < nif->addr_bytes; i++) {
             if (io->ios2_SrcAddr[i] != 0xFF) {
                 src_is_bcast = FALSE;
@@ -229,7 +258,9 @@ TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac)
             for (i = 0; i < nif->addr_bytes; i++) {
                 nif->mac[i]   = io->ios2_SrcAddr[i];
                 nif->bcast[i] = io->ios2_DstAddr[i];
+                fac[i]        = io->ios2_DstAddr[i];
             }
+            fac_valid = tn_s2_addr_usable(fac, nif->addr_bytes);
         }
     }
 
@@ -238,19 +269,23 @@ TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac)
             nif->mac[i] = mac[i];
         }
         mac_valid = TRUE;
-    } else {
+    } else if (tn_s2_addr_usable(nif->mac, nif->addr_bytes)) {
+        mac_valid = TRUE;
+    } else if (fac_valid) {
+        /* unconfigured unit (current address all-0): the spec's way to use
+         * the factory address is to pass DstAddr to S2_CONFIGINTERFACE.
+         * Emulated cards (WinUAE a2065) also filter unicast RX on it. */
         for (i = 0; i < nif->addr_bytes; i++) {
-            if (nif->mac[i] != 0x00 && nif->mac[i] != 0xFF) {
-                mac_valid = TRUE;
-                break;
-            }
+            nif->mac[i] = fac[i];
         }
+        mac_valid = TRUE;
     }
 
     if (!mac_valid && nif->addr_bytes == 6) {
-        /* 5.9: a fixed fallback collided between machines on one LAN.
-         * Locally administered unicast (02:...) with the low 3 bytes from
-         * tn_rand(), seeded from timer/EClock before tn_s2_online runs. */
+        /* 5.9: no current and no factory address. A fixed fallback collided
+         * between machines on one LAN: locally administered unicast (02:...)
+         * with the low 3 bytes from tn_rand(), seeded from timer/EClock
+         * before tn_s2_online runs. */
         ULONG rnd = (ULONG)LWIP_RAND();
         nif->mac[0] = 0x02;
         nif->mac[1] = 0x80;
@@ -273,12 +308,28 @@ TnS2Result tn_s2_online(TnSana2If *nif, const UBYTE *mac)
             io->ios2_WireError == S2WERR_IS_CONFIGURED) {
             /* TNET-060: on a daemon restart (stop/start without reboot) most
              * drivers answer BAD_STATE/IS_CONFIGURED because the unit kept
-             * our station address. Treat as success; the station address was
-             * already read back above via S2_GETSTATIONADDRESS. */
+             * its station address. Treat as success and adopt the address
+             * the unit actually runs with - nif->mac may hold a fallback
+             * picked above, which the card would not receive on. */
             tn_log(TN_LOG_BASIC, "tolunnet: S2_CONFIGINTERFACE: already configured (ok)\n");
+            io->ios2_Req.io_Command = S2_GETSTATIONADDRESS;
+            io->ios2_Req.io_Error   = 0;
+            DoIO((struct IORequest *)io);
+            if (io->ios2_Req.io_Error == 0 &&
+                tn_s2_addr_usable(io->ios2_SrcAddr, nif->addr_bytes)) {
+                for (i = 0; i < nif->addr_bytes; i++) {
+                    nif->mac[i] = io->ios2_SrcAddr[i];
+                }
+            }
         } else {
             tn_log_s2err("S2_CONFIGINTERFACE", io->ios2_Req.io_Error, io->ios2_WireError);
             return TN_S2_CONFIG_FAIL;
+        }
+    } else if (tn_s2_addr_usable(io->ios2_SrcAddr, nif->addr_bytes)) {
+        /* SANA-II: "The caller must check ios2_SrcAddr for the actual
+         * interface address after configuring the interface." */
+        for (i = 0; i < nif->addr_bytes; i++) {
+            nif->mac[i] = io->ios2_SrcAddr[i];
         }
     }
 
