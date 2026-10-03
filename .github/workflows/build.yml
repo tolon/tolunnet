@@ -2,12 +2,10 @@
 #
 # Two jobs on every push (no branch filter) + manual dispatch:
 #   host  — native gcc unit tests (make test-host, TAP output, sanitizers)
-#   amiga — cross-compile with amiga-gcc, package (LhA + Gotek ADF set,
-#           both read back byte for byte), upload artefacts
-#
-# Container: sebastianbergmann/amiga-gcc (Bebbo amiga-gcc). If the image is
-# ever unavailable, fall back to the AmigaPorts prebuilt (QUESTIONS.md) — do
-# not change the compiler flags.
+#   amiga — cross-compile with amiga-gcc 6.5 (the release toolchain, built
+#           from pinned commits by ci/build-toolchain.sh and cached),
+#           package (LhA + Gotek ADF set, both read back byte for byte),
+#           upload artefacts. Do not change the compiler flags.
 
 name: build
 
@@ -36,23 +34,41 @@ jobs:
 
   amiga:
     name: amiga-gcc build + package
-    runs-on: ubuntu-latest
-    container:
-      image: sebastianbergmann/amiga-gcc:latest
+    runs-on: ubuntu-24.04
+    env:
+      PREFIX: /opt/amiga
     steps:
       - uses: actions/checkout@v4
 
-      # 11ab item 5: make package calls several Python scripts; this
-      # container may ship without python3. Fail-visible either way.
-      - name: python3 guard (packaging scripts need it)
+      # The sebastianbergmann/amiga-gcc image is gone and AmigaPorts ships
+      # prebuilt GCC 16 only. Releases are built with amiga-gcc 6.5.0b, so
+      # CI builds that exact toolchain (every project pinned in
+      # ci/build-toolchain.sh) once and caches it; the key is the script's
+      # hash, so changing a pin rebuilds.
+      - name: Toolchain cache
+        id: toolchain
+        uses: actions/cache@v4
+        with:
+          path: /opt/amiga
+          key: amiga-gcc-6.5-${{ runner.os }}-${{ hashFiles('ci/build-toolchain.sh') }}
+
+      - name: Toolchain build deps
         run: |
-          python3 --version || { apt-get update && apt-get install -y python3; }
-          python3 --version
+          sudo apt-get update
+          sudo apt-get install -y make wget git gcc g++ lhasa libgmp-dev \
+            libmpfr-dev libmpc-dev flex bison gettext texinfo \
+            libncurses-dev autoconf rsync libreadline-dev python3-pip
+
+      - name: Build amiga-gcc 6.5 (cache miss only)
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        run: |
+          sudo mkdir -p "$PREFIX" && sudo chown "$USER" "$PREFIX"
+          ci/build-toolchain.sh
 
       - name: Toolchain sanity check
         run: |
-          which m68k-amigaos-gcc || { echo "m68k-amigaos-gcc not found in image"; exit 1; }
-          m68k-amigaos-gcc --version | head -1
+          echo "$PREFIX/bin" >> "$GITHUB_PATH"
+          "$PREFIX/bin/m68k-amigaos-gcc" --version | head -1
 
       - name: Build binaries (incl. SocketConformance)
         run: make all
@@ -62,8 +78,9 @@ jobs:
       # xdftool (amitools) is missing instead of skipping with a warning.
       - name: amitools (xdftool) for the ADF set
         run: |
-          python3 -m pip --version || { apt-get update && apt-get install -y python3-pip; }
-          python3 -m pip install amitools || python3 -m pip install --break-system-packages amitools
+          python3 -m pip install --user amitools || python3 -m pip install --user --break-system-packages amitools
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
           command -v xdftool
 
       - name: Package LhA + ADF set
