@@ -54,6 +54,24 @@ void tn_dns_cancel_for_base(TnDaemon *d, TnSocketBase *base)
     tn_dns_cancel_for_base2(d, base, 1);
 }
 
+/* Audit run-1: case-insensitive match of the callback's name against the
+ * recorded name. rec_name holds at most 63 chars; a record that was
+ * truncated (63 chars) matches on that prefix. */
+static int tn_dns_name_matches(const char *rec_name, const char *name)
+{
+    int j;
+    if (name == NULL) return 0;
+    for (j = 0; j < 63; j++) {
+        char a = rec_name[j];
+        char b = name[j];
+        if (a >= 'A' && a <= 'Z') a = (char)(a - 'A' + 'a');
+        if (b >= 'A' && b <= 'Z') b = (char)(b - 'A' + 'a');
+        if (a != b) return 0;
+        if (a == '\0') return 1;
+    }
+    return 1; /* both agree on the first 63 chars (truncated record) */
+}
+
 /* DNS callback from lwIP when asynchronous host lookup completes.
  * Non-static: the host TNET-150 test invokes it directly. */
 void tn_dns_found_cb(const char *name, const ip_addr_t *ipaddr, void *callback_arg)
@@ -69,9 +87,14 @@ void tn_dns_found_cb(const char *name, const ip_addr_t *ipaddr, void *callback_a
     /* TNET-150: only a tracked request may be completed. An untracked
      * imsg means the client timed out and abandoned it (the message may
      * already be freed) or the base closed and the request was cancelled
-     * — touch nothing. */
+     * — touch nothing.
+     * Audit run-1: the message pointer alone is not an identity — a
+     * blocking caller reuses its embedded TnIpcMsg, and lwIP keeps the
+     * callback of a cancelled request alive. Require the name to match
+     * too, so a stale answer for another name cannot complete this one. */
     for (i = 0; i < TN_DNS_PENDING_MAX; i++) {
-        if (d->dns_pending[i].in_use && d->dns_pending[i].imsg == imsg) {
+        if (d->dns_pending[i].in_use && d->dns_pending[i].imsg == imsg &&
+            tn_dns_name_matches(d->dns_pending[i].name, name)) {
             rec = &d->dns_pending[i];
             break;
         }

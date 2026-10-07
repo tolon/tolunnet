@@ -695,7 +695,14 @@ dns_compare_name(const char *query, struct pbuf *p, u16_t start_offset)
     } else {
       /* Not compressed name */
       while (n > 0) {
-        int c = pbuf_try_get_at(p, response_offset);
+        int c;
+        /* tolunnet audit run-1: never read past the end of query. A
+         * response label that continues after query's NUL (e.g. labels of
+         * zero bytes) used to walk off entry->name and the dns_table. */
+        if (*query == '\0') {
+          return 0xFFFF;
+        }
+        c = pbuf_try_get_at(p, response_offset);
         if (c < 0) {
           return 0xFFFF;
         }
@@ -710,7 +717,13 @@ dns_compare_name(const char *query, struct pbuf *p, u16_t start_offset)
         ++query;
         --n;
       }
-      ++query;
+      /* tolunnet audit run-1: a label must end exactly at a '.' or at the
+       * end of query; step over the '.' only, never over the NUL. */
+      if (*query == '.') {
+        ++query;
+      } else if (*query != '\0') {
+        return 0xFFFF;
+      }
     }
     n = pbuf_try_get_at(p, response_offset);
     if (n < 0) {
@@ -718,6 +731,10 @@ dns_compare_name(const char *query, struct pbuf *p, u16_t start_offset)
     }
   } while (n != 0);
 
+  /* tolunnet audit run-1: the whole query must have been matched */
+  if (*query != '\0') {
+    return 0xFFFF;
+  }
   if (response_offset == 0xFFFF) {
     /* would overflow */
     return 0xFFFF;

@@ -79,6 +79,7 @@ COMMON_OBJS = $(BUILD)/src/common/log.o $(BUILD)/src/common/log_format.o $(BUILD
               $(BUILD)/src/common/ipc_client.o $(BUILD)/src/common/http_url.o \
               $(BUILD)/src/common/errstr.o $(BUILD)/src/common/sockaddr_util.o \
               $(BUILD)/src/common/rawfmt.o $(BUILD)/src/common/nslookup_parse.o \
+              $(BUILD)/src/common/tn_csprng.o \
               $(BUILD)/src/task/timers.o
 SANA2_OBJS  = $(BUILD)/src/sana2/sana2_netif.o $(BUILD)/src/sana2/sana2_stubs.o $(BUILD)/src/sana2/buffers.o
 LIB_OBJS    = $(BUILD)/src/lib/lib_init.o $(BUILD)/src/lib/lib_vectors.o \
@@ -170,7 +171,8 @@ HOST_UNITS   = src/common/inet_parse.c src/common/config_text.c \
                src/common/nslookup_parse.c \
                tests/host/mock_lwip.c src/task/slot_table.c \
                src/task/route.c src/common/ifreader.c \
-               src/common/log_format.c src/task/timers.c
+               src/common/log_format.c src/task/timers.c \
+               src/common/tn_csprng.c
 HOST_TESTS   = $(wildcard tests/host/test_*.c)
 HOST_BINS    = $(patsubst tests/host/%.c,$(BUILD)/host/%,$(HOST_TESTS))
 

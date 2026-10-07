@@ -8,6 +8,7 @@
  */
 
 #include "timers.h"
+#include "../common/tn_csprng.h"
 
 #ifdef __AMIGA__
 #include "../common/log.h"
@@ -19,7 +20,11 @@ struct Device *TimerBase = NULL;
 static TnTimer *g_active_timer = NULL;
 #endif
 
-static uint32_t g_rand_state   = 0;
+/* Audit run-1: keyed, non-invertible generator replaces the old shared
+ * xorshift32 whose output was its full recoverable state. g_isn_key drives
+ * the RFC 6528 TCP ISN (tn_tcp_isn), keyed independently of the stream. */
+static TnCsprng g_rng;
+static uint8_t  g_isn_key[16];
 
 /* 32-bit Integer Hash (Murmur3 finalizer) */
 static inline uint32_t hash32(uint32_t x)
@@ -131,7 +136,6 @@ void tn_rand_init(TnTimer *tm, const UBYTE mac[6])
     struct timeval cur;
     struct EClockVal ev;
     ULONG chip_mem, fast_mem;
-    uint32_t seed = 0;
 
     cur.tv_secs = 0;
     cur.tv_micro = 0;
@@ -153,27 +157,44 @@ void tn_rand_init(TnTimer *tm, const UBYTE mac[6])
     chip_mem = AvailMem(MEMF_CHIP);
     fast_mem = AvailMem(MEMF_FAST | MEMF_PUBLIC);
 
-    /* Fold hardware entropy into seed */
-    seed ^= hash32(cur.tv_secs);
-    seed ^= hash32(cur.tv_micro ^ 0x9e3779b9UL);
-    seed ^= hash32(ev.ev_lo);
-    seed ^= hash32(chip_mem);
-    seed ^= hash32(fast_mem);
+    /* Audit run-1: spread the hardware entropy across a 32-byte key pool
+     * (one 16-byte key for the random stream, one for the ISN) instead of
+     * folding everything into a single recoverable 32-bit word. The key
+     * strength is still bounded by what this platform can gather — see
+     * the entropy words below — but one observed output no longer reveals
+     * the key or any future value. */
+    {
+        uint32_t w[8];
+        uint8_t key[32];
+        int i;
+        uint32_t macw0 = 0, macw1 = 0;
 
-    if (mac != NULL) {
-        uint32_t mac_hi = ((uint32_t)mac[0] << 24) | ((uint32_t)mac[1] << 16) |
-                          ((uint32_t)mac[2] << 8)  | (uint32_t)mac[3];
-        uint32_t mac_lo = ((uint32_t)mac[4] << 8)  | (uint32_t)mac[5];
-        seed ^= hash32(mac_hi);
-        seed ^= hash32(mac_lo);
+        if (mac != NULL) {
+            macw0 = ((uint32_t)mac[0] << 24) | ((uint32_t)mac[1] << 16) |
+                    ((uint32_t)mac[2] << 8)  | (uint32_t)mac[3];
+            macw1 = ((uint32_t)mac[4] << 8)  | (uint32_t)mac[5];
+        }
+        w[0] = hash32(cur.tv_secs);
+        w[1] = hash32(cur.tv_micro ^ 0x9e3779b9UL);
+        w[2] = hash32(ev.ev_lo);
+        w[3] = hash32(ev.ev_hi ^ 0x85ebca6bUL);
+        w[4] = hash32(chip_mem);
+        w[5] = hash32(fast_mem);
+        w[6] = hash32(macw0);
+        w[7] = hash32(macw1 ^ 0xc2b2ae35UL);
+        for (i = 0; i < 8; i++) {
+            key[i * 4 + 0] = (uint8_t)(w[i] >> 24);
+            key[i * 4 + 1] = (uint8_t)(w[i] >> 16);
+            key[i * 4 + 2] = (uint8_t)(w[i] >> 8);
+            key[i * 4 + 3] = (uint8_t)(w[i]);
+        }
+        tn_csprng_init(&g_rng, key);
+        for (i = 0; i < 16; i++) {
+            g_isn_key[i] = key[16 + i];
+        }
     }
-
-    if (seed == 0) {
-        seed = 0xa5a5a5a5UL;
-    }
-
-    g_rand_state = seed;
-    tn_logf(TN_LOG_VERBOSE, "tolunnet: PRNG entropy pool initialized (seed: 0x%08lx)\n", (ULONG)g_rand_state);
+    /* Do not log key material. */
+    tn_logf(TN_LOG_VERBOSE, "tolunnet: PRNG entropy pool initialized\n");
 }
 
 void tn_timer_arm(TnTimer *tm, ULONG microsecs)
@@ -298,14 +319,16 @@ uint32_t sys_now(void)
 }
 #endif
 
-/* Fast 32-bit xorshift PRNG */
+/* Audit run-1: keyed, non-invertible stream (SipHash over a counter).
+ * Replaces the xorshift32 whose output equalled its recoverable state. */
 uint32_t tn_rand(void)
 {
-    uint32_t x = g_rand_state;
-    if (x == 0) x = 0xdeadbeefUL;
-    x ^= x << 13;
-    x ^= x >> 17;
-    x ^= x << 5;
-    g_rand_state = x;
-    return x;
+    return tn_csprng_next(&g_rng);
+}
+
+/* RFC 6528 TCP ISN hook (LWIP_HOOK_TCP_ISN via include/tn_lwip_hooks.h).
+ * Keyed hash of the connection 4-tuple plus a coarse monotonic clock. */
+uint32_t tn_tcp_isn(uint32_t laddr, uint16_t lport, uint32_t raddr, uint16_t rport)
+{
+    return tn_tcp_isn_compute(g_isn_key, laddr, lport, raddr, rport, sys_now());
 }

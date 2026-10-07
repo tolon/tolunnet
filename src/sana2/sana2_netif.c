@@ -66,6 +66,11 @@ void tn_log_s2err(const char *step, LONG err, LONG wire)
 extern void tn_s2_copy_to_buff_asm(void);
 extern void tn_s2_copy_from_buff_asm(void);
 
+/* TNET-audit run-1: RX buffer capacity read by the CopyToBuff asm hook to
+ * clamp an oversize driver-supplied length. Set in tn_s2_arm_reads; 0 means
+ * "not initialised yet" and the hook does not clamp. */
+ULONG tn_s2_rx_cap = 0;
+
 BOOL tn_copy_to_buff_c(APTR dst, APTR src, ULONG len)
 {
     if (dst != NULL && src != NULL && len > 0) {
@@ -585,6 +590,11 @@ TnS2Result tn_s2_arm_reads(TnSana2If *nif)
 
     buf_size = nif->mtu + 32;
     if (buf_size < 1600) buf_size = 1600;
+
+    /* TNET-audit run-1: publish the RX buffer capacity to the CopyToBuff
+     * asm hook so it clamps a driver-supplied length that exceeds it,
+     * preventing an oversize received frame from overflowing the buffer. */
+    tn_s2_rx_cap = buf_size;
 
     nif->read_ios = (struct IOSana2Req **)AllocVec(
         sizeof(struct IOSana2Req *) * TN_S2_NREADS, MEMF_CLEAR | MEMF_PUBLIC);

@@ -1693,7 +1693,10 @@ decode_next:
         }
       }
     }
-    if (offset >= q->len) {
+    /* tolunnet audit run-1: one option may skip across more than one
+     * (small) pbuf of a reassembled chain - advance until offset lies
+     * inside the current pbuf, as the initial skip loop above does. */
+    while (offset >= q->len) {
       offset = (u16_t)(offset - q->len);
       offset_max = (u16_t)(offset_max - q->len);
       if (offset < offset_max) {

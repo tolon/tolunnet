@@ -1087,6 +1087,50 @@ TN_TEST(net_udp_recv_clones_to_pbuf_ram_frees_incoming_pool_pbuf)
     tn_slot_free(&g_daemon, slot_idx);
 }
 
+/* Audit run-1: datagram rx queues are bounded by BYTES against SO_RCVBUF
+ * (opt_rcvbuf), not only by packet count — PBUF_RAM clones come from the
+ * single shared lwIP heap. The first datagram on an empty queue is always
+ * taken so one large datagram is never undeliverable. */
+TN_TEST(net_udp_recv_bounded_by_rcvbuf_bytes)
+{
+    TnSocketBase base;
+    int slot_idx = -1;
+    ip_addr_t src_ip;
+    TnSocketSlot *slot;
+    int i;
+
+    mock_lwip_reset();
+    tn_slot_table_init(&g_daemon);
+    TN_TEST_BASE_INIT(base);
+    slot = tn_slot_alloc(&g_daemon, &base, NULL, AF_INET, SOCK_DGRAM, IPPROTO_UDP, &slot_idx);
+    TN_ASSERT_TRUE(slot != NULL);
+    slot->opt_rcvbuf = 100;
+    src_ip.addr = 0x0202000A;
+
+    /* 60 + 60 > 100: the second datagram is dropped */
+    for (i = 0; i < 2; i++) {
+        tn_udp_recv_cb((void *)(intptr_t)slot_idx, NULL, mock_pbuf_alloc(60), &src_ip, 5353);
+    }
+    TN_ASSERT_EQ(slot->rx_count, 1u);
+
+    /* a datagram larger than rcvbuf is still accepted on an empty queue */
+    tn_rx_queue_drain(slot);
+    tn_udp_recv_cb((void *)(intptr_t)slot_idx, NULL, mock_pbuf_alloc(150), &src_ip, 5353);
+    TN_ASSERT_EQ(slot->rx_count, 1u);
+
+    /* raw sockets get the same bound */
+    tn_rx_queue_drain(slot);
+    for (i = 0; i < 2; i++) {
+        struct pbuf *p = mock_pbuf_alloc(60);
+        tn_raw_recv_cb((void *)(intptr_t)slot_idx, NULL, p, &src_ip);
+        pbuf_free(p); /* raw callback returning 0 leaves p to lwIP */
+    }
+    TN_ASSERT_EQ(slot->rx_count, 1u);
+
+    tn_slot_free(&g_daemon, slot_idx);
+    mock_lwip_reset();
+}
+
 TN_TEST(net_sys_now_eclock_monotonic_conversion)
 {
     struct EClockVal boot = {0, 0}, cur = {0, 0};
@@ -2282,6 +2326,44 @@ TN_TEST(net_tcp_fin_close_wait_keeps_pcb)
     mock_lwip_reset();
 }
 
+/* Audit run-1: an established TCP socket must not keep the incoming
+ * PBUF_POOL pbuf in its rx queue (the per-socket cap equals the pool
+ * size, so one slow reader could pin the whole pool the SANA-II driver
+ * receives into). Like the UDP and pre-accept paths it queues a PBUF_RAM
+ * clone and releases the original. */
+TN_TEST(net_tcp_recv_clones_to_pbuf_ram_frees_incoming)
+{
+    TnSocketBase base;
+    struct tcp_pcb pcb;
+    int idx = -1;
+    int frees_before;
+    struct pbuf *incoming;
+    TN_TEST_BASE_INIT(base);
+
+    TnSocketSlot *slot = tq_g_tcp_slot(&base, &pcb, &idx);
+    TN_ASSERT_TRUE(slot != NULL);
+    mock_lwip_reset();
+    pcb.state = ESTABLISHED;
+
+    incoming = mock_pbuf_alloc(8);
+    TN_ASSERT_TRUE(incoming != NULL);
+    memcpy(incoming->payload, "TCPDATA!", 8);
+    frees_before = mock_lwip_call_count(MOCK_CALL_PBUF_FREE);
+
+    TN_ASSERT_EQ(tn_tcp_recv_cb((void *)(intptr_t)idx, &pcb, incoming, ERR_OK), ERR_OK);
+
+    TN_ASSERT_EQ(slot->rx_count, 1u);
+    TN_ASSERT_TRUE(slot->rx_head != NULL);
+    TN_ASSERT_TRUE(slot->rx_head->p != incoming);              /* a clone is queued */
+    TN_ASSERT_EQ(mock_lwip_call_count(MOCK_CALL_PBUF_FREE), frees_before + 1); /* original released */
+    TN_ASSERT_EQ((int)slot->rx_head->p->tot_len, 8);
+    TN_ASSERT_TRUE(memcmp(slot->rx_head->p->payload, "TCPDATA!", 8) == 0);
+
+    tn_slot_free(&g_daemon, idx);
+    tn_selector_table_free(&g_daemon);
+    mock_lwip_reset();
+}
+
 /* TNET-159 (4.2 remainder): a multi-iovec TCP sendmsg on a blocking
  * socket parks like send() and resumes mid-iovec from the sent callback;
  * non-blocking keeps the short count / EWOULDBLOCK. */
@@ -2485,6 +2567,7 @@ int main(void)
     TN_TEST_RUN(net_tcp_shutdown_semantics);
     TN_TEST_RUN(net_recv_65536_clamped_not_truncated_to_zero);
     TN_TEST_RUN(net_udp_recv_clones_to_pbuf_ram_frees_incoming_pool_pbuf);
+    TN_TEST_RUN(net_udp_recv_bounded_by_rcvbuf_bytes);
     TN_TEST_RUN(net_sys_now_eclock_monotonic_conversion);
     TN_TEST_RUN(net_tcp_send_nonblocking_ewouldblock);
     TN_TEST_RUN(net_tcp_send_blocking_parks_and_resumes);
@@ -2498,6 +2581,7 @@ int main(void)
     TN_TEST_RUN(net_waitselect_nfds_clamped);
     TN_TEST_RUN(net_tcp_shut_wr_fin_detaches_pcb);
     TN_TEST_RUN(net_tcp_fin_close_wait_keeps_pcb);
+    TN_TEST_RUN(net_tcp_recv_clones_to_pbuf_ram_frees_incoming);
     TN_TEST_RUN(net_tcp_sendmsg_multi_iovec_blocks);
     TN_TEST_RUN(net_client_structs_at_odd_addresses);
 

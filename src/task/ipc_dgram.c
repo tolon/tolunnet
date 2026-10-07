@@ -33,6 +33,23 @@ void tn_store_client_sockaddr(void *addr, socklen_t *addrlen, u16_t port_host, u
     memcpy(addrlen, &full, sizeof(full));
 }
 
+/* Audit run-1: bound a datagram rx queue by BYTES against SO_RCVBUF
+ * (opt_rcvbuf), like the pre-accept TCP queue. The clones come from the
+ * one shared lwIP heap (MEM_SIZE), so a count-only cap let a single unread
+ * socket hold most of it. An empty queue always takes one datagram, so a
+ * datagram larger than rcvbuf is still deliverable. */
+static BOOL tn_dgram_rcvbuf_full(const TnSocketSlot *slot, const struct pbuf *p)
+{
+    ULONG queued = 0;
+    const TnRxPacket *walk;
+
+    if (slot->opt_rcvbuf == 0 || slot->rx_head == NULL) return FALSE;
+    for (walk = slot->rx_head; walk != NULL; walk = walk->next) {
+        if (walk->p != NULL) queued += walk->p->tot_len;
+    }
+    return (queued + p->tot_len > (ULONG)slot->opt_rcvbuf) ? TRUE : FALSE;
+}
+
 void tn_udp_recv_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p,
                    const ip_addr_t *addr, u16_t port)
 {
@@ -52,7 +69,7 @@ void tn_udp_recv_cb(void *arg, struct udp_pcb *pcb, struct pbuf *p,
         return;
     }
 
-    if (slot->rx_count >= TN_MAX_RX_QUEUE_PER_SOCKET) {
+    if (slot->rx_count >= TN_MAX_RX_QUEUE_PER_SOCKET || tn_dgram_rcvbuf_full(slot, p)) {
         pbuf_free(p);
         return;
     }
@@ -95,7 +112,7 @@ u8_t tn_raw_recv_cb(void *arg, struct raw_pcb *pcb, struct pbuf *p,
         return 0;
     }
 
-    if (slot->rx_count >= TN_MAX_RX_QUEUE_PER_SOCKET) {
+    if (slot->rx_count >= TN_MAX_RX_QUEUE_PER_SOCKET || tn_dgram_rcvbuf_full(slot, p)) {
         return 0;
     }
 

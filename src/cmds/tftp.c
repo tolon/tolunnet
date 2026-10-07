@@ -83,10 +83,14 @@ static LONG tftp_elapsed(LONG since)
 }
 
 /* Wait up to `ticks` (1/50 s) for one packet, dropping packets from
- * foreign transfer IDs. Returns the byte count, 0 on timeout or a
- * dropped packet, -1 on Ctrl-C. */
+ * foreign transfer IDs. Before the TID is known (tid == NULL) the first
+ * reply must come from the server's IP (`srv`): RFC 1350 lets the server
+ * pick a new port, not a new address, so a reply from any other host is
+ * dropped instead of becoming the transfer peer (audit run-1). Returns the
+ * byte count, 0 on timeout or a dropped packet, -1 on Ctrl-C. */
 static LONG tftp_wait_packet(LONG fd, UBYTE *pkt, LONG maxlen,
                              const struct sockaddr_in *tid,
+                             const struct sockaddr_in *srv,
                              struct sockaddr_in *from, LONG ticks)
 {
     fd_set r;
@@ -102,6 +106,8 @@ static LONG tftp_wait_packet(LONG fd, UBYTE *pkt, LONG maxlen,
     got = tn_call_recvfrom(fd, pkt, maxlen, 0, (struct sockaddr *)from, &fromlen);
     if (got <= 0) return 0;
     if (tid != NULL && !tftp_addr_eq(from, tid)) return 0; /* foreign TID: drop */
+    if (tid == NULL && srv != NULL &&
+        from->sin_addr.s_addr != srv->sin_addr.s_addr) return 0; /* not the server */
     if (tn_cmd_check_ctrlc()) return -1;
     return got;
 }
@@ -186,7 +192,7 @@ int main(int argc, char **argv)
         for (tries = 0; tries < RETRIES && got <= 0; tries++) {
             if (tn_cmd_check_ctrlc()) { rc = TN_CMD_WARN; goto out; }
             tn_call_sendto(fd, pkt, pos, 0, (struct sockaddr *)&peer, sizeof(peer));
-            got = tftp_wait_packet(fd, rx, sizeof(rx), NULL, &from, TIMEOUT_TICKS);
+            got = tftp_wait_packet(fd, rx, sizeof(rx), NULL, &peer, &from, TIMEOUT_TICKS);
             if (got < 0) { rc = TN_CMD_WARN; goto out; }
         }
         if (got <= 0) {
@@ -236,7 +242,7 @@ int main(int argc, char **argv)
             tries = 0;
             for (;;) {
                 if (tn_cmd_check_ctrlc()) { rc = TN_CMD_WARN; break; }
-                got = tftp_wait_packet(fd, rx, sizeof(rx), &tid, &from, TIMEOUT_TICKS);
+                got = tftp_wait_packet(fd, rx, sizeof(rx), &tid, NULL, &from, TIMEOUT_TICKS);
                 if (got < 0) { rc = TN_CMD_WARN; break; }
                 if (got >= 4) {
                     if (rx[1] == OP_ERROR) { rc = tftp_report_error(rx, got); break; }
@@ -276,7 +282,7 @@ int main(int argc, char **argv)
         for (tries = 0; tries < RETRIES && got <= 0; tries++) {
             if (tn_cmd_check_ctrlc()) { rc = TN_CMD_WARN; break; }
             tn_call_sendto(fd, pkt, pos, 0, (struct sockaddr *)&peer, sizeof(peer));
-            got = tftp_wait_packet(fd, rx, sizeof(rx), NULL, &from, TIMEOUT_TICKS);
+            got = tftp_wait_packet(fd, rx, sizeof(rx), NULL, &peer, &from, TIMEOUT_TICKS);
             if (got < 0) { rc = TN_CMD_WARN; break; }
         }
         if (rc != TN_CMD_OK) { Close(fh); goto out; }
@@ -327,7 +333,7 @@ int main(int argc, char **argv)
                 }
                 el = tftp_elapsed(sent_at);
                 if (el < TIMEOUT_TICKS) {
-                    got = tftp_wait_packet(fd, rx, sizeof(rx), &tid, &from, TIMEOUT_TICKS - el);
+                    got = tftp_wait_packet(fd, rx, sizeof(rx), &tid, NULL, &from, TIMEOUT_TICKS - el);
                     if (got < 0) { rc = TN_CMD_WARN; break; }
                     if (got >= 4) {
                         if (rx[1] == OP_ERROR) { rc = tftp_report_error(rx, got); break; }

@@ -202,7 +202,7 @@ AmigaOS has no memory protection, so one unaligned access or use-after-free ends
 ### 1. Host unit tests (`make test-host`)
 Every `tests/host/test_*.c` program (the Makefile globs them; `ci/check_release_consistency.py` keeps the list below in sync) is built with the host compiler under AddressSanitizer and UndefinedBehaviorSanitizer (`-Werror`). They compile against the real project headers, with a mock lwIP/Exec layer underneath:
 
-`test_config`, `test_constants`, `test_dns_pending`, `test_errstr`, `test_fdset`, `test_http`, `test_ifreader`, `test_inet_addr`, `test_ipc`, `test_ipc_dispatch`, `test_log_format`, `test_lvo_table`, `test_manifest_match`, `test_nslookup_parse`, `test_queues`, `test_route`, `test_sbtc`, `test_slot_table`, `test_sockaddr`, `test_sockopt`, `test_stats`, `test_usergroup`, `test_wizard_config`, `test_wrap`.
+`test_config`, `test_constants`, `test_csprng`, `test_dns_pending`, `test_errstr`, `test_fdset`, `test_http`, `test_ifreader`, `test_inet_addr`, `test_ipc`, `test_ipc_dispatch`, `test_log_format`, `test_lvo_table`, `test_manifest_match`, `test_nslookup_parse`, `test_queues`, `test_route`, `test_sbtc`, `test_slot_table`, `test_sockaddr`, `test_sockopt`, `test_stats`, `test_usergroup`, `test_wizard_config`, `test_wrap`.
 
 After the tests, `make test-host` runs `python-checks`: the LVO table generators must be up to date, icon formats are validated, and a gate checks the `Forbid()`/`Disable()` regions and a lint bans `(T *)(void *)` hops and typed dereferences of client pointers outside a reviewed waiver list (`scripts/check-cast-known.txt`).
 

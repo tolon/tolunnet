@@ -242,12 +242,89 @@ TN_TEST(dns_pending_table_full_and_same_name_eagain)
     }
 }
 
+/* Audit run-1: a cancelled lookup leaves its lwIP request (and callback_arg)
+ * alive. A blocking caller reuses the same embedded TnIpcMsg for its next
+ * lookup, so the stale answer for the OLD name must not complete the NEW
+ * request. */
+TN_TEST(dns_stale_callback_for_other_name_ignored)
+{
+    TnSocketBase base;
+    TnIpcMsg *imsg = (TnIpcMsg *)calloc(1, sizeof(TnIpcMsg));
+    dns_found_callback old_cb;
+    void *old_arg;
+    ip_addr_t ip;
+    int rc;
+
+    reset_daemon();
+    memset(&base, 0, sizeof(base));
+    imsg->socket_base = &base;
+    imsg->ptrs[0] = (APTR)"slow.example";
+    s_dns_ret = ERR_INPROGRESS;
+
+    rc = tn_ipc_cmd_gethostbyname(&g_daemon, imsg, NULL);
+    TN_ASSERT_EQ(rc, 1);
+    old_cb = s_dns_cb;
+    old_arg = s_dns_cb_arg;
+
+    /* cancel (break/close) — lwIP still holds old_cb/old_arg */
+    tn_dns_cancel_for_base2(&g_daemon, &base, 0);
+    TN_ASSERT_EQ((int)g_daemon.dns_pending_count, 0);
+
+    /* same message, different name */
+    imsg->ptrs[0] = (APTR)"bank.example";
+    rc = tn_ipc_cmd_gethostbyname(&g_daemon, imsg, NULL);
+    TN_ASSERT_EQ(rc, 1);
+    TN_ASSERT_EQ((int)g_daemon.dns_pending_count, 1);
+
+    /* stale answer for the old name arrives first */
+    ip.addr = 0x0B0B0B0BUL;
+    old_cb("slow.example", &ip, old_arg);
+    TN_ASSERT_EQ(reply_count(), 0);                 /* new request NOT completed */
+    TN_ASSERT_EQ((int)g_daemon.dns_pending_count, 1);
+    TN_ASSERT_EQ((int)g_daemon.dns_late_replies, 1);
+
+    /* genuine answer for the new name still completes it */
+    ip.addr = 0x01020304UL;
+    s_dns_cb("bank.example", &ip, s_dns_cb_arg);
+    TN_ASSERT_EQ(reply_count(), 1);
+    TN_ASSERT_EQ(imsg->err_no, 0);
+    TN_ASSERT_EQ((int)base.hostent_addr, 0x01020304);
+    TN_ASSERT_STREQ(base.hostent_name, "bank.example");
+
+    free(imsg);
+}
+
+/* Name comparison is case-insensitive (DNS), so a legitimate answer whose
+ * name differs only in case still completes the request. */
+TN_TEST(dns_callback_name_match_is_case_insensitive)
+{
+    TnSocketBase base;
+    TnIpcMsg *imsg = (TnIpcMsg *)calloc(1, sizeof(TnIpcMsg));
+    ip_addr_t ip;
+
+    reset_daemon();
+    memset(&base, 0, sizeof(base));
+    imsg->socket_base = &base;
+    imsg->ptrs[0] = (APTR)"Host.Example";
+    s_dns_ret = ERR_INPROGRESS;
+    TN_ASSERT_EQ(tn_ipc_cmd_gethostbyname(&g_daemon, imsg, NULL), 1);
+
+    ip.addr = 0x0A000202UL;
+    s_dns_cb("host.example", &ip, s_dns_cb_arg);
+    TN_ASSERT_EQ(reply_count(), 1);
+    TN_ASSERT_EQ(imsg->err_no, 0);
+
+    free(imsg);
+}
+
 int main(void)
 {
     TN_TEST_RUN(dns_defer_registers_and_cancel_replies);
     TN_TEST_RUN(dns_late_callback_foreign_message_ignored);
     TN_TEST_RUN(dns_defer_completion_fills_hostent);
     TN_TEST_RUN(dns_pending_table_full_and_same_name_eagain);
+    TN_TEST_RUN(dns_stale_callback_for_other_name_ignored);
+    TN_TEST_RUN(dns_callback_name_match_is_case_insensitive);
     TN_TEST_PLAN();
     return tn_test_failures();
 }

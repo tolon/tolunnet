@@ -6,7 +6,7 @@
  * - Broadcast/multicast ping suppression (Smurf attack defense).
  * - Comprehensive layer-3 and layer-4 checksum enforcement.
  * - IP fragment reassembly age & buffer limits (Teardrop attack defense).
- * - TCP listen backlog & ISN randomization (SYN flood & hijacking defense).
+ * - TCP listen backlog & RFC 6528 keyed ISN (SYN flood & hijacking defense).
  */
 #ifndef LWIP_LWIPOPTS_H
 #define LWIP_LWIPOPTS_H
@@ -143,5 +143,10 @@ struct netif *tn_route_hook_src(const struct ip4_addr *src, const struct ip4_add
 const struct ip4_addr *tn_route_gw_get(struct netif *netif, const struct ip4_addr *ipaddr);
 #define LWIP_HOOK_IP4_ROUTE_SRC(src, dest) tn_route_hook_src((src), (dest))
 #define LWIP_HOOK_ETHARP_GET_GW(netif, ipaddr) tn_route_gw_get((netif), (ipaddr))
+
+/* Audit run-1: RFC 6528 TCP ISN. The hook body needs lwIP types, so both
+ * LWIP_HOOK_TCP_ISN and its prototype live in this header, which lwIP
+ * includes (through LWIP_HOOK_FILENAME) after those types exist. */
+#define LWIP_HOOK_FILENAME "tn_lwip_hooks.h"
 
 #endif /* LWIP_LWIPOPTS_H */

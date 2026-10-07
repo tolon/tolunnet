@@ -156,6 +156,33 @@ static void tn_tcp_detach_finished(TnSocketSlot *slot, struct tcp_pcb *pcb)
     tn_slot_reply_send(slot, EPIPE, 1);
 }
 
+/* Audit run-1: queue a PBUF_RAM clone of an incoming segment and release
+ * the original. Holding the driver's PBUF_POOL pbufs here let one slow
+ * reader pin the whole pool (cap 32 == PBUF_POOL_SIZE) and stall all RX.
+ * Returns 0 when queued (p has been freed) or -1 with p untouched, so the
+ * caller can still hand p back to lwIP (ERR_MEM) or drop it. */
+static int tn_tcp_queue_clone(TnSocketSlot *slot, struct pbuf *p, BOOL capped)
+{
+    struct pbuf *q;
+    int rc;
+
+    if (capped && slot->rx_count >= TN_MAX_RX_QUEUE_PER_SOCKET) {
+        return -1;
+    }
+    q = pbuf_clone(PBUF_RAW, PBUF_RAM, p);
+    if (q == NULL) {
+        return -1;
+    }
+    rc = capped ? tn_rx_queue_push(slot, q, NULL, 0)
+                : tn_rx_queue_push_nocap(slot, q, NULL, 0);
+    if (rc != 0) {
+        pbuf_free(q);
+        return -1;
+    }
+    pbuf_free(p);
+    return 0;
+}
+
 err_t tn_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 {
     int slot_idx = (int)(intptr_t)arg;
@@ -197,13 +224,13 @@ err_t tn_tcp_recv_cb(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
         return ERR_OK;
     }
 
-    if (tn_rx_queue_push(slot, p, NULL, 0) != 0) {
+    if (tn_tcp_queue_clone(slot, p, TRUE) != 0) {
         /* TNET-156: in CLOSING/TIME_WAIT lwIP never redelivers refused
          * data (tcp_fasttmr walks active pcbs only) and would park the
          * FIN on it, so the EOF callback never came. Take it past the
          * cap; drop only when even that fails. */
         if (tn_tcp_pcb_finished(pcb)) {
-            if (tn_rx_queue_push_nocap(slot, p, NULL, 0) != 0) {
+            if (tn_tcp_queue_clone(slot, p, FALSE) != 0) {
                 tn_logf(TN_LOG_BASIC, "tolunnet: tcp slot=%d: %u final bytes dropped (no memory)\n",
                         slot_idx, (unsigned)p->tot_len);
                 pbuf_free(p);
