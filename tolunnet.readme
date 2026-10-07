@@ -2,7 +2,7 @@ Short:        TCP/IP stack & bsdsocket.library v4.1 runtime, AmigaOS 3.0+
 Author:       Ismail Ozturk (tolon)
 Uploader:     tolon
 Type:         comm/tcp
-Version:      1.2.0-rc5
+Version:      1.2.0-rc6
 Architecture: m68k-amigaos >= 3.0.0
 
 ==============================================================================

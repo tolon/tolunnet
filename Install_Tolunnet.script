@@ -11,7 +11,7 @@
 ;BEGIN GENERATED-WELCOME (scripts/gen_installer.py - do not edit;
 ; the version comes from include/version.h)
 (welcome
-  "Welcome to the tolunnet 1.2.0-rc5 Installation.\n\nThe tolunnet package installs a TCP/IP stack and bsdsocket.library v4.1 runtime for AmigaOS 3.0 or newer on 68000-class Amigas.\n\nAuthor: Ismail Ozturk (tolon)\n"
+  "Welcome to the tolunnet 1.2.0-rc6 Installation.\n\nThe tolunnet package installs a TCP/IP stack and bsdsocket.library v4.1 runtime for AmigaOS 3.0 or newer on 68000-class Amigas.\n\nAuthor: Ismail Ozturk (tolon)\n"
 )
 ; 11ab item 2b: refuse to run on anything older than OS 3.0.
 ; 11ac item 1: Installer has no infix operators - shiftleft, not <<.

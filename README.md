@@ -6,10 +6,10 @@
 
 ## Pre-release — testers wanted
 
-**1.2.0-rc5 is a pre-release.** tolunnet is a hobby project, written by one person for the pleasure of keeping 40-year-old machines useful. It is verified in an emulator (WinUAE, Workbench 3.0, A1200 and plain 68000 profiles) and by host unit tests, but it has **not yet been tried on real hardware**, and the Installer / two-disk Gotek path has never run on a real Amiga. That is where you come in.
+**1.2.0-rc6 is a pre-release.** tolunnet is a hobby project, written by one person for the pleasure of keeping 40-year-old machines useful. It is verified in an emulator (WinUAE, Workbench 3.0, A1200 and plain 68000 profiles) and by host unit tests, but it has **not yet been tried on real hardware**, and the Installer / two-disk Gotek path has never run on a real Amiga. That is where you come in.
 
 - **Try it** on a PiStorm, an accelerated Amiga, a CF/HD setup or through a Gotek, and tell us what happens — working or not.
-- **Follow the checklist** in [docs/MANUAL-TEST-rc5.md](docs/MANUAL-TEST-rc5.md) (about 20 minutes) and report back with photos if you can.
+- **Follow the checklist** in [docs/MANUAL-TEST-rc6.md](docs/MANUAL-TEST-rc6.md) (about 20 minutes) and report back with photos if you can.
 - **Report** via GitHub Issues: your Amiga model, CPU/accelerator, Kickstart/Workbench version, network card or SANA-II driver, what you did and what you saw. Screenshots of the Setup wizard or the Preferences window are very welcome.
 - Always **keep a backup** of `S:User-Startup` and your current TCP/IP stack. The installer writes an undo script (`S:tolunnet-undo`), and the default Installer mode is *pretend* (nothing is written until you choose to). The undo never copies a backup over a live `S:User-Startup`: it leaves the tolunnet block there (harmless once `C:tolunnet` is gone; remove it by hand) and keeps the pre-install copy as `S:User-Startup.tolunnet-old`.
 
@@ -266,7 +266,7 @@ Requirements: AmigaOS 3.0+, 68000 or higher, about 1.2 MB free for the unpacked 
    `Execute tolunnet1:Install_From_Floppies Work:tolunnet`
    The script prints `tolunnet two-disk install: copying disk 1 ...`, then `Disk 1 copied. Insert disk 2 (tolunnet2) now` - select disk 2 on the Gotek; DOS asks for the `tolunnet2` volume itself if it is not mounted. After disk 2 it prints `Both disks copied`.
 3. The full package is now in `Work:tolunnet`; start the Installer from there:
-   `CD Work:tolunnet` then `Installer Install_Tolunnet`. Add the `NORUN` switch to skip the automatic Installer start. This script is shell-only: double-clicking it does not work. Full walkthrough: [docs/MANUAL-TEST-rc5.md](docs/MANUAL-TEST-rc5.md).
+   `CD Work:tolunnet` then `Installer Install_Tolunnet`. Add the `NORUN` switch to skip the automatic Installer start. This script is shell-only: double-clicking it does not work. Full walkthrough: [docs/MANUAL-TEST-rc6.md](docs/MANUAL-TEST-rc6.md).
    **Emulator-test status: UNTESTED** - the real Installer opens
    requesters (script error / welcome) that a headless bench cannot
    answer, so its pretend run has never completed in the emulator

@@ -1,11 +1,11 @@
-# tolunnet 1.2.0-rc5 — owner manual-test card
+# tolunnet 1.2.0-rc6 — owner manual-test card
 
 Plain checklist. Real Amiga (OS 3.0+, 68000+), Gotek or floppies.
 Photograph every screen asked about; report pass/fail per line.
 
 ## 1. Gotek install (two disks)
 
-- [ ] Copy `tolunnet-1.2.0-rc5-disk1.adf` and `disk2.adf` from the GitHub release page to the USB stick.
+- [ ] Copy `tolunnet-1.2.0-rc6-disk1.adf` and `disk2.adf` from the GitHub release page to the USB stick.
 - [ ] Shell, disk 1 in DF0: `Execute tolunnet1:Install_From_Floppies Work:tolunnet NORUN`
 - [ ] Expected: `... copying disk 1 to Work:tolunnet ...`, then
       `Disk 1 copied. Insert disk 2 (tolunnet2) now`.

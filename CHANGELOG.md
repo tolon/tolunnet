@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.2.0-rc6 (2026-10-07)
+
+### Security
+
+Fixes from the run-1 security audit (host ASan/UBSan tests, sandbox
+harnesses, m68k cross-build, and a headless WinUAE bench on A1200/68020 and
+A600/68000: SocketConformance core 112/112 both legs, bsdsocktest within
+gate, net TODO 0).
+
+- **lwIP `dns_compare_name()` out-of-bounds read** (vendored): a crafted DNS
+  response whose question name continued past the queried name walked the
+  compare pointer past `entry->name` and the static `dns_table`. The compare
+  now stops at the end of the queried name and never steps over its
+  terminator. Upstream-generic.
+- **lwIP `dhcp_parse_reply()` out-of-bounds read** (vendored): an option skip
+  that spanned more than one pbuf of a reassembled reply read past the
+  current pbuf. The advance now loops across chained pbufs. Upstream-generic.
+- **Predictable TCP ISN**: initial sequence numbers came from lwIP's default
+  counter (the documented randomization was never wired). Replaced with an
+  RFC 6528 keyed ISN via `LWIP_HOOK_TCP_ISN`.
+- **Weak shared PRNG**: `tn_rand()` was one invertible xorshift32 whose output
+  was its full state, so one observed DNS transaction id/port revealed future
+  values. Replaced with a keyed, non-invertible SipHash-2-4 stream
+  (`src/common/tn_csprng.c`); DNS id/port, DHCP xid and ephemeral ports no
+  longer leak the generator.
+- **DNS reply mis-binding**: a late answer for a cancelled `gethostbyname`
+  could complete a different later lookup (matched by message pointer only).
+  The callback now also matches the requested name.
+- **TCP receive-queue pool exhaustion**: an established socket held the
+  driver's `PBUF_POOL` pbufs, so one slow reader could pin the whole pool and
+  stall all inbound traffic. Received segments are now cloned into `PBUF_RAM`.
+- **Datagram receive accounting**: UDP/raw queues are bounded by bytes against
+  `SO_RCVBUF`, not only packet count.
+- **SANA-II `CopyToBuff` bound**: the RX copy hook clamps a driver-supplied
+  length to the receive-buffer capacity, so an oversize frame cannot overflow
+  the buffer.
+- **tftp first-reply binding**: a GET/PUT now requires the first reply to come
+  from the server's IP before locking the transfer id (RFC 1350).
+
 ## 1.2.0-rc5 (2026-10-03)
 
 ### Fixed
