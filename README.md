@@ -299,6 +299,8 @@ Requirements: AmigaOS 3.0+, 68000 or higher, about 1.2 MB free for the unpacked 
 
 Release state, test results and known limitations are tracked in [STATUS.md](STATUS.md).
 
+**Security (1.2.0-rc6):** this release closes the findings of an internal security audit — out-of-bounds reads in the vendored lwIP DNS and DHCP parsers, a predictable TCP ISN (now an RFC 6528 keyed hook), a weak shared PRNG (replaced with a keyed SipHash stream so DNS transaction ids and ports no longer leak), a DNS reply that could bind to the wrong request, a TCP receive path that could exhaust the `PBUF_POOL`, unbounded datagram queues, the SANA-II receive-copy bound, and tftp first-reply source validation. Details per fix are in the [CHANGELOG](CHANGELOG.md). All are remote- or network-facing; the stack still assumes trusted local programs (classic AmigaOS has no memory protection).
+
 ---
 
 ## License & Third-Party Credits
